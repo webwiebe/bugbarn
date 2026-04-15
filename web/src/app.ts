@@ -1,38 +1,60 @@
 type RawRecord = Record<string, unknown>;
 
 interface ApiIssue extends RawRecord {
+  ID?: string | number;
+  IssueID?: string | number;
   id?: string | number;
   issueId?: string | number;
   issue_id?: string | number;
+  Title?: string;
   title?: string;
+  NormalizedTitle?: string;
   normalizedTitle?: string;
   normalized_title?: string;
+  ExceptionType?: string;
   exceptionType?: string;
   exception_type?: string;
+  Fingerprint?: string;
   fingerprint?: string;
+  FirstSeen?: string | number;
   firstSeen?: string | number;
   first_seen?: string | number;
+  LastSeen?: string | number;
   lastSeen?: string | number;
   last_seen?: string | number;
+  EventCount?: number;
   eventCount?: number;
   event_count?: number;
   count?: number;
 }
 
 interface ApiEvent extends RawRecord {
+  ID?: string | number;
+  EventID?: string | number;
+  IssueID?: string | number;
   id?: string | number;
   eventId?: string | number;
   event_id?: string | number;
   issueId?: string | number;
   issue_id?: string | number;
+  Title?: string;
   title?: string;
+  Body?: string;
   body?: string;
+  Message?: string;
   message?: string;
+  Timestamp?: string | number;
   timestamp?: string | number;
+  CreatedAt?: string | number;
   createdAt?: string | number;
   created_at?: string | number;
+  ReceivedAt?: string | number;
+  ObservedAt?: string | number;
+  Severity?: string;
+  SeverityText?: string;
   severityText?: string;
   severity_text?: string;
+  Exception?: RawRecord | { message?: string; Message?: string };
   exception?: RawRecord | { message?: string };
 }
 
@@ -261,8 +283,8 @@ async function loadEventDetail(eventId: string): Promise<void> {
     let issue: ApiIssue | null = null;
     let issueEvents: ApiEvent[] = [];
 
-    const relatedIssueId = event.issueId ?? event.issue_id;
-    if (relatedIssueId !== null && relatedIssueId !== undefined && relatedIssueId !== "") {
+    const relatedIssueId = eventIssueId(event);
+    if (relatedIssueId) {
       const issueId = String(relatedIssueId);
       try {
         const [issuePayload, eventsPayload] = await Promise.all([
@@ -372,23 +394,95 @@ function isRecord(value: unknown): value is RawRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function readFirst(source: RawRecord, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = source[key];
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+  return "";
+}
+
+function readString(source: RawRecord, keys: string[]): string {
+  const value = readFirst(source, keys);
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function readNumber(source: RawRecord, keys: string[]): number {
+  const value = readFirst(source, keys);
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
+function issueTitle(issue: ApiIssue): string {
+  return readString(issue, ["title", "Title", "normalizedTitle", "NormalizedTitle", "normalized_title"]) || "Untitled issue";
+}
+
+function issueNormalizedTitle(issue: ApiIssue): string {
+  return readString(issue, ["normalizedTitle", "NormalizedTitle", "normalized_title"]);
+}
+
+function issueExceptionType(issue: ApiIssue): string {
+  return readString(issue, ["exceptionType", "ExceptionType", "exception_type"]);
+}
+
+function issueFingerprint(issue: ApiIssue): string {
+  return readString(issue, ["fingerprint", "Fingerprint"]);
+}
+
+function issueLastSeen(issue: ApiIssue): unknown {
+  return readFirst(issue, ["lastSeen", "LastSeen", "last_seen"]);
+}
+
+function issueFirstSeen(issue: ApiIssue): unknown {
+  return readFirst(issue, ["firstSeen", "FirstSeen", "first_seen"]);
+}
+
+function issueEventCount(issue: ApiIssue, fallback = 0): number {
+  return readNumber(issue, ["eventCount", "EventCount", "event_count", "count"]) || fallback;
+}
+
+function eventIssueId(event: ApiEvent): string {
+  return readString(event, ["issueId", "IssueID", "issue_id"]);
+}
+
+function eventTitle(event: ApiEvent): string {
+  return (
+    readString(event, ["title", "Title", "body", "Body", "message", "Message"]) ||
+    readNestedMessage(readFirst(event, ["exception", "Exception"])) ||
+    "Event"
+  );
+}
+
+function eventTimestamp(event: ApiEvent): unknown {
+  return readFirst(event, ["timestamp", "Timestamp", "createdAt", "CreatedAt", "created_at", "receivedAt", "ReceivedAt", "observedAt", "ObservedAt"]);
+}
+
+function eventSeverity(event: ApiEvent): string {
+  return readString(event, ["severityText", "SeverityText", "severity_text", "severity", "Severity"]);
+}
+
 function renderIssueList(error: unknown = null): void {
   const filtered = state.issues.filter((issue) => {
     if (!state.issueQuery) {
       return true;
     }
     const text = [
-      issue.id,
-      issue.issueId,
-      issue.issue_id,
-      issue.title,
-      issue.exceptionType,
-      issue.exception_type,
-      issue.normalizedTitle,
-      issue.normalized_title,
-      issue.fingerprint,
-      issue.lastSeen,
-      issue.last_seen,
+      firstIdentifier(issue),
+      issueTitle(issue),
+      issueExceptionType(issue),
+      issueNormalizedTitle(issue),
+      issueFingerprint(issue),
+      issueLastSeen(issue),
     ]
       .filter(Boolean)
       .map((value) => String(value))
@@ -412,9 +506,9 @@ function renderIssueList(error: unknown = null): void {
   elements.issueList.innerHTML = filtered
     .map((issue) => {
       const id = firstIdentifier(issue);
-      const title = issue.title ?? issue.normalizedTitle ?? issue.normalized_title ?? "Untitled issue";
-      const count = issue.eventCount ?? issue.event_count ?? issue.count ?? 0;
-      const lastSeen = formatTime(issue.lastSeen ?? issue.last_seen);
+      const title = issueTitle(issue);
+      const count = issueEventCount(issue);
+      const lastSeen = formatTime(issueLastSeen(issue));
       const active = id && String(id) === String(state.selectedIssueId) ? "active" : "";
       return `
         <button class="item ${active}" type="button" data-issue-id="${escapeAttr(id)}">
@@ -465,28 +559,37 @@ function setDetailLoading(title: string): void {
 
 function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
   const id = firstIdentifier(issue);
-  const title = issue.title ?? issue.normalizedTitle ?? issue.normalized_title ?? "Untitled issue";
-  const normalizedTitle = issue.normalizedTitle ?? issue.normalized_title ?? "";
-  const exceptionType = issue.exceptionType ?? issue.exception_type ?? "";
-  const fingerprint = issue.fingerprint ?? "";
-  const firstSeen = formatTime(issue.firstSeen ?? issue.first_seen);
-  const lastSeen = formatTime(issue.lastSeen ?? issue.last_seen);
-  const eventCount = issue.eventCount ?? issue.event_count ?? events.length ?? 0;
+  const title = issueTitle(issue);
+  const normalizedTitle = issueNormalizedTitle(issue);
+  const exceptionType = issueExceptionType(issue);
+  const fingerprint = issueFingerprint(issue);
+  const firstSeen = formatTime(issueFirstSeen(issue));
+  const lastSeen = formatTime(issueLastSeen(issue));
+  const eventCount = issueEventCount(issue, events.length);
   const fields = collectKeyValues(issue, [
     "id",
+    "ID",
     "issueId",
+    "IssueID",
     "issue_id",
     "title",
+    "Title",
     "normalizedTitle",
+    "NormalizedTitle",
     "normalized_title",
     "exceptionType",
+    "ExceptionType",
     "exception_type",
     "fingerprint",
+    "Fingerprint",
     "firstSeen",
+    "FirstSeen",
     "first_seen",
     "lastSeen",
+    "LastSeen",
     "last_seen",
     "eventCount",
+    "EventCount",
     "event_count",
   ]);
 
@@ -522,21 +625,33 @@ function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
 
 function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[]): void {
   const id = firstIdentifier(event);
-  const issueId = issue ? firstIdentifier(issue) : firstIdentifier(event, ["id", "eventId", "event_id"]);
-  const title = event.title ?? event.body ?? event.message ?? readNestedMessage(event.exception) ?? "Event";
-  const timestamp = formatTime(event.timestamp ?? event.createdAt ?? event.created_at);
+  const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
+  const title = eventTitle(event);
+  const timestamp = formatTime(eventTimestamp(event));
   const fields = collectKeyValues(event, [
     "id",
+    "ID",
     "eventId",
+    "EventID",
     "event_id",
     "issueId",
+    "IssueID",
     "issue_id",
     "title",
+    "Title",
     "body",
+    "Body",
     "message",
+    "Message",
     "timestamp",
+    "Timestamp",
     "createdAt",
+    "CreatedAt",
     "created_at",
+    "receivedAt",
+    "ReceivedAt",
+    "observedAt",
+    "ObservedAt",
   ]);
 
   elements.detailTitle.textContent = title;
@@ -550,7 +665,7 @@ function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents:
         <div class="kv"><span>Event id</span><span>${escapeHtml(String(id || "n/a"))}</span></div>
         <div class="kv"><span>Issue id</span><span>${escapeHtml(String(issueId || "n/a"))}</span></div>
         <div class="kv"><span>Timestamp</span><span>${escapeHtml(timestamp || "n/a")}</span></div>
-        <div class="kv"><span>Severity</span><span>${escapeHtml(event.severityText ?? event.severity_text ?? "n/a")}</span></div>
+        <div class="kv"><span>Severity</span><span>${escapeHtml(eventSeverity(event) || "n/a")}</span></div>
       </div>
     </div>
     <div class="section">
@@ -581,8 +696,8 @@ function renderEventButtons(events: ApiEvent[], activeId = ""): string {
       ${events
         .map((event) => {
           const id = firstIdentifier(event);
-          const title = event.title ?? event.body ?? event.message ?? readNestedMessage(event.exception) ?? "Event";
-          const timestamp = formatTime(event.timestamp ?? event.createdAt ?? event.created_at);
+          const title = eventTitle(event);
+          const timestamp = formatTime(eventTimestamp(event));
           const active = activeId && String(activeId) === String(id) ? "active" : "";
           return `
             <button class="item ${active}" type="button" data-event-id="${escapeAttr(id)}">
@@ -669,9 +784,9 @@ function renderLiveList(): void {
   elements.liveList.innerHTML = state.liveEvents
     .map((event) => {
       const id = firstIdentifier(event);
-      const issueId = event.issueId ?? event.issue_id;
-      const title = event.title ?? event.body ?? event.message ?? readNestedMessage(event.exception) ?? "Event";
-      const timestamp = formatTime(event.timestamp ?? event.createdAt ?? event.created_at);
+      const issueId = eventIssueId(event);
+      const title = eventTitle(event);
+      const timestamp = formatTime(eventTimestamp(event));
       return `
         <button class="item" type="button" data-live-event-id="${escapeAttr(id)}">
           <div class="item-title">${escapeHtml(title)}</div>
@@ -719,10 +834,33 @@ function renderEmptyIssues(): string {
 
 function renderSetupGuide(): string {
   const endpoint = `${state.apiBase || window.location.origin}/api/v1/events`;
+  const testApiKeyCommand = "kubectl -n bugbarn-testing get secret bugbarn-api-key -o jsonpath='{.data.BUGBARN_API_KEY}' | base64 -d; echo";
+  const stagingApiKeyCommand = "kubectl -n bugbarn-staging get secret bugbarn-api-key -o jsonpath='{.data.BUGBARN_API_KEY}' | base64 -d; echo";
   return `
     <div class="section">
       <p class="muted">Use your BugBarn API key and send errors to:</p>
       <pre class="pre">${escapeHtml(endpoint)}</pre>
+    </div>
+    <div class="section">
+      <h3>API key</h3>
+      <p class="muted">Read the key from the cluster secret for the environment you are sending to.</p>
+      <pre class="pre">${escapeHtml(`# Testing
+${testApiKeyCommand}
+
+# Staging
+${stagingApiKeyCommand}`)}</pre>
+      <p class="muted">If the command prints replace-me-testing or replace-me-staging, rotate the secret before connecting a real application.</p>
+    </div>
+    <div class="section">
+      <h3>SDK package</h3>
+      <p class="muted">Until the package is published, build a local tarball and install it from Rapid Root.</p>
+      <pre class="pre">${escapeHtml(`cd /Users/wiebe/webwiebe/temu-sentry/sdks/typescript
+npm install
+npm run build
+npm pack
+
+cd /Users/wiebe/webwiebe/rapid-root
+pnpm add /Users/wiebe/webwiebe/temu-sentry/sdks/typescript/bugbarn-typescript-0.1.0.tgz`)}</pre>
     </div>
     <div class="section">
       <h3>TypeScript</h3>
@@ -789,7 +927,9 @@ function errorMessage(error: unknown): string {
 }
 
 function firstIdentifier(source: ApiIssue | ApiEvent, extraOmitKeys: string[] = []): string {
-  const value = source.id ?? source.issueId ?? source.issue_id ?? source.eventId ?? source.event_id;
+  const omit = new Set(extraOmitKeys);
+  const keys = ["id", "ID", "issueId", "IssueID", "issue_id", "eventId", "EventID", "event_id"].filter((key) => !omit.has(key));
+  const value = readFirst(source, keys);
   if (value === null || value === undefined || value === "") {
     return "";
   }
@@ -800,6 +940,6 @@ function readNestedMessage(value: unknown): string {
   if (!isRecord(value)) {
     return "";
   }
-  const message = value.message;
+  const message = readFirst(value, ["message", "Message"]);
   return typeof message === "string" ? message : "";
 }

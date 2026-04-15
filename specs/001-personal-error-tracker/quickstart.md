@@ -56,3 +56,44 @@ Target namespaces:
 - `bugbarn-staging`
 
 Production is intentionally deferred.
+
+Testing endpoint:
+
+```bash
+https://bugbarn.test.wiebe.xyz/api/v1/events
+```
+
+Staging endpoint:
+
+```bash
+https://bugbarn.staging.wiebe.xyz/api/v1/events
+```
+
+Read the active API keys from the Kubernetes secrets:
+
+```bash
+kubectl -n bugbarn-testing get secret bugbarn-api-key -o jsonpath='{.data.BUGBARN_API_KEY}' | base64 -d; echo
+kubectl -n bugbarn-staging get secret bugbarn-api-key -o jsonpath='{.data.BUGBARN_API_KEY}' | base64 -d; echo
+```
+
+If either command prints a `replace-me-*` value, rotate the secret before connecting a real application.
+
+## Local TypeScript SDK Package
+
+Until packages are published to a registry, build the SDK tarball locally:
+
+```bash
+cd sdks/typescript
+npm install
+npm run build
+npm pack
+```
+
+Install it from Rapid Root or another local project:
+
+```bash
+cd /Users/wiebe/webwiebe/rapid-root
+pnpm add /Users/wiebe/webwiebe/temu-sentry/sdks/typescript/bugbarn-typescript-0.1.0.tgz
+```
+
+This is suitable for local testing. Rapid Root's CI and Docker builds use pnpm frozen lockfiles, so the testing/staging rollout should vendor the SDK as a Rapid Root workspace package or publish `@bugbarn/typescript` to a package registry before relying on it in automated builds.

@@ -88,13 +88,13 @@ function installDefaultHandlers(): void {
   }
   handlersInstalled = true;
 
-  process.on("uncaughtException", (error) => {
+  process.on("uncaughtException", (error: Error) => {
     void captureException(error).finally(() => {
       process.exit(1);
     });
   });
 
-  process.on("unhandledRejection", (reason) => {
+  process.on("unhandledRejection", (reason: unknown) => {
     void captureException(reason).finally(() => {
       process.exit(1);
     });

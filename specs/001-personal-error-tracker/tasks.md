@@ -73,6 +73,7 @@
 - [x] T046 Create Python SDK package with initialization, manual capture, async transport, and `sys.excepthook` support.
 - [x] T047 Create Python sample app for uncaught exceptions.
 - [ ] T048 Add SDK shutdown/flush with bounded timeout.
+- [x] T064 Make the TypeScript SDK build into an installable package tarball for local Rapid Root integration.
 
 ## Phase 9: Deployment and Homelab CI/CD
 
