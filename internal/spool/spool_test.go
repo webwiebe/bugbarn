@@ -47,3 +47,32 @@ func TestAppendWritesNDJSON(t *testing.T) {
 		t.Fatalf("expected body %q, got %q", record.BodyBase64, got.BodyBase64)
 	}
 }
+
+func TestReadRecordsReturnsAppendedRecords(t *testing.T) {
+	dir := t.TempDir()
+	eventSpool, err := New(dir)
+	if err != nil {
+		t.Fatalf("new spool: %v", err)
+	}
+	defer eventSpool.Close()
+
+	first := Record{IngestID: "first", BodyBase64: "e30="}
+	second := Record{IngestID: "second", BodyBase64: "e30="}
+	if err := eventSpool.Append(first); err != nil {
+		t.Fatalf("append first: %v", err)
+	}
+	if err := eventSpool.Append(second); err != nil {
+		t.Fatalf("append second: %v", err)
+	}
+
+	records, err := ReadRecords(Path(dir))
+	if err != nil {
+		t.Fatalf("read records: %v", err)
+	}
+	if got, want := len(records), 2; got != want {
+		t.Fatalf("unexpected record count: got %d want %d", got, want)
+	}
+	if records[0].IngestID != "first" || records[1].IngestID != "second" {
+		t.Fatalf("unexpected records: %#v", records)
+	}
+}

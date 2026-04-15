@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -14,7 +15,9 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
+	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
+	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func main() {
@@ -25,6 +28,9 @@ func main() {
 
 func run() error {
 	cfg := loadConfig()
+	if len(os.Args) > 1 && os.Args[1] == "worker-once" {
+		return runWorkerOnce(cfg)
+	}
 
 	eventSpool, err := spool.New(cfg.spoolDir)
 	if err != nil {
@@ -81,6 +87,29 @@ func loadConfig() config {
 	}
 
 	return cfg
+}
+
+func runWorkerOnce(cfg config) error {
+	records, err := spool.ReadRecords(spool.Path(cfg.spoolDir))
+	if err != nil {
+		return err
+	}
+
+	processed, err := worker.ProcessRecords(records)
+	if err != nil {
+		return err
+	}
+
+	store := issues.NewStore()
+	for _, item := range processed {
+		store.AddWithFingerprint(item.Event, item.Fingerprint)
+	}
+
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"records": len(records),
+		"events":  len(processed),
+		"issues":  store.Len(),
+	})
 }
 
 func getenv(key, fallback string) string {

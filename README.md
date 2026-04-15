@@ -10,7 +10,7 @@ This repository is being developed spec-first with GitHub Spec Kit. The root pro
 - Durable local spool plus background workers for normalization, PII scrubbing, fingerprinting, facet extraction, and persistence.
 - OpenTelemetry-shaped event model with permissive adapters for sender-specific formats.
 - Web interface for issue lists, event drill-down, and live event flow.
-- First SDKs for TypeScript and Python with default error-handler integration.
+- First SDKs for TypeScript and Python with default error-handler integration, with a future PHP SDK tracked separately.
 - Docker-first deployment with standalone binary support for low-powered hardware.
 - Homelab staging/testing deployment through GitHub Actions and K3S.
 
@@ -45,6 +45,12 @@ curl -X POST http://localhost:8080/api/v1/events \
   -H 'content-type: application/json' \
   -H 'x-bugbarn-api-key: local-dev-key' \
   --data @specs/001-personal-error-tracker/fixtures/example-event.json
+```
+
+Process the local spool once and print a summary:
+
+```bash
+BUGBARN_SPOOL_DIR=.data/spool go run ./cmd/bugbarn worker-once
 ```
 
 ## Homelab Runner Scaffold

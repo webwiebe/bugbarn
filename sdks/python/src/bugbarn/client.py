@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import atexit
+import datetime
 import json
 import queue
 import sys
@@ -12,30 +13,63 @@ import urllib.request
 from typing import Any, Optional
 
 SDK_NAME = "bugbarn.python"
+SDK_VERSION = "0.1.0"
 DEFAULT_ENDPOINT = "/api/v1/events"
 
 
 @dataclass
-class Event:
-    sdk: str
-    message: str
+class StackFrame:
+    function: str | None = None
+    file: str | None = None
+    line: int | None = None
+    column: int | None = None
+    module: str | None = None
+
+
+@dataclass
+class Envelope:
+    timestamp: str
+    severityText: str
+    body: str
     exception_type: str
-    exception_value: str
-    stack: str | None
+    exception_message: str
+    stacktrace: list[StackFrame] | None = None
+    attributes: dict[str, Any] = field(default_factory=dict)
     tags: dict[str, Any] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
+    sender: dict[str, Any] = field(
+        default_factory=lambda: {"sdk": {"name": SDK_NAME, "version": SDK_VERSION}}
+    )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "timestamp": self.timestamp,
+            "severityText": self.severityText,
+            "body": self.body,
+            "exception": {
+                "type": self.exception_type,
+                "message": self.exception_message,
+            },
+            "attributes": self.attributes,
+            "tags": self.tags,
+            "extra": self.extra,
+            "sender": self.sender,
+        }
+        if self.stacktrace:
+            payload["exception"]["stacktrace"] = [frame.__dict__ for frame in self.stacktrace]
+        return payload
 
 
 class Transport:
     def __init__(self, api_key: str, endpoint: str = DEFAULT_ENDPOINT, maxsize: int = 256) -> None:
         self.api_key = api_key
         self.endpoint = endpoint
-        self.queue: "queue.Queue[Event]" = queue.Queue(maxsize=maxsize)
+        self.queue: "queue.Queue[Envelope]" = queue.Queue(maxsize=maxsize)
         self._closed = threading.Event()
         self._worker = threading.Thread(target=self._run, name="bugbarn-transport", daemon=True)
         self._worker.start()
 
-    def submit(self, event: Event) -> bool:
+    def submit(self, event: Envelope) -> bool:
         try:
             self.queue.put_nowait(event)
             return True
@@ -57,8 +91,8 @@ class Transport:
             finally:
                 self.queue.task_done()
 
-    def _send(self, event: Event) -> None:
-        payload = json.dumps({"events": [event.__dict__]}).encode("utf-8")
+    def _send(self, event: Envelope) -> None:
+        payload = json.dumps(event.to_payload()).encode("utf-8")
         request = urllib.request.Request(
             self.endpoint,
             data=payload,
@@ -88,15 +122,45 @@ def _normalize_exception(exc: BaseException | str | object) -> BaseException:
     return Exception("Unknown error")
 
 
-def _build_event(exc: BaseException | str | object, tags: Optional[dict[str, Any]] = None, extra: Optional[dict[str, Any]] = None) -> Event:
+def _extract_stacktrace(tb) -> list[StackFrame] | None:
+    if tb is None:
+        return None
+
+    frames: list[StackFrame] = []
+    for frame in traceback.extract_tb(tb):
+        module = frame.filename.rsplit("/", 1)[-1] if frame.filename else None
+        frames.append(
+            StackFrame(
+                function=frame.name or None,
+                file=frame.filename or None,
+                line=frame.lineno or None,
+                column=None,
+                module=module,
+            )
+        )
+    return frames or None
+
+
+def _now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _build_event(
+    exc: BaseException | str | object,
+    *,
+    attributes: Optional[dict[str, Any]] = None,
+    tags: Optional[dict[str, Any]] = None,
+    extra: Optional[dict[str, Any]] = None,
+) -> Envelope:
     normalized = _normalize_exception(exc)
-    stack = "".join(traceback.format_exception(type(normalized), normalized, normalized.__traceback__))
-    return Event(
-        sdk=SDK_NAME,
-        message=str(normalized),
+    return Envelope(
+        timestamp=_now_iso(),
+        severityText="ERROR",
+        body=str(normalized),
         exception_type=type(normalized).__name__,
-        exception_value=str(normalized),
-        stack=stack or None,
+        exception_message=str(normalized),
+        stacktrace=_extract_stacktrace(normalized.__traceback__),
+        attributes=attributes or {},
         tags=tags or {},
         extra=extra or {},
     )
@@ -107,7 +171,13 @@ def _excepthook(exc_type, exc, tb) -> None:
     sys.__excepthook__(exc_type, exc, tb)
 
 
-def init(*, api_key: str, endpoint: str = DEFAULT_ENDPOINT, install_excepthook: bool = False, transport: Transport | None = None) -> None:
+def init(
+    *,
+    api_key: str,
+    endpoint: str = DEFAULT_ENDPOINT,
+    install_excepthook: bool = False,
+    transport: Transport | None = None,
+) -> None:
     global _transport, _install_hook
     _transport = transport or Transport(api_key=api_key, endpoint=endpoint)
     if install_excepthook and not _install_hook:
@@ -116,7 +186,15 @@ def init(*, api_key: str, endpoint: str = DEFAULT_ENDPOINT, install_excepthook: 
     atexit.register(lambda: _transport.close() if _transport else None)
 
 
-def capture_exception(exc: BaseException | str | object, *, tags: Optional[dict[str, Any]] = None, extra: Optional[dict[str, Any]] = None) -> bool:
+def capture_exception(
+    exc: BaseException | str | object,
+    *,
+    attributes: Optional[dict[str, Any]] = None,
+    tags: Optional[dict[str, Any]] = None,
+    extra: Optional[dict[str, Any]] = None,
+) -> bool:
     if _transport is None:
         return False
-    return _transport.submit(_build_event(exc, tags=tags, extra=extra))
+    return _transport.submit(
+        _build_event(exc, attributes=attributes, tags=tags, extra=extra)
+    )

@@ -1,4 +1,4 @@
-import type { BugBarnEvent, Transport } from "./types.ts";
+import type { BugBarnEnvelope, Transport } from "./types.ts";
 
 const DEFAULT_ENDPOINT = "/api/v1/events";
 
@@ -11,16 +11,16 @@ function resolveUrl(endpoint: string): string {
 }
 
 export function createTransport(apiKey: string, endpoint = DEFAULT_ENDPOINT): Transport {
-  const queue: BugBarnEvent[] = [];
+  const queue: BugBarnEnvelope[] = [];
   let flushScheduled = false;
   let flushInFlight: Promise<void> | null = null;
 
-  async function send(event: BugBarnEvent): Promise<void> {
+  async function send(event: BugBarnEnvelope): Promise<void> {
     queue.push(event);
     if (!flushScheduled) {
       flushScheduled = true;
       setTimeout(() => {
-        void flush();
+        void flush().catch(() => {});
       }, 0);
     }
   }
@@ -41,17 +41,19 @@ export function createTransport(apiKey: string, endpoint = DEFAULT_ENDPOINT): Tr
     }
 
     flushInFlight = (async () => {
-      const response = await fetch(resolveUrl(endpoint), {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-bugbarn-api-key": apiKey,
-        },
-        body: JSON.stringify({ events: batch }),
-      });
+      for (const event of batch) {
+        const response = await fetch(resolveUrl(endpoint), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-bugbarn-api-key": apiKey,
+          },
+          body: JSON.stringify(event),
+        });
 
-      if (!response.ok) {
-        throw new Error(`BugBarn transport failed with ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`BugBarn transport failed with ${response.status}`);
+        }
       }
     })();
 

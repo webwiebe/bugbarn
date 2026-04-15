@@ -4,18 +4,18 @@
 
 ## Phase 1: Repository and Tooling Setup
 
-- [ ] T001 Create monorepo skeleton: `cmd/`, `internal/`, `web/`, `sdks/`, `deploy/`, and `infra/`.
-- [ ] T002 Initialize Go module and baseline CLI entrypoint for `bugbarn`.
-- [ ] T003 Add Makefile targets for `setup`, `test`, `lint`, `build`, `dev`, and `docker-build`.
-- [ ] T004 Add GitHub Actions CI for Go tests, SDK tests, frontend checks, and container builds.
-- [ ] T005 Add Docker Compose for local single-node development.
+- [x] T001 Create monorepo skeleton: `cmd/`, `internal/`, `web/`, `sdks/`, `deploy/`, and `infra/`.
+- [x] T002 Initialize Go module and baseline CLI entrypoint for `bugbarn`.
+- [x] T003 Add Makefile targets for `setup`, `test`, `lint`, `build`, `dev`, and `docker-build`.
+- [x] T004 Add GitHub Actions CI for Go tests, SDK tests, frontend checks, and container builds.
+- [x] T005 Add Docker Compose for local single-node development.
 
 ## Phase 2: Contracts and Test Fixtures
 
 - [ ] T006 Add OpenAPI contract validation for `contracts/ingest-api.yaml`.
 - [ ] T007 Create canonical event fixtures covering OpenTelemetry-shaped JSON, minimal JSON, malformed best-effort JSON, and sender-specific variants.
-- [ ] T008 Create PII scrubbing fixtures for emails, raw IPs, authorization headers, cookies, tokens, session IDs, UUIDs, and high-cardinality values.
-- [ ] T009 Create fingerprinting fixtures that prove volatile values collapse to stable fingerprints.
+- [x] T008 Create PII scrubbing fixtures for emails, raw IPs, authorization headers, cookies, tokens, session IDs, UUIDs, and high-cardinality values.
+- [x] T009 Create fingerprinting fixtures that prove volatile values collapse to stable fingerprints.
 - [ ] T010 Add load-test fixture generator for high-volume small events.
 
 ## Phase 3: Ingest and Durable Spool
@@ -31,12 +31,12 @@
 ## Phase 4: Normalization, Privacy, and Grouping
 
 - [ ] T018 Implement worker loop that reads, leases, retries, and dead-letters spool records.
-- [ ] T019 Implement canonical OpenTelemetry-shaped event normalization.
+- [x] T019 Implement canonical OpenTelemetry-shaped event normalization.
 - [ ] T020 Implement best-effort handling for unknown and partial sender payloads.
-- [ ] T021 Implement privacy scrubber by sensitive key patterns.
-- [ ] T022 Implement privacy scrubber by sensitive value patterns.
-- [ ] T023 Implement fingerprint normalization for exception type, message, stack frames, and stable context.
-- [ ] T024 Implement issue create/update logic from fingerprints.
+- [x] T021 Implement privacy scrubber by sensitive key patterns.
+- [x] T022 Implement privacy scrubber by sensitive value patterns.
+- [x] T023 Implement fingerprint normalization for exception type, message, stack frames, and stable context.
+- [x] T024 Implement issue create/update logic from fingerprints.
 - [ ] T025 Implement event persistence linked to issues.
 
 ## Phase 5: Storage and Facets
@@ -68,20 +68,20 @@
 
 ## Phase 8: SDKs
 
-- [ ] T044 Create TypeScript SDK package with initialization, manual capture, async transport, and uncaught handler support.
+- [x] T044 Create TypeScript SDK package with initialization, manual capture, async transport, and uncaught handler support.
 - [ ] T045 Create TypeScript sample app and tests for uncaught exceptions and unhandled promise rejections.
-- [ ] T046 Create Python SDK package with initialization, manual capture, async transport, and `sys.excepthook` support.
+- [x] T046 Create Python SDK package with initialization, manual capture, async transport, and `sys.excepthook` support.
 - [ ] T047 Create Python sample app and tests for uncaught exceptions.
 - [ ] T048 Add SDK shutdown/flush with bounded timeout.
 
 ## Phase 9: Deployment and Homelab CI/CD
 
-- [ ] T049 Add Dockerfiles for service/worker and web.
-- [ ] T050 Add K3S manifests or Helm/Kustomize overlays for testing and staging.
-- [ ] T051 Add namespaces `bugbarn-testing` and `bugbarn-staging`.
+- [x] T049 Add Dockerfiles for service/worker and web.
+- [x] T050 Add K3S manifests or Helm/Kustomize overlays for testing and staging.
+- [x] T051 Add namespaces `bugbarn-testing` and `bugbarn-staging`.
 - [ ] T052 Add GitHub Actions deploy workflow for testing on main branch or selected branches.
 - [ ] T053 Add GitHub Actions deploy workflow for staging on tagged or manually dispatched builds.
-- [ ] T054 Provision project-specific self-hosted runners using `infra/` Ansible scaffold.
+- [x] T054 Add project-specific self-hosted runner definitions using the `infra/` Ansible scaffold.
 
 ## Phase 10: Release Readiness
 
@@ -91,3 +91,7 @@
 - [ ] T058 Run sustained ingest benchmark and record baseline hardware/resource usage.
 - [ ] T059 Verify all success criteria in `spec.md`.
 - [ ] T060 Prepare first public release checklist.
+
+## Phase 11: Future SDKs
+
+- [ ] T061 Add a PHP SDK package with initialization, manual capture, async transport, and uncaught handler support. This tracks the user's separate note about "bhp", interpreted here as PHP, and is intentionally left for a later iteration after the foundation SDKs.

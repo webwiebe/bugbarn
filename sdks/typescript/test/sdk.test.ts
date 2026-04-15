@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { captureException, createTransport, flush, getApiKey, init } from "../src/index.ts";
-import type { BugBarnEvent, Transport } from "../src/types.ts";
+import type { BugBarnEnvelope, Transport } from "../src/types.ts";
 
 test("init stores transport and api key", async () => {
-  const events: BugBarnEvent[] = [];
+  const events: BugBarnEnvelope[] = [];
   const transport: Transport = {
     async send(event) {
       events.push(event);
@@ -23,9 +23,14 @@ test("init stores transport and api key", async () => {
 
   assert.equal(getApiKey(), "bb_live_test");
   assert.equal(events.length, 1);
-  assert.equal(events[0].sdk, "bugbarn.typescript");
-  assert.equal(events[0].exception.value, "boom");
+  assert.equal(events[0].severityText, "ERROR");
+  assert.equal(events[0].body, "boom");
+  assert.equal(events[0].exception.type, "Error");
+  assert.equal(events[0].exception.message, "boom");
   assert.equal(events[0].tags?.service, "api");
+  assert.equal(events[0].sender.sdk.name, "bugbarn.typescript");
+  assert.equal(events[0].sender.sdk.version, "0.1.0");
+  assert.ok(events[0].timestamp.length > 0);
 });
 
 test("flush delegates to transport", async () => {
@@ -59,10 +64,16 @@ test("transport sends api key header to ingest endpoint", async () => {
   try {
     const transport = createTransport("bb_live_test", "http://127.0.0.1:9000/api/v1/events");
     await transport.send({
-      sdk: "bugbarn.typescript",
-      message: "boom",
-      exception: { type: "Error", value: "boom" },
       timestamp: new Date().toISOString(),
+      severityText: "ERROR",
+      body: "boom",
+      exception: { type: "Error", message: "boom" },
+      sender: {
+        sdk: {
+          name: "bugbarn.typescript",
+          version: "0.1.0",
+        },
+      },
     });
     await transport.flush();
   } finally {
@@ -72,4 +83,8 @@ test("transport sends api key header to ingest endpoint", async () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "http://127.0.0.1:9000/api/v1/events");
   assert.equal(new Headers(calls[0].init?.headers).get("x-bugbarn-api-key"), "bb_live_test");
+  const body = JSON.parse(String(calls[0].init?.body)) as BugBarnEnvelope;
+  assert.equal(body.body, "boom");
+  assert.equal(body.exception.message, "boom");
+  assert.equal(body.sender.sdk.name, "bugbarn.typescript");
 });

@@ -1,6 +1,7 @@
 package spool
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -57,6 +58,13 @@ func (s *Spool) Path() string {
 	return s.path
 }
 
+func Path(dir string) string {
+	if dir == "" {
+		dir = ".data/spool"
+	}
+	return filepath.Join(dir, DefaultFileName)
+}
+
 func (s *Spool) Append(record Record) error {
 	if s == nil {
 		return errors.New("spool is nil")
@@ -90,4 +98,34 @@ func (s *Spool) Close() error {
 	defer s.mu.Unlock()
 
 	return s.file.Close()
+}
+
+func ReadRecords(path string) ([]Record, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	var records []Record
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var record Record
+		if err := json.Unmarshal(line, &record); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return records, nil
 }

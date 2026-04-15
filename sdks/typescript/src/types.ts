@@ -6,24 +6,40 @@ export type BugBarnClientOptions = {
 };
 
 export type CaptureOptions = {
+  attributes?: Record<string, unknown>;
   tags?: Record<string, string | number | boolean | null>;
   extra?: Record<string, unknown>;
 };
 
-export type BugBarnEvent = {
-  sdk: "bugbarn.typescript";
-  message: string;
+export type StackFrame = {
+  function?: string;
+  file?: string;
+  line?: number;
+  column?: number;
+  module?: string;
+};
+
+export type BugBarnEnvelope = {
+  timestamp: string;
+  severityText: "ERROR";
+  body: string;
   exception: {
     type: string;
-    value: string;
-    stack?: string;
+    message: string;
+    stacktrace?: StackFrame[];
   };
-  timestamp: string;
+  attributes?: Record<string, unknown>;
   tags?: Record<string, string | number | boolean | null>;
   extra?: Record<string, unknown>;
+  sender: {
+    sdk: {
+      name: string;
+      version: string;
+    };
+  };
 };
 
 export type Transport = {
-  send(event: BugBarnEvent): Promise<void>;
+  send(event: BugBarnEnvelope): Promise<void>;
   flush(): Promise<void>;
 };

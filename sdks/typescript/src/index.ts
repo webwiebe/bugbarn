@@ -1,7 +1,8 @@
 import { createTransport } from "./transport.ts";
-import type { BugBarnClientOptions, BugBarnEvent, CaptureOptions, Transport } from "./types.ts";
+import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, StackFrame, Transport } from "./types.ts";
 
 const SDK_NAME = "bugbarn.typescript";
+const SDK_VERSION = "0.1.0";
 
 let transport: Transport | null = null;
 let currentApiKey = "";
@@ -19,19 +20,65 @@ function normalizeError(error: unknown): Error {
   return new Error("Unknown error");
 }
 
-function buildEvent(error: unknown, options?: CaptureOptions): BugBarnEvent {
+function parseStacktrace(stack?: string): StackFrame[] | undefined {
+  if (!stack) {
+    return undefined;
+  }
+
+  const frames: StackFrame[] = [];
+  const lines = stack.split("\n").map((line) => line.trim()).filter(Boolean);
+
+  for (const line of lines.slice(1)) {
+    const callMatch = /^at (?:(?<function>.+?) )?\((?<file>.+?):(?<line>\d+):(?<column>\d+)\)$/.exec(line);
+    const bareMatch = /^at (?<file>.+?):(?<line>\d+):(?<column>\d+)$/.exec(line);
+    const match = callMatch ?? bareMatch;
+
+    if (!match?.groups) {
+      continue;
+    }
+
+    const file = match.groups.file;
+    const frame: StackFrame = {
+      file,
+      line: Number(match.groups.line),
+      column: Number(match.groups.column),
+    };
+
+    if (match.groups.function) {
+      frame.function = match.groups.function;
+    }
+
+    const moduleName = file.includes("/") ? file.split("/").slice(-1)[0] : undefined;
+    if (moduleName) {
+      frame.module = moduleName;
+    }
+
+    frames.push(frame);
+  }
+
+  return frames.length > 0 ? frames : undefined;
+}
+
+function buildEnvelope(error: unknown, options?: CaptureOptions): BugBarnEnvelope {
   const normalized = normalizeError(error);
   return {
-    sdk: SDK_NAME,
-    message: normalized.message,
+    timestamp: new Date().toISOString(),
+    severityText: "ERROR",
+    body: normalized.message,
     exception: {
       type: normalized.name || "Error",
-      value: normalized.message,
-      stack: normalized.stack,
+      message: normalized.message,
+      stacktrace: parseStacktrace(normalized.stack),
     },
-    timestamp: new Date().toISOString(),
+    attributes: options?.attributes,
     tags: options?.tags,
     extra: options?.extra,
+    sender: {
+      sdk: {
+        name: SDK_NAME,
+        version: SDK_VERSION,
+      },
+    },
   };
 }
 
@@ -68,7 +115,7 @@ export async function captureException(error: unknown, options?: CaptureOptions)
     return;
   }
 
-  await transport.send(buildEvent(error, options));
+  await transport.send(buildEnvelope(error, options));
 }
 
 export async function flush(): Promise<void> {

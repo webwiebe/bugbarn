@@ -5,7 +5,7 @@ import sys
 import unittest
 from unittest import mock
 
-from bugbarn.client import Event, Transport, capture_exception, init
+from bugbarn.client import Envelope, Transport, capture_exception, init
 
 
 class RecordingTransport:
@@ -28,9 +28,13 @@ class SDKTests(unittest.TestCase):
 
         self.assertTrue(capture_exception(RuntimeError("boom"), tags={"service": "api"}))
         self.assertEqual(len(transport.events), 1)
-        self.assertEqual(transport.events[0].sdk, "bugbarn.python")
-        self.assertEqual(transport.events[0].exception_value, "boom")
+        self.assertEqual(transport.events[0].severityText, "ERROR")
+        self.assertEqual(transport.events[0].body, "boom")
+        self.assertEqual(transport.events[0].exception_type, "RuntimeError")
+        self.assertEqual(transport.events[0].exception_message, "boom")
         self.assertEqual(transport.events[0].tags["service"], "api")
+        self.assertEqual(transport.events[0].sender["sdk"]["name"], "bugbarn.python")
+        self.assertEqual(transport.events[0].sender["sdk"]["version"], "0.1.0")
 
     def test_optional_excepthook_installation(self):
         transport = RecordingTransport()
@@ -62,12 +66,13 @@ class SDKTests(unittest.TestCase):
             return Response()
 
         transport = Transport(api_key="bb_live_test", endpoint="http://127.0.0.1:9000/api/v1/events")
-        event = Event(
-            sdk="bugbarn.python",
-            message="boom",
+        event = Envelope(
+            timestamp="2026-04-15T12:00:00+00:00",
+            severityText="ERROR",
+            body="boom",
             exception_type="RuntimeError",
-            exception_value="boom",
-            stack=None,
+            exception_message="boom",
+            sender={"sdk": {"name": "bugbarn.python", "version": "0.1.0"}},
         )
 
         with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
@@ -76,7 +81,11 @@ class SDKTests(unittest.TestCase):
         self.assertEqual(captured["url"], "http://127.0.0.1:9000/api/v1/events")
         self.assertEqual(captured["headers"].get("X-bugbarn-api-key"), "bb_live_test")
         payload = json.loads(captured["body"].decode("utf-8"))
-        self.assertEqual(payload["events"][0]["sdk"], "bugbarn.python")
+        self.assertEqual(payload["severityText"], "ERROR")
+        self.assertEqual(payload["body"], "boom")
+        self.assertEqual(payload["exception"]["type"], "RuntimeError")
+        self.assertEqual(payload["exception"]["message"], "boom")
+        self.assertEqual(payload["sender"]["sdk"]["name"], "bugbarn.python")
         transport.close()
 
 

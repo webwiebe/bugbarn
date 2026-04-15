@@ -1,0 +1,10 @@
+{
+  "exception": {
+    "type": "TypeError",
+    "message": "cart 550e8400-e29b-41d4-a716-446655440001 failed for user 987654",
+    "stacktrace": [
+      {"function": "checkout", "file": "/app/releases/2002/server.ts", "line": 99}
+    ]
+  }
+}
+

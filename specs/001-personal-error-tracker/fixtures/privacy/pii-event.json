@@ -1,0 +1,15 @@
+{
+  "message": "failed for alice@example.com from 192.168.1.10",
+  "authorization": "Bearer abcdefghijklmnopqrstuvwxyz",
+  "cookie": "session=abcdef123456",
+  "attributes": {
+    "http.request.header.authorization": "Bearer abcdefghijklmnopqrstuvwxyz",
+    "enduser.email": "alice@example.com",
+    "session_id": "session-123"
+  },
+  "exception": {
+    "type": "RuntimeError",
+    "message": "token: abcdefghijklmnop for 550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+
