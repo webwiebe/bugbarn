@@ -13,9 +13,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install spec tooling
-        run: python3 -m pip install --user PyYAML
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .ci-venv
+          . .ci-venv/bin/activate
+          python -m pip install PyYAML
       - name: Spec checks
-        run: make spec-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          . .ci-venv/bin/activate
+          make spec-check
 
   code:
     runs-on: [self-hosted, build]
@@ -26,9 +35,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go_mods="$(find . -path '*/.git' -prune -o -name go.mod -print | wc -l | tr -d ' ')"
-          node_manifests="$(find . -path '*/node_modules' -prune -o -name package.json -print | wc -l | tr -d ' ')"
-          python_manifests="$(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print | wc -l | tr -d ' ')"
+          prune=( \( -path './.git' -o -path './.cache' -o -path './.ci-venv' -o -path '*/node_modules' -o -path '*/.venv' \) -prune -o )
+          go_mods="$(find . "${prune[@]}" -name go.mod -print | wc -l | tr -d ' ')"
+          node_manifests="$(find . "${prune[@]}" -name package.json -print | wc -l | tr -d ' ')"
+          python_manifests="$(find . "${prune[@]}" \( -name pyproject.toml -o -name requirements.txt \) -print | wc -l | tr -d ' ')"
           echo "go_mods=$go_mods" >> "$GITHUB_OUTPUT"
           echo "node_manifests=$node_manifests" >> "$GITHUB_OUTPUT"
           echo "python_manifests=$python_manifests" >> "$GITHUB_OUTPUT"
@@ -44,6 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          prune=( \( -path './.git' -o -path './.cache' -o -path './.ci-venv' -o -path '*/node_modules' -o -path '*/.venv' \) -prune -o )
           while IFS= read -r mod; do
             dir="$(dirname "$mod")"
             if find "$dir" -name '*.go' -print -quit | grep -q .; then
@@ -52,7 +63,7 @@ jobs:
               (cd "$dir" && go vet ./...)
               (cd "$dir" && go build ./...)
             fi
-          done < <(find . -path '*/.git' -prune -o -name go.mod -print)
+          done < <(find . "${prune[@]}" -name go.mod -print)
 
       - name: Set up Node
         if: steps.detect.outputs.node_manifests != '0'
@@ -67,6 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          prune=( \( -path './.git' -o -path './.cache' -o -path './.ci-venv' -o -path '*/node_modules' -o -path '*/.venv' \) -prune -o )
           while IFS= read -r pkg; do
             dir="$(dirname "$pkg")"
             echo "[node] $dir"
@@ -78,14 +90,17 @@ jobs:
             (cd "$dir" && npm run lint --if-present)
             (cd "$dir" && npm run test --if-present)
             (cd "$dir" && npm run build --if-present)
-          done < <(find . -path '*/node_modules' -prune -o -name package.json -print)
+          done < <(find . "${prune[@]}" -name package.json -print)
 
       - name: Python checks
         if: steps.detect.outputs.python_manifests != '0'
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --user build pytest ruff
+          prune=( \( -path './.git' -o -path './.cache' -o -path './.ci-venv' -o -path '*/node_modules' -o -path '*/.venv' \) -prune -o )
+          python3 -m venv .ci-venv
+          . .ci-venv/bin/activate
+          python -m pip install build pytest ruff
           while IFS= read -r manifest; do
             dir="$(dirname "$manifest")"
             has_tests=0
@@ -93,16 +108,16 @@ jobs:
               has_tests=1
             fi
             if [ -f "$dir/pyproject.toml" ]; then
-              (cd "$dir" && python3 -m pip install --user -e .)
+              (cd "$dir" && python -m pip install -e .)
             fi
             if [ "$has_tests" -eq 1 ]; then
               echo "[python] $dir"
-              (cd "$dir" && PYTHONPATH=src python3 -m pytest)
+              (cd "$dir" && PYTHONPATH=src python -m pytest)
             fi
             if find "$dir" -name '*.py' -print -quit | grep -q .; then
-              (cd "$dir" && python3 -m ruff check .)
+              (cd "$dir" && python -m ruff check .)
             fi
             if [ -f "$dir/pyproject.toml" ]; then
-              (cd "$dir" && python3 -m build)
+              (cd "$dir" && python -m build)
             fi
-          done < <(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print)
+          done < <(find . "${prune[@]}" \( -name pyproject.toml -o -name requirements.txt \) -print)
