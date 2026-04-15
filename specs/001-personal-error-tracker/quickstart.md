@@ -78,9 +78,23 @@ kubectl -n bugbarn-staging get secret bugbarn-api-key -o jsonpath='{.data.BUGBAR
 
 If either command prints a `replace-me-*` value, rotate the secret before connecting a real application.
 
-## Local TypeScript SDK Package
+## TypeScript SDK Package
 
-Until packages are published to a registry, build the SDK tarball locally:
+Testing serves the SDK tarball from the BugBarn web container:
+
+```bash
+cd /Users/wiebe/webwiebe/rapid-root
+pnpm add https://bugbarn.test.wiebe.xyz/packages/typescript/bugbarn-typescript-0.1.0.tgz
+```
+
+Staging serves the same version on the staging host:
+
+```bash
+cd /Users/wiebe/webwiebe/rapid-root
+pnpm add https://bugbarn.staging.wiebe.xyz/packages/typescript/bugbarn-typescript-0.1.0.tgz
+```
+
+For local testing without the deployed web container, build the SDK tarball locally:
 
 ```bash
 cd sdks/typescript
@@ -96,4 +110,4 @@ cd /Users/wiebe/webwiebe/rapid-root
 pnpm add /Users/wiebe/webwiebe/temu-sentry/sdks/typescript/bugbarn-typescript-0.1.0.tgz
 ```
 
-This is suitable for local testing. Rapid Root's CI and Docker builds use pnpm frozen lockfiles, so the testing/staging rollout should vendor the SDK as a Rapid Root workspace package or publish `@bugbarn/typescript` to a package registry before relying on it in automated builds.
+The local file path is suitable for local testing only. Rapid Root's CI and Docker builds use pnpm frozen lockfiles, so the testing/staging rollout should use the hosted tarball URL or a package registry.

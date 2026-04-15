@@ -2,9 +2,25 @@
 
 Small Node.js client for sending uncaught exceptions and captured errors to BugBarn.
 
+## Hosted package
+
+BugBarn serves a packed SDK tarball from its web container:
+
+```sh
+pnpm add https://bugbarn.test.wiebe.xyz/packages/typescript/bugbarn-typescript-0.1.0.tgz
+```
+
+Use the staging host when wiring a staging app:
+
+```sh
+pnpm add https://bugbarn.staging.wiebe.xyz/packages/typescript/bugbarn-typescript-0.1.0.tgz
+```
+
+This keeps Rapid Root on a normal package-manager dependency without publishing to the public npm registry.
+
 ## Local package
 
-Until BugBarn publishes packages to a registry, build a local tarball from this repository:
+For local testing without the deployed web container, build a local tarball from this repository:
 
 ```sh
 cd /Users/wiebe/webwiebe/temu-sentry/sdks/typescript
@@ -20,7 +36,7 @@ cd /Users/wiebe/webwiebe/rapid-root
 pnpm add /Users/wiebe/webwiebe/temu-sentry/sdks/typescript/bugbarn-typescript-0.1.0.tgz
 ```
 
-This tarball path is intended for local testing. Rapid Root uses pnpm with frozen lockfiles in CI and Docker builds, so a durable testing/staging integration should either vendor this SDK as a Rapid Root workspace package or publish `@bugbarn/typescript` to a package registry first.
+This local tarball path is intended for local testing only. Rapid Root uses pnpm with frozen lockfiles in CI and Docker builds, so testing/staging should use the hosted tarball URL or a package registry.
 
 ## Usage
 

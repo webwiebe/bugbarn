@@ -834,6 +834,7 @@ function renderEmptyIssues(): string {
 
 function renderSetupGuide(): string {
   const endpoint = `${state.apiBase || window.location.origin}/api/v1/events`;
+  const packageUrl = `${state.apiBase || window.location.origin}/packages/typescript/bugbarn-typescript-0.1.0.tgz`;
   const testApiKeyCommand = "kubectl -n bugbarn-testing get secret bugbarn-api-key -o jsonpath='{.data.BUGBARN_API_KEY}' | base64 -d; echo";
   const stagingApiKeyCommand = "kubectl -n bugbarn-staging get secret bugbarn-api-key -o jsonpath='{.data.BUGBARN_API_KEY}' | base64 -d; echo";
   return `
@@ -853,14 +854,9 @@ ${stagingApiKeyCommand}`)}</pre>
     </div>
     <div class="section">
       <h3>SDK package</h3>
-      <p class="muted">Until the package is published, build a local tarball and install it from Rapid Root.</p>
-      <pre class="pre">${escapeHtml(`cd /Users/wiebe/webwiebe/temu-sentry/sdks/typescript
-npm install
-npm run build
-npm pack
-
-cd /Users/wiebe/webwiebe/rapid-root
-pnpm add /Users/wiebe/webwiebe/temu-sentry/sdks/typescript/bugbarn-typescript-0.1.0.tgz`)}</pre>
+      <p class="muted">Install the hosted TypeScript SDK tarball directly from this BugBarn instance.</p>
+      <pre class="pre">${escapeHtml(`cd /Users/wiebe/webwiebe/rapid-root
+pnpm add ${packageUrl}`)}</pre>
     </div>
     <div class="section">
       <h3>TypeScript</h3>
