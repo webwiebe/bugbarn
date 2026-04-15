@@ -23,6 +23,30 @@ Use the documents in `specs/001-personal-error-tracker/` as the source of truth:
 - `tasks.md`: implementation backlog
 - `contracts/ingest-api.yaml`: initial API contract
 
+## Local Development
+
+```bash
+make test
+make build
+make dev
+```
+
+The initial Go service reads these development defaults:
+
+- `BUGBARN_ADDR`: listen address, default `:8080`
+- `BUGBARN_API_KEY`: optional ingest key; Docker Compose uses `local-dev-key`
+- `BUGBARN_SPOOL_DIR`: durable local spool directory, default `.data/spool`
+- `BUGBARN_MAX_BODY_BYTES`: request body limit, default `1048576`
+
+Send a local event:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/events \
+  -H 'content-type: application/json' \
+  -H 'x-bugbarn-api-key: local-dev-key' \
+  --data @specs/001-personal-error-tracker/fixtures/example-event.json
+```
+
 ## Homelab Runner Scaffold
 
 The `infra/` directory contains a minimal Ansible scaffold for provisioning project-specific GitHub Actions runners. It follows the shape of the adjacent `../rapid-root/infra` setup and expects those shared runner roles to be available locally unless they are vendored later.

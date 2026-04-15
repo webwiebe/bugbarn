@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  spec:
+    runs-on: [self-hosted, build]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Spec checks
+        run: make spec-check
+
+  code:
+    runs-on: [self-hosted, build]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect manifests
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          go_mods="$(find . -path '*/.git' -prune -o -name go.mod -print | wc -l | tr -d ' ')"
+          node_manifests="$(find . -path '*/node_modules' -prune -o -name package.json -print | wc -l | tr -d ' ')"
+          python_manifests="$(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print | wc -l | tr -d ' ')"
+          echo "go_mods=$go_mods" >> "$GITHUB_OUTPUT"
+          echo "node_manifests=$node_manifests" >> "$GITHUB_OUTPUT"
+          echo "python_manifests=$python_manifests" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        if: steps.detect.outputs.go_mods != '0'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Go checks
+        if: steps.detect.outputs.go_mods != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r mod; do
+            dir="$(dirname "$mod")"
+            if find "$dir" -name '*.go' -print -quit | grep -q .; then
+              echo "[go] $dir"
+              (cd "$dir" && go test ./...)
+              (cd "$dir" && go vet ./...)
+              (cd "$dir" && go build ./...)
+            fi
+          done < <(find . -path '*/.git' -prune -o -name go.mod -print)
+
+      - name: Set up Node
+        if: steps.detect.outputs.node_manifests != '0'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Node checks
+        if: steps.detect.outputs.node_manifests != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r pkg; do
+            dir="$(dirname "$pkg")"
+            echo "[node] $dir"
+            if [ -f "$dir/package-lock.json" ]; then
+              (cd "$dir" && npm ci)
+            else
+              (cd "$dir" && npm install)
+            fi
+            (cd "$dir" && npm run lint --if-present)
+            (cd "$dir" && npm run test --if-present)
+            (cd "$dir" && npm run build --if-present)
+          done < <(find . -path '*/node_modules' -prune -o -name package.json -print)
+
+      - name: Set up Python
+        if: steps.detect.outputs.python_manifests != '0'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python checks
+        if: steps.detect.outputs.python_manifests != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install build pytest ruff
+          while IFS= read -r manifest; do
+            dir="$(dirname "$manifest")"
+            has_tests=0
+            if find "$dir" \( -name 'test_*.py' -o -name '*_test.py' -o -path '*/tests/*.py' \) -print -quit | grep -q .; then
+              has_tests=1
+            fi
+            if [ -f "$dir/pyproject.toml" ]; then
+              (cd "$dir" && python -m pip install -e .)
+            fi
+            if [ "$has_tests" -eq 1 ]; then
+              echo "[python] $dir"
+              (cd "$dir" && PYTHONPATH=src pytest)
+            fi
+            if find "$dir" -name '*.py' -print -quit | grep -q .; then
+              (cd "$dir" && ruff check .)
+            fi
+            if [ -f "$dir/pyproject.toml" ]; then
+              (cd "$dir" && python -m build)
+            fi
+          done < <(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print)

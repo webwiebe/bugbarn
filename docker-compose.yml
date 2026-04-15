@@ -1,0 +1,45 @@
+name: bugbarn
+
+services:
+  service:
+    build:
+      context: .
+      dockerfile: deploy/docker/service.Dockerfile
+    image: bugbarn/service:local
+    ports:
+      - "8080:8080"
+    environment:
+      BUGBARN_ENV: local
+      BUGBARN_LOG_LEVEL: info
+      BUGBARN_ADDR: :8080
+      BUGBARN_API_KEY: local-dev-key
+      BUGBARN_SPOOL_DIR: /var/lib/bugbarn/spool
+    volumes:
+      - bugbarn-data:/var/lib/bugbarn
+
+  web:
+    profiles: ["web"]
+    build:
+      context: .
+      dockerfile: deploy/docker/web.Dockerfile
+    image: bugbarn/web:local
+    ports:
+      - "3000:3000"
+    environment:
+      BUGBARN_API_URL: http://service:8080
+    depends_on:
+      - service
+
+  db:
+    profiles: ["db"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bugbarn
+      POSTGRES_USER: bugbarn
+      POSTGRES_PASSWORD: bugbarn
+    volumes:
+      - bugbarn-postgres:/var/lib/postgresql/data
+
+volumes:
+  bugbarn-data:
+  bugbarn-postgres:
