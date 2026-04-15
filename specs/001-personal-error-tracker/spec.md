@@ -167,4 +167,5 @@ As a self-hosting operator, I want simple application API keys, a local user log
 - The canonical event model should be compatible with OpenTelemetry concepts without requiring every SDK to send native OTLP immediately.
 - Exact storage choices may evolve, but the request path must remain storage-decoupled.
 - Production deployment, multi-user roles, alerting, source maps, and advanced stack trace symbolication are out of scope for the first foundation spec unless added later.
+- Browser-side scripting source should be authored in TypeScript; generated JavaScript is acceptable as build output, but not as the preferred source format.
 - A future PHP SDK is desired, but it remains out of scope for the foundation release and is tracked in the backlog only.

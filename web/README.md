@@ -1,8 +1,23 @@
 # Web UI
 
-This directory contains the static BugBarn UI.
+This directory holds the TypeScript source for the BugBarn web app.
 
-Run it locally with any static server:
+Source lives in `src/` and the browser loads the generated output from `dist/`.
+
+## Commands
+
+```bash
+cd web
+npm install
+npm run build
+npm run test
+```
+
+`npm run build` compiles `src/app.ts` to `dist/app.js`. `npm run test` runs the TypeScript compiler in no-emit mode and is the fastest way to check the web package.
+
+## Local Run
+
+After building, serve this directory with any static server:
 
 ```bash
 cd web

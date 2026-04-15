@@ -4,6 +4,14 @@ Barebones self-hosted error tracking for personal infrastructure and small proje
 
 This repository is being developed spec-first with GitHub Spec Kit. The root product ask is captured in `specs/001-personal-error-tracker/` and governed by `.specify/memory/constitution.md`.
 
+## Docs
+
+- [`docs/architecture.md`](docs/architecture.md): repository layout, runtime flow, and ownership boundaries
+- [`specs/001-personal-error-tracker/spec.md`](specs/001-personal-error-tracker/spec.md): product requirements and user stories
+- [`specs/001-personal-error-tracker/plan.md`](specs/001-personal-error-tracker/plan.md): implementation plan and architecture
+- [`specs/001-personal-error-tracker/tasks.md`](specs/001-personal-error-tracker/tasks.md): implementation backlog and status
+- [`docs/mvp-acceptance.md`](docs/mvp-acceptance.md): short validation checklist for the current MVP surface
+
 ## Initial Direction
 
 - Fast Go ingest service that accepts high-volume error/event payloads without doing transactional database writes in the request path.

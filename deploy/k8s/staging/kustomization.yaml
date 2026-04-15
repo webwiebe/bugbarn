@@ -7,6 +7,11 @@ resources:
   - pvc.yaml
   - deployment.yaml
   - service.yaml
+  - web-deployment.yaml
+  - web-service.yaml
+  - ingress.yaml
 images:
   - name: bugbarn/service
+    newTag: local
+  - name: bugbarn/web
     newTag: local

@@ -32,12 +32,12 @@
 
 - [ ] T018 Implement worker loop that reads, leases, retries, and dead-letters spool records.
 - [x] T019 Implement canonical OpenTelemetry-shaped event normalization.
-- [ ] T020 Implement best-effort handling for unknown and partial sender payloads.
+- [x] T020 Implement best-effort handling for unknown and partial sender payloads.
 - [x] T021 Implement privacy scrubber by sensitive key patterns.
 - [x] T022 Implement privacy scrubber by sensitive value patterns.
 - [x] T023 Implement fingerprint normalization for exception type, message, stack frames, and stable context.
 - [x] T024 Implement issue create/update logic from fingerprints.
-- [ ] T025 Implement event persistence linked to issues.
+- [x] T025 Implement event persistence linked to issues.
 
 ## Phase 5: Storage and Facets
 
@@ -58,10 +58,10 @@
 
 ## Phase 7: Web UI
 
-- [ ] T037 Choose lightweight frontend stack and document the decision in `research.md`.
+- [x] T037 Choose lightweight frontend stack, keep browser-side source TypeScript-first, and document the decision in `research.md`.
 - [ ] T038 Implement login flow.
 - [ ] T039 Implement issue list with sort, count, severity, first seen, last seen, project, and selected facets.
-- [ ] T040 Implement issue detail with normalized exception data and scrubbed context.
+- [x] T040 Implement issue detail with normalized exception data and scrubbed context.
 - [ ] T041 Implement previous/next event navigation for an issue.
 - [ ] T042 Implement live events view using SSE or websocket with reconnect.
 - [ ] T043 Add browser smoke tests for login, issue list, issue detail, and live events.
@@ -79,13 +79,14 @@
 - [x] T049 Add Dockerfiles for service/worker and web.
 - [x] T050 Add K3S manifests or Helm/Kustomize overlays for testing and staging.
 - [x] T051 Add namespaces `bugbarn-testing` and `bugbarn-staging`.
-- [ ] T052 Add GitHub Actions deploy workflow for testing on main branch or selected branches.
-- [ ] T053 Add GitHub Actions deploy workflow for staging on tagged or manually dispatched builds.
+- [x] T052 Add GitHub Actions deploy workflow for testing on main branch or selected branches.
+- [x] T053 Add GitHub Actions deploy workflow for staging on tagged or manually dispatched builds.
 - [x] T054 Add project-specific self-hosted runner definitions using the `infra/` Ansible scaffold.
+- [x] T063 Expose testing and staging overlays through K3S ingress hostnames for web/API access.
 
 ## Phase 10: Release Readiness
 
-- [ ] T055 Document local deployment, Docker deployment, binary deployment, and homelab deployment.
+- [x] T055 Document local deployment, Docker deployment, binary deployment, and homelab deployment.
 - [ ] T056 Add security notes covering auth model, API key storage, PII scrubbing, and personal-use assumptions.
 - [ ] T057 Add operational docs for spool sizing, backpressure, retention, backup, and recovery.
 - [ ] T058 Run sustained ingest benchmark and record baseline hardware/resource usage.

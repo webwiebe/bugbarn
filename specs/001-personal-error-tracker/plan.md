@@ -8,7 +8,7 @@ Build a small self-hosted error tracker with a Go ingest/API/worker service, loc
 
 ## Technical Context
 
-**Language/Version**: Go 1.24+ for ingest/API/worker; TypeScript for web and TS SDK; Python 3.11+ for Python SDK  
+**Language/Version**: Go 1.24+ for ingest/API/worker; TypeScript for web and TS SDK; Python 3.11+ for Python SDK. Browser-side scripting source should be TypeScript, not hand-written JavaScript.
 **Primary Dependencies**: Go standard HTTP stack, OpenTelemetry semantic conventions where useful, SQLite driver, frontend framework selected during implementation, OpenAPI tooling  
 **Storage**: Local append-only disk spool in request path; SQLite default for processed issues/events/facets; Postgres-compatible repository boundary if complexity stays low  
 **Testing**: Go unit/integration/benchmark tests, SDK tests, frontend component/browser smoke tests, OpenAPI contract checks, load fixtures  
@@ -61,9 +61,11 @@ specs/
 
 ### Runtime Components
 
-- **Ingest/API service**: Handles API key auth, request limits, durable spool append, user auth, read APIs, and live event stream endpoints.
-- **Worker**: Reads spool records, parses payloads, normalizes to canonical events, scrubs PII, computes fingerprints, persists events/issues/facets, and emits live updates.
-- **Web UI**: Separate deployable frontend that authenticates users and calls read/live APIs.
+- **`cmd/bugbarn`**: Process entrypoint. It wires config, storage, the spool, the HTTP server, and the background worker together. `worker-once` is the maintenance path for draining the current spool once.
+- **Ingest/API service**: `internal/api` owns the HTTP server and route dispatch, while `internal/ingest` owns API key auth, request limits, and durable spool append.
+- **Worker**: `internal/worker` reads spool records, parses payloads, normalizes to canonical events, scrubs PII, computes fingerprints, and hands processed events to storage.
+- **Storage**: `internal/storage` owns SQLite schema creation, issue/event/facet persistence, and read/query operations.
+- **Web UI**: Separate deployable browser client that stays TypeScript-first and calls read/live APIs.
 - **SDKs**: Lightweight clients that capture errors, build canonical envelopes, and send asynchronously.
 
 ### Ingest Flow
@@ -73,6 +75,12 @@ specs/
 3. Append raw request bytes plus request metadata to the local durable spool.
 4. Return `202 Accepted` with an ingest ID.
 5. Worker reads records, normalizes, scrubs, fingerprints, persists, and acknowledges spool offsets.
+
+### Route Ownership
+
+- Ingest endpoint contract: `specs/001-personal-error-tracker/contracts/ingest-api.yaml`
+- HTTP route wiring: `internal/api/server.go`
+- Browser UI expectations: `web/README.md`
 
 ### Grouping Flow
 

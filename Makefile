@@ -3,6 +3,7 @@ SHELL := /bin/sh
 
 SPEC_DIR := specs/001-personal-error-tracker
 LOCAL_DIRS := .cache var
+FIND_PRUNE := \( -path './.git' -o -path './.cache' -o -path '*/node_modules' -o -path '*/.venv' \) -prune -o
 export XDG_CACHE_HOME := $(CURDIR)/.cache
 export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod
@@ -24,13 +25,13 @@ setup:
 	@set -eu; \
 	for dir in $(LOCAL_DIRS) $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	found=0; \
-	for mod in $$(find . -path '*/.git' -prune -o -name go.mod -print 2>/dev/null); do \
+	for mod in $$(find . $(FIND_PRUNE) -name go.mod -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$mod"); \
 		echo "[setup] go $$dir"; \
 		(cd "$$dir" && go mod download); \
 	done; \
-	for pkg in $$(find . -path '*/node_modules' -prune -o -name package.json -print 2>/dev/null); do \
+	for pkg in $$(find . $(FIND_PRUNE) -name package.json -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$pkg"); \
 		echo "[setup] node $$dir"; \
@@ -40,7 +41,7 @@ setup:
 			(cd "$$dir" && npm install); \
 		fi; \
 	done; \
-	for py in $$(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
+	for py in $$(find . $(FIND_PRUNE) \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$py"); \
 		echo "[setup] python $$dir"; \
@@ -76,7 +77,7 @@ test: spec-check
 	@set -eu; \
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	found=0; \
-	for mod in $$(find . -path '*/.git' -prune -o -name go.mod -print 2>/dev/null); do \
+	for mod in $$(find . $(FIND_PRUNE) -name go.mod -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$mod"); \
 		if find "$$dir" -name '*.go' -print -quit | grep -q .; then \
@@ -84,13 +85,13 @@ test: spec-check
 			(cd "$$dir" && go test ./...); \
 		fi; \
 	done; \
-	for pkg in $$(find . -path '*/node_modules' -prune -o -name package.json -print 2>/dev/null); do \
+	for pkg in $$(find . $(FIND_PRUNE) -name package.json -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$pkg"); \
 		echo "[test] node $$dir"; \
 		(cd "$$dir" && npm run test --if-present); \
 	done; \
-	for py in $$(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
+	for py in $$(find . $(FIND_PRUNE) \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$py"); \
 		if find "$$dir" \( -name 'test_*.py' -o -name '*_test.py' -o -path '*/tests/*.py' \) -print -quit | grep -q .; then \
@@ -108,26 +109,26 @@ lint:
 	@set -eu; \
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	found=0; \
-	for mod in $$(find . -path '*/.git' -prune -o -name go.mod -print 2>/dev/null); do \
+	for mod in $$(find . $(FIND_PRUNE) -name go.mod -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$mod"); \
 		if find "$$dir" -name '*.go' -print -quit | grep -q .; then \
 			echo "[lint] go $$dir"; \
 			(cd "$$dir" && go vet ./...); \
-			formatted=$$(cd "$$dir" && gofmt -l .); \
+			formatted=$$(cd "$$dir" && find . $(FIND_PRUNE) -name '*.go' -print0 | xargs -0 gofmt -l); \
 			if [ -n "$$formatted" ]; then \
 				printf '%s\n' "$$formatted"; \
 				exit 1; \
 			fi; \
 		fi; \
 	done; \
-	for pkg in $$(find . -path '*/node_modules' -prune -o -name package.json -print 2>/dev/null); do \
+	for pkg in $$(find . $(FIND_PRUNE) -name package.json -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$pkg"); \
 		echo "[lint] node $$dir"; \
 		(cd "$$dir" && npm run lint --if-present); \
 	done; \
-	for py in $$(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
+	for py in $$(find . $(FIND_PRUNE) \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$py"); \
 		echo "[lint] python $$dir"; \
@@ -143,7 +144,7 @@ build:
 	@set -eu; \
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	found=0; \
-	for mod in $$(find . -path '*/.git' -prune -o -name go.mod -print 2>/dev/null); do \
+	for mod in $$(find . $(FIND_PRUNE) -name go.mod -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$mod"); \
 		if find "$$dir" -name '*.go' -print -quit | grep -q .; then \
@@ -151,13 +152,13 @@ build:
 			(cd "$$dir" && go build ./...); \
 		fi; \
 	done; \
-	for pkg in $$(find . -path '*/node_modules' -prune -o -name package.json -print 2>/dev/null); do \
+	for pkg in $$(find . $(FIND_PRUNE) -name package.json -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$pkg"); \
 		echo "[build] node $$dir"; \
 		(cd "$$dir" && npm run build --if-present); \
 	done; \
-	for py in $$(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
+	for py in $$(find . $(FIND_PRUNE) \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
 		found=1; \
 		dir=$$(dirname "$$py"); \
 		echo "[build] python $$dir"; \

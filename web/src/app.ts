@@ -1,4 +1,81 @@
-const state = {
+type RawRecord = Record<string, unknown>;
+
+interface ApiIssue extends RawRecord {
+  id?: string | number;
+  issueId?: string | number;
+  issue_id?: string | number;
+  title?: string;
+  normalizedTitle?: string;
+  normalized_title?: string;
+  exceptionType?: string;
+  exception_type?: string;
+  fingerprint?: string;
+  firstSeen?: string | number;
+  first_seen?: string | number;
+  lastSeen?: string | number;
+  last_seen?: string | number;
+  eventCount?: number;
+  event_count?: number;
+  count?: number;
+}
+
+interface ApiEvent extends RawRecord {
+  id?: string | number;
+  eventId?: string | number;
+  event_id?: string | number;
+  issueId?: string | number;
+  issue_id?: string | number;
+  title?: string;
+  body?: string;
+  message?: string;
+  timestamp?: string | number;
+  createdAt?: string | number;
+  created_at?: string | number;
+  severityText?: string;
+  severity_text?: string;
+  exception?: RawRecord | { message?: string };
+}
+
+interface IssueListResponse extends RawRecord {
+  issues?: ApiIssue[];
+  items?: ApiIssue[];
+  data?: ApiIssue[];
+}
+
+interface EventListResponse extends RawRecord {
+  events?: ApiEvent[];
+  items?: ApiEvent[];
+  data?: ApiEvent[];
+}
+
+interface AppState {
+  apiBase: string;
+  issues: ApiIssue[];
+  issueQuery: string;
+  selectedIssueId: string | null;
+  selectedEventId: string | null;
+  liveEvents: ApiEvent[];
+  liveError: Error | null;
+  liveTimer: number | null;
+  inFlight: Map<string, Promise<unknown>>;
+}
+
+interface AppElements {
+  apiBase: HTMLInputElement;
+  saveApi: HTMLButtonElement;
+  refreshAll: HTMLButtonElement;
+  issueCount: HTMLElement;
+  issueFilter: HTMLInputElement;
+  issueList: HTMLElement;
+  detailTitle: HTMLElement;
+  detailBody: HTMLElement;
+  liveList: HTMLElement;
+  liveStatus: HTMLElement;
+  routeChip: HTMLElement;
+  statusText: HTMLElement;
+}
+
+const state: AppState = {
   apiBase: readApiBase(),
   issues: [],
   issueQuery: "",
@@ -7,22 +84,22 @@ const state = {
   liveEvents: [],
   liveError: null,
   liveTimer: null,
-  inFlight: new Map(),
+  inFlight: new Map<string, Promise<unknown>>(),
 };
 
-const elements = {
-  apiBase: document.getElementById("api-base"),
-  saveApi: document.getElementById("save-api"),
-  refreshAll: document.getElementById("refresh-all"),
-  issueCount: document.getElementById("issue-count"),
-  issueFilter: document.getElementById("issue-filter"),
-  issueList: document.getElementById("issue-list"),
-  detailTitle: document.getElementById("detail-title"),
-  detailBody: document.getElementById("detail-body"),
-  liveList: document.getElementById("live-list"),
-  liveStatus: document.getElementById("live-status"),
-  routeChip: document.getElementById("route-chip"),
-  statusText: document.getElementById("status-text"),
+const elements: AppElements = {
+  apiBase: byId<HTMLInputElement>("api-base"),
+  saveApi: byId<HTMLButtonElement>("save-api"),
+  refreshAll: byId<HTMLButtonElement>("refresh-all"),
+  issueCount: byId<HTMLElement>("issue-count"),
+  issueFilter: byId<HTMLInputElement>("issue-filter"),
+  issueList: byId<HTMLElement>("issue-list"),
+  detailTitle: byId<HTMLElement>("detail-title"),
+  detailBody: byId<HTMLElement>("detail-body"),
+  liveList: byId<HTMLElement>("live-list"),
+  liveStatus: byId<HTMLElement>("live-status"),
+  routeChip: byId<HTMLElement>("route-chip"),
+  statusText: byId<HTMLElement>("status-text"),
 };
 
 elements.apiBase.value = state.apiBase;
@@ -32,10 +109,13 @@ elements.saveApi.addEventListener("click", () => {
   state.apiBase = normalizeBase(elements.apiBase.value);
   persistApiBase(state.apiBase);
   setStatus(`API base saved: ${state.apiBase || "same origin"}`);
-  refreshAll();
+  void refreshAll();
 });
 
-elements.refreshAll.addEventListener("click", refreshAll);
+elements.refreshAll.addEventListener("click", () => {
+  void refreshAll();
+});
+
 elements.issueFilter.addEventListener("input", () => {
   state.issueQuery = elements.issueFilter.value.trim().toLowerCase();
   renderIssueList();
@@ -45,9 +125,17 @@ window.addEventListener("hashchange", route);
 window.addEventListener("beforeunload", stopLivePolling);
 
 route();
-refreshAll();
+void refreshAll();
 
-function readApiBase() {
+function byId<T extends HTMLElement>(id: string): T {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`Missing required element: ${id}`);
+  }
+  return element as T;
+}
+
+function readApiBase(): string {
   const params = new URLSearchParams(location.search);
   const fromQuery = params.get("api");
   if (fromQuery) {
@@ -56,35 +144,35 @@ function readApiBase() {
   return normalizeBase(localStorage.getItem("bugbarn.apiBase") || "");
 }
 
-function persistApiBase(value) {
+function persistApiBase(value: string): void {
   localStorage.setItem("bugbarn.apiBase", value);
 }
 
-function normalizeBase(value) {
+function normalizeBase(value: string): string {
   return String(value || "")
     .trim()
     .replace(/\/+$/, "");
 }
 
-function apiUrl(path) {
+function apiUrl(path: string): string {
   return `${state.apiBase}${path}`;
 }
 
-function setStatus(message) {
+function setStatus(message: string): void {
   elements.statusText.textContent = message;
 }
 
-function setRouteChip(message, tone = "") {
+function setRouteChip(message: string, tone = ""): void {
   elements.routeChip.className = `chip${tone ? ` ${tone}` : ""}`;
   elements.routeChip.textContent = message;
 }
 
-function setLiveStatus(message, tone = "") {
+function setLiveStatus(message: string, tone = ""): void {
   elements.liveStatus.className = `chip${tone ? ` ${tone}` : ""}`;
   elements.liveStatus.textContent = message;
 }
 
-function route() {
+function route(): void {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const [kind, id] = parts;
   state.selectedIssueId = null;
@@ -104,32 +192,40 @@ function route() {
   renderDetail();
 }
 
-async function refreshAll() {
+async function refreshAll(): Promise<void> {
   await Promise.all([loadIssues(), loadLiveEvents(), loadActiveRoute()]);
 }
 
-async function loadActiveRoute() {
+async function loadActiveRoute(): Promise<void> {
   if (state.selectedIssueId) {
     await loadIssueDetail(state.selectedIssueId);
-  } else if (state.selectedEventId) {
+    return;
+  }
+
+  if (state.selectedEventId) {
     await loadEventDetail(state.selectedEventId);
-  } else if (state.issues.length) {
-    if (!location.hash) {
-      location.hash = `#/issues/${encodeURIComponent(state.issues[0].id)}`;
+    return;
+  }
+
+  if (state.issues.length && !location.hash) {
+    const firstId = firstIdentifier(state.issues[0]);
+    if (firstId) {
+      location.hash = `#/issues/${encodeURIComponent(firstId)}`;
     }
   }
 }
 
-async function loadIssues() {
+async function loadIssues(): Promise<void> {
   elements.issueCount.textContent = "Loading";
   try {
     const payload = await fetchJson("/api/v1/issues");
-    state.issues = normalizeList(payload, "issues");
+    state.issues = normalizeList<ApiIssue>(payload, "issues");
     setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
     elements.issueCount.textContent = `${state.issues.length} issues`;
     renderIssueList();
+
     if (!location.hash && state.issues.length) {
-      const firstId = state.issues[0].id ?? state.issues[0].issueId ?? state.issues[0].issue_id;
+      const firstId = firstIdentifier(state.issues[0]);
       if (firstId) {
         location.hash = `#/issues/${encodeURIComponent(firstId)}`;
       }
@@ -138,42 +234,43 @@ async function loadIssues() {
     state.issues = [];
     elements.issueCount.textContent = "Unavailable";
     renderIssueList(error);
-    setStatus(`Issues unavailable: ${error.message}`);
+    setStatus(`Issues unavailable: ${errorMessage(error)}`);
   }
 }
 
-async function loadIssueDetail(issueId) {
+async function loadIssueDetail(issueId: string): Promise<void> {
   setDetailLoading(`Issue ${issueId}`);
   try {
     const [issuePayload, eventsPayload] = await Promise.all([
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}`),
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events`),
     ]);
-    const issue = normalizeObject(issuePayload);
-    const events = normalizeList(eventsPayload, "events");
+    const issue = normalizeObject<ApiIssue>(issuePayload);
+    const events = normalizeList<ApiEvent>(eventsPayload, "events");
     renderIssueDetail(issue, events);
   } catch (error) {
     renderErrorDetail(`Issue ${issueId}`, error);
   }
 }
 
-async function loadEventDetail(eventId) {
+async function loadEventDetail(eventId: string): Promise<void> {
   setDetailLoading(`Event ${eventId}`);
   try {
     const eventPayload = await fetchJson(`/api/v1/events/${encodeURIComponent(eventId)}`);
-    const event = normalizeObject(eventPayload);
-    let issue = null;
-    let issueEvents = [];
+    const event = normalizeObject<ApiEvent>(eventPayload);
+    let issue: ApiIssue | null = null;
+    let issueEvents: ApiEvent[] = [];
 
-    if (event.issueId || event.issue_id) {
-      const issueId = event.issueId || event.issue_id;
+    const relatedIssueId = event.issueId ?? event.issue_id;
+    if (relatedIssueId !== null && relatedIssueId !== undefined && relatedIssueId !== "") {
+      const issueId = String(relatedIssueId);
       try {
         const [issuePayload, eventsPayload] = await Promise.all([
           fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}`),
           fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events`),
         ]);
-        issue = normalizeObject(issuePayload);
-        issueEvents = normalizeList(eventsPayload, "events");
+        issue = normalizeObject<ApiIssue>(issuePayload);
+        issueEvents = normalizeList<ApiEvent>(eventsPayload, "events");
       } catch {
         issueEvents = [];
       }
@@ -185,35 +282,35 @@ async function loadEventDetail(eventId) {
   }
 }
 
-async function loadLiveEvents() {
+async function loadLiveEvents(): Promise<void> {
   setLiveStatus("Polling");
   try {
     const payload = await fetchJson("/api/v1/live/events");
-    state.liveEvents = normalizeList(payload, "events");
+    state.liveEvents = normalizeList<ApiEvent>(payload, "events");
     state.liveError = null;
     renderLiveList();
     setLiveStatus(`Live ${state.liveEvents.length}`, "warn");
   } catch (error) {
     state.liveEvents = [];
-    state.liveError = error;
+    state.liveError = error instanceof Error ? error : new Error(errorMessage(error));
     renderLiveList();
     setLiveStatus("Unavailable", "bad");
   }
 
   stopLivePolling();
   state.liveTimer = window.setInterval(() => {
-    loadLiveEvents();
+    void loadLiveEvents();
   }, 10000);
 }
 
-function stopLivePolling() {
+function stopLivePolling(): void {
   if (state.liveTimer) {
     window.clearInterval(state.liveTimer);
     state.liveTimer = null;
   }
 }
 
-async function fetchJson(path) {
+async function fetchJson(path: string): Promise<unknown> {
   const url = apiUrl(path);
   const existing = state.inFlight.get(url);
   if (existing) {
@@ -231,7 +328,7 @@ async function fetchJson(path) {
     }
 
     try {
-      return JSON.parse(text);
+      return JSON.parse(text) as unknown;
     } catch {
       return text;
     }
@@ -245,39 +342,45 @@ async function fetchJson(path) {
   }
 }
 
-function normalizeList(payload, key) {
+function normalizeList<T extends RawRecord = RawRecord>(payload: unknown, key: string): T[] {
   if (!payload) {
     return [];
   }
   if (Array.isArray(payload)) {
-    return payload.map(normalizeObject);
+    return payload.map((item) => normalizeObject<T>(item));
   }
-  if (Array.isArray(payload[key])) {
-    return payload[key].map(normalizeObject);
+  if (isRecord(payload) && Array.isArray(payload[key])) {
+    return payload[key].map((item) => normalizeObject<T>(item));
   }
-  if (Array.isArray(payload.items)) {
-    return payload.items.map(normalizeObject);
+  if (isRecord(payload) && Array.isArray(payload.items)) {
+    return payload.items.map((item) => normalizeObject<T>(item));
   }
-  if (Array.isArray(payload.data)) {
-    return payload.data.map(normalizeObject);
+  if (isRecord(payload) && Array.isArray(payload.data)) {
+    return payload.data.map((item) => normalizeObject<T>(item));
   }
   return [];
 }
 
-function normalizeObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { value };
+function normalizeObject<T extends RawRecord = RawRecord>(value: unknown): T {
+  if (!isRecord(value)) {
+    return { value } as unknown as T;
   }
-  return value;
+  return value as T;
 }
 
-function renderIssueList(error = null) {
+function isRecord(value: unknown): value is RawRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function renderIssueList(error: unknown = null): void {
   const filtered = state.issues.filter((issue) => {
     if (!state.issueQuery) {
       return true;
     }
     const text = [
       issue.id,
+      issue.issueId,
+      issue.issue_id,
       issue.title,
       issue.exceptionType,
       issue.exception_type,
@@ -288,13 +391,14 @@ function renderIssueList(error = null) {
       issue.last_seen,
     ]
       .filter(Boolean)
+      .map((value) => String(value))
       .join(" ")
       .toLowerCase();
     return text.includes(state.issueQuery);
   });
 
   if (error) {
-    elements.issueList.innerHTML = `<div class="error">Issues unavailable. ${escapeHtml(error.message)}</div>`;
+    elements.issueList.innerHTML = `<div class="error">Issues unavailable. ${escapeHtml(errorMessage(error))}</div>`;
     return;
   }
 
@@ -307,7 +411,7 @@ function renderIssueList(error = null) {
 
   elements.issueList.innerHTML = filtered
     .map((issue) => {
-      const id = issue.id ?? issue.issueId ?? issue.issue_id ?? "";
+      const id = firstIdentifier(issue);
       const title = issue.title ?? issue.normalizedTitle ?? issue.normalized_title ?? "Untitled issue";
       const count = issue.eventCount ?? issue.event_count ?? issue.count ?? 0;
       const lastSeen = formatTime(issue.lastSeen ?? issue.last_seen);
@@ -327,18 +431,20 @@ function renderIssueList(error = null) {
   elements.issueList.querySelectorAll("[data-issue-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const issueId = button.getAttribute("data-issue-id");
-      location.hash = `#/issues/${encodeURIComponent(issueId)}`;
+      if (issueId) {
+        location.hash = `#/issues/${encodeURIComponent(issueId)}`;
+      }
     });
   });
 }
 
-function renderDetail() {
+function renderDetail(): void {
   if (state.selectedEventId) {
-    loadEventDetail(state.selectedEventId);
+    void loadEventDetail(state.selectedEventId);
     return;
   }
   if (state.selectedIssueId) {
-    loadIssueDetail(state.selectedIssueId);
+    void loadIssueDetail(state.selectedIssueId);
     return;
   }
 
@@ -352,13 +458,13 @@ function renderDetail() {
   elements.detailBody.innerHTML = `<div class="empty">No issues loaded yet.</div>`;
 }
 
-function setDetailLoading(title) {
+function setDetailLoading(title: string): void {
   elements.detailTitle.textContent = title;
   elements.detailBody.innerHTML = `<div class="loading">Loading.</div>`;
 }
 
-function renderIssueDetail(issue, events) {
-  const id = issue.id ?? issue.issueId ?? issue.issue_id ?? "";
+function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
+  const id = firstIdentifier(issue);
   const title = issue.title ?? issue.normalizedTitle ?? issue.normalized_title ?? "Untitled issue";
   const normalizedTitle = issue.normalizedTitle ?? issue.normalized_title ?? "";
   const exceptionType = issue.exceptionType ?? issue.exception_type ?? "";
@@ -414,10 +520,10 @@ function renderIssueDetail(issue, events) {
   wireIssueDetailActions();
 }
 
-function renderEventDetail(event, issue, issueEvents) {
-  const id = event.id ?? event.eventId ?? event.event_id ?? "";
-  const issueId = issue?.id ?? issue?.issueId ?? issue?.issue_id ?? event.issueId ?? event.issue_id ?? "";
-  const title = event.title ?? event.body ?? event.message ?? event.exception?.message ?? "Event";
+function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[]): void {
+  const id = firstIdentifier(event);
+  const issueId = issue ? firstIdentifier(issue) : firstIdentifier(event, ["id", "eventId", "event_id"]);
+  const title = event.title ?? event.body ?? event.message ?? readNestedMessage(event.exception) ?? "Event";
   const timestamp = formatTime(event.timestamp ?? event.createdAt ?? event.created_at);
   const fields = collectKeyValues(event, [
     "id",
@@ -460,12 +566,12 @@ function renderEventDetail(event, issue, issueEvents) {
   wireEventDetailActions(issueId);
 }
 
-function renderErrorDetail(title, error) {
+function renderErrorDetail(title: string, error: unknown): void {
   elements.detailTitle.textContent = title;
-  elements.detailBody.innerHTML = `<div class="error">Unable to load detail. ${escapeHtml(error.message)}</div>`;
+  elements.detailBody.innerHTML = `<div class="error">Unable to load detail. ${escapeHtml(errorMessage(error))}</div>`;
 }
 
-function renderEventButtons(events, activeId = "") {
+function renderEventButtons(events: ApiEvent[], activeId = ""): string {
   if (!events.length) {
     return `<div class="empty">No events returned.</div>`;
   }
@@ -474,8 +580,8 @@ function renderEventButtons(events, activeId = "") {
     <div class="grid">
       ${events
         .map((event) => {
-          const id = event.id ?? event.eventId ?? event.event_id ?? "";
-          const title = event.title ?? event.body ?? event.message ?? event.exception?.message ?? "Event";
+          const id = firstIdentifier(event);
+          const title = event.title ?? event.body ?? event.message ?? readNestedMessage(event.exception) ?? "Event";
           const timestamp = formatTime(event.timestamp ?? event.createdAt ?? event.created_at);
           const active = activeId && String(activeId) === String(id) ? "active" : "";
           return `
@@ -493,7 +599,7 @@ function renderEventButtons(events, activeId = "") {
   `;
 }
 
-function wireIssueDetailActions() {
+function wireIssueDetailActions(): void {
   wireCopyButtons();
 
   elements.detailBody.querySelectorAll("[data-event-id]").forEach((button) => {
@@ -506,7 +612,7 @@ function wireIssueDetailActions() {
   });
 }
 
-function wireEventDetailActions(issueId) {
+function wireEventDetailActions(issueId: string): void {
   elements.detailBody.querySelectorAll("[data-open-issue]").forEach((button) => {
     button.addEventListener("click", () => {
       if (issueId) {
@@ -527,7 +633,7 @@ function wireEventDetailActions(issueId) {
   });
 }
 
-function wireCopyButtons() {
+function wireCopyButtons(): void {
   elements.detailBody.querySelectorAll("[data-copy-id]").forEach((button) => {
     button.addEventListener("click", async () => {
       const id = button.getAttribute("data-copy-id");
@@ -544,7 +650,7 @@ function wireCopyButtons() {
   });
 }
 
-function renderLiveList() {
+function renderLiveList(): void {
   if (state.liveError) {
     elements.liveList.innerHTML = `<div class="empty">Live endpoint unavailable. Polling will keep trying.</div>`;
     return;
@@ -557,9 +663,9 @@ function renderLiveList() {
 
   elements.liveList.innerHTML = state.liveEvents
     .map((event) => {
-      const id = event.id ?? event.eventId ?? event.event_id ?? "";
-      const issueId = event.issueId ?? event.issue_id ?? "";
-      const title = event.title ?? event.body ?? event.message ?? event.exception?.message ?? "Event";
+      const id = firstIdentifier(event);
+      const issueId = event.issueId ?? event.issue_id;
+      const title = event.title ?? event.body ?? event.message ?? readNestedMessage(event.exception) ?? "Event";
       const timestamp = formatTime(event.timestamp ?? event.createdAt ?? event.created_at);
       return `
         <button class="item" type="button" data-live-event-id="${escapeAttr(id)}">
@@ -583,17 +689,13 @@ function renderLiveList() {
   });
 }
 
-function collectKeyValues(source, omitKeys = []) {
+function collectKeyValues(source: RawRecord, omitKeys: string[] = []): RawRecord {
   const omit = new Set(omitKeys);
-  return Object.entries(source || {}).reduce((acc, [key, value]) => {
+  return Object.entries(source || {}).reduce<RawRecord>((acc, [key, value]) => {
     if (omit.has(key)) {
       return acc;
     }
     if (value === null || value === undefined) {
-      return acc;
-    }
-    if (typeof value === "object") {
-      acc[key] = value;
       return acc;
     }
     acc[key] = value;
@@ -601,11 +703,11 @@ function collectKeyValues(source, omitKeys = []) {
   }, {});
 }
 
-function formatTime(value) {
-  if (!value) {
+function formatTime(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
     return "";
   }
-  const date = new Date(value);
+  const date = new Date(value as string | number | Date);
   if (Number.isNaN(date.getTime())) {
     return String(value);
   }
@@ -615,7 +717,7 @@ function formatTime(value) {
   }).format(date);
 }
 
-function escapeHtml(value) {
+function escapeHtml(value: unknown): string {
   return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -624,6 +726,29 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function escapeAttr(value) {
+function escapeAttr(value: unknown): string {
   return escapeHtml(value).replaceAll("`", "&#96;");
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function firstIdentifier(source: ApiIssue | ApiEvent, extraOmitKeys: string[] = []): string {
+  const value = source.id ?? source.issueId ?? source.issue_id ?? source.eventId ?? source.event_id;
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  return String(value);
+}
+
+function readNestedMessage(value: unknown): string {
+  if (!isRecord(value)) {
+    return "";
+  }
+  const message = value.message;
+  return typeof message === "string" ? message : "";
 }

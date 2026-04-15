@@ -20,6 +20,13 @@ func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
 	return &Server{ingestHandler: ingestHandler, store: store}
 }
 
+type route struct {
+	method  string
+	path    string
+	prefix  bool
+	handler http.HandlerFunc
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key")
@@ -32,19 +39,44 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/api/v1/events" && r.Method == http.MethodPost:
 		s.ingestHandler.ServeHTTP(w, r)
-	case r.URL.Path == "/api/v1/issues" && r.Method == http.MethodGet:
-		s.listIssues(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/issues/") && strings.HasSuffix(r.URL.Path, "/events") && r.Method == http.MethodGet:
-		s.listIssueEvents(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/issues/") && r.Method == http.MethodGet:
-		s.getIssue(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/events/") && r.Method == http.MethodGet:
-		s.getEvent(w, r)
-	case r.URL.Path == "/api/v1/live/events" && r.Method == http.MethodGet:
-		s.listRecentEvents(w, r)
 	default:
+		for _, route := range s.queryRoutes() {
+			if route.matches(r.Method, r.URL.Path) {
+				route.handler(w, r)
+				return
+			}
+		}
+
 		http.NotFound(w, r)
 	}
+}
+
+func (s *Server) queryRoutes() []route {
+	return []route{
+		{method: http.MethodGet, path: "/api/v1/issues", handler: s.listIssues},
+		{method: http.MethodGet, path: "/api/v1/issues/", prefix: true, handler: s.serveIssueRoute},
+		{method: http.MethodGet, path: "/api/v1/events/", prefix: true, handler: s.getEvent},
+		{method: http.MethodGet, path: "/api/v1/live/events", handler: s.listRecentEvents},
+	}
+}
+
+func (r route) matches(method, path string) bool {
+	if r.method != method {
+		return false
+	}
+	if r.prefix {
+		return strings.HasPrefix(path, r.path)
+	}
+	return path == r.path
+}
+
+// /api/v1/issues/{id} and /api/v1/issues/{id}/events share the same prefix.
+func (s *Server) serveIssueRoute(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/events") {
+		s.listIssueEvents(w, r)
+		return
+	}
+	s.getIssue(w, r)
 }
 
 func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {

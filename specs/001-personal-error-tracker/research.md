@@ -49,7 +49,7 @@
 
 ### Frontend Direction
 
-**Decision**: Use a lightweight TypeScript frontend with server-provided API contracts. Candidate stacks are SvelteKit or Vite + React; choose during implementation based on repo constraints and UI complexity.
+**Decision**: Use a lightweight TypeScript-authored browser UI with server-provided API contracts. Candidate stacks are SvelteKit or Vite + React; choose during implementation based on repo constraints and UI complexity. Browser-side source should stay in TypeScript, with emitted JavaScript treated as build output.
 
 **Rationale**: The UI is data-heavy and interactive but does not need a heavyweight app platform.
 
@@ -57,4 +57,3 @@
 
 - Server-rendered templates only: simplest, but live event flow and rich filtering become less pleasant.
 - Next.js: capable, but heavier than the project needs by default.
-

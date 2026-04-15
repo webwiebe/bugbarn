@@ -27,6 +27,7 @@ func main() {
 	}
 }
 
+// run owns process wiring: it opens storage, starts the worker, and serves the API.
 func run() error {
 	cfg := loadConfig()
 	if len(os.Args) > 1 && os.Args[1] == "worker-once" {
@@ -106,6 +107,7 @@ func loadConfig() config {
 	return cfg
 }
 
+// runWorkerOnce replays queued records into the persistent store for local maintenance.
 func runWorkerOnce(cfg config) error {
 	persistentStore, err := storage.Open(cfg.dbPath)
 	if err != nil {

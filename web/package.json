@@ -1,0 +1,12 @@
+{
+  "name": "bugbarn-web",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
