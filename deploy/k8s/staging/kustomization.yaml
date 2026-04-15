@@ -3,4 +3,10 @@ kind: Kustomization
 namespace: bugbarn-staging
 resources:
   - namespace.yaml
-
+  - secret.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+images:
+  - name: bugbarn/service
+    newTag: local

@@ -37,6 +37,7 @@ The initial Go service reads these development defaults:
 - `BUGBARN_API_KEY`: optional ingest key; Docker Compose uses `local-dev-key`
 - `BUGBARN_SPOOL_DIR`: durable local spool directory, default `.data/spool`
 - `BUGBARN_MAX_BODY_BYTES`: request body limit, default `1048576`
+- `BUGBARN_MAX_SPOOL_BYTES`: optional durable spool size limit; returns retryable backpressure when full
 
 Send a local event:
 

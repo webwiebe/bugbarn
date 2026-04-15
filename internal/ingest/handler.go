@@ -78,6 +78,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ContentLength: int64(len(body)),
 		BodyBase64:    base64.StdEncoding.EncodeToString(body),
 	}); err != nil {
+		if errors.Is(err, spool.ErrFull) {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "ingest spool full", http.StatusTooManyRequests)
+			return
+		}
 		http.Error(w, "failed to persist ingest record", http.StatusServiceUnavailable)
 		return
 	}

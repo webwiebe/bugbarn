@@ -70,6 +70,7 @@ spec-check:
 		deploy/k8s/staging/kustomization.yaml; do \
 		test -f "$$file"; \
 	done
+	@python3 scripts/validate_openapi.py
 
 test: spec-check
 	@set -eu; \

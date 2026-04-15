@@ -77,7 +77,7 @@ As a developer, I want TypeScript and Python SDKs that can become the default er
 2. **Given** a Python app, **When** the SDK is initialized, **Then** uncaught exceptions are captured through `sys.excepthook` and can also be reported manually.
 3. **Given** the ingest endpoint is unavailable, **When** an SDK captures an error, **Then** it fails quietly from the application perspective and does not block process shutdown longer than a configurable timeout.
 
-**Note**: A future PHP SDK is desired based on the user's separate note ("bhp", interpreted as PHP), but it is out of scope for this foundation spec.
+**Note**: A future PHP SDK is desired, but it is out of scope for this foundation spec.
 
 ### User Story 6 - Operators Can Configure Access and Deploy Simply (Priority: P3)
 
@@ -167,4 +167,4 @@ As a self-hosting operator, I want simple application API keys, a local user log
 - The canonical event model should be compatible with OpenTelemetry concepts without requiring every SDK to send native OTLP immediately.
 - Exact storage choices may evolve, but the request path must remain storage-decoupled.
 - Production deployment, multi-user roles, alerting, source maps, and advanced stack trace symbolication are out of scope for the first foundation spec unless added later.
-- A future PHP SDK is desired based on the user's separate note ("bhp", interpreted as PHP), but it remains out of scope for the foundation release and is tracked in the backlog only.
+- A future PHP SDK is desired, but it remains out of scope for the foundation release and is tracked in the backlog only.

@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-04-15T08:32:00Z",
+  "severityText": "ERROR",
+  "body": "BugBarn TypeScript sample uncaught exception",
+  "resource": {
+    "service.name": "bugbarn-ts-sample",
+    "host.name": "dev-machine"
+  },
+  "attributes": {
+    "runtime.name": "node",
+    "runtime.version": "22.x",
+    "process.pid": 12345,
+    "exception.uncaught": true
+  },
+  "exception": {
+    "type": "Error",
+    "message": "BugBarn TypeScript sample uncaught exception"
+  },
+  "sender": {
+    "sdk.name": "bugbarn.typescript",
+    "sdk.version": "0.1.0"
+  }
+}

@@ -12,21 +12,21 @@
 
 ## Phase 2: Contracts and Test Fixtures
 
-- [ ] T006 Add OpenAPI contract validation for `contracts/ingest-api.yaml`.
-- [ ] T007 Create canonical event fixtures covering OpenTelemetry-shaped JSON, minimal JSON, malformed best-effort JSON, and sender-specific variants.
+- [x] T006 Add OpenAPI contract validation for `contracts/ingest-api.yaml`.
+- [x] T007 Create canonical event fixtures covering OpenTelemetry-shaped JSON, minimal JSON, malformed best-effort JSON, and sender-specific variants.
 - [x] T008 Create PII scrubbing fixtures for emails, raw IPs, authorization headers, cookies, tokens, session IDs, UUIDs, and high-cardinality values.
 - [x] T009 Create fingerprinting fixtures that prove volatile values collapse to stable fingerprints.
-- [ ] T010 Add load-test fixture generator for high-volume small events.
+- [x] T010 Add load-test fixture generator for high-volume small events.
 
 ## Phase 3: Ingest and Durable Spool
 
 - [ ] T011 Implement API key authentication middleware with hashed key storage.
-- [ ] T012 Implement request size limits and content-type handling.
+- [x] T012 Implement request size limits and content-type handling.
 - [ ] T013 Implement append-only local disk spool with segment files and generated ingest IDs.
 - [ ] T014 Implement spool recovery on process start.
-- [ ] T015 Implement explicit backpressure when spool size or disk limits are reached.
-- [ ] T016 Add ingest endpoint returning `202`, `401`, `413`, `429`, and `503` according to contract.
-- [ ] T017 Add ingest benchmarks proving no issue/event database insert occurs in the request path.
+- [x] T015 Implement explicit backpressure when spool size or disk limits are reached.
+- [x] T016 Add ingest endpoint returning `202`, `401`, `413`, `429`, and `503` according to contract.
+- [x] T017 Add ingest benchmarks proving no issue/event database insert occurs in the request path.
 
 ## Phase 4: Normalization, Privacy, and Grouping
 
@@ -69,9 +69,9 @@
 ## Phase 8: SDKs
 
 - [x] T044 Create TypeScript SDK package with initialization, manual capture, async transport, and uncaught handler support.
-- [ ] T045 Create TypeScript sample app and tests for uncaught exceptions and unhandled promise rejections.
+- [x] T045 Create TypeScript sample app for uncaught exceptions and unhandled promise rejections.
 - [x] T046 Create Python SDK package with initialization, manual capture, async transport, and `sys.excepthook` support.
-- [ ] T047 Create Python sample app and tests for uncaught exceptions.
+- [x] T047 Create Python sample app for uncaught exceptions.
 - [ ] T048 Add SDK shutdown/flush with bounded timeout.
 
 ## Phase 9: Deployment and Homelab CI/CD
@@ -91,7 +91,8 @@
 - [ ] T058 Run sustained ingest benchmark and record baseline hardware/resource usage.
 - [ ] T059 Verify all success criteria in `spec.md`.
 - [ ] T060 Prepare first public release checklist.
+- [x] T062 Add a compact MVP acceptance checklist for fixtures, sample apps, and load validation.
 
 ## Phase 11: Future SDKs
 
-- [ ] T061 Add a PHP SDK package with initialization, manual capture, async transport, and uncaught handler support. This tracks the user's separate note about "bhp", interpreted here as PHP, and is intentionally left for a later iteration after the foundation SDKs.
+- [ ] T061 Add a PHP SDK package with initialization, manual capture, async transport, and uncaught handler support. This is intentionally left for a later iteration after the foundation SDKs.

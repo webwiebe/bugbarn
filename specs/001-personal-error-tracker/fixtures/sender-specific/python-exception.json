@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-04-15T08:33:00Z",
+  "severityText": "ERROR",
+  "body": "BugBarn Python sample uncaught exception",
+  "resource": {
+    "service.name": "bugbarn-python-sample",
+    "host.name": "dev-machine"
+  },
+  "attributes": {
+    "runtime.name": "python",
+    "runtime.version": "3.11",
+    "process.pid": 54321,
+    "exception.uncaught": true
+  },
+  "exception": {
+    "type": "RuntimeError",
+    "message": "BugBarn Python sample uncaught exception"
+  },
+  "sender": {
+    "sdk.name": "bugbarn.python",
+    "sdk.version": "0.1.0"
+  }
+}

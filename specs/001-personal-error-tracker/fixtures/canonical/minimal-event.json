@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-04-15T08:31:00Z",
+  "severityText": "ERROR",
+  "body": "Minimal event for MVP validation",
+  "exception": {
+    "type": "Error",
+    "message": "Minimal event for MVP validation"
+  },
+  "sender": {
+    "sdk.name": "bugbarn.typescript",
+    "sdk.version": "0.1.0"
+  }
+}

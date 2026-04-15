@@ -13,6 +13,8 @@ import (
 
 const DefaultFileName = "ingest.ndjson"
 
+var ErrFull = errors.New("spool is full")
+
 type Record struct {
 	IngestID      string    `json:"ingestId"`
 	ReceivedAt    time.Time `json:"receivedAt"`
@@ -23,6 +25,10 @@ type Record struct {
 }
 
 func New(dir string) (*Spool, error) {
+	return NewWithLimit(dir, 0)
+}
+
+func NewWithLimit(dir string, maxBytes int64) (*Spool, error) {
 	if dir == "" {
 		dir = ".data/spool"
 	}
@@ -38,17 +44,19 @@ func New(dir string) (*Spool, error) {
 	}
 
 	return &Spool{
-		dir:  dir,
-		path: filePath,
-		file: file,
+		dir:      dir,
+		path:     filePath,
+		file:     file,
+		maxBytes: maxBytes,
 	}, nil
 }
 
 type Spool struct {
-	mu   sync.Mutex
-	dir  string
-	path string
-	file *os.File
+	mu       sync.Mutex
+	dir      string
+	path     string
+	file     *os.File
+	maxBytes int64
 }
 
 func (s *Spool) Path() string {
@@ -81,6 +89,16 @@ func (s *Spool) Append(record Record) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.maxBytes > 0 {
+		info, err := s.file.Stat()
+		if err != nil {
+			return err
+		}
+		if info.Size()+int64(len(payload))+1 > s.maxBytes {
+			return ErrFull
+		}
+	}
 
 	if _, err := s.file.Write(append(payload, '\n')); err != nil {
 		return err

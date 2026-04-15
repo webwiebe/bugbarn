@@ -108,6 +108,50 @@ func TestServeHTTPRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestServeHTTPReturnsBackpressureWhenSpoolFull(t *testing.T) {
+	eventSpool, err := spool.NewWithLimit(t.TempDir(), 10)
+	if err != nil {
+		t.Fatalf("new spool: %v", err)
+	}
+	defer eventSpool.Close()
+
+	handler := NewHandler(auth.New(""), eventSpool, 1024)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"message":"boom"}`))
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rr.Code)
+	}
+	if retryAfter := rr.Header().Get("Retry-After"); retryAfter == "" {
+		t.Fatal("expected Retry-After header")
+	}
+}
+
+func BenchmarkServeHTTPAccepted(b *testing.B) {
+	eventSpool, err := spool.New(b.TempDir())
+	if err != nil {
+		b.Fatalf("new spool: %v", err)
+	}
+	defer eventSpool.Close()
+
+	handler := NewHandler(auth.New("secret"), eventSpool, 1024)
+	body := `{"message":"boom","exception":{"type":"Error","message":"boom"}}`
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
+		req.Header.Set(auth.HeaderAPIKey, "secret")
+		rr := httptest.NewRecorder()
+
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusAccepted {
+			b.Fatalf("expected 202, got %d", rr.Code)
+		}
+	}
+}
+
 func mustSpool(t *testing.T) *spool.Spool {
 	t.Helper()
 

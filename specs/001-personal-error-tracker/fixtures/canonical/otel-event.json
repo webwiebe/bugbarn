@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-04-15T08:30:00Z",
+  "severityText": "ERROR",
+  "body": "Unhandled exception in checkout",
+  "resource": {
+    "service.name": "sample-app",
+    "service.version": "0.1.0",
+    "host.name": "dev-machine",
+    "deployment.environment": "local"
+  },
+  "attributes": {
+    "http.route": "/checkout/:id",
+    "http.request.method": "POST",
+    "http.response.status_code": 500,
+    "user_agent.original": "Mozilla/5.0 Example",
+    "enduser.id": "user-12345"
+  },
+  "exception": {
+    "type": "TypeError",
+    "message": "Cannot read properties of undefined reading 'total' for cart 550e8400-e29b-41d4-a716-446655440000",
+    "stacktrace": [
+      {
+        "function": "calculateTotal",
+        "file": "src/cart.ts",
+        "line": 42,
+        "column": 17
+      },
+      {
+        "function": "checkout",
+        "file": "src/server.ts",
+        "line": 88,
+        "column": 9
+      }
+    ]
+  },
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "spanId": "00f067aa0ba902b7",
+  "sender": {
+    "sdk.name": "bugbarn.typescript",
+    "sdk.version": "0.0.0"
+  }
+}

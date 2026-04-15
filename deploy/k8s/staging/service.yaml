@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bugbarn
+spec:
+  selector:
+    app.kubernetes.io/name: bugbarn
+    app.kubernetes.io/environment: staging
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

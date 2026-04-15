@@ -1,0 +1,80 @@
+name: Deploy k3s
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: k3s environment to deploy
+        required: true
+        default: testing
+        type: choice
+        options:
+          - testing
+          - staging
+
+concurrency:
+  group: deploy-k3s-${{ github.event.inputs.environment || 'testing' }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, build, mac-mini]
+    timeout-minutes: 30
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      DEPLOY_ENV: ${{ github.event.inputs.environment || 'testing' }}
+      K3S_HOST: k3s1.nijmegen.wiebe.xyz
+      K3S_USER: root
+      IMAGE: bugbarn/service:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+
+      - name: Build linux image
+        run: |
+          set -euo pipefail
+          DOCKER_CONFIG_DIR="${RUNNER_TEMP}/docker-config-${GITHUB_RUN_ID}"
+          mkdir -p "$DOCKER_CONFIG_DIR"
+          printf '{"auths":{},"credsStore":""}\n' > "$DOCKER_CONFIG_DIR/config.json"
+          export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+          docker buildx build \
+            --platform linux/amd64 \
+            --load \
+            -f deploy/docker/service.Dockerfile \
+            -t "$IMAGE" \
+            .
+
+      - name: Transfer image and manifests
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/bugbarn-deploy"
+          docker save "$IMAGE" | gzip > "${RUNNER_TEMP}/bugbarn-service.tar.gz"
+          rm -rf "${RUNNER_TEMP}/bugbarn-deploy/deploy"
+          cp -R deploy "${RUNNER_TEMP}/bugbarn-deploy/deploy"
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
+          scp -o StrictHostKeyChecking=no "${RUNNER_TEMP}/bugbarn-service.tar.gz" "${K3S_USER}@${K3S_HOST}:/tmp/bugbarn-deploy/bugbarn-service.tar.gz"
+          scp -o StrictHostKeyChecking=no -r "${RUNNER_TEMP}/bugbarn-deploy/deploy" "${K3S_USER}@${K3S_HOST}:/tmp/bugbarn-deploy/deploy"
+
+      - name: Import image and deploy
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            set -euo pipefail
+            gzip -dc /tmp/bugbarn-deploy/bugbarn-service.tar.gz | k3s ctr images import -
+            kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/${DEPLOY_ENV}
+            kubectl -n bugbarn-${DEPLOY_ENV} set image deployment/bugbarn bugbarn=${IMAGE}
+            kubectl -n bugbarn-${DEPLOY_ENV} rollout status deployment/bugbarn --timeout=180s
+            kubectl -n bugbarn-${DEPLOY_ENV} get pods -l app.kubernetes.io/name=bugbarn -o wide
+          "
+

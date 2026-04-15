@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bugbarn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bugbarn
+      app.kubernetes.io/environment: testing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bugbarn
+        app.kubernetes.io/environment: testing
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s1
+      containers:
+        - name: bugbarn
+          image: bugbarn/service
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: BUGBARN_ADDR
+              value: :8080
+            - name: BUGBARN_SPOOL_DIR
+              value: /var/lib/bugbarn/spool
+            - name: BUGBARN_DB_PATH
+              value: /var/lib/bugbarn/bugbarn.db
+            - name: BUGBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-api-key
+                  key: BUGBARN_API_KEY
+          volumeMounts:
+            - name: bugbarn-data
+              mountPath: /var/lib/bugbarn
+      volumes:
+        - name: bugbarn-data
+          persistentVolumeClaim:
+            claimName: bugbarn-data

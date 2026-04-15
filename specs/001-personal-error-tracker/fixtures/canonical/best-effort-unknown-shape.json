@@ -1,0 +1,12 @@
+{
+  "message": "Checkout failed before canonical normalization",
+  "context": {
+    "service.name": "sample-app",
+    "http.route": "/checkout/123",
+    "status": 500
+  },
+  "sender": {
+    "sdk.name": "custom-node",
+    "sdk.version": "1.0.0"
+  }
+}

@@ -2,6 +2,7 @@ package spool
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -74,5 +75,18 @@ func TestReadRecordsReturnsAppendedRecords(t *testing.T) {
 	}
 	if records[0].IngestID != "first" || records[1].IngestID != "second" {
 		t.Fatalf("unexpected records: %#v", records)
+	}
+}
+
+func TestAppendReturnsErrFullWhenLimitWouldBeExceeded(t *testing.T) {
+	eventSpool, err := NewWithLimit(t.TempDir(), 10)
+	if err != nil {
+		t.Fatalf("new spool: %v", err)
+	}
+	defer eventSpool.Close()
+
+	err = eventSpool.Append(Record{IngestID: "too-large", BodyBase64: "e30="})
+	if !errors.Is(err, ErrFull) {
+		t.Fatalf("expected ErrFull, got %v", err)
 	}
 }

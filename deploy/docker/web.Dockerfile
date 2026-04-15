@@ -1,10 +1,9 @@
-FROM alpine:3.20
+FROM caddy:2.8-alpine
 
-WORKDIR /app
+WORKDIR /srv
 
-RUN addgroup -S bugbarn && adduser -S bugbarn -G bugbarn
+COPY web/ /srv/
 
-USER bugbarn
+EXPOSE 8080
 
-CMD ["sh", "-c", "echo 'BugBarn web placeholder'; sleep infinity"]
-
+CMD ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
