@@ -12,12 +12,8 @@ jobs:
     runs-on: [self-hosted, build]
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Install spec tooling
-        run: python -m pip install PyYAML
+        run: python3 -m pip install --user PyYAML
       - name: Spec checks
         run: make spec-check
 
@@ -84,19 +80,12 @@ jobs:
             (cd "$dir" && npm run build --if-present)
           done < <(find . -path '*/node_modules' -prune -o -name package.json -print)
 
-      - name: Set up Python
-        if: steps.detect.outputs.python_manifests != '0'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       - name: Python checks
         if: steps.detect.outputs.python_manifests != '0'
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install build pytest ruff
+          python3 -m pip install --user build pytest ruff
           while IFS= read -r manifest; do
             dir="$(dirname "$manifest")"
             has_tests=0
@@ -104,16 +93,16 @@ jobs:
               has_tests=1
             fi
             if [ -f "$dir/pyproject.toml" ]; then
-              (cd "$dir" && python -m pip install -e .)
+              (cd "$dir" && python3 -m pip install --user -e .)
             fi
             if [ "$has_tests" -eq 1 ]; then
               echo "[python] $dir"
-              (cd "$dir" && PYTHONPATH=src pytest)
+              (cd "$dir" && PYTHONPATH=src python3 -m pytest)
             fi
             if find "$dir" -name '*.py' -print -quit | grep -q .; then
-              (cd "$dir" && ruff check .)
+              (cd "$dir" && python3 -m ruff check .)
             fi
             if [ -f "$dir/pyproject.toml" ]; then
-              (cd "$dir" && python -m build)
+              (cd "$dir" && python3 -m build)
             fi
           done < <(find . -path '*/.venv' -prune -o \( -name pyproject.toml -o -name requirements.txt \) -print)
