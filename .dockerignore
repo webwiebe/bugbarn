@@ -10,6 +10,8 @@ dist
 **/dist
 coverage
 **/coverage
+*.tgz
+**/*.tgz
 
 __pycache__
 **/__pycache__

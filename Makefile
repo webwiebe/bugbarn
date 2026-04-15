@@ -3,7 +3,7 @@ SHELL := /bin/sh
 
 SPEC_DIR := specs/001-personal-error-tracker
 LOCAL_DIRS := .cache var
-FIND_PRUNE := \( -path './.git' -o -path './.cache' -o -path '*/node_modules' -o -path '*/.venv' \) -prune -o
+FIND_PRUNE := \( -path './.git' -o -path './.cache' -o -path '*/node_modules' -o -path '*/dist' -o -path '*/build' -o -path '*/.venv' \) -prune -o
 export XDG_CACHE_HOME := $(CURDIR)/.cache
 export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod

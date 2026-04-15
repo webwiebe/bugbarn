@@ -1,5 +1,5 @@
-import { createTransport } from "./transport.ts";
-import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, StackFrame, Transport } from "./types.ts";
+import { createTransport } from "./transport.js";
+import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, StackFrame, Transport } from "./types.js";
 
 const SDK_NAME = "bugbarn.typescript";
 const SDK_VERSION = "0.1.0";

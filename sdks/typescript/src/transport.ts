@@ -1,4 +1,4 @@
-import type { BugBarnEnvelope, Transport } from "./types.ts";
+import type { BugBarnEnvelope, Transport } from "./types.js";
 
 const DEFAULT_ENDPOINT = "/api/v1/events";
 

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import test from "node:test";
 
-import { captureException, createTransport, flush, getApiKey, init } from "../src/index.ts";
-import type { BugBarnEnvelope, Transport } from "../src/types.ts";
+import { captureException, createTransport, flush, getApiKey, init } from "../dist/esm/index.js";
 
 test("init stores transport and api key", async () => {
-  const events: BugBarnEnvelope[] = [];
-  const transport: Transport = {
+  const events = [];
+  const transport = {
     async send(event) {
       events.push(event);
     },
@@ -35,7 +35,7 @@ test("init stores transport and api key", async () => {
 
 test("flush delegates to transport", async () => {
   let flushed = false;
-  const transport: Transport = {
+  const transport = {
     async send() {},
     async flush() {
       flushed = true;
@@ -54,12 +54,12 @@ test("flush delegates to transport", async () => {
 
 test("transport sends api key header to ingest endpoint", async () => {
   const originalFetch = globalThis.fetch;
-  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const calls = [];
 
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  globalThis.fetch = async (input, init) => {
     calls.push({ url: String(input), init });
     return new Response(null, { status: 200 });
-  }) as typeof fetch;
+  };
 
   try {
     const transport = createTransport("bb_live_test", "http://127.0.0.1:9000/api/v1/events");
@@ -83,8 +83,16 @@ test("transport sends api key header to ingest endpoint", async () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "http://127.0.0.1:9000/api/v1/events");
   assert.equal(new Headers(calls[0].init?.headers).get("x-bugbarn-api-key"), "bb_live_test");
-  const body = JSON.parse(String(calls[0].init?.body)) as BugBarnEnvelope;
+  const body = JSON.parse(String(calls[0].init?.body));
   assert.equal(body.body, "boom");
   assert.equal(body.exception.message, "boom");
   assert.equal(body.sender.sdk.name, "bugbarn.typescript");
+});
+
+test("commonjs consumers can require the package entry", async () => {
+  const require = createRequire(import.meta.url);
+  const sdk = require("../dist/cjs/index.js");
+  assert.equal(typeof sdk.init, "function");
+  assert.equal(typeof sdk.captureException, "function");
+  assert.equal(typeof sdk.createTransport, "function");
 });

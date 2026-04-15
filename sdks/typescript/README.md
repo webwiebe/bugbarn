@@ -18,6 +18,8 @@ pnpm add https://bugbarn.staging.wiebe.xyz/packages/typescript/bugbarn-typescrip
 
 This keeps Rapid Root on a normal package-manager dependency without publishing to the public npm registry.
 
+The package exposes both ESM and CommonJS entrypoints, so bundlers and Node runtimes can choose `import` or `require` without custom externalization rules.
+
 ## Local package
 
 For local testing without the deployed web container, build a local tarball from this repository:
