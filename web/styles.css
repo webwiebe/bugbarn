@@ -1,16 +1,16 @@
 :root {
-  color-scheme: light;
-  --bg: #eef3f0;
-  --panel: #ffffff;
-  --panel-alt: #f7faf8;
-  --text: #17211c;
-  --muted: #5d6e65;
-  --line: #d8e2dd;
-  --accent: #1f7a5a;
-  --accent-soft: #d9efe6;
-  --accent-warm: #b15c1c;
-  --danger: #9f3b31;
-  --shadow: 0 10px 30px rgba(23, 33, 28, 0.08);
+  color-scheme: dark;
+  --bg: #171812;
+  --panel: #24251c;
+  --panel-alt: #2f3025;
+  --text: #f8f8f2;
+  --muted: #b0b28f;
+  --line: #464838;
+  --accent: #a6e22e;
+  --accent-soft: #313f22;
+  --accent-warm: #fd971f;
+  --danger: #f92672;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
   --radius: 8px;
 }
 
@@ -22,7 +22,7 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: linear-gradient(180deg, #f3f7f5 0%, var(--bg) 100%);
+  background: var(--bg);
   color: var(--text);
   font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -71,7 +71,7 @@ h2 {
   justify-content: space-between;
   gap: 12px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(36, 37, 28, 0.92);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -90,8 +90,8 @@ h2 {
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  background: linear-gradient(180deg, #20362d 0%, #31594b 100%);
-  color: #f3faf7;
+  background: #11120d;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -142,11 +142,16 @@ button:focus {
 button {
   padding: 0 14px;
   cursor: pointer;
-  background: linear-gradient(180deg, #ffffff 0%, #f5f8f7 100%);
+  background: #2f3025;
 }
 
 button:hover {
-  border-color: #b8cbc1;
+  border-color: var(--accent);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .shell {
@@ -158,7 +163,7 @@ button:hover {
 
 .panel {
   min-height: 70vh;
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(36, 37, 28, 0.96);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -192,7 +197,7 @@ button:hover {
   border: 1px dashed var(--line);
   border-radius: var(--radius);
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(17, 18, 13, 0.45);
 }
 
 .error {
@@ -218,18 +223,18 @@ button:hover {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #fff;
+  background: #202117;
   text-align: left;
 }
 
 .item:hover {
-  border-color: #b8cbc1;
-  background: #fbfdfc;
+  border-color: var(--accent);
+  background: #292a20;
 }
 
 .item.active {
-  border-color: rgba(31, 122, 90, 0.4);
-  box-shadow: inset 0 0 0 1px rgba(31, 122, 90, 0.1);
+  border-color: rgba(166, 226, 46, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(166, 226, 46, 0.18);
 }
 
 .item-title {
@@ -259,7 +264,7 @@ button:hover {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #fff;
+  background: #202117;
 }
 
 .section h3 {
@@ -302,12 +307,12 @@ button:hover {
 }
 
 .chip.warn {
-  background: #fff0df;
+  background: #442d13;
   color: var(--accent-warm);
 }
 
 .chip.bad {
-  background: #f9e2df;
+  background: #401423;
   color: var(--danger);
 }
 
@@ -338,10 +343,45 @@ button:hover {
   margin: 0;
   padding: 12px;
   border-radius: var(--radius);
-  background: #0f1814;
-  color: #dff5ea;
+  background: #11120d;
+  color: #f8f8f2;
   overflow: auto;
   font-size: 12px;
+}
+
+.pre.compact {
+  max-height: 260px;
+}
+
+.stacktrace {
+  display: grid;
+  gap: 8px;
+}
+
+.frame {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #191a12;
+}
+
+.frame > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.frame code {
+  color: var(--accent);
+}
+
+.frame small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .footer {

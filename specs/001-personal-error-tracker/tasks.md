@@ -62,9 +62,10 @@
 - [ ] T038 Implement login flow.
 - [ ] T039 Implement issue list with sort, count, severity, first seen, last seen, project, and selected facets.
 - [x] T040 Implement issue detail with normalized exception data and scrubbed context.
-- [ ] T041 Implement previous/next event navigation for an issue.
+- [x] T041 Implement previous/next event navigation for an issue.
 - [ ] T042 Implement live events view using SSE or websocket with reconnect.
 - [ ] T043 Add browser smoke tests for login, issue list, issue detail, and live events.
+- [x] T065 Add dark-mode web theme and richer event detail sections for exception, context, stacktrace, spans, and scrubbed payload data.
 
 ## Phase 8: SDKs
 

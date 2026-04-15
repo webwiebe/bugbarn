@@ -52,6 +52,8 @@ interface ApiEvent extends RawRecord {
   ObservedAt?: string | number;
   Severity?: string;
   SeverityText?: string;
+  Payload?: RawRecord;
+  payload?: RawRecord;
   severityText?: string;
   severity_text?: string;
   Exception?: RawRecord | { message?: string; Message?: string };
@@ -267,7 +269,7 @@ async function loadIssueDetail(issueId: string): Promise<void> {
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}`),
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events`),
     ]);
-    const issue = normalizeObject<ApiIssue>(issuePayload);
+    const issue = normalizeObject<ApiIssue>(issuePayload, "issue");
     const events = normalizeList<ApiEvent>(eventsPayload, "events");
     renderIssueDetail(issue, events);
   } catch (error) {
@@ -279,7 +281,7 @@ async function loadEventDetail(eventId: string): Promise<void> {
   setDetailLoading(`Event ${eventId}`);
   try {
     const eventPayload = await fetchJson(`/api/v1/events/${encodeURIComponent(eventId)}`);
-    const event = normalizeObject<ApiEvent>(eventPayload);
+    const event = normalizeObject<ApiEvent>(eventPayload, "event");
     let issue: ApiIssue | null = null;
     let issueEvents: ApiEvent[] = [];
 
@@ -291,7 +293,7 @@ async function loadEventDetail(eventId: string): Promise<void> {
           fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}`),
           fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events`),
         ]);
-        issue = normalizeObject<ApiIssue>(issuePayload);
+        issue = normalizeObject<ApiIssue>(issuePayload, "issue");
         issueEvents = normalizeList<ApiEvent>(eventsPayload, "events");
       } catch {
         issueEvents = [];
@@ -383,9 +385,12 @@ function normalizeList<T extends RawRecord = RawRecord>(payload: unknown, key: s
   return [];
 }
 
-function normalizeObject<T extends RawRecord = RawRecord>(value: unknown): T {
+function normalizeObject<T extends RawRecord = RawRecord>(value: unknown, key = ""): T {
   if (!isRecord(value)) {
     return { value } as unknown as T;
+  }
+  if (key && isRecord(value[key])) {
+    return value[key] as T;
   }
   return value as T;
 }
@@ -421,6 +426,15 @@ function readNumber(source: RawRecord, keys: string[]): number {
     }
   }
   return 0;
+}
+
+function readRecord(source: RawRecord, keys: string[]): RawRecord {
+  const value = readFirst(source, keys);
+  return isRecord(value) ? value : {};
+}
+
+function hasKeys(source: RawRecord): boolean {
+  return Object.keys(source).length > 0;
 }
 
 function issueTitle(issue: ApiIssue): string {
@@ -469,6 +483,87 @@ function eventTimestamp(event: ApiEvent): unknown {
 
 function eventSeverity(event: ApiEvent): string {
   return readString(event, ["severityText", "SeverityText", "severity_text", "severity", "Severity"]);
+}
+
+function eventPayload(event: ApiEvent): RawRecord {
+  return readRecord(event, ["payload", "Payload"]);
+}
+
+function eventException(event: ApiEvent): RawRecord {
+  const payload = eventPayload(event);
+  const direct = readRecord(event, ["exception", "Exception"]);
+  return hasKeys(direct) ? direct : readRecord(payload, ["exception", "Exception"]);
+}
+
+function eventRawScrubbed(event: ApiEvent): RawRecord {
+  return readRecord(eventPayload(event), ["rawScrubbed", "raw_scrubbed", "RawScrubbed"]);
+}
+
+function eventSdkName(event: ApiEvent): string {
+  const payload = eventPayload(event);
+  const sender = readRecord(eventRawScrubbed(event), ["sender", "Sender"]);
+  const sdk = readRecord(sender, ["sdk", "SDK"]);
+  return readString(payload, ["sdkName", "SDKName", "sdk_name"]) || readString(sdk, ["name", "Name"]);
+}
+
+function eventTraceId(event: ApiEvent): string {
+  const payload = eventPayload(event);
+  const raw = eventRawScrubbed(event);
+  return readString(payload, ["traceId", "trace_id", "TraceID"]) || readString(raw, ["traceId", "trace_id", "TraceID"]);
+}
+
+function eventContext(event: ApiEvent): RawRecord {
+  const payload = eventPayload(event);
+  const raw = eventRawScrubbed(event);
+  const context: RawRecord = {};
+  for (const [label, value] of [
+    ["Ingest id", readString(payload, ["ingestId", "ingest_id", "IngestID"])],
+    ["SDK", eventSdkName(event)],
+    ["Trace id", eventTraceId(event)],
+    ["Exception type", readString(eventException(event), ["type", "Type"])],
+    ["Exception message", readString(eventException(event), ["message", "Message"])],
+  ] as const) {
+    if (value) {
+      context[label] = value;
+    }
+  }
+  for (const [label, record] of [
+    ["Resource", readRecord(payload, ["resource", "Resource"])],
+    ["Attributes", readRecord(payload, ["attributes", "Attributes"])],
+    ["Tags", readRecord(raw, ["tags", "Tags"])],
+  ] as const) {
+    if (Object.keys(record).length) {
+      context[label] = record;
+    }
+  }
+  return context;
+}
+
+function eventStacktrace(event: ApiEvent): unknown[] {
+  const exception = eventException(event);
+  const direct = readFirst(eventPayload(event), ["stacktrace", "Stacktrace", "stackTrace", "StackTrace"]);
+  const nested = readFirst(exception, ["stacktrace", "Stacktrace", "stackTrace", "StackTrace"]);
+  if (Array.isArray(direct)) {
+    return direct;
+  }
+  if (Array.isArray(nested)) {
+    return nested;
+  }
+  return [];
+}
+
+function eventSpans(event: ApiEvent): unknown[] {
+  const payload = eventPayload(event);
+  const raw = eventRawScrubbed(event);
+  const direct = readFirst(payload, ["spans", "Spans"]);
+  const rawSpans = readFirst(raw, ["spans", "Spans"]);
+  if (Array.isArray(direct)) {
+    return direct;
+  }
+  if (Array.isArray(rawSpans)) {
+    return rawSpans;
+  }
+  return [];
 }
 
 function renderIssueList(error: unknown = null): void {
@@ -602,7 +697,6 @@ function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
       <div class="grid">
         <div class="kv"><span>Issue id</span><span>${escapeHtml(String(id || "n/a"))}</span></div>
         <div class="kv"><span>Title</span><span>${escapeHtml(title)}</span></div>
-        <div class="kv"><span>Normalized title</span><span>${escapeHtml(normalizedTitle || "n/a")}</span></div>
         <div class="kv"><span>Exception</span><span>${escapeHtml(exceptionType || "n/a")}</span></div>
         <div class="kv"><span>Fingerprint</span><span>${escapeHtml(fingerprint || "n/a")}</span></div>
         <div class="kv"><span>First seen</span><span>${escapeHtml(firstSeen || "n/a")}</span></div>
@@ -614,6 +708,7 @@ function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
       <h3>Events</h3>
       ${renderEventButtons(events)}
     </div>
+    ${renderDataSection("Representative event", readRecord(issue, ["representativeEvent", "RepresentativeEvent"]))}
     <div class="section">
       <h3>Issue data</h3>
       <pre class="pre">${escapeHtml(JSON.stringify(fields, null, 2))}</pre>
@@ -628,6 +723,12 @@ function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents:
   const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
   const title = eventTitle(event);
   const timestamp = formatTime(eventTimestamp(event));
+  const payload = eventPayload(event);
+  const exception = eventException(event);
+  const rawScrubbed = eventRawScrubbed(event);
+  const context = eventContext(event);
+  const stacktrace = eventStacktrace(event);
+  const spans = eventSpans(event);
   const fields = collectKeyValues(event, [
     "id",
     "ID",
@@ -658,8 +759,9 @@ function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents:
   elements.detailBody.innerHTML = `
     <div class="section">
       <div class="link-row">
-        <button type="button" data-open-issue="${escapeAttr(issueId)}">Open issue</button>
-        <button type="button" data-copy-id="${escapeAttr(id)}">Copy event id</button>
+        <button type="button" data-open-issue="${escapeAttr(issueId)}" ${issueId ? "" : "disabled"}>Open issue</button>
+        <button type="button" data-copy-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>Copy event id</button>
+        ${renderEventNavigation(issueEvents, id)}
       </div>
       <div class="grid">
         <div class="kv"><span>Event id</span><span>${escapeHtml(String(id || "n/a"))}</span></div>
@@ -668,10 +770,16 @@ function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents:
         <div class="kv"><span>Severity</span><span>${escapeHtml(eventSeverity(event) || "n/a")}</span></div>
       </div>
     </div>
+    ${renderDataSection("Exception", exception)}
+    ${renderDataSection("Context", context)}
+    ${renderStacktrace(stacktrace)}
+    ${renderSpans(spans)}
     <div class="section">
       <h3>Issue events</h3>
       ${renderEventButtons(issueEvents, id)}
     </div>
+    ${renderDataSection("Scrubbed payload", rawScrubbed)}
+    ${renderDataSection("Normalized payload", payload)}
     <div class="section">
       <h3>Event data</h3>
       <pre class="pre">${escapeHtml(JSON.stringify(fields, null, 2))}</pre>
@@ -679,6 +787,97 @@ function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents:
   `;
 
   wireEventDetailActions(issueId);
+}
+
+function renderDataSection(title: string, data: RawRecord): string {
+  if (!hasKeys(data)) {
+    return "";
+  }
+  return `
+    <div class="section">
+      <h3>${escapeHtml(title)}</h3>
+      ${renderRecord(data)}
+    </div>
+  `;
+}
+
+function renderRecord(data: RawRecord): string {
+  const entries = Object.entries(data).filter(([, value]) => value !== null && value !== undefined && value !== "");
+  if (!entries.length) {
+    return `<div class="empty">No data returned.</div>`;
+  }
+  return `
+    <div class="grid">
+      ${entries
+        .map(([key, value]) => {
+          const rendered = isRecord(value) || Array.isArray(value) ? `<pre class="pre compact">${escapeHtml(JSON.stringify(value, null, 2))}</pre>` : `<span>${escapeHtml(String(value))}</span>`;
+          return `<div class="kv"><span>${escapeHtml(key)}</span>${rendered}</div>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderStacktrace(stacktrace: unknown[]): string {
+  if (!stacktrace.length) {
+    return "";
+  }
+  return `
+    <div class="section">
+      <h3>Stacktrace</h3>
+      <div class="stacktrace">
+        ${stacktrace
+          .map((frame, index) => {
+            if (!isRecord(frame)) {
+              return `<div class="frame"><span>#${index + 1}</span><code>${escapeHtml(String(frame))}</code></div>`;
+            }
+            const fn = readString(frame, ["function", "Function", "name", "Name"]) || "<anonymous>";
+            const file = readString(frame, ["file", "File", "filename", "Filename", "path", "Path"]);
+            const line = readString(frame, ["line", "Line", "lineno", "Lineno"]);
+            const column = readString(frame, ["column", "Column", "colno", "Colno"]);
+            const location = [file, line ? `:${line}` : "", column ? `:${column}` : ""].join("");
+            return `
+              <div class="frame">
+                <span>#${index + 1}</span>
+                <div>
+                  <code>${escapeHtml(fn)}</code>
+                  <small>${escapeHtml(location || "unknown source")}</small>
+                </div>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderSpans(spans: unknown[]): string {
+  if (!spans.length) {
+    return "";
+  }
+  return `
+    <div class="section">
+      <h3>Spans</h3>
+      <pre class="pre">${escapeHtml(JSON.stringify(spans, null, 2))}</pre>
+    </div>
+  `;
+}
+
+function renderEventNavigation(events: ApiEvent[], activeId: string): string {
+  if (!events.length || !activeId) {
+    return "";
+  }
+  const index = events.findIndex((event) => firstIdentifier(event) === activeId);
+  if (index < 0) {
+    return "";
+  }
+  const previousId = index > 0 ? firstIdentifier(events[index - 1]) : "";
+  const nextId = index < events.length - 1 ? firstIdentifier(events[index + 1]) : "";
+  return `
+    <button type="button" data-event-id="${escapeAttr(previousId)}" ${previousId ? "" : "disabled"}>Previous event</button>
+    <button type="button" data-event-id="${escapeAttr(nextId)}" ${nextId ? "" : "disabled"}>Next event</button>
+  `;
 }
 
 function renderErrorDetail(title: string, error: unknown): void {
