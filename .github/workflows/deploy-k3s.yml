@@ -87,6 +87,12 @@ jobs:
             kubectl -n bugbarn-${DEPLOY_ENV} set image deployment/bugbarn-web bugbarn-web=${WEB_IMAGE}
             kubectl -n bugbarn-${DEPLOY_ENV} rollout status deployment/bugbarn --timeout=180s
             kubectl -n bugbarn-${DEPLOY_ENV} rollout status deployment/bugbarn-web --timeout=180s
+            for app in bugbarn bugbarn-web; do
+              old_rs=\$(kubectl -n bugbarn-${DEPLOY_ENV} get rs -l app.kubernetes.io/name=\${app} -o jsonpath='{range .items[?(@.spec.replicas==0)]}{.metadata.name}{\"\\n\"}{end}')
+              if [ -n \"\${old_rs}\" ]; then
+                printf '%s\\n' \"\${old_rs}\" | xargs kubectl -n bugbarn-${DEPLOY_ENV} delete rs
+              fi
+            done
             kubectl -n bugbarn-${DEPLOY_ENV} get pods -l app.kubernetes.io/name=bugbarn -o wide
             kubectl -n bugbarn-${DEPLOY_ENV} get pods -l app.kubernetes.io/name=bugbarn-web -o wide
           "

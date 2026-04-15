@@ -199,6 +199,19 @@ button:hover {
   color: var(--danger);
 }
 
+.empty {
+  display: grid;
+  gap: 8px;
+}
+
+.empty strong {
+  color: var(--text);
+}
+
+.empty p {
+  margin: 0;
+}
+
 .item {
   display: grid;
   gap: 6px;

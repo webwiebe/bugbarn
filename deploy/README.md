@@ -9,6 +9,8 @@ kubectl apply -k deploy/k8s/staging
 
 The ingress sends `/api/*` to the Go service and all other paths to the static web service. The GitHub Actions deploy workflow builds and imports both images before applying the selected overlay.
 
+Both deployments set `revisionHistoryLimit: 1`, and the deploy workflow deletes zero-replica BugBarn ReplicaSets after successful rollouts. This keeps repeated homelab deploys from accumulating stale ReplicaSet objects.
+
 The adjacent `rapid-root` gateway already defines wildcard Caddy routes for `*.test.wiebe.xyz` and `*.staging.wiebe.xyz` on `192.168.4.111`, forwarding TLS-terminated traffic to the K3S Traefik entrypoint. BugBarn does not need a dedicated Caddy block while those wildcard routes remain active.
 
 For direct cluster access, you can still use a port-forward:

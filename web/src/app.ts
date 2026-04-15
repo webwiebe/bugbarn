@@ -405,7 +405,7 @@ function renderIssueList(error: unknown = null): void {
   elements.issueCount.textContent = `${filtered.length} issue${filtered.length === 1 ? "" : "s"}`;
 
   if (!filtered.length) {
-    elements.issueList.innerHTML = `<div class="empty">No issues returned.</div>`;
+    elements.issueList.innerHTML = renderEmptyIssues();
     return;
   }
 
@@ -454,8 +454,8 @@ function renderDetail(): void {
     return;
   }
 
-  elements.detailTitle.textContent = "Select an issue";
-  elements.detailBody.innerHTML = `<div class="empty">No issues loaded yet.</div>`;
+  elements.detailTitle.textContent = "Start sending errors";
+  elements.detailBody.innerHTML = renderSetupGuide();
 }
 
 function setDetailLoading(title: string): void {
@@ -657,7 +657,12 @@ function renderLiveList(): void {
   }
 
   if (!state.liveEvents.length) {
-    elements.liveList.innerHTML = `<div class="empty">No live events yet.</div>`;
+    elements.liveList.innerHTML = `
+      <div class="empty">
+        <strong>No live events yet.</strong>
+        <p>Send an exception with one of the SDK snippets and this list will update on the next poll.</p>
+      </div>
+    `;
     return;
   }
 
@@ -701,6 +706,52 @@ function collectKeyValues(source: RawRecord, omitKeys: string[] = []): RawRecord
     acc[key] = value;
     return acc;
   }, {});
+}
+
+function renderEmptyIssues(): string {
+  return `
+    <div class="empty">
+      <strong>No issues yet.</strong>
+      <p>Connect an app with the BugBarn API key. New exceptions will appear here after the background worker processes them.</p>
+    </div>
+  `;
+}
+
+function renderSetupGuide(): string {
+  const endpoint = `${state.apiBase || window.location.origin}/api/v1/events`;
+  return `
+    <div class="section">
+      <p class="muted">Use your BugBarn API key and send errors to:</p>
+      <pre class="pre">${escapeHtml(endpoint)}</pre>
+    </div>
+    <div class="section">
+      <h3>TypeScript</h3>
+      <pre class="pre">${escapeHtml(`import { init } from "@bugbarn/typescript";
+
+init({
+  apiKey: process.env.BUGBARN_API_KEY ?? "",
+  endpoint: "${endpoint}",
+});`)}</pre>
+    </div>
+    <div class="section">
+      <h3>Python</h3>
+      <pre class="pre">${escapeHtml(`import os
+from bugbarn import init
+
+init(
+    api_key=os.environ["BUGBARN_API_KEY"],
+    endpoint="${endpoint}",
+    install_excepthook=True,
+)`)}</pre>
+    </div>
+    <div class="section">
+      <h3>Smoke test</h3>
+      <pre class="pre">${escapeHtml(`curl -X POST ${endpoint} \\
+  -H "content-type: application/json" \\
+  -H "x-bugbarn-api-key: $BUGBARN_API_KEY" \\
+  --data '{"body":"BugBarn smoke test","exception":{"type":"SmokeError","message":"BugBarn smoke test"}}'`)}</pre>
+    </div>
+  `;
 }
 
 function formatTime(value: unknown): string {
