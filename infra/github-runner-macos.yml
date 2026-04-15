@@ -1,0 +1,13 @@
+---
+# GitHub Actions Runner setup for macOS (Mac Mini + Mac Laptop)
+# Run with: GITHUB_TOKEN=<token> make setup-runners-macos
+
+- hosts: macos_runners
+  become: yes
+
+  vars:
+    github_runner_token: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+
+  roles:
+    - github-runner-macos
+

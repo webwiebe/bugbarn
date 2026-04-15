@@ -1,0 +1,23 @@
+name: Spec Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  spec-artifacts:
+    runs-on: [self-hosted, build]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify initial Spec Kit artifacts exist
+        run: |
+          test -f .specify/memory/constitution.md
+          test -f specs/001-personal-error-tracker/spec.md
+          test -f specs/001-personal-error-tracker/plan.md
+          test -f specs/001-personal-error-tracker/tasks.md
+          test -f specs/001-personal-error-tracker/contracts/ingest-api.yaml
+          test -f deploy/k8s/testing/namespace.yaml
+          test -f deploy/k8s/staging/namespace.yaml
+

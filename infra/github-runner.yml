@@ -1,0 +1,23 @@
+---
+- hosts: runners
+  become: yes
+
+  vars:
+    github_runner_enabled: true
+    github_runner_token: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+    github_runner_version: "2.332.0"
+    github_runner_base_dir: /home/deployer/github-runner
+    github_runner_user: deployer
+    github_runners:
+      - name: "bugbarn-1"
+        repo: "wiebe-xyz/bugbarn"
+        labels: "build"
+      - name: "bugbarn-2"
+        repo: "wiebe-xyz/bugbarn"
+        labels: "build"
+      - name: "bugbarn-deploy-1"
+        repo: "wiebe-xyz/bugbarn"
+        labels: "deploy"
+
+  roles:
+    - github-runner

@@ -1,0 +1,14 @@
+# Mac Mini - GitHub Actions runner configuration for BugBarn
+
+github_runner_enabled: true
+github_runner_version: "2.332.0"
+github_runner_base_dir: /Users/wiebe/github-runners
+github_runner_user: wiebe
+github_runner_battery_aware: false
+github_runners:
+  - name: "bugbarn-mac-1"
+    repo: "wiebe-xyz/bugbarn"
+    labels: "build,mac-mini,macos,arm64"
+  - name: "bugbarn-mac-2"
+    repo: "wiebe-xyz/bugbarn"
+    labels: "build,mac-mini,macos,arm64"

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bugbarn-testing
+  labels:
+    app.kubernetes.io/name: bugbarn
+    app.kubernetes.io/part-of: bugbarn
+    app.kubernetes.io/environment: testing

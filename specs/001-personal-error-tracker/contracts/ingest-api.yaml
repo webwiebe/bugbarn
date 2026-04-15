@@ -1,0 +1,120 @@
+openapi: 3.1.0
+info:
+  title: BugBarn Ingest API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+security:
+  - ApiKeyAuth: []
+paths:
+  /api/v1/events:
+    post:
+      summary: Accept an error/event payload for asynchronous processing
+      operationId: ingestEvent
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestEnvelope'
+      responses:
+        '202':
+          description: Event durably queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestAccepted'
+        '400':
+          description: Payload cannot be parsed or exceeds supported shape
+        '401':
+          description: Missing or invalid API key
+        '413':
+          description: Payload exceeds configured size limit
+        '429':
+          description: Durable spool is full; sender should retry later
+        '503':
+          description: Ingest is temporarily unavailable
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-bugbarn-api-key
+  schemas:
+    IngestEnvelope:
+      type: object
+      additionalProperties: true
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        observedTimestamp:
+          type: string
+          format: date-time
+        severityText:
+          type: string
+          examples: [ERROR]
+        severityNumber:
+          type: integer
+        body:
+          description: Human-readable event body or log message
+        resource:
+          type: object
+          additionalProperties: true
+          description: OpenTelemetry-style resource attributes
+        scope:
+          type: object
+          additionalProperties: true
+        attributes:
+          type: object
+          additionalProperties: true
+        exception:
+          $ref: '#/components/schemas/Exception'
+        traceId:
+          type: string
+        spanId:
+          type: string
+        sender:
+          type: object
+          additionalProperties: true
+          description: SDK/runtime metadata
+    Exception:
+      type: object
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+        stacktrace:
+          type: array
+          items:
+            $ref: '#/components/schemas/StackFrame'
+    StackFrame:
+      type: object
+      additionalProperties: true
+      properties:
+        function:
+          type: string
+        file:
+          type: string
+        line:
+          type: integer
+        column:
+          type: integer
+        module:
+          type: string
+    IngestAccepted:
+      type: object
+      required: [accepted, ingestId]
+      properties:
+        accepted:
+          type: boolean
+          const: true
+        ingestId:
+          type: string
+        retryAfterMs:
+          type: integer
+          description: Present only for soft backpressure responses in future variants

@@ -1,0 +1,15 @@
+# Mac Laptop - GitHub Actions runner configuration for BugBarn
+# Battery-aware runners should only run when on AC power.
+
+github_runner_enabled: true
+github_runner_version: "2.332.0"
+github_runner_base_dir: /Users/wiebe/github-runners
+github_runner_user: wiebe
+github_runner_battery_aware: true
+github_runners:
+  - name: "bugbarn-laptop-1"
+    repo: "wiebe-xyz/bugbarn"
+    labels: "build,mac-laptop,macos,arm64"
+  - name: "bugbarn-laptop-2"
+    repo: "wiebe-xyz/bugbarn"
+    labels: "build,mac-laptop,macos,arm64"
