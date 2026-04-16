@@ -41,28 +41,33 @@
         </header>
 
         <main class="shell">
-          <aside class="panel panel-list">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Issues</p>
-                <h2 id="issue-count">Loading</h2>
-              </div>
-              <input id="issue-filter" type="search" placeholder="Filter" aria-label="Filter issues" />
-            </div>
-            <div id="issue-list" class="list" aria-live="polite"></div>
-          </aside>
-
           <section class="panel panel-main">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Detail</p>
-                <h2 id="detail-title">Select an issue</h2>
+            <div id="overview-view" class="view">
+              <div class="view-head">
+                <div>
+                  <p class="eyebrow">Issues</p>
+                  <h2 id="issue-count">Loading</h2>
+                </div>
+                <div class="view-actions">
+                  <input id="issue-filter" type="search" placeholder="is unresolved" aria-label="Filter issues" />
+                  <span id="route-chip" class="chip">Issues</span>
+                </div>
               </div>
-              <div class="chips">
-                <span id="route-chip" class="chip">Ready</span>
-              </div>
+              <div id="issue-list" class="list issue-list" aria-live="polite"></div>
             </div>
-            <div id="detail-body" class="detail"></div>
+
+            <div id="detail-view" class="view hidden">
+              <div class="view-head">
+                <div>
+                  <p class="eyebrow">Issues</p>
+                  <h2 id="detail-title">Select an issue</h2>
+                </div>
+                <div class="chips">
+                  <a class="ghost" href="#/">Back to issues</a>
+                </div>
+              </div>
+              <div id="detail-body" class="detail"></div>
+            </div>
           </section>
 
           <aside class="panel panel-live">

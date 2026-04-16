@@ -97,6 +97,8 @@ interface AppElements {
   apiBase: HTMLInputElement;
   saveApi: HTMLButtonElement;
   refreshAll: HTMLButtonElement;
+  overviewView: HTMLElement;
+  detailView: HTMLElement;
   issueCount: HTMLElement;
   issueFilter: HTMLInputElement;
   issueList: HTMLElement;
@@ -130,6 +132,8 @@ const elements: AppElements = {
   apiBase: byId<HTMLInputElement>("api-base"),
   saveApi: byId<HTMLButtonElement>("save-api"),
   refreshAll: byId<HTMLButtonElement>("refresh-all"),
+  overviewView: byId<HTMLElement>("overview-view"),
+  detailView: byId<HTMLElement>("detail-view"),
   issueCount: byId<HTMLElement>("issue-count"),
   issueFilter: byId<HTMLInputElement>("issue-filter"),
   issueList: byId<HTMLElement>("issue-list"),
@@ -236,8 +240,14 @@ function route(): void {
     setRouteChip("Issues");
   }
 
+  setActiveView(state.selectedIssueId || state.selectedEventId ? "detail" : "overview");
   renderIssueList();
   renderDetail();
+}
+
+function setActiveView(view: "overview" | "detail"): void {
+  elements.overviewView.classList.toggle("hidden", view !== "overview");
+  elements.detailView.classList.toggle("hidden", view !== "detail");
 }
 
 async function refreshAll(): Promise<void> {
@@ -287,12 +297,6 @@ async function loadActiveRoute(): Promise<void> {
     return;
   }
 
-  if (state.issues.length && !location.hash) {
-    const firstId = firstIdentifier(state.issues[0]);
-    if (firstId) {
-      location.hash = `#/issues/${encodeURIComponent(firstId)}`;
-    }
-  }
 }
 
 async function loadIssues(): Promise<void> {
@@ -304,12 +308,6 @@ async function loadIssues(): Promise<void> {
     elements.issueCount.textContent = `${state.issues.length} issues`;
     renderIssueList();
 
-    if (!location.hash && state.issues.length) {
-      const firstId = firstIdentifier(state.issues[0]);
-      if (firstId) {
-        location.hash = `#/issues/${encodeURIComponent(firstId)}`;
-      }
-    }
   } catch (error) {
     state.issues = [];
     elements.issueCount.textContent = "Unavailable";
@@ -710,6 +708,8 @@ function renderIssueList(error: unknown = null): void {
       <span>Trend</span>
       <span>Events</span>
       <span>Users</span>
+      <span>Priority</span>
+      <span>Assignee</span>
     </div>
     ${filtered
       .map((issue) => {
@@ -727,6 +727,8 @@ function renderIssueList(error: unknown = null): void {
           <span class="issue-trend" aria-label="Ongoing trend"></span>
           <span class="issue-cell">${escapeHtml(String(count))}</span>
           <span class="issue-cell">0</span>
+          <span class="issue-cell">low</span>
+          <span class="issue-cell">unassigned</span>
           <div class="item-meta">
             <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
             <span>${escapeHtml(id)}</span>
@@ -762,18 +764,12 @@ function renderDetail(): void {
     return;
   }
 
-  if (state.issues.length) {
-    const issue = state.issues[0];
-    renderIssueDetail(issue, []);
-    return;
-  }
-
-  elements.detailTitle.textContent = "Start sending errors";
-  elements.detailBody.innerHTML = renderSetupGuide();
+  setActiveView("overview");
 }
 
 function renderLogin(error = ""): void {
   stopLivePolling();
+  setActiveView("detail");
   setRouteChip("Login", "warn");
   elements.issueCount.textContent = "Locked";
   elements.issueList.innerHTML = `<div class="empty">Log in to view issues.</div>`;
@@ -837,6 +833,7 @@ function setDetailLoading(title: string): void {
 }
 
 function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
+  setActiveView("detail");
   const id = firstIdentifier(issue);
   const title = issueTitle(issue);
   const normalizedTitle = issueNormalizedTitle(issue);
@@ -932,6 +929,7 @@ function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
 }
 
 function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[]): void {
+  setActiveView("detail");
   const id = firstIdentifier(event);
   const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
   const title = eventTitle(event);
@@ -1284,6 +1282,7 @@ function renderEmptyIssues(): string {
     <div class="empty">
       <strong>No issues yet.</strong>
       <p>Connect an app with the BugBarn API key. New exceptions will appear here after the background worker processes them.</p>
+      ${renderSetupGuide()}
     </div>
   `;
 }
