@@ -204,7 +204,7 @@ button:disabled {
 
 .shell {
   display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.8fr) minmax(280px, 0.8fr);
+  grid-template-columns: minmax(420px, 1.2fr) minmax(0, 2.4fr) minmax(260px, 0.7fr);
   gap: 12px;
   align-items: start;
 }
@@ -240,7 +240,7 @@ button:disabled {
 
 .issue-table-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 88px 70px;
+  grid-template-columns: minmax(0, 1fr) 88px 48px 96px 56px 48px;
   gap: 10px;
   padding: 8px 12px;
   color: var(--muted);
@@ -286,7 +286,7 @@ button:disabled {
 }
 
 .issue-row {
-  grid-template-columns: minmax(0, 1fr) 88px 70px;
+  grid-template-columns: minmax(0, 1fr) 88px 48px 96px 56px 48px;
   align-items: center;
   border-width: 0 0 1px;
   border-radius: 0;
@@ -299,6 +299,13 @@ button:disabled {
 .issue-cell {
   color: var(--muted);
   font-size: 12px;
+}
+
+.issue-trend {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line) 12%, var(--line) 88%, transparent);
 }
 
 .item:hover {
@@ -341,6 +348,153 @@ button:disabled {
 .detail {
   display: grid;
   gap: 14px;
+}
+
+.issue-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  background: #202117;
+}
+
+.issue-hero h3 {
+  margin: 4px 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.issue-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #202117;
+  overflow: hidden;
+}
+
+.issue-stats div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+}
+
+.issue-stats div:last-child {
+  border-right: 0;
+}
+
+.issue-stats span,
+.rail-section p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.issue-stats strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.9fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #202117;
+}
+
+.event-meter {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  min-height: 54px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-meter span {
+  width: 100%;
+  min-width: 3px;
+  background: #7e6bc4;
+}
+
+.insight-list {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.insight-list span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.insight-list strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs span {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tabs .active {
+  color: var(--text);
+  border-bottom: 2px solid #7e6bc4;
+}
+
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 12px;
+}
+
+.detail-main {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.detail-rail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.rail-section {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #202117;
+}
+
+.rail-section h3 {
+  margin: 0;
+  font-size: 13px;
 }
 
 .section {
@@ -488,6 +642,11 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .detail-layout,
+  .event-bar {
+    grid-template-columns: 1fr;
+  }
+
   .panel {
     min-height: auto;
   }
@@ -500,6 +659,24 @@ button:disabled {
   .topbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .issue-table-head,
+  .issue-row {
+    grid-template-columns: minmax(0, 1fr) 72px 52px;
+  }
+
+  .issue-table-head span:nth-child(3),
+  .issue-table-head span:nth-child(4),
+  .issue-table-head span:nth-child(6),
+  .issue-row > .issue-cell:nth-of-type(2),
+  .issue-row > .issue-trend,
+  .issue-row > .issue-cell:nth-of-type(4) {
+    display: none;
+  }
+
+  .issue-stats {
+    grid-template-columns: 1fr 1fr;
   }
 
   .toolbar {

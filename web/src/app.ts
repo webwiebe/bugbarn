@@ -60,6 +60,11 @@ interface ApiEvent extends RawRecord {
   exception?: RawRecord | { message?: string };
 }
 
+interface InsightPair {
+  label: string;
+  value: string;
+}
+
 interface IssueListResponse extends RawRecord {
   issues?: ApiIssue[];
   items?: ApiIssue[];
@@ -522,7 +527,12 @@ function issueEventCount(issue: ApiIssue, fallback = 0): number {
 }
 
 function eventIssueId(event: ApiEvent): string {
-  return readString(event, ["issueId", "IssueID", "issue_id"]);
+  const direct = readString(event, ["issueId", "IssueID", "issue_id"]);
+  if (direct) {
+    return direct;
+  }
+  const issue = readRecord(event, ["issue", "Issue"]);
+  return firstIdentifier(issue as ApiIssue);
 }
 
 function eventTitle(event: ApiEvent): string {
@@ -622,6 +632,44 @@ function eventSpans(event: ApiEvent): unknown[] {
   return [];
 }
 
+function eventUrl(event: ApiEvent): string {
+  const payload = eventPayload(event);
+  const raw = eventRawScrubbed(event);
+  const attributes = readRecord(payload, ["attributes", "Attributes"]);
+  return (
+    readString(attributes, ["url", "http.url", "http.target", "route"]) ||
+    readString(raw, ["url", "URL", "requestUrl", "request_url"]) ||
+    readString(readRecord(raw, ["request", "Request"]), ["url", "URL"])
+  );
+}
+
+function eventEnvironment(event: ApiEvent): string {
+  const payload = eventPayload(event);
+  const raw = eventRawScrubbed(event);
+  const resource = readRecord(payload, ["resource", "Resource"]);
+  const tags = readRecord(raw, ["tags", "Tags"]);
+  return readString(resource, ["environment", "deployment.environment"]) || readString(tags, ["environment", "env"]) || "production";
+}
+
+function eventBrowser(event: ApiEvent): string {
+  const raw = eventRawScrubbed(event);
+  const attributes = readRecord(eventPayload(event), ["attributes", "Attributes"]);
+  return readString(attributes, ["browser", "browser.name", "user_agent.original"]) || readString(raw, ["browser", "userAgent", "user_agent"]);
+}
+
+function issueInsights(events: ApiEvent[]): InsightPair[] {
+  if (!events.length) {
+    return [];
+  }
+  const latest = events[0];
+  return [
+    { label: "transaction", value: eventUrl(latest) || eventTitle(latest) },
+    { label: "environment", value: eventEnvironment(latest) },
+    { label: "sdk", value: eventSdkName(latest) },
+    { label: "browser", value: eventBrowser(latest) },
+  ].filter((pair) => pair.value);
+}
+
 function renderIssueList(error: unknown = null): void {
   const filtered = state.issues.filter((issue) => {
     if (!state.issueQuery) {
@@ -658,7 +706,10 @@ function renderIssueList(error: unknown = null): void {
     <div class="issue-table-head">
       <span>Issue</span>
       <span>Last seen</span>
+      <span>Age</span>
+      <span>Trend</span>
       <span>Events</span>
+      <span>Users</span>
     </div>
     ${filtered
       .map((issue) => {
@@ -666,12 +717,16 @@ function renderIssueList(error: unknown = null): void {
       const title = issueTitle(issue);
       const count = issueEventCount(issue);
       const lastSeen = formatTime(issueLastSeen(issue));
+      const age = formatAge(issueFirstSeen(issue));
       const active = id && String(id) === String(state.selectedIssueId) ? "active" : "";
       return `
         <button class="item issue-row ${active}" type="button" data-issue-id="${escapeAttr(id)}">
           <div class="item-title"><span class="status-dot"></span>${escapeHtml(title)}</div>
           <span class="issue-cell">${escapeHtml(lastSeen || "No timestamp")}</span>
+          <span class="issue-cell">${escapeHtml(age || "n/a")}</span>
+          <span class="issue-trend" aria-label="Ongoing trend"></span>
           <span class="issue-cell">${escapeHtml(String(count))}</span>
+          <span class="issue-cell">0</span>
           <div class="item-meta">
             <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
             <span>${escapeHtml(id)}</span>
@@ -790,6 +845,8 @@ function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
   const firstSeen = formatTime(issueFirstSeen(issue));
   const lastSeen = formatTime(issueLastSeen(issue));
   const eventCount = issueEventCount(issue, events.length);
+  const lastEvent = events[0] || readRecord(issue, ["representativeEvent", "RepresentativeEvent"]);
+  const insightPairs = issueInsights(events);
   const fields = collectKeyValues(issue, [
     "id",
     "ID",
@@ -819,28 +876,55 @@ function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
 
   elements.detailTitle.textContent = title;
   elements.detailBody.innerHTML = `
-    <div class="section">
+    <div class="issue-hero">
+      <div>
+        <p class="eyebrow">${escapeHtml(exceptionType || "Error")}</p>
+        <h3>${escapeHtml(title)}</h3>
+        <p class="muted">${escapeHtml(normalizedTitle || fingerprint || id || "No fingerprint")}</p>
+      </div>
       <div class="link-row">
         <button type="button" data-copy-id="${escapeAttr(id)}">Copy issue id</button>
-      </div>
-      <div class="grid">
-        <div class="kv"><span>Issue id</span><span>${escapeHtml(String(id || "n/a"))}</span></div>
-        <div class="kv"><span>Title</span><span>${escapeHtml(title)}</span></div>
-        <div class="kv"><span>Exception</span><span>${escapeHtml(exceptionType || "n/a")}</span></div>
-        <div class="kv"><span>Fingerprint</span><span>${escapeHtml(fingerprint || "n/a")}</span></div>
-        <div class="kv"><span>First seen</span><span>${escapeHtml(firstSeen || "n/a")}</span></div>
-        <div class="kv"><span>Last seen</span><span>${escapeHtml(lastSeen || "n/a")}</span></div>
-        <div class="kv"><span>Events</span><span>${escapeHtml(String(eventCount))}</span></div>
+        <button type="button" disabled>Resolve</button>
       </div>
     </div>
-    <div class="section">
-      <h3>Events</h3>
-      ${renderEventButtons(events)}
+    <div class="issue-stats">
+      <div><span>Events</span><strong>${escapeHtml(String(eventCount))}</strong></div>
+      <div><span>Users</span><strong>0</strong></div>
+      <div><span>First seen</span><strong>${escapeHtml(firstSeen || "n/a")}</strong></div>
+      <div><span>Last seen</span><strong>${escapeHtml(lastSeen || "n/a")}</strong></div>
     </div>
-    ${renderDataSection("Representative event", readRecord(issue, ["representativeEvent", "RepresentativeEvent"]))}
-    <div class="section">
-      <h3>Issue data</h3>
-      <pre class="pre">${escapeHtml(JSON.stringify(fields, null, 2))}</pre>
+    <div class="event-bar">
+      <div class="event-meter" aria-hidden="true">${renderMiniBars(eventCount)}</div>
+      <div class="insight-list">${renderInsights(insightPairs)}</div>
+    </div>
+    <div class="tabs" aria-label="Issue detail sections">
+      <span class="active">Events</span>
+      <span>Stack trace</span>
+      <span>Tags</span>
+      <span>Context</span>
+    </div>
+    <div class="detail-layout">
+      <div class="detail-main">
+        <div class="section">
+          <h3>Events in this issue</h3>
+          ${renderEventButtons(events)}
+        </div>
+        ${renderDataSection("Representative event", isRecord(lastEvent) ? lastEvent : {})}
+        <div class="section">
+          <h3>Issue data</h3>
+          <pre class="pre">${escapeHtml(JSON.stringify(fields, null, 2))}</pre>
+        </div>
+      </div>
+      <aside class="detail-rail">
+        <div class="rail-section">
+          <h3>Issue tracking</h3>
+          <p class="muted">External issue links are not configured yet.</p>
+        </div>
+        <div class="rail-section">
+          <h3>Activity</h3>
+          <p class="muted">Marked as ongoing automatically.</p>
+        </div>
+      </aside>
     </div>
   `;
 
@@ -886,36 +970,80 @@ function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents:
 
   elements.detailTitle.textContent = title;
   elements.detailBody.innerHTML = `
-    <div class="section">
+    <div class="issue-hero">
+      <div>
+        <p class="eyebrow">${escapeHtml(eventSeverity(event) || "event")}</p>
+        <h3>${escapeHtml(title)}</h3>
+        <p class="muted">${escapeHtml(eventUrl(event) || eventTraceId(event) || id || "No request context")}</p>
+      </div>
       <div class="link-row">
         <button type="button" data-open-issue="${escapeAttr(issueId)}" ${issueId ? "" : "disabled"}>Open issue</button>
         <button type="button" data-copy-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>Copy event id</button>
         ${renderEventNavigation(issueEvents, id)}
       </div>
-      <div class="grid">
-        <div class="kv"><span>Event id</span><span>${escapeHtml(String(id || "n/a"))}</span></div>
-        <div class="kv"><span>Issue id</span><span>${escapeHtml(String(issueId || "n/a"))}</span></div>
-        <div class="kv"><span>Timestamp</span><span>${escapeHtml(timestamp || "n/a")}</span></div>
-        <div class="kv"><span>Severity</span><span>${escapeHtml(eventSeverity(event) || "n/a")}</span></div>
+    </div>
+    <div class="issue-stats">
+      <div><span>Event id</span><strong>${escapeHtml(String(id || "n/a"))}</strong></div>
+      <div><span>Issue id</span><strong>${escapeHtml(String(issueId || "n/a"))}</strong></div>
+      <div><span>Timestamp</span><strong>${escapeHtml(timestamp || "n/a")}</strong></div>
+      <div><span>Severity</span><strong>${escapeHtml(eventSeverity(event) || "n/a")}</strong></div>
+    </div>
+    <div class="tabs" aria-label="Event detail sections">
+      <span class="active">Highlights</span>
+      <span>Stack trace</span>
+      <span>Breadcrumbs</span>
+      <span>Trace</span>
+      <span>Tags</span>
+      <span>Context</span>
+    </div>
+    <div class="detail-layout">
+      <div class="detail-main">
+        ${renderDataSection("Exception", exception)}
+        ${renderDataSection("Context", context)}
+        ${renderStacktrace(stacktrace)}
+        ${renderSpans(spans)}
+        <div class="section">
+          <h3>Issue events</h3>
+          ${renderEventButtons(issueEvents, id)}
+        </div>
+        ${renderDataSection("Scrubbed payload", rawScrubbed)}
+        ${renderDataSection("Normalized payload", payload)}
+        <div class="section">
+          <h3>Event data</h3>
+          <pre class="pre">${escapeHtml(JSON.stringify(fields, null, 2))}</pre>
+        </div>
       </div>
-    </div>
-    ${renderDataSection("Exception", exception)}
-    ${renderDataSection("Context", context)}
-    ${renderStacktrace(stacktrace)}
-    ${renderSpans(spans)}
-    <div class="section">
-      <h3>Issue events</h3>
-      ${renderEventButtons(issueEvents, id)}
-    </div>
-    ${renderDataSection("Scrubbed payload", rawScrubbed)}
-    ${renderDataSection("Normalized payload", payload)}
-    <div class="section">
-      <h3>Event data</h3>
-      <pre class="pre">${escapeHtml(JSON.stringify(fields, null, 2))}</pre>
+      <aside class="detail-rail">
+        <div class="rail-section">
+          <h3>Seen after</h3>
+          <p class="muted">Release markers are planned in the spec and will appear here.</p>
+        </div>
+        <div class="rail-section">
+          <h3>People</h3>
+          <p class="muted">User facets are not populated yet.</p>
+        </div>
+      </aside>
     </div>
   `;
 
   wireEventDetailActions(issueId);
+}
+
+function renderInsights(pairs: InsightPair[]): string {
+  if (!pairs.length) {
+    return `<span class="muted">No event highlights yet.</span>`;
+  }
+  return pairs
+    .map((pair) => `<span><strong>${escapeHtml(pair.label)}</strong> ${escapeHtml(pair.value)}</span>`)
+    .join("");
+}
+
+function renderMiniBars(count: number): string {
+  const safeCount = Math.max(1, count);
+  return Array.from({ length: 28 }, (_, index) => {
+    const height = 18 + ((index * 7 + safeCount) % 34);
+    return `<span style="height:${height}px"></span>`;
+  }).join("");
 }
 
 function renderDataSection(title: string, data: RawRecord): string {
@@ -1230,6 +1358,33 @@ function formatTime(value: unknown): string {
   }).format(date);
 }
 
+function formatAge(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  const date = new Date(value as string | number | Date);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 0) {
+    return "now";
+  }
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 60) {
+    return `${Math.max(1, minutes)}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) {
+    return `${hours}h`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 90) {
+    return `${days}d`;
+  }
+  return `${Math.floor(days / 30)}mo`;
+}
+
 function escapeHtml(value: unknown): string {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1254,10 +1409,25 @@ function firstIdentifier(source: ApiIssue | ApiEvent, extraOmitKeys: string[] = 
   const omit = new Set(extraOmitKeys);
   const keys = ["id", "ID", "issueId", "IssueID", "issue_id", "eventId", "EventID", "event_id"].filter((key) => !omit.has(key));
   const value = readFirst(source, keys);
-  if (value === null || value === undefined || value === "") {
-    return "";
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
   }
-  return String(value);
+  if (isRecord(value)) {
+    const nested = readFirst(value, ["id", "ID"]);
+    if (typeof nested === "string" || typeof nested === "number") {
+      return String(nested);
+    }
+  }
+  for (const nestedKey of ["issue", "Issue", "event", "Event"]) {
+    const nested = source[nestedKey];
+    if (isRecord(nested)) {
+      const nestedID = firstIdentifier(nested as ApiIssue | ApiEvent, extraOmitKeys);
+      if (nestedID) {
+        return nestedID;
+      }
+    }
+  }
+  return "";
 }
 
 function readNestedMessage(value: unknown): string {

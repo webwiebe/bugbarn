@@ -66,6 +66,8 @@
 - [ ] T042 Implement live events view using SSE or websocket with reconnect.
 - [ ] T043 Add browser smoke tests for login, issue list, issue detail, and live events.
 - [x] T065 Add dark-mode web theme and richer event detail sections for exception, context, stacktrace, spans, and scrubbed payload data.
+- [x] T070 Add a Sentry-inspired issue overview/detail layout pass with dense issue columns, issue/event summary headers, tab strips, histogram placeholders, and detail side rails.
+- [ ] T071 Populate issue detail side rails with real release, people, external tracking, activity, and similar-issue data.
 
 ## Phase 8: SDKs
 
