@@ -36,6 +36,30 @@ spec:
                 secretKeyRef:
                   name: bugbarn-api-key
                   key: BUGBARN_API_KEY
+            - name: BUGBARN_API_KEY_SHA256
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-api-key
+                  key: BUGBARN_API_KEY_SHA256
+                  optional: true
+            - name: BUGBARN_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-api-key
+                  key: BUGBARN_ADMIN_USERNAME
+                  optional: true
+            - name: BUGBARN_ADMIN_PASSWORD_BCRYPT
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-api-key
+                  key: BUGBARN_ADMIN_PASSWORD_BCRYPT
+                  optional: true
+            - name: BUGBARN_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-api-key
+                  key: BUGBARN_SESSION_SECRET
+                  optional: true
           volumeMounts:
             - name: bugbarn-data
               mountPath: /var/lib/bugbarn

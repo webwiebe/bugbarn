@@ -110,6 +110,22 @@ Queryable event facet values.
 - `value_bool`
 - `value_hash`
 
+## ReleaseMarker
+
+Deploy or notable-event record used to correlate regressions with recent changes.
+
+- `id`
+- `project_id`
+- `name`
+- `environment`
+- `observed_at`
+- `version`
+- `commit_sha`
+- `url`
+- `notes`
+- `created_by`
+- `created_at`
+
 ## Relationships
 
 - A project has many API keys, issues, events, and facet keys.
@@ -117,4 +133,4 @@ Queryable event facet values.
 - An event belongs to one project and usually one issue.
 - An event has many event facets.
 - Facet keys are discovered from scrubbed event attributes and resource data.
-
+- Release markers belong to one project and are displayed near issues/events by time and environment.

@@ -20,7 +20,7 @@
 
 ## Phase 3: Ingest and Durable Spool
 
-- [ ] T011 Implement API key authentication middleware with hashed key storage.
+- [x] T011 Implement API key authentication middleware with hashed key storage.
 - [x] T012 Implement request size limits and content-type handling.
 - [ ] T013 Implement append-only local disk spool with segment files and generated ingest IDs.
 - [ ] T014 Implement spool recovery on process start.
@@ -50,16 +50,16 @@
 
 ## Phase 6: Auth and Administration
 
-- [ ] T032 Implement admin user bootstrap from environment variables.
+- [x] T032 Implement admin user bootstrap from environment variables.
 - [ ] T033 Implement CLI command to create/update admin users.
-- [ ] T034 Implement username/password login with secure password hashing.
+- [x] T034 Implement username/password login with secure password hashing.
 - [ ] T035 Implement project creation CLI/API.
 - [ ] T036 Implement API key creation, display-once secret generation, revocation, and last-used tracking.
 
 ## Phase 7: Web UI
 
 - [x] T037 Choose lightweight frontend stack, keep browser-side source TypeScript-first, and document the decision in `research.md`.
-- [ ] T038 Implement login flow.
+- [x] T038 Implement login flow.
 - [ ] T039 Implement issue list with sort, count, severity, first seen, last seen, project, and selected facets.
 - [x] T040 Implement issue detail with normalized exception data and scrubbed context.
 - [x] T041 Implement previous/next event navigation for an issue.
@@ -89,7 +89,7 @@
 ## Phase 10: Release Readiness
 
 - [x] T055 Document local deployment, Docker deployment, binary deployment, and homelab deployment.
-- [ ] T056 Add security notes covering auth model, API key storage, PII scrubbing, and personal-use assumptions.
+- [x] T056 Add security notes covering auth model, API key storage, PII scrubbing, and personal-use assumptions.
 - [ ] T057 Add operational docs for spool sizing, backpressure, retention, backup, and recovery.
 - [ ] T058 Run sustained ingest benchmark and record baseline hardware/resource usage.
 - [ ] T059 Verify all success criteria in `spec.md`.
@@ -99,3 +99,10 @@
 ## Phase 11: Future SDKs
 
 - [ ] T061 Add a PHP SDK package with initialization, manual capture, async transport, and uncaught handler support. This is intentionally left for a later iteration after the foundation SDKs.
+
+## Phase 12: Release Markers
+
+- [ ] T066 Add release/notable-event marker persistence with project, environment, observed time, version/commit, URL, notes, and creator fields.
+- [ ] T067 Add release marker API endpoints for creating, listing, and querying nearby markers for an issue/event.
+- [ ] T068 Add web UI timeline markers so regressions can be visually linked to recent deploys.
+- [ ] T069 Add CI/GitHub Actions example for posting a BugBarn release marker after testing and staging deploys.

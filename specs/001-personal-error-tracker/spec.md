@@ -126,6 +126,8 @@ As a self-hosting operator, I want simple application API keys, a local user log
 - **FR-027**: SDKs MUST send events asynchronously and avoid blocking application execution on network failures.
 - **FR-028**: CI MUST run tests, linting, builds, and container image checks.
 - **FR-029**: CI/CD MUST support testing and staging namespaces in the homelab K3S cluster.
+- **FR-030**: The system MUST support release or notable-event markers so regressions can be correlated with recent deploys or operational changes.
+- **FR-031**: Release markers SHOULD be linkable from issue/event timelines and SHOULD carry at least name, environment, observed time, optional commit/version, and optional URL.
 
 ### Non-Functional Requirements
 
@@ -149,6 +151,7 @@ As a self-hosting operator, I want simple application API keys, a local user log
 - **Facet Key**: Queryable context field discovered from event attributes.
 - **Facet Value**: Normalized value for a facet key linked to events/issues.
 - **Live Event Cursor**: Stream position used by UI clients to receive recent events.
+- **Release Marker**: Operator- or CI-created deploy/notable-event record used to correlate regressions with recent changes.
 
 ## Success Criteria
 

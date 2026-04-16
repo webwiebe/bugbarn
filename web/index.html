@@ -9,64 +9,78 @@
     <script defer src="./dist/app.js"></script>
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">BB</div>
-        <div>
-          <p class="eyebrow">BugBarn</p>
-          <h1>Issues, events, and live intake</h1>
-        </div>
-      </div>
-
-      <div class="toolbar">
-        <label class="field">
-          <span>API base</span>
-          <input id="api-base" type="text" spellcheck="false" placeholder="http://localhost:8080" />
-        </label>
-        <button id="save-api" type="button">Save</button>
-        <button id="refresh-all" type="button">Refresh</button>
-      </div>
-    </header>
-
-    <main class="shell">
-      <aside class="panel panel-list">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Issues</p>
-            <h2 id="issue-count">Loading</h2>
-          </div>
-          <input id="issue-filter" type="search" placeholder="Filter" aria-label="Filter issues" />
-        </div>
-        <div id="issue-list" class="list" aria-live="polite"></div>
+    <div class="app-frame">
+      <aside class="sidebar" aria-label="Primary">
+        <div class="side-mark" aria-hidden="true">BB</div>
+        <nav class="side-nav">
+          <a class="active" href="#/">Issues</a>
+          <a href="#/">Feed</a>
+          <a href="#/">Releases</a>
+          <a href="#/">Alerts</a>
+          <a href="#/">Settings</a>
+        </nav>
       </aside>
 
-      <section class="panel panel-main">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Detail</p>
-            <h2 id="detail-title">Select an issue</h2>
+      <div class="workspace">
+        <header class="topbar">
+          <div class="brand">
+            <div>
+              <p class="eyebrow">BugBarn</p>
+              <h1>Errors & outages</h1>
+            </div>
           </div>
-          <div class="chips">
-            <span id="route-chip" class="chip">Ready</span>
-          </div>
-        </div>
-        <div id="detail-body" class="detail"></div>
-      </section>
 
-      <aside class="panel panel-live">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Live</p>
-            <h2>Recent events</h2>
+          <div class="toolbar">
+            <label class="field">
+              <span>API base</span>
+              <input id="api-base" type="text" spellcheck="false" placeholder="http://localhost:8080" />
+            </label>
+            <button id="save-api" type="button">Save</button>
+            <button id="refresh-all" type="button">Refresh</button>
           </div>
-          <span id="live-status" class="chip">Idle</span>
-        </div>
-        <div id="live-list" class="list" aria-live="polite"></div>
-      </aside>
-    </main>
+        </header>
 
-    <footer class="footer">
-      <span id="status-text">Waiting for data.</span>
-    </footer>
+        <main class="shell">
+          <aside class="panel panel-list">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Issues</p>
+                <h2 id="issue-count">Loading</h2>
+              </div>
+              <input id="issue-filter" type="search" placeholder="Filter" aria-label="Filter issues" />
+            </div>
+            <div id="issue-list" class="list" aria-live="polite"></div>
+          </aside>
+
+          <section class="panel panel-main">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Detail</p>
+                <h2 id="detail-title">Select an issue</h2>
+              </div>
+              <div class="chips">
+                <span id="route-chip" class="chip">Ready</span>
+              </div>
+            </div>
+            <div id="detail-body" class="detail"></div>
+          </section>
+
+          <aside class="panel panel-live">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Live</p>
+                <h2>Recent events</h2>
+              </div>
+              <span id="live-status" class="chip">Idle</span>
+            </div>
+            <div id="live-list" class="list" aria-live="polite"></div>
+          </aside>
+        </main>
+
+        <footer class="footer">
+          <span id="status-text">Waiting for data.</span>
+        </footer>
+      </div>
+    </div>
   </body>
 </html>

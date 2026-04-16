@@ -24,12 +24,21 @@ Either configure environment variables:
 ```bash
 BUGBARN_ADMIN_USERNAME=admin
 BUGBARN_ADMIN_PASSWORD=change-me
+BUGBARN_SESSION_SECRET=replace-with-random-secret
 ```
 
 Or run the setup CLI:
 
 ```bash
 bugbarn admin create --username admin
+```
+
+For deployed environments, prefer a bcrypt hash instead of a plaintext password:
+
+```bash
+BUGBARN_ADMIN_USERNAME=admin
+BUGBARN_ADMIN_PASSWORD_BCRYPT='<bcrypt hash>'
+BUGBARN_SESSION_SECRET='<random high-entropy string>'
 ```
 
 ## First Project Key
@@ -77,6 +86,14 @@ kubectl -n bugbarn-staging get secret bugbarn-api-key -o jsonpath='{.data.BUGBAR
 ```
 
 If either command prints a `replace-me-*` value, rotate the secret before connecting a real application.
+
+Prefer storing only the API key digest in the server environment:
+
+```bash
+printf '%s' "$BUGBARN_API_KEY" | shasum -a 256 | awk '{print $1}'
+```
+
+Set the resulting value as `BUGBARN_API_KEY_SHA256`.
 
 ## TypeScript SDK Package
 

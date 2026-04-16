@@ -51,10 +51,19 @@ func run() error {
 
 	go runBackgroundWorker(ctx, cfg.spoolDir, store)
 
-	handler := ingest.NewHandler(auth.New(cfg.apiKey), eventSpool, cfg.maxBodyBytes)
+	apiAuthorizer, err := newAPIAuthorizer(cfg)
+	if err != nil {
+		return err
+	}
+	userAuth, err := auth.NewUserAuthenticator(cfg.adminUsername, cfg.adminPassword, cfg.adminPasswordBcrypt)
+	if err != nil {
+		return err
+	}
+	sessionManager := auth.NewSessionManager(cfg.sessionSecret, cfg.sessionTTL)
+	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.maxBodyBytes)
 	server := &http.Server{
 		Addr:    cfg.addr,
-		Handler: api.NewServer(handler, store),
+		Handler: api.NewServerWithAuth(handler, store, userAuth, sessionManager),
 	}
 
 	errCh := make(chan error, 1)
@@ -76,21 +85,33 @@ func run() error {
 }
 
 type config struct {
-	addr          string
-	apiKey        string
-	spoolDir      string
-	dbPath        string
-	maxBodyBytes  int64
-	maxSpoolBytes int64
+	addr                string
+	apiKey              string
+	apiKeySHA256        string
+	adminUsername       string
+	adminPassword       string
+	adminPasswordBcrypt string
+	sessionSecret       string
+	sessionTTL          time.Duration
+	spoolDir            string
+	dbPath              string
+	maxBodyBytes        int64
+	maxSpoolBytes       int64
 }
 
 func loadConfig() config {
 	cfg := config{
-		addr:         getenv("BUGBARN_ADDR", ":8080"),
-		apiKey:       os.Getenv("BUGBARN_API_KEY"),
-		spoolDir:     getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
-		dbPath:       getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
-		maxBodyBytes: 1 << 20,
+		addr:                getenv("BUGBARN_ADDR", ":8080"),
+		apiKey:              os.Getenv("BUGBARN_API_KEY"),
+		apiKeySHA256:        os.Getenv("BUGBARN_API_KEY_SHA256"),
+		adminUsername:       os.Getenv("BUGBARN_ADMIN_USERNAME"),
+		adminPassword:       os.Getenv("BUGBARN_ADMIN_PASSWORD"),
+		adminPasswordBcrypt: os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT"),
+		sessionSecret:       os.Getenv("BUGBARN_SESSION_SECRET"),
+		sessionTTL:          12 * time.Hour,
+		spoolDir:            getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
+		dbPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
+		maxBodyBytes:        1 << 20,
 	}
 
 	if raw := os.Getenv("BUGBARN_MAX_BODY_BYTES"); raw != "" {
@@ -103,8 +124,20 @@ func loadConfig() config {
 			cfg.maxSpoolBytes = parsed
 		}
 	}
+	if raw := os.Getenv("BUGBARN_SESSION_TTL_SECONDS"); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
+			cfg.sessionTTL = time.Duration(parsed) * time.Second
+		}
+	}
 
 	return cfg
+}
+
+func newAPIAuthorizer(cfg config) (*auth.Authorizer, error) {
+	if cfg.apiKeySHA256 != "" {
+		return auth.NewHashed(cfg.apiKeySHA256)
+	}
+	return auth.New(cfg.apiKey), nil
 }
 
 // runWorkerOnce replays queued records into the persistent store for local maintenance.

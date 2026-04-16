@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
@@ -199,6 +201,76 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 		}
 		if got, want := response.Events[2].ID, eventA1.ID; got != want {
 			t.Fatalf("unexpected third live event: got %q want %q", got, want)
+		}
+	})
+}
+
+func TestServeHTTPUserAuthentication(t *testing.T) {
+	t.Parallel()
+
+	store := mustOpenStore(t)
+	defer store.Close()
+
+	userAuth, err := auth.NewUserAuthenticator("admin", "change-me", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions := auth.NewSessionManager("test-secret", time.Hour)
+	server := NewServerWithAuth(nil, store, userAuth, sessions)
+
+	t.Run("query endpoints require session", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/issues", nil)
+
+		server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("unexpected status: got %d want %d", rr.Code, http.StatusUnauthorized)
+		}
+	})
+
+	var session *http.Cookie
+	t.Run("login sets session cookie", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader(`{"username":"admin","password":"change-me"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("unexpected status: got %d want %d body=%q", rr.Code, http.StatusOK, rr.Body.String())
+		}
+		for _, cookie := range rr.Result().Cookies() {
+			if cookie.Name == "bugbarn_session" {
+				session = cookie
+			}
+		}
+		if session == nil || session.Value == "" {
+			t.Fatal("expected session cookie")
+		}
+	})
+
+	t.Run("session can access query endpoint", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/issues", nil)
+		req.AddCookie(session)
+
+		server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("unexpected status: got %d want %d body=%q", rr.Code, http.StatusOK, rr.Body.String())
+		}
+	})
+
+	t.Run("wrong password is rejected", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader(`{"username":"admin","password":"wrong"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("unexpected status: got %d want %d", rr.Code, http.StatusUnauthorized)
 		}
 	})
 }

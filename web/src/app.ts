@@ -74,6 +74,10 @@ interface EventListResponse extends RawRecord {
 
 interface AppState {
   apiBase: string;
+  authChecked: boolean;
+  authRequired: boolean;
+  authenticated: boolean;
+  username: string;
   issues: ApiIssue[];
   issueQuery: string;
   selectedIssueId: string | null;
@@ -101,6 +105,10 @@ interface AppElements {
 
 const state: AppState = {
   apiBase: readApiBase(),
+  authChecked: false,
+  authRequired: false,
+  authenticated: false,
+  username: "",
   issues: [],
   issueQuery: "",
   selectedIssueId: null,
@@ -110,6 +118,8 @@ const state: AppState = {
   liveTimer: null,
   inFlight: new Map<string, Promise<unknown>>(),
 };
+
+const httpUnauthorized = 401;
 
 const elements: AppElements = {
   apiBase: byId<HTMLInputElement>("api-base"),
@@ -133,7 +143,7 @@ elements.saveApi.addEventListener("click", () => {
   state.apiBase = normalizeBase(elements.apiBase.value);
   persistApiBase(state.apiBase);
   setStatus(`API base saved: ${state.apiBase || "same origin"}`);
-  void refreshAll();
+  void start();
 });
 
 elements.refreshAll.addEventListener("click", () => {
@@ -148,8 +158,17 @@ elements.issueFilter.addEventListener("input", () => {
 window.addEventListener("hashchange", route);
 window.addEventListener("beforeunload", stopLivePolling);
 
-route();
-void refreshAll();
+void start();
+
+async function start(): Promise<void> {
+  route();
+  await loadSession();
+  if (state.authRequired && !state.authenticated) {
+    renderLogin();
+    return;
+  }
+  await refreshAll();
+}
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -217,7 +236,39 @@ function route(): void {
 }
 
 async function refreshAll(): Promise<void> {
+  if (state.authRequired && !state.authenticated) {
+    renderLogin();
+    return;
+  }
   await Promise.all([loadIssues(), loadLiveEvents(), loadActiveRoute()]);
+}
+
+async function loadSession(): Promise<void> {
+  try {
+    const response = await fetch(apiUrl("/api/v1/me"), {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    state.authChecked = true;
+    if (response.status === httpUnauthorized) {
+      state.authRequired = true;
+      state.authenticated = false;
+      return;
+    }
+    if (!response.ok) {
+      state.authRequired = false;
+      state.authenticated = true;
+      return;
+    }
+    const payload = normalizeObject<RawRecord>(await response.json());
+    state.authRequired = Boolean(payload.authEnabled);
+    state.authenticated = Boolean(payload.authenticated);
+    state.username = readString(payload, ["username"]);
+  } catch {
+    state.authChecked = true;
+    state.authRequired = false;
+    state.authenticated = true;
+  }
 }
 
 async function loadActiveRoute(): Promise<void> {
@@ -341,7 +392,12 @@ async function fetchJson(path: string): Promise<unknown> {
     return existing;
   }
 
-  const request = fetch(url, { headers: { Accept: "application/json" } }).then(async (response) => {
+  const request = fetch(url, { credentials: "include", headers: { Accept: "application/json" } }).then(async (response) => {
+    if (response.status === httpUnauthorized) {
+      state.authRequired = true;
+      state.authenticated = false;
+      renderLogin();
+    }
     if (!response.ok) {
       throw new Error(`${response.status} ${response.statusText}`.trim());
     }
@@ -598,24 +654,34 @@ function renderIssueList(error: unknown = null): void {
     return;
   }
 
-  elements.issueList.innerHTML = filtered
-    .map((issue) => {
+  elements.issueList.innerHTML = `
+    <div class="issue-table-head">
+      <span>Issue</span>
+      <span>Last seen</span>
+      <span>Events</span>
+    </div>
+    ${filtered
+      .map((issue) => {
       const id = firstIdentifier(issue);
       const title = issueTitle(issue);
       const count = issueEventCount(issue);
       const lastSeen = formatTime(issueLastSeen(issue));
       const active = id && String(id) === String(state.selectedIssueId) ? "active" : "";
       return `
-        <button class="item ${active}" type="button" data-issue-id="${escapeAttr(id)}">
-          <div class="item-title">${escapeHtml(title)}</div>
+        <button class="item issue-row ${active}" type="button" data-issue-id="${escapeAttr(id)}">
+          <div class="item-title"><span class="status-dot"></span>${escapeHtml(title)}</div>
+          <span class="issue-cell">${escapeHtml(lastSeen || "No timestamp")}</span>
+          <span class="issue-cell">${escapeHtml(String(count))}</span>
           <div class="item-meta">
-            <span>${escapeHtml(String(count))} events</span>
-            <span>${escapeHtml(lastSeen || "No timestamp")}</span>
+            <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
+            <span>${escapeHtml(id)}</span>
+            <span>Ongoing</span>
           </div>
         </button>
       `;
     })
-    .join("");
+      .join("")}
+  `;
 
   elements.issueList.querySelectorAll("[data-issue-id]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -628,6 +694,10 @@ function renderIssueList(error: unknown = null): void {
 }
 
 function renderDetail(): void {
+  if (state.authRequired && !state.authenticated) {
+    renderLogin();
+    return;
+  }
   if (state.selectedEventId) {
     void loadEventDetail(state.selectedEventId);
     return;
@@ -645,6 +715,65 @@ function renderDetail(): void {
 
   elements.detailTitle.textContent = "Start sending errors";
   elements.detailBody.innerHTML = renderSetupGuide();
+}
+
+function renderLogin(error = ""): void {
+  stopLivePolling();
+  setRouteChip("Login", "warn");
+  elements.issueCount.textContent = "Locked";
+  elements.issueList.innerHTML = `<div class="empty">Log in to view issues.</div>`;
+  elements.liveStatus.textContent = "Locked";
+  elements.liveList.innerHTML = `<div class="empty">Live events require a session.</div>`;
+  elements.detailTitle.textContent = "Log in";
+  elements.detailBody.innerHTML = `
+    <form class="section login-form" id="login-form">
+      <p class="muted">Use the admin credentials configured for this BugBarn instance.</p>
+      ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
+      <label class="field">
+        <span>Username</span>
+        <input name="username" type="text" autocomplete="username" required />
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input name="password" type="password" autocomplete="current-password" required />
+      </label>
+      <div class="link-row">
+        <button type="submit">Log in</button>
+      </div>
+    </form>
+  `;
+  const form = document.getElementById("login-form");
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(form as HTMLFormElement);
+    void login(String(formData.get("username") || ""), String(formData.get("password") || ""));
+  });
+}
+
+async function login(username: string, password: string): Promise<void> {
+  try {
+    const response = await fetch(apiUrl("/api/v1/login"), {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+      renderLogin("Invalid username or password.");
+      return;
+    }
+    const payload = normalizeObject<RawRecord>(await response.json());
+    state.authRequired = Boolean(payload.authEnabled);
+    state.authenticated = Boolean(payload.authenticated);
+    state.username = readString(payload, ["username"]);
+    setStatus(state.username ? `Logged in as ${state.username}.` : "Logged in.");
+    await refreshAll();
+  } catch (error) {
+    renderLogin(errorMessage(error));
+  }
 }
 
 function setDetailLoading(title: string): void {
