@@ -86,6 +86,8 @@ func run() error {
 	}
 	sessionManager := auth.NewSessionManager(cfg.sessionSecret, cfg.sessionTTL)
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.maxBodyBytes)
+	go handler.Start(ctx)
+
 	server := &http.Server{
 		Addr:    cfg.addr,
 		Handler: api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins),

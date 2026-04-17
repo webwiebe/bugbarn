@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -24,6 +25,10 @@ func TestServeHTTPAcceptedAndSpoolsBody(t *testing.T) {
 
 	handler := NewHandler(auth.New("secret"), eventSpool, 1024)
 	handler.idFn = func() string { return "ingest-123" }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { handler.Start(ctx); close(done) }()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"message":"boom"}`))
 	req.Header.Set(auth.HeaderAPIKey, "secret")
@@ -49,6 +54,10 @@ func TestServeHTTPAcceptedAndSpoolsBody(t *testing.T) {
 	if ingestID, ok := response["ingestId"].(string); !ok || ingestID != "ingest-123" {
 		t.Fatalf("expected ingestId ingest-123, got %#v", response["ingestId"])
 	}
+
+	// Cancel the context so Start drains the queue and flushes to disk.
+	cancel()
+	<-done
 
 	raw := mustReadFile(t, filepath.Join(dir, spool.DefaultFileName))
 	var record spool.Record
@@ -108,23 +117,30 @@ func TestServeHTTPRejectsWrongMethod(t *testing.T) {
 	}
 }
 
-func TestServeHTTPReturnsBackpressureWhenSpoolFull(t *testing.T) {
-	eventSpool, err := spool.NewWithLimit(t.TempDir(), 10)
-	if err != nil {
-		t.Fatalf("new spool: %v", err)
-	}
-	defer eventSpool.Close()
+func TestServeHTTPReturnsBackpressureWhenQueueFull(t *testing.T) {
+	handler := NewHandler(auth.New(""), mustSpool(t), 1024)
+	// Replace the queue with a tiny one to force backpressure without filling 32k slots.
+	handler.queue = make(chan spool.Record, 1)
 
-	handler := NewHandler(auth.New(""), eventSpool, 1024)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"message":"boom"}`))
+	body := strings.NewReader(`{"message":"boom"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", body)
+
+	// Fill the single slot.
 	rr := httptest.NewRecorder()
-
 	handler.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429, got %d", rr.Code)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected first request 202, got %d", rr.Code)
 	}
-	if retryAfter := rr.Header().Get("Retry-After"); retryAfter == "" {
+
+	// Second request should be rejected since queue is full and Start is not running.
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"message":"boom"}`))
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+
+	if rr2.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rr2.Code)
+	}
+	if retryAfter := rr2.Header().Get("Retry-After"); retryAfter == "" {
 		t.Fatal("expected Retry-After header")
 	}
 }

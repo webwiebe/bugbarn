@@ -117,6 +117,49 @@ func (s *Spool) Append(record Record) error {
 	return s.file.Sync()
 }
 
+// AppendBatch writes multiple records in a single locked section and calls
+// Sync once for the whole batch. This is substantially faster than calling
+// Append per-record when throughput matters.
+func (s *Spool) AppendBatch(records []Record) error {
+	if s == nil {
+		return errors.New("spool is nil")
+	}
+	if len(records) == 0 {
+		return nil
+	}
+
+	var buf []byte
+	for i := range records {
+		if records[i].BodyBase64 == "" {
+			records[i].BodyBase64 = base64.StdEncoding.EncodeToString(nil)
+		}
+		payload, err := json.Marshal(records[i])
+		if err != nil {
+			return err
+		}
+		buf = append(buf, payload...)
+		buf = append(buf, '\n')
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.maxBytes > 0 {
+		info, err := s.file.Stat()
+		if err != nil {
+			return err
+		}
+		if info.Size()+int64(len(buf)) > s.maxBytes {
+			return ErrFull
+		}
+	}
+
+	if _, err := s.file.Write(buf); err != nil {
+		return err
+	}
+	return s.file.Sync()
+}
+
 func (s *Spool) Close() error {
 	if s == nil || s.file == nil {
 		return nil

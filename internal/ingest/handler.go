@@ -1,12 +1,14 @@
 package ingest
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -14,25 +16,73 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 )
 
+const defaultQueueSize = 32768
+
 type Handler struct {
 	auth         *auth.Authorizer
 	spool        *spool.Spool
 	maxBodyBytes int64
 	now          func() time.Time
 	idFn         func() string
+	queue        chan spool.Record
 }
 
 func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyBytes int64) *Handler {
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = 1 << 20
 	}
-
 	return &Handler{
 		auth:         authorizer,
 		spool:        eventSpool,
 		maxBodyBytes: maxBodyBytes,
 		now:          time.Now,
 		idFn:         generateIngestID,
+		queue:        make(chan spool.Record, defaultQueueSize),
+	}
+}
+
+// Start drains the in-memory queue and flushes batches to the spool file.
+// It returns when ctx is cancelled, flushing any remaining records first.
+func (h *Handler) Start(ctx context.Context) {
+	const maxBatch = 64
+	batch := make([]spool.Record, 0, maxBatch)
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		if err := h.spool.AppendBatch(batch); err != nil {
+			if !errors.Is(err, spool.ErrFull) {
+				log.Printf("ingest: spool batch write: %v", err)
+			}
+		}
+		batch = batch[:0]
+	}
+
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case r := <-h.queue:
+			batch = append(batch, r)
+			if len(batch) >= maxBatch {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		case <-ctx.Done():
+			// Drain whatever is left before exiting.
+			for {
+				select {
+				case r := <-h.queue:
+					batch = append(batch, r)
+				default:
+					flush()
+					return
+				}
+			}
+		}
 	}
 }
 
@@ -83,22 +133,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ingestID := h.idFn()
-	if err := h.spool.Append(spool.Record{
-		IngestID:      ingestID,
+	record := spool.Record{
+		IngestID:      h.idFn(),
 		ReceivedAt:    h.now().UTC(),
 		ContentType:   r.Header.Get("Content-Type"),
 		RemoteAddr:    r.RemoteAddr,
 		ContentLength: int64(len(body)),
 		BodyBase64:    base64.StdEncoding.EncodeToString(body),
 		ProjectSlug:   r.Header.Get("x-bugbarn-project"),
-	}); err != nil {
-		if errors.Is(err, spool.ErrFull) {
-			w.Header().Set("Retry-After", "1")
-			http.Error(w, "ingest spool full", http.StatusTooManyRequests)
-			return
-		}
-		http.Error(w, "failed to persist ingest record", http.StatusServiceUnavailable)
+	}
+
+	select {
+	case h.queue <- record:
+	default:
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "ingest spool full", http.StatusTooManyRequests)
 		return
 	}
 
@@ -106,7 +155,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"accepted": true,
-		"ingestId": ingestID,
+		"ingestId": record.IngestID,
 	})
 }
 
