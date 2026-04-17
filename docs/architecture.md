@@ -31,7 +31,7 @@ SDK/client -> ingest API -> durable spool -> background worker -> normalization/
 ## Ownership Boundaries
 
 - `cmd/bugbarn` wires the process together; it does not own route semantics or storage policy.
-- `internal/api` owns the HTTP server surface, including `GET /api/v1/issues`, `GET /api/v1/issues/{id}`, `GET /api/v1/issues/{id}/events`, `GET /api/v1/events/{id}`, and `GET /api/v1/live/events`. Handlers should stay limited to parsing, authentication/session handling, response formatting, and calling service methods.
+- `internal/api` owns the HTTP server surface, including `GET /api/v1/issues`, `GET /api/v1/issues/{id}`, `GET /api/v1/issues/{id}/events`, `GET /api/v1/events/{id}`, and `GET /api/v1/events/stream` (SSE). Handlers should stay limited to parsing, authentication/session handling, response formatting, and calling service methods.
 - `internal/service` owns business behavior such as issue resolution/reopen, regression semantics, live-event recency windows, releases, alerts, settings, and source-map upload use cases.
 - `internal/storage` implements repository interfaces. SQL and migration details stay behind this boundary and should not leak to API handlers or frontend responses.
 - `internal/ingest` owns `POST /api/v1/events`.

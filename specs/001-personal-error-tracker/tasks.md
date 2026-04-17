@@ -23,7 +23,7 @@
 - [x] T011 Implement API key authentication middleware with hashed key storage.
 - [x] T012 Implement request size limits and content-type handling.
 - [x] T013 Implement append-only local disk spool with segment files and generated ingest IDs. (async in-memory channel, background drain with batched fsync, project slug stored in spool records)
-- [ ] T014 Implement spool recovery on process start.
+- [x] T014 Implement spool recovery on process start. (cursor persisted via spool.ReadCursor/WriteCursor; runBackgroundWorker reads cursor offset at startup and resumes from last committed position)
 - [x] T015 Implement explicit backpressure when spool size or disk limits are reached.
 - [x] T016 Add ingest endpoint returning `202`, `401`, `413`, `429`, and `503` according to contract.
 - [x] T017 Add ingest benchmarks proving no issue/event database insert occurs in the request path.
@@ -42,17 +42,17 @@
 
 ## Phase 5: Storage and Facets
 
-- [ ] T026 Implement SQLite schema for users, projects, API keys, raw ingest metadata, issues, events, facet keys, and event facets.
-- [ ] T027 Add migrations and local database initialization.
-- [ ] T028 Implement facet discovery from scrubbed resource and attributes JSON.
-- [ ] T029 Implement typed facet value persistence.
-- [ ] T030 Implement facet cardinality safeguards and indexing controls.
-- [ ] T031 Add query APIs for issues, issue detail, events, event detail, and facets.
+- [x] T026 Implement SQLite schema for users, projects, API keys, raw ingest metadata, issues, events, facet keys, and event facets. (internal/storage/schema.go; raw ingest lives in durable spool on disk, not DB)
+- [x] T027 Add migrations and local database initialization. (idempotent CREATE TABLE IF NOT EXISTS applied at Open; schema_version tracking via simple sequential ALTER guards)
+- [x] T028 Implement facet discovery from scrubbed resource and attributes JSON. (internal/storage/facets.go extractFacets; pulls resource + attributes fields plus environment/release/severity)
+- [x] T029 Implement typed facet value persistence. (PersistFacets in internal/storage/facets.go; stores project_id, event_id, issue_id, section, facet_key, facet_value)
+- [x] T030 Implement facet cardinality safeguards and indexing controls. (maxFacetKeysPerProject=50, maxFacetValuesPerKey=10000; idx_event_facets_lookup index)
+- [x] T031 Add query APIs for issues, issue detail, events, event detail, and facets. (internal/api/issues.go, events.go, facets.go; GET /api/v1/issues, /issues/:id, /events/:id, /facets/:key)
 
 ## Phase 6: Auth and Administration
 
 - [x] T032 Implement admin user bootstrap from environment variables.
-- [ ] T033 Implement CLI command to create/update admin users.
+- [x] T033 Implement CLI command to create/update admin users. (`bugbarn user create --username=X --password=Y` in cmd/bugbarn/main.go runUserCmd; upserts via storage.UpsertUser)
 - [x] T034 Implement username/password login with secure password hashing.
 - [x] T035 Implement project creation CLI/API. (auto-create on `apikey create`, explicit `project create` subcommand, `/api/v1/projects` endpoint, web UI project switcher, X-BugBarn-Project header routing)
 - [x] T036 Implement API key creation, display-once secret generation, revocation, and last-used tracking.
@@ -61,11 +61,11 @@
 
 - [x] T037 Choose lightweight frontend stack, keep browser-side source TypeScript-first, and document the decision in `research.md`.
 - [x] T038 Implement login flow.
-- [ ] T039 Implement issue list with sort, count, severity, first seen, last seen, project, and selected facets.
+- [x] T039 Implement issue list with sort, count, severity, first seen, last seen, project, and selected facets. (renderIssueListMarkup in web/src/components.ts; sort by last_seen/first_seen/event_count; severity/count/first/last seen columns; facet filter via ?attributes.environment=X)
 - [x] T040 Implement issue detail with normalized exception data and scrubbed context.
 - [x] T041 Implement previous/next event navigation for an issue.
-- [ ] T042 Implement live events view using SSE or websocket with reconnect.
-- [ ] T043 Add browser smoke tests for login, issue list, issue detail, and live events.
+- [x] T042 Implement live events view using SSE or websocket with reconnect. (startLiveStream/SSE in web/src/app.ts; exponential backoff reconnect; GET /api/v1/events/stream backend in internal/api/events.go)
+- [x] T043 Add browser smoke tests for login, issue list, issue detail, and live events. (web/e2e/smoke.spec.ts with Playwright; covers login, issue list, issue detail navigation, live events panel; run with npm run test:e2e against a live server)
 - [x] T065 Add dark-mode web theme and richer event detail sections for exception, context, stacktrace, spans, and scrubbed payload data.
 - [x] T070 Add a Sentry-inspired issue overview/detail layout pass with dense issue columns and issue/event summary headers.
 - [x] T071 Remove nonfunctional mirrored UI chrome, fake graphs, disabled actions, and placeholder rails until backing data exists.
@@ -98,10 +98,10 @@
 
 - [x] T055 Document local deployment, Docker deployment, binary deployment, and homelab deployment.
 - [x] T056 Add security notes covering auth model, API key storage, PII scrubbing, and personal-use assumptions.
-- [ ] T057 Add operational docs for spool sizing, backpressure, retention, backup, and recovery. (partial: ci-integration.md covers multi-project, spool sizing, and backpressure; retention/backup/recovery still outstanding)
+- [x] T057 Add operational docs for spool sizing, backpressure, retention, backup, and recovery. (docs/operations.md covers spool sizing, backpressure, retention policy, backup/restore, spool-only and DB-only recovery, admin bootstrap, env vars)
 - [x] T058 Run sustained ingest benchmark and record baseline hardware/resource usage. (scripts/loadtest/main.go; baseline ~400 req/s at c=64 on Raspberry Pi-class k3s node)
-- [ ] T059 Verify all success criteria in `spec.md`.
-- [ ] T060 Prepare first public release checklist.
+- [x] T059 Verify all success criteria in `spec.md`. (docs/release-checklist.md; all 7 SC verified passing as of 2026-04-18)
+- [x] T060 Prepare first public release checklist. (docs/release-checklist.md; covers pre-release, security review, deployment verification, version tagging, and post-release steps)
 - [x] T062 Add a compact MVP acceptance checklist for fixtures, sample apps, and load validation.
 
 ## Phase 11: Future SDKs
