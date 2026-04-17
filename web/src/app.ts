@@ -643,7 +643,7 @@ function setDetailLoading(title: string): void {
 function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
   setActiveView("detail");
   elements.detailTitle.textContent = issueTitle(issue);
-  elements.detailBody.innerHTML = renderIssueDetailMarkup(issue, events);
+  elements.detailBody.innerHTML = renderIssueDetailMarkup(issue, events, state.releases);
   wireIssueDetailActions(firstIdentifier(issue));
 }
 
@@ -835,7 +835,7 @@ async function toggleIssueStatus(issueId: string, status: "resolved" | "unresolv
 }
 
 function renderLiveList(): void {
-  elements.liveList.innerHTML = renderLiveListMarkup(state.liveEvents, state.liveError);
+  elements.liveList.innerHTML = renderLiveListMarkup(state.liveEvents, state.liveError, state.releases);
   elements.liveList.querySelectorAll("[data-live-event-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const eventId = button.getAttribute("data-live-event-id");
