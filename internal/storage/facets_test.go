@@ -97,10 +97,10 @@ func TestPersistFacetsAndQueryAPIs(t *testing.T) {
 		Attributes: map[string]any{"http.method": "POST"},
 	})
 
-	if _, _, err := store.PersistProcessedEvent(ctx, evt1); err != nil {
+	if _, _, _, _, err := store.PersistProcessedEvent(ctx, evt1); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.PersistProcessedEvent(ctx, evt2); err != nil {
+	if _, _, _, _, err := store.PersistProcessedEvent(ctx, evt2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,11 +160,11 @@ func TestListIssuesFilteredByFacets(t *testing.T) {
 		Resource:   map[string]any{"host.name": "web-02"},
 	})
 
-	issueA, _, err := store.PersistProcessedEvent(ctx, evtA)
+	issueA, _, _, _, err := store.PersistProcessedEvent(ctx, evtA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = store.PersistProcessedEvent(ctx, evtB)
+	_, _, _, _, err = store.PersistProcessedEvent(ctx, evtB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestPersistFacetsCardinalityGuards(t *testing.T) {
 		Message:    "cardinality guard test",
 		Exception:  event.Exception{Type: "CardError", Message: "cardinality guard test"},
 	})
-	_, ev, err := store.PersistProcessedEvent(ctx, baseEvt)
+	_, ev, _, _, err := store.PersistProcessedEvent(ctx, baseEvt)
 	if err != nil {
 		t.Fatal(err)
 	}

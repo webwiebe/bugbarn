@@ -65,12 +65,12 @@ func TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable(t *test
 		},
 	})
 
-	issue1, event1, err := store.PersistProcessedEvent(ctx, first)
+	issue1, event1, _, _, err := store.PersistProcessedEvent(ctx, first)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue2, event2, err := store.PersistProcessedEvent(ctx, second)
+	issue2, event2, _, _, err := store.PersistProcessedEvent(ctx, second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,11 +156,11 @@ func TestResolveIssueReopensOnRegressionAndLiveEventsAreWindowed(t *testing.T) {
 	first := processedEventForIssue(time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC), "request failed for user 12345")
 	second := processedEventForIssue(base.Add(-5*time.Minute), "request failed for user 67890")
 
-	issue, _, err := store.PersistProcessedEvent(ctx, first)
+	issue, _, _, _, err := store.PersistProcessedEvent(ctx, first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.PersistProcessedEvent(ctx, second); err != nil {
+	if _, _, _, _, err := store.PersistProcessedEvent(ctx, second); err != nil {
 		t.Fatal(err)
 	}
 
@@ -176,7 +176,7 @@ func TestResolveIssueReopensOnRegressionAndLiveEventsAreWindowed(t *testing.T) {
 	}
 
 	regression := processedEventForIssue(base, "request failed for user 99999")
-	regressionIssue, regressionEvent, err := store.PersistProcessedEvent(ctx, regression)
+	regressionIssue, regressionEvent, _, _, err := store.PersistProcessedEvent(ctx, regression)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestResolveIssueReopensOnRegressionAndLiveEventsAreWindowed(t *testing.T) {
 	}
 
 	oldEvent := processedEventForIssue(time.Date(2026, 4, 15, 8, 0, 0, 0, time.UTC), "stale error")
-	if _, _, err := store.PersistProcessedEvent(ctx, oldEvent); err != nil {
+	if _, _, _, _, err := store.PersistProcessedEvent(ctx, oldEvent); err != nil {
 		t.Fatal(err)
 	}
 

@@ -144,6 +144,13 @@ func (s *Store) init(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_events_project_received_at ON events(project_id, received_at DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_releases_project_observed_at ON releases(project_id, observed_at DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_facets_lookup ON event_facets(project_id, section, facet_key, facet_value)`,
+		`CREATE TABLE IF NOT EXISTS alert_firings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			alert_id INTEGER NOT NULL,
+			issue_id INTEGER NOT NULL,
+			fired_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_alert_firings_lookup ON alert_firings(alert_id, issue_id, fired_at DESC)`,
 	}
 	for _, stmt := range schema {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
@@ -185,6 +192,34 @@ func (s *Store) init(ctx context.Context) error {
 		return err
 	}
 	if err := ensureColumn(ctx, tx, "api_keys", "scope", "TEXT NOT NULL DEFAULT 'full'"); err != nil {
+		return err
+	}
+
+	// Alert delivery fields
+	if err := ensureColumn(ctx, tx, "alerts", "webhook_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "alerts", "condition", "TEXT NOT NULL DEFAULT 'new_issue'"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "alerts", "threshold", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "alerts", "cooldown_minutes", "INTEGER NOT NULL DEFAULT 15"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "alerts", "last_fired_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// Issue mute
+	if err := ensureColumn(ctx, tx, "issues", "mute_mode", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// User context and breadcrumbs on events
+	if err := ensureColumn(ctx, tx, "events", "user_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "events", "breadcrumbs_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 

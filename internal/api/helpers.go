@@ -72,21 +72,34 @@ func decodeStringMap(w http.ResponseWriter, r *http.Request) (map[string]string,
 
 func alertFromRequest(payload map[string]any) storage.Alert {
 	alert := storage.Alert{
-		Name:     stringValue(payload["name"]),
-		Severity: stringValue(payload["severity"]),
-		Enabled:  true,
-		Rule:     map[string]any{},
+		Name:       stringValue(payload["name"]),
+		Severity:   stringValue(payload["severity"]),
+		WebhookURL: stringValue(payload["webhook_url"]),
+		Condition:  stringValue(payload["condition"]),
+		Enabled:    true,
+		Rule:       map[string]any{},
 	}
 	if enabled, ok := payload["enabled"].(bool); ok {
 		alert.Enabled = enabled
 	}
-	for _, key := range []string{"condition", "query", "target"} {
+	if threshold, ok := payload["threshold"].(float64); ok {
+		alert.Threshold = int(threshold)
+	}
+	if cooldown, ok := payload["cooldown_minutes"].(float64); ok {
+		alert.CooldownMinutes = int(cooldown)
+	}
+	// Top-level known keys — do not copy into Rule.
+	topLevel := map[string]bool{
+		"name": true, "severity": true, "enabled": true,
+		"webhook_url": true, "condition": true, "threshold": true, "cooldown_minutes": true,
+	}
+	for _, key := range []string{"query", "target"} {
 		if value, ok := payload[key]; ok && value != nil {
 			alert.Rule[key] = value
 		}
 	}
 	for key, value := range payload {
-		if key == "name" || key == "severity" || key == "enabled" || key == "condition" || key == "query" || key == "target" {
+		if topLevel[key] || key == "query" || key == "target" {
 			continue
 		}
 		alert.Rule[key] = value

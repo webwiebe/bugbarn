@@ -259,6 +259,11 @@ SELECT
 	enabled,
 	severity,
 	rule_json,
+	webhook_url,
+	condition,
+	threshold,
+	cooldown_minutes,
+	last_fired_at,
 	created_at,
 	updated_at
 FROM alerts
@@ -298,6 +303,11 @@ SELECT
 	enabled,
 	severity,
 	rule_json,
+	webhook_url,
+	condition,
+	threshold,
+	cooldown_minutes,
+	last_fired_at,
 	created_at,
 	updated_at
 FROM alerts
@@ -326,13 +336,21 @@ INSERT INTO alerts (
 	name,
 	enabled,
 	severity,
-	rule_json
-) VALUES (?, ?, ?, ?, ?)`,
+	rule_json,
+	webhook_url,
+	condition,
+	threshold,
+	cooldown_minutes
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		projectID,
 		alert.Name,
 		boolToInt(alert.Enabled),
 		alert.Severity,
 		mustMarshalObject(alert.Rule),
+		alert.WebhookURL,
+		alert.Condition,
+		alert.Threshold,
+		alert.CooldownMinutes,
 	)
 	if err != nil {
 		return Alert{}, err
@@ -364,12 +382,18 @@ func (s *Store) UpdateAlert(ctx context.Context, alertID string, alert Alert) (A
 	}
 	if _, err := s.db.ExecContext(ctx, `
 UPDATE alerts
-SET name = ?, enabled = ?, severity = ?, rule_json = ?, updated_at = CURRENT_TIMESTAMP
+SET name = ?, enabled = ?, severity = ?, rule_json = ?,
+    webhook_url = ?, condition = ?, threshold = ?, cooldown_minutes = ?,
+    updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?`,
 		alert.Name,
 		boolToInt(alert.Enabled),
 		alert.Severity,
 		mustMarshalObject(alert.Rule),
+		alert.WebhookURL,
+		alert.Condition,
+		alert.Threshold,
+		alert.CooldownMinutes,
 		projectID,
 		rowID,
 	); err != nil {
@@ -606,12 +630,13 @@ func scanAlert(scanner interface {
 	Scan(dest ...any) error
 }) (Alert, error) {
 	var (
-		id        int64
-		item      Alert
-		ruleRaw   []byte
-		createdAt string
-		updatedAt string
-		enabled   int
+		id          int64
+		item        Alert
+		ruleRaw     []byte
+		lastFiredAt string
+		createdAt   string
+		updatedAt   string
+		enabled     int
 	)
 	if err := scanner.Scan(
 		&id,
@@ -619,6 +644,11 @@ func scanAlert(scanner interface {
 		&enabled,
 		&item.Severity,
 		&ruleRaw,
+		&item.WebhookURL,
+		&item.Condition,
+		&item.Threshold,
+		&item.CooldownMinutes,
+		&lastFiredAt,
 		&createdAt,
 		&updatedAt,
 	); err != nil {
@@ -626,6 +656,7 @@ func scanAlert(scanner interface {
 	}
 	item.ID = formatID(alertIDPrefix, id)
 	item.Enabled = enabled != 0
+	item.LastFiredAt, _ = parseTime(lastFiredAt)
 	item.CreatedAt, _ = parseTime(createdAt)
 	item.UpdatedAt, _ = parseTime(updatedAt)
 	if len(ruleRaw) > 0 {

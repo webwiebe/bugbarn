@@ -47,9 +47,12 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]I
 
 	switch filter.Status {
 	case "open":
-		conditions = append(conditions, "i.status = 'unresolved'")
+		conditions = append(conditions, "i.status IN ('unresolved', 'regressed')")
+	case "muted":
+		conditions = append(conditions, "i.status = 'muted'")
 	case "resolved":
 		conditions = append(conditions, "i.status = 'resolved'")
+	// "all" or "" → no status filter
 	}
 
 	if q := strings.TrimSpace(filter.Query); q != "" {
@@ -90,6 +93,7 @@ SELECT
 	i.normalized_title,
 	i.exception_type,
 	i.status,
+	i.mute_mode,
 	i.resolved_at,
 	i.reopened_at,
 	i.last_regressed_at,
@@ -143,6 +147,7 @@ SELECT
 	normalized_title,
 	exception_type,
 	status,
+	mute_mode,
 	resolved_at,
 	reopened_at,
 	last_regressed_at,
@@ -200,6 +205,7 @@ func (s *Store) upsertIssue(ctx context.Context, projectID int64, processed work
 		lastRegressedAt      string
 		regressionCount      int
 		status               string
+		muteMode             string
 		storedMaterial       string
 		storedExplanation    []byte
 		storedRepresentative []byte
@@ -215,6 +221,7 @@ SELECT
 	normalized_title,
 	exception_type,
 	status,
+	mute_mode,
 	resolved_at,
 	reopened_at,
 	last_regressed_at,
@@ -236,6 +243,7 @@ WHERE project_id = ? AND fingerprint = ?`,
 		&issue.NormalizedTitle,
 		&issue.ExceptionType,
 		&status,
+		&muteMode,
 		&resolvedAt,
 		&reopenedAt,
 		&lastRegressedAt,
@@ -289,12 +297,29 @@ WHERE project_id = ? AND fingerprint = ?`,
 			issue.LastSeen = seenAt
 		}
 
+		issue.MuteMode = muteMode
 		regressed := issue.Status == "resolved"
+
+		if existing && muteMode == "until_regression" && (issue.Status == "resolved" || issue.Status == "muted") {
+			// A new event on a muted-until-regression issue triggers a regression.
+			regressed = true
+		}
+
 		if regressed {
-			issue.Status = "unresolved"
-			issue.RegressionCount++
-			issue.ReopenedAt = seenAt
-			issue.LastRegressedAt = seenAt
+			if muteMode == "forever" {
+				// Keep muted; don't change status.
+				regressed = false
+			} else {
+				newStatus := "unresolved"
+				if muteMode == "until_regression" {
+					newStatus = "regressed"
+					issue.MuteMode = "" // unmute now that regression occurred
+				}
+				issue.Status = newStatus
+				issue.RegressionCount++
+				issue.ReopenedAt = seenAt
+				issue.LastRegressedAt = seenAt
+			}
 		}
 
 		assignments := []string{
@@ -304,8 +329,15 @@ WHERE project_id = ? AND fingerprint = ?`,
 		}
 		args := []any{formatTime(issue.LastSeen)}
 		if regressed {
-			assignments = append(assignments, "status = 'unresolved'", "reopened_at = ?", "last_regressed_at = ?", "regression_count = regression_count + 1")
-			args = append(args, formatTime(issue.ReopenedAt), formatTime(issue.LastRegressedAt))
+			newStatus := issue.Status
+			assignments = append(assignments,
+				"status = ?",
+				"mute_mode = ?",
+				"reopened_at = ?",
+				"last_regressed_at = ?",
+				"regression_count = regression_count + 1",
+			)
+			args = append(args, newStatus, issue.MuteMode, formatTime(issue.ReopenedAt), formatTime(issue.LastRegressedAt))
 		}
 		args = append(args, id, projectID)
 
@@ -408,6 +440,7 @@ func scanIssue(scanner interface {
 		&issue.NormalizedTitle,
 		&issue.ExceptionType,
 		&issue.Status,
+		&issue.MuteMode,
 		&resolvedAt,
 		&reopenedAt,
 		&lastRegressedAt,
@@ -440,6 +473,122 @@ func scanIssue(scanner interface {
 	issue.LastRegressedAt, _ = parseTime(lastRegressedAt)
 	issue.ID = formatID(issueIDPrefix, id)
 	return issue, nil
+}
+
+// MuteIssue sets an issue to muted status with the given mute mode.
+// muteMode must be one of "until_regression" or "forever".
+func (s *Store) MuteIssue(ctx context.Context, issueID string, muteMode string) (Issue, error) {
+	if muteMode != "until_regression" && muteMode != "forever" {
+		return Issue{}, fmt.Errorf("invalid mute_mode %q: must be 'until_regression' or 'forever'", muteMode)
+	}
+	rowID, err := parseID(issueIDPrefix, issueID)
+	if err != nil {
+		return Issue{}, err
+	}
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+	if _, err := s.db.ExecContext(ctx, `
+UPDATE issues
+SET status = 'muted', mute_mode = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND project_id = ?`,
+		muteMode, rowID, projectID,
+	); err != nil {
+		return Issue{}, err
+	}
+	return s.GetIssue(ctx, issueID)
+}
+
+// UnmuteIssue clears mute status and sets the issue back to unresolved.
+func (s *Store) UnmuteIssue(ctx context.Context, issueID string) (Issue, error) {
+	rowID, err := parseID(issueIDPrefix, issueID)
+	if err != nil {
+		return Issue{}, err
+	}
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+	if _, err := s.db.ExecContext(ctx, `
+UPDATE issues
+SET status = 'unresolved', mute_mode = '', updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND project_id = ?`,
+		rowID, projectID,
+	); err != nil {
+		return Issue{}, err
+	}
+	return s.GetIssue(ctx, issueID)
+}
+
+// HourlyEventCounts returns 24-hour event counts per issue for the given issue row IDs.
+// The returned map keys are issue row IDs. Index 0 of [24]int is the oldest hour, index 23
+// is the most recent partial hour.
+func (s *Store) HourlyEventCounts(ctx context.Context, issueIDs []int64) (map[int64][24]int, error) {
+	if len(issueIDs) == 0 {
+		return map[int64][24]int{}, nil
+	}
+
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
+	// Build placeholder list.
+	placeholders := make([]string, len(issueIDs))
+	args := []any{projectID}
+	for i, id := range issueIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	query := `
+SELECT
+	issue_id,
+	strftime('%Y-%m-%dT%H', observed_at) AS hour_bucket,
+	COUNT(*) AS cnt
+FROM events
+WHERE project_id = ?
+  AND issue_id IN (` + strings.Join(placeholders, ",") + `)
+  AND observed_at >= datetime('now', '-24 hours')
+GROUP BY issue_id, hour_bucket`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64][24]int, len(issueIDs))
+	now := time.Now().UTC()
+
+	for rows.Next() {
+		var issueID int64
+		var hourBucket string
+		var cnt int
+		if err := rows.Scan(&issueID, &hourBucket, &cnt); err != nil {
+			return nil, err
+		}
+		// Parse the hour bucket to determine how many hours ago it is.
+		t, err := time.Parse("2006-01-02T15", hourBucket)
+		if err != nil {
+			continue
+		}
+		t = t.UTC()
+		hoursAgo := int(now.Sub(t).Hours())
+		if hoursAgo < 0 || hoursAgo >= 24 {
+			continue
+		}
+		// Index 0 = 23 hours ago, index 23 = current hour.
+		bucketIdx := 23 - hoursAgo
+		if bucketIdx < 0 {
+			bucketIdx = 0
+		}
+		counts := result[issueID]
+		counts[bucketIdx] += cnt
+		result[issueID] = counts
+	}
+	return result, rows.Err()
 }
 
 func issueSeenAt(evt event.Event) time.Time {

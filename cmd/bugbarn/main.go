@@ -21,10 +21,13 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/wiebe-xyz/bugbarn/internal/alert"
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
+	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
@@ -74,7 +77,16 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go runBackgroundWorker(ctx, cfg.spoolDir, store)
+	// Wire the domain event bus and alert evaluator.
+	bus := &domainevents.Bus{}
+	alertRepo := alert.NewSQLiteRepository(store.DB())
+	deliverer := alert.NewDeliverer()
+	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.publicURL)
+	bus.Subscribe(evaluator.HandleEvent)
+
+	svc := service.NewWithBus(store, bus)
+
+	go runBackgroundWorker(ctx, cfg.spoolDir, store, svc)
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -125,6 +137,7 @@ type config struct {
 	dbPath              string
 	maxBodyBytes        int64
 	maxSpoolBytes       int64
+	publicURL           string
 }
 
 func loadConfig() config {
@@ -140,6 +153,7 @@ func loadConfig() config {
 		spoolDir:            getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
 		dbPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
 		maxBodyBytes:        1 << 20,
+		publicURL:           os.Getenv("BUGBARN_PUBLIC_URL"),
 	}
 
 	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {
@@ -351,7 +365,7 @@ func runWorkerOnce(cfg config) error {
 	store := issues.NewStore()
 	for _, item := range processed {
 		store.AddWithFingerprint(item.Event, item.Fingerprint)
-		if _, _, err := persistentStore.PersistProcessedEvent(context.Background(), item); err != nil {
+		if _, _, _, _, err := persistentStore.PersistProcessedEvent(context.Background(), item); err != nil {
 			return err
 		}
 	}
@@ -368,7 +382,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.Store) {
+func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.Store, svc *service.Service) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -426,9 +440,10 @@ func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.St
 				}
 				// Annotate JS stack frames with original positions from stored source maps.
 				processed.Event = worker.SymbolicateEvent(persistCtx, processed.Event, store)
-				if _, _, err := store.PersistProcessedEvent(persistCtx, processed); err != nil {
+				issue, _, isNew, isRegressed, persistErr := store.PersistProcessedEvent(persistCtx, processed)
+				if persistErr != nil {
 					retryCounts[record.IngestID]++
-					log.Printf("worker persist record %s (attempt %d): %v", record.IngestID, retryCounts[record.IngestID], err)
+					log.Printf("worker persist record %s (attempt %d): %v", record.IngestID, retryCounts[record.IngestID], persistErr)
 					if retryCounts[record.IngestID] >= workerMaxRetries {
 						log.Printf("worker dead-lettering record %s after %d persist attempts", record.IngestID, retryCounts[record.IngestID])
 						if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
@@ -444,6 +459,13 @@ func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.St
 					// Stop processing this batch; retry remaining records next tick.
 					break
 				}
+
+				// Publish domain events after successful persistence.
+				var projectID int64
+				if pid, ok := storage.ProjectIDFromContext(persistCtx); ok {
+					projectID = pid
+				}
+				svc.PublishIssueEvent(issue, projectID, isNew, isRegressed)
 
 				delete(retryCounts, record.IngestID)
 				// Advance cursor after each successfully processed record.

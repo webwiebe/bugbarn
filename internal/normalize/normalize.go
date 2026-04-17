@@ -54,7 +54,53 @@ func Normalize(raw []byte, ingestID string, receivedAt time.Time) (event.Event, 
 		evt.Severity = "ERROR"
 	}
 
+	evt.User = normalizeUser(scrubbed["user"])
+	evt.Breadcrumbs = normalizeBreadcrumbs(payload["breadcrumbs"])
+
 	return evt, nil
+}
+
+func normalizeUser(value any) event.UserContext {
+	obj := objectValue(value)
+	if obj == nil {
+		return event.UserContext{}
+	}
+	return event.UserContext{
+		ID:       firstString(obj, "id", "user_id"),
+		Email:    firstString(obj, "email"),
+		Username: firstString(obj, "username", "name"),
+	}
+}
+
+func normalizeBreadcrumbs(value any) []event.Breadcrumb {
+	arr, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]event.Breadcrumb, 0, len(arr))
+	for _, item := range arr {
+		obj := objectValue(item)
+		if obj == nil {
+			continue
+		}
+		bc := event.Breadcrumb{
+			Timestamp: firstString(obj, "timestamp"),
+			Category:  firstString(obj, "category"),
+			Message:   firstString(obj, "message"),
+			Level:     firstString(obj, "level"),
+		}
+		if data := objectValue(obj["data"]); data != nil {
+			bc.Data = data
+		}
+		if bc.Timestamp != "" || bc.Message != "" {
+			out = append(out, bc)
+		}
+	}
+	// Cap at 100 breadcrumbs to limit memory usage.
+	if len(out) > 100 {
+		out = out[len(out)-100:]
+	}
+	return out
 }
 
 func normalizeException(value any) event.Exception {

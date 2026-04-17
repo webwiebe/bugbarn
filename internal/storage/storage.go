@@ -79,9 +79,17 @@ func (s *Store) DefaultProjectID() int64 {
 	return s.defaultProjectID
 }
 
-func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.ProcessedEvent) (Issue, Event, error) {
+// DB returns the underlying *sql.DB. Use sparingly — prefer Store methods.
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
+// PersistProcessedEvent stores a processed event and upserts the related issue.
+// It returns the upserted issue, the stored event, a flag indicating whether this
+// was a brand-new issue, a flag indicating whether the issue regressed, and any error.
+func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.ProcessedEvent) (Issue, Event, bool, bool, error) {
 	if s == nil || s.db == nil {
-		return Issue{}, Event{}, errors.New("storage is nil")
+		return Issue{}, Event{}, false, false, errors.New("storage is nil")
 	}
 
 	projectID, ok := ProjectIDFromContext(ctx)
@@ -91,21 +99,24 @@ func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.Proc
 
 	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
 	if err != nil {
-		return Issue{}, Event{}, err
+		return Issue{}, Event{}, false, false, err
 	}
+
+	// isNew is true when the issue was just created (EventCount == 1 and no regression).
+	isNew := issue.EventCount == 1 && !regressed
 
 	eventRow, eventRowID, err := s.insertEvent(ctx, projectID, issueID, regressed, processed)
 	if err != nil {
-		return Issue{}, Event{}, err
+		return Issue{}, Event{}, false, false, err
 	}
 
 	if err := s.insertFacets(ctx, projectID, issueID, eventRowID, processed.Event); err != nil {
-		return Issue{}, Event{}, err
+		return Issue{}, Event{}, false, false, err
 	}
 
 	if err := s.PersistFacets(ctx, eventRowID, issueID, extractFacets(processed.Event)); err != nil {
-		return Issue{}, Event{}, err
+		return Issue{}, Event{}, false, false, err
 	}
 
-	return issue, eventRow, nil
+	return issue, eventRow, isNew, regressed, nil
 }

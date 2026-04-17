@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -16,6 +17,9 @@ type Repository interface {
 	ListRecentEvents(context.Context, int, time.Time) ([]storage.Event, error)
 	ResolveIssue(context.Context, string) (storage.Issue, error)
 	ReopenIssue(context.Context, string) (storage.Issue, error)
+	MuteIssue(context.Context, string, string) (storage.Issue, error)
+	UnmuteIssue(context.Context, string) (storage.Issue, error)
+	HourlyEventCounts(context.Context, []int64) (map[int64][24]int, error)
 	ListReleases(context.Context) ([]storage.Release, error)
 	GetRelease(context.Context, string) (storage.Release, error)
 	CreateRelease(context.Context, storage.Release) (storage.Release, error)
@@ -36,10 +40,30 @@ type Repository interface {
 
 type Service struct {
 	repo Repository
+	bus  *domainevents.Bus
 }
 
 func New(repo Repository) *Service {
 	return &Service{repo: repo}
+}
+
+// NewWithBus creates a Service that publishes domain events on the given bus.
+func NewWithBus(repo Repository, bus *domainevents.Bus) *Service {
+	return &Service{repo: repo, bus: bus}
+}
+
+// PublishIssueEvent publishes IssueCreated or IssueRegressed domain events
+// when a new event is persisted. Safe to call when bus is nil.
+func (s *Service) PublishIssueEvent(issue storage.Issue, projectID int64, isNew bool, isRegressed bool) {
+	if s.bus == nil {
+		return
+	}
+	if isNew {
+		s.bus.Publish(domainevents.IssueCreated{Issue: issue, ProjectID: projectID})
+	}
+	if isRegressed {
+		s.bus.Publish(domainevents.IssueRegressed{Issue: issue, ProjectID: projectID})
+	}
 }
 
 func (s *Service) ListIssues(ctx context.Context) ([]storage.Issue, error) {
@@ -78,6 +102,18 @@ func (s *Service) ResolveIssue(ctx context.Context, id string) (storage.Issue, e
 
 func (s *Service) ReopenIssue(ctx context.Context, id string) (storage.Issue, error) {
 	return s.repo.ReopenIssue(ctx, id)
+}
+
+func (s *Service) MuteIssue(ctx context.Context, id, muteMode string) (storage.Issue, error) {
+	return s.repo.MuteIssue(ctx, id, muteMode)
+}
+
+func (s *Service) UnmuteIssue(ctx context.Context, id string) (storage.Issue, error) {
+	return s.repo.UnmuteIssue(ctx, id)
+}
+
+func (s *Service) HourlyEventCounts(ctx context.Context, issueIDs []int64) (map[int64][24]int, error) {
+	return s.repo.HourlyEventCounts(ctx, issueIDs)
 }
 
 func (s *Service) ListReleases(ctx context.Context) ([]storage.Release, error) {

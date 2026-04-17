@@ -25,6 +25,7 @@ type Issue struct {
 	NormalizedTitle        string
 	ExceptionType          string
 	Status                 string
+	MuteMode               string // "until_regression" | "forever" | ""
 	ResolvedAt             time.Time
 	ReopenedAt             time.Time
 	LastRegressedAt        time.Time
@@ -33,6 +34,12 @@ type Issue struct {
 	LastSeen               time.Time
 	EventCount             int
 	RepresentativeEvent    event.Event
+}
+
+// IssueHourlyCounts holds per-issue 24-hour event frequency data.
+type IssueHourlyCounts struct {
+	IssueID string
+	Counts  [24]int // index 0 = 23h ago, index 23 = current partial hour
 }
 
 // Event represents a single captured error event.
@@ -54,8 +61,11 @@ type Event struct {
 type IssueFilter struct {
 	// Sort is one of "last_seen", "first_seen", "event_count". Default: "last_seen".
 	Sort string
-	// Status filters by issue status: "open" maps to "unresolved", "resolved" to "resolved".
-	// Empty string means no filter (all issues).
+	// Status filters by issue status:
+	//   "open"     → status IN ('unresolved', 'regressed')  (default, excludes muted)
+	//   "muted"    → status = 'muted'
+	//   "resolved" → status = 'resolved'
+	//   "all" or "" → no status filter
 	Status string
 	// Query is a case-insensitive substring matched against title and normalized_title.
 	Query string
@@ -114,13 +124,18 @@ type Release struct {
 
 // Alert represents a project alert row.
 type Alert struct {
-	ID        string
-	Name      string
-	Enabled   bool
-	Severity  string
-	Rule      map[string]any
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID              string
+	Name            string
+	Enabled         bool
+	Severity        string
+	Rule            map[string]any
+	WebhookURL      string
+	Condition       string
+	Threshold       int
+	CooldownMinutes int
+	LastFiredAt     time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Setting represents a project setting row.

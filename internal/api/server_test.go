@@ -507,7 +507,7 @@ func mustOpenStore(t *testing.T) *storage.Store {
 func mustPersistProcessedEvent(t *testing.T, store *storage.Store, processed worker.ProcessedEvent) (storage.Issue, storage.Event) {
 	t.Helper()
 
-	issue, eventRow, err := store.PersistProcessedEvent(context.Background(), processed)
+	issue, eventRow, _, _, err := store.PersistProcessedEvent(context.Background(), processed)
 	if err != nil {
 		t.Fatal(err)
 	}

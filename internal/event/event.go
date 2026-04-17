@@ -2,6 +2,22 @@ package event
 
 import "time"
 
+// UserContext holds identifying information about the user who triggered an event.
+type UserContext struct {
+	ID       string `json:"id,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Username string `json:"username,omitempty"`
+}
+
+// Breadcrumb records a single step in the application's execution leading up to an error.
+type Breadcrumb struct {
+	Timestamp string         `json:"timestamp"`
+	Category  string         `json:"category"`
+	Message   string         `json:"message"`
+	Level     string         `json:"level,omitempty"`
+	Data      map[string]any `json:"data,omitempty"`
+}
+
 type Event struct {
 	IngestID               string         `json:"ingestId,omitempty"`
 	ReceivedAt             time.Time      `json:"receivedAt,omitempty"`
@@ -18,6 +34,8 @@ type Event struct {
 	FingerprintMaterial    string         `json:"fingerprintMaterial,omitempty"`
 	FingerprintExplanation []string       `json:"fingerprintExplanation,omitempty"`
 	RawScrubbed            map[string]any `json:"rawScrubbed,omitempty"`
+	User                   UserContext    `json:"user,omitempty"`
+	Breadcrumbs            []Breadcrumb   `json:"breadcrumbs,omitempty"`
 }
 
 type Exception struct {
