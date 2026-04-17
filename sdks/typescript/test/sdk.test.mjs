@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
 
-import { captureException, createTransport, flush, getApiKey, init, shutdown, uploadSourceMap } from "../dist/esm/index.js";
+import { captureException, createTransport, flush, getApiKey, init, shutdown, uploadSourceMap, setUser, clearUser, addBreadcrumb, clearBreadcrumbs } from "../dist/esm/index.js";
 
 test("init stores transport and api key", async () => {
   const events = [];
@@ -181,4 +181,81 @@ test("commonjs consumers can require the package entry", async () => {
   assert.equal(typeof sdk.captureException, "function");
   assert.equal(typeof sdk.createTransport, "function");
   assert.equal(typeof sdk.shutdown, "function");
+});
+
+test("buildEnvelope includes user context when set", async () => {
+  clearUser();
+  clearBreadcrumbs();
+  const events = [];
+  const transport = {
+    async send(event) { events.push(event); },
+    async flush() {},
+  };
+
+  init({ apiKey: "bb_live_test", transport, installDefaultHandlers: false, autoBreadcrumbs: false });
+
+  setUser({ id: "u1", email: "user@example.com", username: "tester" });
+  await captureException(new Error("with-user"));
+
+  assert.equal(events.length >= 1, true);
+  const event = events[events.length - 1];
+  assert.deepEqual(event.user, { id: "u1", email: "user@example.com", username: "tester" });
+
+  clearUser();
+});
+
+test("buildEnvelope omits user when not set", async () => {
+  clearUser();
+  clearBreadcrumbs();
+  const events = [];
+  const transport = {
+    async send(event) { events.push(event); },
+    async flush() {},
+  };
+
+  init({ apiKey: "bb_live_test", transport, installDefaultHandlers: false, autoBreadcrumbs: false });
+  await captureException(new Error("no-user"));
+
+  const event = events[events.length - 1];
+  assert.equal(event.user, undefined);
+});
+
+test("buildEnvelope includes breadcrumbs when present", async () => {
+  clearUser();
+  clearBreadcrumbs();
+  const events = [];
+  const transport = {
+    async send(event) { events.push(event); },
+    async flush() {},
+  };
+
+  init({ apiKey: "bb_live_test", transport, installDefaultHandlers: false, autoBreadcrumbs: false });
+
+  addBreadcrumb({ timestamp: new Date().toISOString(), category: "manual", message: "step one" });
+  addBreadcrumb({ timestamp: new Date().toISOString(), category: "manual", message: "step two" });
+  await captureException(new Error("with-crumbs"));
+
+  const event = events[events.length - 1];
+  assert.ok(Array.isArray(event.breadcrumbs));
+  assert.ok(event.breadcrumbs.length >= 2);
+  assert.ok(event.breadcrumbs.some((c) => c.message === "step one"));
+  assert.ok(event.breadcrumbs.some((c) => c.message === "step two"));
+
+  clearBreadcrumbs();
+});
+
+test("buildEnvelope omits breadcrumbs when buffer is empty", async () => {
+  clearUser();
+  clearBreadcrumbs();
+  const events = [];
+  const transport = {
+    async send(event) { events.push(event); },
+    async flush() {},
+  };
+
+  init({ apiKey: "bb_live_test", transport, installDefaultHandlers: false, autoBreadcrumbs: false });
+  await captureException(new Error("no-crumbs"));
+
+  const event = events[events.length - 1];
+  assert.equal(event.breadcrumbs, undefined);
 });

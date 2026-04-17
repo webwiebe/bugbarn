@@ -1,6 +1,9 @@
 import { createTransport } from "./transport.js";
 import { uploadSourceMap, createSourceMapUploader } from "./source-maps.js";
 import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, StackFrame, Transport } from "./types.js";
+import { setUser, clearUser, getUser } from "./user.js";
+import { addBreadcrumb, getBreadcrumbs, clearBreadcrumbs } from "./breadcrumbs.js";
+import { installAutoInterceptors } from "./interceptors.js";
 
 const SDK_NAME = "bugbarn.typescript";
 const SDK_VERSION = "0.1.0";
@@ -66,6 +69,7 @@ function parseStacktrace(stack?: string): StackFrame[] | undefined {
 
 function buildEnvelope(error: unknown, options?: CaptureOptions): BugBarnEnvelope {
   const normalized = normalizeError(error);
+  const crumbs = getBreadcrumbs();
   return {
     timestamp: new Date().toISOString(),
     severityText: "ERROR",
@@ -80,6 +84,8 @@ function buildEnvelope(error: unknown, options?: CaptureOptions): BugBarnEnvelop
     attributes: options?.attributes,
     tags: options?.tags,
     extra: options?.extra,
+    user: getUser() ?? undefined,
+    breadcrumbs: crumbs.length > 0 ? crumbs : undefined,
     sender: {
       sdk: {
         name: SDK_NAME,
@@ -150,6 +156,10 @@ export function init(options: BugBarnClientOptions): void {
   if (options.installDefaultHandlers !== false) {
     installDefaultHandlers();
   }
+
+  if (options.autoBreadcrumbs !== false) {
+    installAutoInterceptors();
+  }
 }
 
 export async function captureException(error: unknown, options?: CaptureOptions): Promise<void> {
@@ -182,3 +192,5 @@ export function getApiKey(): string {
 
 export { createTransport };
 export { uploadSourceMap, createSourceMapUploader };
+export { setUser, clearUser } from "./user.js";
+export { addBreadcrumb, clearBreadcrumbs } from "./breadcrumbs.js";

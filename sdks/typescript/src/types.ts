@@ -1,7 +1,22 @@
+export type UserContext = {
+  id?: string;
+  email?: string;
+  username?: string;
+};
+
+export type Breadcrumb = {
+  timestamp: string; // ISO 8601
+  category: string; // "console" | "http" | "navigation" | "manual"
+  message: string;
+  level?: string; // "log" | "warn" | "error" | "info" | "debug"
+  data?: Record<string, unknown>;
+};
+
 export type BugBarnClientOptions = {
   apiKey: string;
   endpoint?: string;
   installDefaultHandlers?: boolean;
+  autoBreadcrumbs?: boolean; // default true
   release?: string;
   dist?: string;
   /** Project slug within this BugBarn instance. Events and source maps are routed to this project. */
@@ -43,6 +58,8 @@ export type BugBarnEnvelope = {
   attributes?: Record<string, unknown>;
   tags?: Record<string, string | number | boolean | null>;
   extra?: Record<string, unknown>;
+  user?: UserContext;
+  breadcrumbs?: Breadcrumb[];
   sender: {
     sdk: {
       name: string;
