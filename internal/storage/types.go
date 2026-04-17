@@ -1,0 +1,138 @@
+package storage
+
+import (
+	"database/sql"
+	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/event"
+)
+
+// Store is the primary database access object.
+type Store struct {
+	db               *sql.DB
+	defaultProjectID int64
+}
+
+type ctxProjectKey struct{}
+
+// Issue represents a grouped error occurrence.
+type Issue struct {
+	ID                     string
+	Fingerprint            string
+	FingerprintMaterial    string
+	FingerprintExplanation []string
+	Title                  string
+	NormalizedTitle        string
+	ExceptionType          string
+	Status                 string
+	ResolvedAt             time.Time
+	ReopenedAt             time.Time
+	LastRegressedAt        time.Time
+	RegressionCount        int
+	FirstSeen              time.Time
+	LastSeen               time.Time
+	EventCount             int
+	RepresentativeEvent    event.Event
+}
+
+// Event represents a single captured error event.
+type Event struct {
+	ID                     string
+	IssueID                string
+	Fingerprint            string
+	FingerprintMaterial    string
+	FingerprintExplanation []string
+	ReceivedAt             time.Time
+	ObservedAt             time.Time
+	Severity               string
+	Message                string
+	Regressed              bool
+	Payload                event.Event
+}
+
+// IssueFilter holds optional filters and sort order for ListIssuesFiltered.
+type IssueFilter struct {
+	// Sort is one of "last_seen", "first_seen", "event_count". Default: "last_seen".
+	Sort string
+	// Status filters by issue status: "open" maps to "unresolved", "resolved" to "resolved".
+	// Empty string means no filter (all issues).
+	Status string
+	// Query is a case-insensitive substring matched against title and normalized_title.
+	Query string
+	// Facets is an optional map of facet key→value pairs to filter by.
+	// Issues must match ALL provided facet filters (AND semantics).
+	Facets map[string]string
+}
+
+// User represents an admin user stored in the database.
+type User struct {
+	ID             int64
+	Username       string
+	PasswordBcrypt string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// Project represents a project row.
+type Project struct {
+	ID        int64
+	Name      string
+	Slug      string
+	CreatedAt time.Time
+}
+
+// Scope constants for API keys.
+const (
+	APIKeyScopeFull   = "full"   // full access to all endpoints
+	APIKeyScopeIngest = "ingest" // write-only: POST /api/v1/events only
+)
+
+// APIKey represents an API key row (the plaintext key is never stored).
+type APIKey struct {
+	ID         int64
+	Name       string
+	ProjectID  int64
+	KeySHA256  string
+	Scope      string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+}
+
+// Release represents a software release row.
+type Release struct {
+	ID          string
+	Name        string
+	Environment string
+	ObservedAt  time.Time
+	Version     string
+	CommitSHA   string
+	URL         string
+	Notes       string
+	CreatedBy   string
+	CreatedAt   time.Time
+}
+
+// Alert represents a project alert row.
+type Alert struct {
+	ID        string
+	Name      string
+	Enabled   bool
+	Severity  string
+	Rule      map[string]any
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Setting represents a project setting row.
+type Setting struct {
+	Key       string
+	Value     string
+	UpdatedAt time.Time
+}
+
+// facetRow is an internal struct used when inserting raw facets.
+type facetRow struct {
+	section string
+	key     string
+	value   string
+}
