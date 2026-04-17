@@ -680,7 +680,6 @@ WHERE project_id = ? AND fingerprint = ?`,
 			issue.RegressionCount++
 			issue.ReopenedAt = seenAt
 			issue.LastRegressedAt = seenAt
-			issue.ResolvedAt = issue.ResolvedAt
 		}
 
 		assignments := []string{
