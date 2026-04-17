@@ -26,7 +26,7 @@ import {
   issueTitle,
 } from "./domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "./format.js";
-import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiRelease, ApiSettings, RawRecord } from "./types.js";
+import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
 
 const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
@@ -51,6 +51,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
       <span>First seen</span>
       <span>Trend</span>
       <span>Events</span>
+      <span>24h</span>
     </div>
     ${filtered
       .map((issue) => {
@@ -70,6 +71,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
             <span class="issue-cell">${escapeHtml(firstSeen || "n/a")}</span>
             <span class="issue-cell">${renderIssueCountMeter(count, maxEvents)}</span>
             <span class="issue-cell">${escapeHtml(String(count))}</span>
+            <span class="issue-cell">${renderSparkline(issue.hourly_counts)}</span>
             <div class="item-meta">
               <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
               <span>${escapeHtml(id)}</span>
@@ -146,6 +148,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       <div class="link-row">
         <button type="button" data-copy-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>Copy issue id</button>
         ${status === "resolved" ? `<button type="button" data-reopen-issue="${escapeAttr(id)}" ${id ? "" : "disabled"}>Reopen issue</button>` : `<button type="button" data-resolve-issue="${escapeAttr(id)}" ${id ? "" : "disabled"}>Resolve issue</button>`}
+        ${renderMuteButton(issue)}
       </div>
     </div>
     <div class="issue-stats">
@@ -239,6 +242,8 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
       ${renderOccurrenceTimeline(issueEvents, releases, id, issueEvents.length, hasMore)}
       ${renderDataSection("Exception", exception)}
       ${renderDataSection("Context", context)}
+      ${renderUserSection(event)}
+      ${renderBreadcrumbsSection(event)}
       ${renderStacktrace(stacktrace)}
       <div class="section section-scrollable">
         <h3>Issue events</h3>
@@ -383,6 +388,82 @@ function renderNearbyReleasesPanel(releases: ApiRelease[], lastSeen: unknown): s
       </div>
     </div>
   `;
+}
+
+function renderMuteButton(issue: ApiIssue): string {
+  const status = issue.Status || issue.status || '';
+  const muteMode = issue.mute_mode || '';
+
+  if (status === 'muted') {
+    return `<button class="btn btn--secondary" data-action="unmute-issue" data-issue-id="${issue.ID || issue.id}">Unmute</button>`;
+  }
+
+  void muteMode;
+  return `
+    <span class="mute-group">
+      <select id="mute-mode-select" aria-label="Mute mode">
+        <option value="until_regression">Until regression</option>
+        <option value="forever">Forever</option>
+      </select>
+      <button class="btn btn--secondary" data-action="mute-issue" data-issue-id="${issue.ID || issue.id}">Mute</button>
+    </span>`;
+}
+
+function renderUserSection(event: ApiEvent): string {
+  const user = event.User || event.user;
+  if (!user) return '';
+  const id = (event.User?.ID ?? event.User?.id) || event.user?.id;
+  const email = (event.User?.Email ?? event.User?.email) || event.user?.email;
+  const username = (event.User?.Username ?? event.User?.username) || event.user?.username;
+  if (!id && !email && !username) return '';
+  return `
+    <section class="detail-section">
+      <h4>User</h4>
+      <table class="kv-table">
+        ${id ? `<tr><th>ID</th><td>${escapeHtml(String(id))}</td></tr>` : ''}
+        ${email ? `<tr><th>Email</th><td>${escapeHtml(String(email))}</td></tr>` : ''}
+        ${username ? `<tr><th>Username</th><td>${escapeHtml(String(username))}</td></tr>` : ''}
+      </table>
+    </section>`;
+}
+
+function renderBreadcrumbsSection(event: ApiEvent): string {
+  const crumbs = event.breadcrumbs || event.Breadcrumbs;
+  if (!crumbs || crumbs.length === 0) return '';
+
+  const rows = crumbs.map((crumb: BreadcrumbEntry) => {
+    const cat = crumb.category || 'manual';
+    const icon = cat === 'console' ? '▸' : cat === 'http' ? '⇄' : cat === 'navigation' ? '→' : '•';
+    const time = crumb.timestamp ? new Date(crumb.timestamp).toISOString().slice(11, 23) : '';
+    const level = crumb.level || '';
+    const levelClass = level === 'error' ? 'bad' : level === 'warn' || level === 'warning' ? 'warn' : '';
+    return `
+      <div class="breadcrumb-row">
+        <span class="breadcrumb-icon">${icon}</span>
+        <span class="breadcrumb-time muted">${escapeHtml(time)}</span>
+        <span class="breadcrumb-cat chip ${levelClass}">${escapeHtml(cat)}</span>
+        <span class="breadcrumb-msg">${escapeHtml(crumb.message || '')}</span>
+      </div>`;
+  }).join('');
+
+  return `
+    <section class="detail-section">
+      <h4>Breadcrumbs</h4>
+      <div class="breadcrumb-list">${rows}</div>
+    </section>`;
+}
+
+function renderSparkline(hourlyCounts: number[] | undefined): string {
+  if (!hourlyCounts || hourlyCounts.length === 0) {
+    return '<span class="sparkline sparkline--empty"></span>';
+  }
+  const max = Math.max(...hourlyCounts, 1);
+  const bars = hourlyCounts.map((count) => {
+    const pct = Math.round((count / max) * 100);
+    const hasEvents = count > 0;
+    return `<span class="spark-bar${hasEvents ? ' spark-bar--active' : ''}" style="height:${pct}%" title="${count} events"></span>`;
+  });
+  return `<span class="sparkline">${bars.join('')}</span>`;
 }
 
 function renderIssueCountMeter(count: number, maxCount: number): string {
@@ -599,6 +680,9 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
           ${renderField("Condition", "condition", "text", "event_count > 10")}
           ${renderField("Query", "query", "text", "environment:testing")}
           ${renderField("Target", "target", "text", "ops@example.com")}
+          ${renderField("Webhook URL", "webhook_url", "url", "")}
+          ${renderField("Threshold", "threshold", "number", "")}
+          ${renderField("Cooldown minutes", "cooldown_minutes", "number", "")}
           <label class="field field-wide checkbox-field">
             <input name="enabled" type="checkbox" checked />
             <span>Enabled</span>

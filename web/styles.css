@@ -414,7 +414,7 @@ button:disabled {
 
 .issue-table-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px 86px 86px 112px 56px;
+  grid-template-columns: minmax(0, 1fr) 92px 86px 86px 112px 56px 56px;
   gap: 12px;
   padding: 9px 16px;
   color: var(--muted);
@@ -462,7 +462,7 @@ button:disabled {
 }
 
 .issue-row {
-  grid-template-columns: minmax(0, 1fr) 92px 86px 86px 112px 56px;
+  grid-template-columns: minmax(0, 1fr) 92px 86px 86px 112px 56px 56px;
   align-items: center;
 }
 
@@ -950,6 +950,93 @@ button:disabled {
   background: #1d1e16;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Sparklines */
+.sparkline {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 20px;
+  width: 48px;
+  vertical-align: middle;
+}
+.spark-bar {
+  flex: 1;
+  min-height: 2px;
+  background: var(--color-border, #333);
+  border-radius: 1px;
+}
+.spark-bar--active {
+  background: var(--color-accent, #6ab0f5);
+}
+.sparkline--empty {
+  display: inline-block;
+  width: 48px;
+  height: 20px;
+}
+
+/* Mute group */
+.mute-group {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+/* Breadcrumbs */
+.breadcrumb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-family: monospace;
+}
+.breadcrumb-row {
+  display: grid;
+  grid-template-columns: 1.2rem 6rem 5rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--color-border, #222);
+}
+.breadcrumb-icon { opacity: 0.6; text-align: center; }
+.breadcrumb-time { opacity: 0.5; font-size: 0.75rem; }
+.breadcrumb-cat { font-size: 0.65rem; }
+.breadcrumb-msg { word-break: break-all; }
+
+/* kv-table used in detail sections */
+.kv-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+.kv-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: normal;
+  padding: 3px 8px 3px 0;
+  white-space: nowrap;
+}
+.kv-table td {
+  padding: 3px 0;
+  word-break: break-all;
+}
+
+/* detail-section used for user/breadcrumbs panels */
+.detail-section {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #202117;
+}
+.detail-section h4 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 @media (max-width: 1120px) {

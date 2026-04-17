@@ -1,5 +1,13 @@
 export type RawRecord = Record<string, unknown>;
 
+export interface BreadcrumbEntry {
+  timestamp?: string;
+  category?: string;
+  message?: string;
+  level?: string;
+  data?: Record<string, unknown>;
+}
+
 export interface ApiIssue extends RawRecord {
   ID?: string | number;
   IssueID?: string | number;
@@ -36,6 +44,8 @@ export interface ApiIssue extends RawRecord {
   fingerprint_inputs?: RawRecord;
   fingerprintDebug?: RawRecord;
   fingerprint_debug?: RawRecord;
+  hourly_counts?: number[];
+  mute_mode?: string;
 }
 
 export interface ApiEvent extends RawRecord {
@@ -68,6 +78,10 @@ export interface ApiEvent extends RawRecord {
   severity_text?: string;
   Exception?: RawRecord | { message?: string; Message?: string };
   exception?: RawRecord | { message?: string };
+  User?: { ID?: string; Email?: string; Username?: string; id?: string; email?: string; username?: string };
+  user?: { id?: string; email?: string; username?: string };
+  Breadcrumbs?: BreadcrumbEntry[];
+  breadcrumbs?: BreadcrumbEntry[];
 }
 
 export interface ApiRelease extends RawRecord {
@@ -106,6 +120,12 @@ export interface ApiAlert extends RawRecord {
   last_triggered_at?: string | number;
   createdAt?: string | number;
   created_at?: string | number;
+  webhook_url?: string;
+  WebhookURL?: string;
+  threshold?: number;
+  Threshold?: number;
+  cooldown_minutes?: number;
+  CooldownMinutes?: number;
 }
 
 export interface ApiApiKey extends RawRecord {
@@ -150,7 +170,7 @@ export interface ApiSettings extends RawRecord {
 }
 
 export type IssueSort = "last_seen" | "first_seen" | "event_count";
-export type IssueStatus = "all" | "open" | "resolved";
+export type IssueStatus = "all" | "open" | "resolved" | "muted";
 
 export interface AppState {
   authChecked: boolean;

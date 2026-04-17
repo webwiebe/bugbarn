@@ -680,6 +680,7 @@ function renderIssuesView(error: unknown = null): void {
       <button class="tab${state.issueStatus === "all" ? " active" : ""}" data-status="all" role="tab">All</button>
       <button class="tab${state.issueStatus === "open" ? " active" : ""}" data-status="open" role="tab">Open</button>
       <button class="tab${state.issueStatus === "resolved" ? " active" : ""}" data-status="resolved" role="tab">Resolved</button>
+      <button class="tab${state.issueStatus === "muted" ? " active" : ""}" data-status="muted" role="tab">Muted</button>
     </div>
     <div id="issue-list" class="list issue-list" aria-live="polite"></div>
   `;
@@ -961,6 +962,21 @@ function wireIssueDetailActions(issueId: string): void {
       }
     });
   });
+
+  elements.detailBody.querySelectorAll("[data-action='mute-issue']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = (button as HTMLElement).dataset.issueId ?? issueId;
+      const muteMode = (document.getElementById("mute-mode-select") as HTMLSelectElement | null)?.value ?? "until_regression";
+      void muteIssue(id, muteMode);
+    });
+  });
+
+  elements.detailBody.querySelectorAll("[data-action='unmute-issue']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = (button as HTMLElement).dataset.issueId ?? issueId;
+      void unmuteIssue(id);
+    });
+  });
 }
 
 function wireEventDetailActions(issueId: string): void {
@@ -1053,12 +1069,17 @@ async function submitReleaseForm(form: HTMLFormElement): Promise<void> {
 
 async function submitAlertForm(form: HTMLFormElement): Promise<void> {
   const data = new FormData(form);
+  const thresholdRaw = data.get("threshold");
+  const cooldownRaw = data.get("cooldown_minutes");
   try {
     await postJson("/api/v1/alerts", {
       name: String(data.get("name") || ""),
       condition: String(data.get("condition") || ""),
       query: String(data.get("query") || ""),
       target: String(data.get("target") || ""),
+      webhook_url: String(data.get("webhook_url") || ""),
+      threshold: thresholdRaw ? Number(thresholdRaw) : undefined,
+      cooldown_minutes: cooldownRaw ? Number(cooldownRaw) : undefined,
       enabled: data.get("enabled") !== null,
     });
     setStatus("Alert saved.");
@@ -1092,6 +1113,59 @@ async function submitSourceMapsForm(form: HTMLFormElement): Promise<void> {
     setStatus("Source maps uploaded.");
   } catch (error) {
     setStatus(`Source map upload unavailable: ${errorMessage(error)}`);
+  }
+}
+
+async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const csrf = getCSRFToken();
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(init.headers as Record<string, string> ?? {}),
+  };
+  if (csrf) {
+    headers["X-BugBarn-CSRF"] = csrf;
+  }
+  if (state.currentProject && state.currentProject !== "default") {
+    headers["X-BugBarn-Project"] = state.currentProject;
+  }
+  return fetch(apiUrl(path), { credentials: "include", ...init, headers });
+}
+
+async function muteIssue(id: string, muteMode: string): Promise<void> {
+  try {
+    const res = await apiFetch(`/api/v1/issues/${encodeURIComponent(id)}/mute`, {
+      method: "PATCH",
+      body: JSON.stringify({ mute_mode: muteMode }),
+    });
+    if (res.ok) {
+      setStatus(`Issue ${id} muted.`);
+      await loadIssues();
+      if (state.selectedIssueId === id) {
+        await loadIssueDetail(id);
+      }
+    } else {
+      setStatus(`Mute failed: ${res.status} ${res.statusText}`.trim());
+    }
+  } catch (error) {
+    setStatus(`Mute unavailable: ${errorMessage(error)}`);
+  }
+}
+
+async function unmuteIssue(id: string): Promise<void> {
+  try {
+    const res = await apiFetch(`/api/v1/issues/${encodeURIComponent(id)}/unmute`, { method: "PATCH" });
+    if (res.ok) {
+      setStatus(`Issue ${id} unmuted.`);
+      await loadIssues();
+      if (state.selectedIssueId === id) {
+        await loadIssueDetail(id);
+      }
+    } else {
+      setStatus(`Unmute failed: ${res.status} ${res.statusText}`.trim());
+    }
+  } catch (error) {
+    setStatus(`Unmute unavailable: ${errorMessage(error)}`);
   }
 }
 
