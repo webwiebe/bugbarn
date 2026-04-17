@@ -98,7 +98,7 @@ jobs:
           "
 
       - name: Post release marker
-        if: ${{ vars.BUGBARN_ENDPOINT != '' && secrets.BUGBARN_API_KEY != '' }}
+        if: vars.BUGBARN_ENDPOINT != ''
         env:
           BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
           BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY }}
