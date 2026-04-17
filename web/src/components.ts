@@ -168,7 +168,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
   `;
 }
 
-export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[]): string {
+export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[], hasMore = false): string {
   const id = firstIdentifier(event);
   const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
   const title = eventTitle(event);
@@ -236,6 +236,7 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
       ${renderStacktrace(stacktrace)}
       <div class="section section-scrollable">
         <h3>Issue events</h3>
+        ${hasMore ? `<button type="button" data-load-older class="load-older-btn">Load older events</button>` : ""}
         ${renderEventButtons(issueEvents, id, "scrollable-list")}
       </div>
       ${renderDataSection("Scrubbed payload", rawScrubbed)}

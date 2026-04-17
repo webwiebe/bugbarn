@@ -352,10 +352,15 @@ WHERE project_id = ? AND id = ?`,
 	return scanIssue(row)
 }
 
-func (s *Store) ListIssueEvents(ctx context.Context, issueID string) ([]Event, error) {
+// ListIssueEventsPage returns up to limit events for the given issue, ordered
+// newest-first. If beforeID is non-zero only events with id < beforeID are
+// returned, enabling cursor-based pagination. Results are reversed before
+// returning so callers always receive events in ascending (oldest-first) order
+// within the page.
+func (s *Store) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]Event, bool, error) {
 	rowID, err := parseID(issueIDPrefix, issueID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	projectID, ok := ProjectIDFromContext(ctx)
@@ -363,27 +368,33 @@ func (s *Store) ListIssueEvents(ctx context.Context, issueID string) ([]Event, e
 		projectID = s.defaultProjectID
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-SELECT
-	id,
-	issue_id,
-	fingerprint,
-	fingerprint_material,
-	fingerprint_explanation_json,
-	received_at,
-	observed_at,
-	severity,
-	message,
-	regressed,
-	event_json
+	if limit <= 0 {
+		limit = 25
+	}
+
+	// Fetch one extra row to know whether there are more pages.
+	fetch := limit + 1
+
+	var rows *sql.Rows
+	if beforeID > 0 {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
+       received_at, observed_at, severity, message, regressed, event_json
+FROM events
+WHERE project_id = ? AND issue_id = ? AND id < ?
+ORDER BY id DESC LIMIT ?`,
+			projectID, rowID, beforeID, fetch)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
+       received_at, observed_at, severity, message, regressed, event_json
 FROM events
 WHERE project_id = ? AND issue_id = ?
-ORDER BY id ASC`,
-		projectID,
-		rowID,
-	)
+ORDER BY id DESC LIMIT ?`,
+			projectID, rowID, fetch)
+	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
@@ -391,14 +402,25 @@ ORDER BY id ASC`,
 	for rows.Next() {
 		entry, err := scanEvent(rows)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		events = append(events, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return events, nil
+
+	hasMore := len(events) > limit
+	if hasMore {
+		events = events[:limit]
+	}
+
+	// Reverse to ascending order for display.
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+
+	return events, hasMore, nil
 }
 
 func (s *Store) GetEvent(ctx context.Context, eventID string) (Event, error) {

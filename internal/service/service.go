@@ -11,7 +11,7 @@ type Repository interface {
 	ListIssues(context.Context) ([]storage.Issue, error)
 	ListIssuesFiltered(context.Context, storage.IssueFilter) ([]storage.Issue, error)
 	GetIssue(context.Context, string) (storage.Issue, error)
-	ListIssueEvents(context.Context, string) ([]storage.Event, error)
+	ListIssueEvents(context.Context, string, int, int64) ([]storage.Event, bool, error)
 	GetEvent(context.Context, string) (storage.Event, error)
 	ListRecentEvents(context.Context, int, time.Time) ([]storage.Event, error)
 	ResolveIssue(context.Context, string) (storage.Issue, error)
@@ -54,8 +54,8 @@ func (s *Service) GetIssue(ctx context.Context, id string) (storage.Issue, error
 	return s.repo.GetIssue(ctx, id)
 }
 
-func (s *Service) ListIssueEvents(ctx context.Context, issueID string) ([]storage.Event, error) {
-	return s.repo.ListIssueEvents(ctx, issueID)
+func (s *Service) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]storage.Event, bool, error) {
+	return s.repo.ListIssueEvents(ctx, issueID, limit, beforeID)
 }
 
 func (s *Service) GetEvent(ctx context.Context, id string) (storage.Event, error) {

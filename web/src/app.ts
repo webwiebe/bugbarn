@@ -405,11 +405,13 @@ async function loadIssueDetail(issueId: string): Promise<void> {
   try {
     const [issuePayload, eventsPayload] = await Promise.all([
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}`),
-      fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events`),
+      fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events?limit=25`),
     ]);
     const issue = normalizeObject<ApiIssue>(issuePayload, "issue");
-    const events = normalizeList<ApiEvent>(eventsPayload, "events");
-    renderIssueDetail(issue, events);
+    const raw = eventsPayload as Record<string, unknown>;
+    const events = normalizeList<ApiEvent>(raw, "events");
+    const hasMore = Boolean(raw?.["hasMore"]);
+    renderIssueDetail(issue, events, hasMore);
   } catch (error) {
     renderErrorDetail(`Issue ${issueId}`, error);
   }
@@ -422,6 +424,7 @@ async function loadEventDetail(eventId: string): Promise<void> {
     const event = normalizeObject<ApiEvent>(eventPayload, "event");
     let issue: ApiIssue | null = null;
     let issueEvents: ApiEvent[] = [];
+    let eventsHasMore = false;
 
     const relatedIssueId = eventIssueId(event);
     if (relatedIssueId) {
@@ -429,16 +432,18 @@ async function loadEventDetail(eventId: string): Promise<void> {
       try {
         const [issuePayload, eventsPayload] = await Promise.all([
           fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}`),
-          fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events`),
+          fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events?limit=25`),
         ]);
         issue = normalizeObject<ApiIssue>(issuePayload, "issue");
-        issueEvents = normalizeList<ApiEvent>(eventsPayload, "events");
+        const eventsRaw = eventsPayload as Record<string, unknown>;
+        issueEvents = normalizeList<ApiEvent>(eventsRaw, "events");
+        eventsHasMore = Boolean(eventsRaw?.["hasMore"]);
       } catch {
         issueEvents = [];
       }
     }
 
-    renderEventDetail(event, issue, issueEvents);
+    renderEventDetail(event, issue, issueEvents, eventsHasMore);
   } catch (error) {
     renderErrorDetail(`Event ${eventId}`, error);
   }
@@ -794,19 +799,88 @@ function setDetailLoading(title: string): void {
   setActiveView("detail");
 }
 
-function renderIssueDetail(issue: ApiIssue, events: ApiEvent[]): void {
+function renderIssueDetail(issue: ApiIssue, events: ApiEvent[], hasMore = false): void {
   setActiveView("detail");
   elements.detailTitle.textContent = issueTitle(issue);
-  elements.detailBody.innerHTML = renderIssueDetailMarkup(issue, events, state.releases);
+  elements.detailBody.innerHTML = renderIssueDetailMarkup(issue, events, state.releases, hasMore);
   wireIssueDetailActions(firstIdentifier(issue));
+
+  if (hasMore) {
+    const btn = elements.detailBody.querySelector<HTMLButtonElement>("[data-load-older]");
+    btn?.addEventListener("click", () => {
+      const oldestId = events.length > 0
+        ? Number(String(events[0].ID ?? events[0].id ?? "0").replace(/\D/g, "")) || 0
+        : 0;
+      void loadOlderEvents(firstIdentifier(issue), oldestId, events);
+    });
+  }
 }
 
-function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[]): void {
+async function loadOlderEvents(issueId: string, beforeRowId: number, existing: ApiEvent[]): Promise<void> {
+  const btn = elements.detailBody.querySelector<HTMLButtonElement>("[data-load-older]");
+  if (btn) btn.disabled = true;
+  try {
+    const payload = await fetchJson(
+      `/api/v1/issues/${encodeURIComponent(issueId)}/events?limit=25&before=${beforeRowId}`
+    );
+    const raw = payload as Record<string, unknown>;
+    const older = normalizeList<ApiEvent>(raw, "events");
+    const hasMore = Boolean(raw?.["hasMore"]);
+    const combined = [...older, ...existing];
+    renderIssueDetail(
+      normalizeObject<ApiIssue>({ ID: issueId }, "issue"),
+      combined,
+      hasMore,
+    );
+    // Re-fetch the issue so the header stays accurate — use cached issues list.
+    const cached = state.issues.find((i) => String(firstIdentifier(i)) === issueId);
+    if (cached) {
+      renderIssueDetail(cached, combined, hasMore);
+    }
+  } catch {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function loadOlderEventsForEvent(
+  currentEvent: ApiEvent,
+  issue: ApiIssue | null,
+  issueId: string,
+  beforeRowId: number,
+  existing: ApiEvent[],
+): Promise<void> {
+  const btn = elements.detailBody.querySelector<HTMLButtonElement>("[data-load-older]");
+  if (btn) btn.disabled = true;
+  try {
+    const payload = await fetchJson(
+      `/api/v1/issues/${encodeURIComponent(issueId)}/events?limit=25&before=${beforeRowId}`
+    );
+    const raw = payload as Record<string, unknown>;
+    const older = normalizeList<ApiEvent>(raw, "events");
+    const hasMore = Boolean(raw?.["hasMore"]);
+    const combined = [...older, ...existing];
+    renderEventDetail(currentEvent, issue, combined, hasMore);
+  } catch {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[], hasMore = false): void {
   setActiveView("detail");
   const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
   elements.detailTitle.textContent = eventTitle(event);
-  elements.detailBody.innerHTML = renderEventDetailMarkup(event, issue, issueEvents);
+  elements.detailBody.innerHTML = renderEventDetailMarkup(event, issue, issueEvents, hasMore);
   wireEventDetailActions(issueId);
+
+  if (hasMore && issueId) {
+    const btn = elements.detailBody.querySelector<HTMLButtonElement>("[data-load-older]");
+    btn?.addEventListener("click", () => {
+      const oldestId = issueEvents.length > 0
+        ? Number(String(issueEvents[0].ID ?? issueEvents[0].id ?? "0").replace(/\D/g, "")) || 0
+        : 0;
+      void loadOlderEventsForEvent(event, issue, issueId, oldestId, issueEvents);
+    });
+  }
 }
 
 function renderErrorDetail(title: string, error: unknown): void {

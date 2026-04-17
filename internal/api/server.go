@@ -344,12 +344,26 @@ func (s *Server) listIssueEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/events")
-	events, err := s.service.ListIssueEvents(r.Context(), issueID)
+
+	limit := 25
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	var beforeID int64
+	if v := r.URL.Query().Get("before"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			beforeID = n
+		}
+	}
+
+	events, hasMore, err := s.service.ListIssueEvents(r.Context(), issueID, limit, beforeID)
 	if err != nil {
 		writeStorageError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"events": events})
+	writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
 }
 
 func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) {
