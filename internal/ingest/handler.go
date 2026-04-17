@@ -93,9 +93,16 @@ func (h *Handler) ValidAPIKey(r *http.Request) bool {
 
 // APIKeyProject validates the API key from the request and returns the
 // associated project ID. For env-var static keys, projectID=0 is returned.
+// Both full-scope and ingest-scope keys are accepted here.
 func (h *Handler) APIKeyProject(r *http.Request) (projectID int64, ok bool) {
+	pid, _, valid := h.APIKeyProjectScope(r)
+	return pid, valid
+}
+
+// APIKeyProjectScope validates the API key and returns project ID, scope, and ok.
+func (h *Handler) APIKeyProjectScope(r *http.Request) (projectID int64, scope string, ok bool) {
 	if h == nil || h.auth == nil {
-		return 0, true
+		return 0, "full", true
 	}
 	return h.auth.ValidWithProject(r.Context(), r.Header.Get(auth.HeaderAPIKey))
 }

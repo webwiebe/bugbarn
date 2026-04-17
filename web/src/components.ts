@@ -26,7 +26,7 @@ import {
   issueTitle,
 } from "./domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "./format.js";
-import type { ApiAlert, ApiEvent, ApiIssue, ApiRelease, ApiSettings, RawRecord } from "./types.js";
+import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiRelease, ApiSettings, RawRecord } from "./types.js";
 
 const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
@@ -515,7 +515,7 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
   `;
 }
 
-export function renderSettingsViewMarkup(settings: ApiSettings | null, username: string, error: unknown = null): string {
+export function renderSettingsViewMarkup(settings: ApiSettings | null, username: string, apiKeys: ApiApiKey[] = [], error: unknown = null): string {
   const displayName = settings?.displayName || settings?.display_name || username || "";
   const timezone = settings?.timezone || settings?.timezoneName || "";
   const defaultEnvironment = settings?.defaultEnvironment || settings?.default_environment || "";
@@ -577,8 +577,33 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
           </div>
         </form>
       </div>
+      <div class="section">
+        <h3>API keys</h3>
+        <p class="muted">
+          <strong>ingest</strong> keys are safe to embed in browser bundles — they can only POST events.
+          <strong>full</strong> keys grant full API access; keep them server-side only.
+          Create keys with <code>bugbarn apikey create --scope ingest --name my-frontend</code>.
+        </p>
+        ${renderApiKeyTable(apiKeys)}
+      </div>
     </div>
   `;
+}
+
+function renderApiKeyTable(keys: ApiApiKey[]): string {
+  if (!keys.length) {
+    return `<p class="muted">No API keys found. Use the CLI to create one.</p>`;
+  }
+  const rows = keys.map((k) => {
+    const name = readFirst(k, "name", "Name") ?? "—";
+    const scope = readFirst(k, "scope", "Scope") ?? "full";
+    const lastUsed = readFirst(k, "lastUsedAt", "LastUsedAt") as string | undefined;
+    return `<div class="kv">
+      <span>${escapeHtml(String(name))}</span>
+      <span><span class="chip chip-${escapeAttr(scope)}">${escapeHtml(scope)}</span>${lastUsed ? ` · last used ${escapeHtml(lastUsed)}` : ""}</span>
+    </div>`;
+  });
+  return `<div class="grid">${rows.join("")}</div>`;
 }
 
 function renderReleaseList(releases: ApiRelease[]): string {

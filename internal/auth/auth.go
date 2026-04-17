@@ -25,9 +25,9 @@ const HeaderAPIKey = "x-bugbarn-api-key"
 type DBKeyLookup func(ctx context.Context, keySHA256 string) (bool, error)
 
 // DBKeyLookupWithProject is called by Authorizer.ValidWithProject to look up an
-// API key's project association. Returns (projectID, true, nil) on match,
-// (0, false, nil) when not found.
-type DBKeyLookupWithProject func(ctx context.Context, keySHA256 string) (projectID int64, found bool, err error)
+// API key's project association and scope. Returns (projectID, scope, true, nil)
+// on match, (0, "", false, nil) when not found.
+type DBKeyLookupWithProject func(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error)
 
 // DBKeyTouch is called after a successful DB-based auth to update last_used_at.
 type DBKeyTouch func(ctx context.Context, keySHA256 string) error
@@ -83,12 +83,12 @@ func (a *Authorizer) Valid(provided string) bool {
 	return a.ValidWithContext(context.Background(), provided)
 }
 
-// ValidWithProject checks the provided key and returns the associated project ID.
-// For env-var static keys, projectID=0 is returned (global/admin access).
-// Returns (projectID, true) on success, (0, false) on failure.
-func (a *Authorizer) ValidWithProject(ctx context.Context, provided string) (projectID int64, ok bool) {
+// ValidWithProject checks the provided key and returns the associated project ID and scope.
+// For env-var static keys, projectID=0 and scope="full" are returned (global/admin access).
+// Returns (projectID, scope, true) on success, (0, "", false) on failure.
+func (a *Authorizer) ValidWithProject(ctx context.Context, provided string) (projectID int64, scope string, ok bool) {
 	if a == nil || !a.Enabled() {
-		return 0, true
+		return 0, "full", true
 	}
 
 	provided = strings.TrimSpace(provided)
@@ -98,28 +98,28 @@ func (a *Authorizer) ValidWithProject(ctx context.Context, provided string) (pro
 	// Check static env-var hash first (global access, no project binding).
 	if len(a.apiKeyHash) == sha256.Size {
 		if subtle.ConstantTimeCompare(sum[:], a.apiKeyHash) == 1 {
-			return 0, true
+			return 0, "full", true
 		}
 	}
 
 	// Check DB-stored keys.
 	if a.dbLookup != nil {
-		pid, found, err := a.dbLookup(ctx, hexSum)
+		pid, sc, found, err := a.dbLookup(ctx, hexSum)
 		if err == nil && found {
 			if a.dbTouch != nil {
 				_ = a.dbTouch(ctx, hexSum)
 			}
-			return pid, true
+			return pid, sc, true
 		}
 	}
 
-	return 0, false
+	return 0, "", false
 }
 
 // ValidWithContext checks the provided key against the env-var hash first, then
 // the DB lookup if configured. It also calls the touch function on DB hits.
 func (a *Authorizer) ValidWithContext(ctx context.Context, provided string) bool {
-	_, ok := a.ValidWithProject(ctx, provided)
+	_, _, ok := a.ValidWithProject(ctx, provided)
 	return ok
 }
 

@@ -81,6 +81,24 @@ type route struct {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Ingest endpoint uses wildcard CORS so browser SDKs can POST from any origin
+	// without credentials. The ingest-only key scope ensures read access is impossible.
+	if r.URL.Path == "/api/v1/events" {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-project")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost {
+			s.ingestHandler.ServeHTTP(w, r)
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	s.setCORSHeaders(w, r)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	if r.Method == http.MethodOptions {
@@ -104,24 +122,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ingest endpoint — API key authentication only (handled by the ingest handler itself).
-	if r.URL.Path == "/api/v1/events" && r.Method == http.MethodPost {
-		s.ingestHandler.ServeHTTP(w, r)
-		return
-	}
-
 	// All remaining endpoints require authentication. When auth is configured, the
-	// request must carry either a valid session cookie or a valid API key. API keys
-	// are accepted on all protected endpoints so that CI/CD scripts can call the
-	// releases, source-maps, and other management endpoints without a browser session.
+	// request must carry either a valid session cookie or a valid API key. Full-scope
+	// API keys are accepted on all protected endpoints; ingest-only keys are rejected here
+	// (they may only reach the ingest endpoint handled above).
 	var resolvedProjectID int64
 	if s.users != nil && s.users.Enabled() {
 		_, usingSession := s.sessionUser(r)
 		var apiKeyProjectID int64
 		usingAPIKey := false
 		if s.ingestHandler != nil {
-			pid, ok := s.ingestHandler.APIKeyProject(r)
+			pid, scope, ok := s.ingestHandler.APIKeyProjectScope(r)
 			if ok {
+				if scope == storage.APIKeyScopeIngest {
+					// Ingest-only key attempted to access a protected endpoint.
+					http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
+					return
+				}
 				usingAPIKey = true
 				apiKeyProjectID = pid
 			}
@@ -1077,15 +1094,21 @@ func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 		ID         int64     `json:"id"`
 		Name       string    `json:"name"`
 		ProjectID  int64     `json:"projectId"`
+		Scope      string    `json:"scope"`
 		CreatedAt  time.Time `json:"createdAt"`
 		LastUsedAt time.Time `json:"lastUsedAt,omitempty"`
 	}
 	out := make([]safeKey, 0, len(keys))
 	for _, k := range keys {
+		scope := k.Scope
+		if scope == "" {
+			scope = storage.APIKeyScopeFull
+		}
 		out = append(out, safeKey{
 			ID:         k.ID,
 			Name:       k.Name,
 			ProjectID:  k.ProjectID,
+			Scope:      scope,
 			CreatedAt:  k.CreatedAt,
 			LastUsedAt: k.LastUsedAt,
 		})

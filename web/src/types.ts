@@ -108,6 +108,21 @@ export interface ApiAlert extends RawRecord {
   created_at?: string | number;
 }
 
+export interface ApiApiKey extends RawRecord {
+  id?: string | number;
+  ID?: string | number;
+  name?: string;
+  Name?: string;
+  projectId?: string | number;
+  ProjectID?: string | number;
+  scope?: string;
+  Scope?: string;
+  createdAt?: string;
+  CreatedAt?: string;
+  lastUsedAt?: string;
+  LastUsedAt?: string;
+}
+
 export interface ApiProject extends RawRecord {
   id?: string | number;
   ID?: string | number;
@@ -154,6 +169,7 @@ export interface AppState {
   releases: ApiRelease[];
   alerts: ApiAlert[];
   settings: ApiSettings | null;
+  apiKeys: ApiApiKey[];
   liveEvents: ApiEvent[];
   liveError: Error | null;
   liveTimer: number | null;

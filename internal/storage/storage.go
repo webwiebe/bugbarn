@@ -638,6 +638,7 @@ func (s *Store) init(ctx context.Context) error {
 			name TEXT NOT NULL,
 			project_id INTEGER NOT NULL REFERENCES projects(id),
 			key_sha256 TEXT UNIQUE NOT NULL,
+			scope TEXT NOT NULL DEFAULT 'full',
 			created_at TEXT NOT NULL,
 			last_used_at TEXT
 		)`,
@@ -684,6 +685,9 @@ func (s *Store) init(ctx context.Context) error {
 		return err
 	}
 	if err := ensureColumn(ctx, tx, "source_maps", "source_map_blob", "BLOB NOT NULL DEFAULT X''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "api_keys", "scope", "TEXT NOT NULL DEFAULT 'full'"); err != nil {
 		return err
 	}
 
@@ -1412,12 +1416,19 @@ type Project struct {
 	CreatedAt time.Time
 }
 
+// Scope constants for API keys.
+const (
+	APIKeyScopeFull   = "full"   // full access to all endpoints
+	APIKeyScopeIngest = "ingest" // write-only: POST /api/v1/events only
+)
+
 // APIKey represents an API key row (the plaintext key is never stored).
 type APIKey struct {
 	ID         int64
 	Name       string
 	ProjectID  int64
 	KeySHA256  string
+	Scope      string
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 }
@@ -1473,11 +1484,15 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 }
 
 // CreateAPIKey stores an API key's SHA-256 hash and returns the resulting row.
-func (s *Store) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256 string) (APIKey, error) {
+// scope must be APIKeyScopeFull or APIKeyScopeIngest.
+func (s *Store) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (APIKey, error) {
+	if scope != APIKeyScopeFull && scope != APIKeyScopeIngest {
+		scope = APIKeyScopeFull
+	}
 	now := formatTime(time.Now().UTC())
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO api_keys (name, project_id, key_sha256, created_at) VALUES (?, ?, ?, ?)`,
-		name, projectID, keySHA256, now,
+INSERT INTO api_keys (name, project_id, key_sha256, scope, created_at) VALUES (?, ?, ?, ?, ?)`,
+		name, projectID, keySHA256, scope, now,
 	)
 	if err != nil {
 		return APIKey{}, err
@@ -1486,13 +1501,13 @@ INSERT INTO api_keys (name, project_id, key_sha256, created_at) VALUES (?, ?, ?,
 	if err != nil {
 		return APIKey{}, err
 	}
-	return APIKey{ID: id, Name: name, ProjectID: projectID, KeySHA256: keySHA256, CreatedAt: time.Now().UTC()}, nil
+	return APIKey{ID: id, Name: name, ProjectID: projectID, KeySHA256: keySHA256, Scope: scope, CreatedAt: time.Now().UTC()}, nil
 }
 
 // ListAPIKeys returns all API key rows (without the plaintext key).
 func (s *Store) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, name, project_id, key_sha256, created_at, last_used_at
+SELECT id, name, project_id, key_sha256, scope, created_at, last_used_at
 FROM api_keys ORDER BY id ASC`)
 	if err != nil {
 		return nil, err
@@ -1504,7 +1519,7 @@ FROM api_keys ORDER BY id ASC`)
 		var k APIKey
 		var createdAt string
 		var lastUsedAt sql.NullString
-		if err := rows.Scan(&k.ID, &k.Name, &k.ProjectID, &k.KeySHA256, &createdAt, &lastUsedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.Name, &k.ProjectID, &k.KeySHA256, &k.Scope, &createdAt, &lastUsedAt); err != nil {
 			return nil, err
 		}
 		k.CreatedAt, _ = parseTime(createdAt)
@@ -1541,17 +1556,17 @@ UPDATE api_keys SET last_used_at = ? WHERE key_sha256 = ?`,
 	return err
 }
 
-// ValidAPIKeySHA256 returns the project_id for the API key matching the given SHA-256 hex digest.
-// Returns (0, false, nil) when no matching key exists.
-func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, found bool, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT project_id FROM api_keys WHERE key_sha256 = ?`, keySHA256).Scan(&projectID)
+// ValidAPIKeySHA256 returns the project_id and scope for the API key matching the given SHA-256 hex digest.
+// Returns (0, "", false, nil) when no matching key exists.
+func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT project_id, scope FROM api_keys WHERE key_sha256 = ?`, keySHA256).Scan(&projectID, &scope)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, false, nil
+		return 0, "", false, nil
 	}
 	if err != nil {
-		return 0, false, err
+		return 0, "", false, err
 	}
-	return projectID, true, nil
+	return projectID, scope, true, nil
 }
 
 // EnsureProject returns the project with the given slug, creating it if it does not exist.

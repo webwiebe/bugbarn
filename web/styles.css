@@ -641,6 +641,16 @@ button:disabled {
   color: var(--danger);
 }
 
+.chip.chip-ingest {
+  background: #132840;
+  color: #6ab0f5;
+}
+
+.chip.chip-full {
+  background: #1a2e1a;
+  color: #7ecb7e;
+}
+
 .link-row {
   display: flex;
   flex-wrap: wrap;

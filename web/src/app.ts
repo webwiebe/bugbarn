@@ -13,7 +13,7 @@ import {
 import { normalizeList, normalizeObject, readString } from "./data.js";
 import { eventIssueId, eventTimestamp, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
-import type { ApiAlert, ApiEvent, ApiIssue, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
+import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
 
 const httpUnauthorized = 401;
 const liveWindowMinutes = 15;
@@ -38,6 +38,7 @@ const state: AppState = {
   releases: [],
   alerts: [],
   settings: null,
+  apiKeys: [],
   liveEvents: [],
   liveError: null,
   liveTimer: null,
@@ -349,8 +350,12 @@ async function loadAlerts(): Promise<void> {
 
 async function loadSettings(): Promise<void> {
   try {
-    const payload = await fetchJson("/api/v1/settings", true);
-    state.settings = payload ? normalizeObject<ApiSettings>(payload, "settings") : null;
+    const [settingsPayload, keysPayload] = await Promise.all([
+      fetchJson("/api/v1/settings", true),
+      fetchJson("/api/v1/apikeys", true).catch(() => null),
+    ]);
+    state.settings = settingsPayload ? normalizeObject<ApiSettings>(settingsPayload, "settings") : null;
+    state.apiKeys = keysPayload ? normalizeList<ApiApiKey>(keysPayload as Record<string, unknown>, "apiKeys") : [];
     renderSettingsView();
   } catch (error) {
     state.settings = null;
@@ -709,7 +714,7 @@ function renderSettingsView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Settings";
   elements.detailBody.innerHTML = "";
-  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, error);
+  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error);
   wireSettingsActions();
 }
 

@@ -275,12 +275,16 @@ func runAPIKeyCmd(cfg config, args []string) error {
 		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
 		projectSlug := fs.String("project", "default", "project slug")
 		name := fs.String("name", "", "key name/label")
+		scope := fs.String("scope", storage.APIKeyScopeFull, "key scope: full or ingest")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		*name = strings.TrimSpace(*name)
 		if *name == "" {
 			return fmt.Errorf("--name is required")
+		}
+		if *scope != storage.APIKeyScopeFull && *scope != storage.APIKeyScopeIngest {
+			return fmt.Errorf("--scope must be %q or %q", storage.APIKeyScopeFull, storage.APIKeyScopeIngest)
 		}
 		store, err := storage.Open(cfg.dbPath)
 		if err != nil {
@@ -306,11 +310,11 @@ func runAPIKeyCmd(cfg config, args []string) error {
 		sum := sha256.Sum256([]byte(plaintext))
 		keySHA256 := hex.EncodeToString(sum[:])
 
-		key, err := store.CreateAPIKey(ctx, *name, project.ID, keySHA256)
+		key, err := store.CreateAPIKey(ctx, *name, project.ID, keySHA256, *scope)
 		if err != nil {
 			return fmt.Errorf("create api key: %w", err)
 		}
-		fmt.Printf("API key created (id=%d, project=%s, name=%s)\n", key.ID, project.Slug, key.Name)
+		fmt.Printf("API key created (id=%d, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
 		fmt.Printf("Key (shown once, store securely): %s\n", plaintext)
 		return nil
 	default:
