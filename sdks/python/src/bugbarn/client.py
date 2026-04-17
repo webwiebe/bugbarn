@@ -10,7 +10,10 @@ import threading
 import traceback
 import urllib.error
 import urllib.request
-from typing import Any, Optional
+from typing import Any, List, Optional
+
+from .user import UserContext, get_user
+from .breadcrumbs import Breadcrumb, get_breadcrumbs
 
 SDK_NAME = "bugbarn.python"
 SDK_VERSION = "0.1.0"
@@ -40,6 +43,8 @@ class Envelope:
     sender: dict[str, Any] = field(
         default_factory=lambda: {"sdk": {"name": SDK_NAME, "version": SDK_VERSION}}
     )
+    user: Optional[UserContext] = None
+    breadcrumbs: Optional[List[Breadcrumb]] = None
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -57,6 +62,10 @@ class Envelope:
         }
         if self.stacktrace:
             payload["exception"]["stacktrace"] = [frame.__dict__ for frame in self.stacktrace]
+        if self.user:
+            payload["user"] = self.user.to_dict()
+        if self.breadcrumbs:
+            payload["breadcrumbs"] = [c.to_dict() for c in self.breadcrumbs]
         return payload
 
 
@@ -163,6 +172,7 @@ def _build_event(
     extra: Optional[dict[str, Any]] = None,
 ) -> Envelope:
     normalized = _normalize_exception(exc)
+    crumbs = get_breadcrumbs()
     return Envelope(
         timestamp=_now_iso(),
         severityText="ERROR",
@@ -173,6 +183,8 @@ def _build_event(
         attributes=attributes or {},
         tags=tags or {},
         extra=extra or {},
+        user=get_user(),
+        breadcrumbs=crumbs if crumbs else None,
     )
 
 

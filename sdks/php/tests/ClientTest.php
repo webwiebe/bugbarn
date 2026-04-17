@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace BugBarn\Tests;
 
+use BugBarn\Breadcrumbs;
 use BugBarn\Client;
 use BugBarn\Envelope;
+use BugBarn\User;
 use PHPUnit\Framework\TestCase;
 
 final class ClientTest extends TestCase
@@ -13,6 +15,8 @@ final class ClientTest extends TestCase
     protected function tearDown(): void
     {
         Client::shutdown();
+        User::reset();
+        Breadcrumbs::reset();
     }
 
     public function testCaptureExceptionBeforeInitReturnsFalse(): void

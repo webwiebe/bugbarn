@@ -60,6 +60,26 @@ final class Client
         }
     }
 
+    public static function setUser(string $id = '', string $email = '', string $username = ''): void
+    {
+        User::setUser($id, $email, $username);
+    }
+
+    public static function clearUser(): void
+    {
+        User::clearUser();
+    }
+
+    public static function addBreadcrumb(string $category, string $message, string $level = '', ?array $data = null): void
+    {
+        Breadcrumbs::add($category, $message, $level, $data);
+    }
+
+    public static function clearBreadcrumbs(): void
+    {
+        Breadcrumbs::clear();
+    }
+
     /**
      * Capture a Throwable and enqueue it for delivery.
      *
@@ -89,6 +109,8 @@ final class Client
             exceptionMessage: $message,
             stacktrace:       null,
             attributes:       $attributes,
+            user:             User::getUser(),
+            breadcrumbs:      Breadcrumbs::get(),
         ));
     }
 
@@ -127,6 +149,8 @@ final class Client
             exceptionMessage: $e->getMessage(),
             stacktrace:       self::extractStacktrace($e),
             attributes:       $attributes,
+            user:             User::getUser(),
+            breadcrumbs:      Breadcrumbs::get(),
         ));
     }
 
