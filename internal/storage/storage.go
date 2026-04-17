@@ -1253,7 +1253,7 @@ func sqliteDSN(path string) string {
 		Scheme: "file",
 		Path:   filepath.ToSlash(path),
 	}
-	return u.String() + "?cache=shared&mode=rwc"
+	return u.String() + "?cache=shared&mode=rwc&_busy_timeout=5000"
 }
 
 func marshalEvent(evt event.Event) ([]byte, error) {
