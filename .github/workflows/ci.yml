@@ -39,9 +39,13 @@ jobs:
           go_mods="$(find . "${prune[@]}" -name go.mod -print | wc -l | tr -d ' ')"
           node_manifests="$(find . "${prune[@]}" -name package.json -print | wc -l | tr -d ' ')"
           python_manifests="$(find . "${prune[@]}" \( -name pyproject.toml -o -name requirements.txt \) -print | wc -l | tr -d ' ')"
+          php_manifests="$(find . "${prune[@]}" -name composer.json -print | wc -l | tr -d ' ')"
+          has_php="$(command -v php >/dev/null 2>&1 && command -v composer >/dev/null 2>&1 && echo '1' || echo '0')"
           echo "go_mods=$go_mods" >> "$GITHUB_OUTPUT"
           echo "node_manifests=$node_manifests" >> "$GITHUB_OUTPUT"
           echo "python_manifests=$python_manifests" >> "$GITHUB_OUTPUT"
+          echo "php_manifests=$php_manifests" >> "$GITHUB_OUTPUT"
+          echo "has_php=$has_php" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         if: steps.detect.outputs.go_mods != '0'
@@ -91,6 +95,21 @@ jobs:
             (cd "$dir" && npm run test --if-present)
             (cd "$dir" && npm run build --if-present)
           done < <(find . "${prune[@]}" -name package.json -print)
+
+      - name: PHP checks
+        if: steps.detect.outputs.php_manifests != '0' && steps.detect.outputs.has_php == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          prune=( \( -path './.git' -o -path './.cache' -o -path './.ci-venv' -o -path '*/node_modules' -o -path '*/.venv' -o -path '*/vendor' \) -prune -o )
+          while IFS= read -r manifest; do
+            dir="$(dirname "$manifest")"
+            echo "[php] $dir"
+            (cd "$dir" && composer install --no-interaction --prefer-dist)
+            if find "$dir/tests" -name '*Test.php' -print -quit 2>/dev/null | grep -q .; then
+              (cd "$dir" && ./vendor/bin/phpunit)
+            fi
+          done < <(find . "${prune[@]}" -name composer.json -print)
 
       - name: Python checks
         if: steps.detect.outputs.python_manifests != '0'

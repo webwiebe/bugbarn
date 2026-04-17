@@ -106,7 +106,7 @@
 
 ## Phase 11: Future SDKs
 
-- [ ] T061 Add a PHP SDK package with initialization, manual capture, async transport, and uncaught handler support. This is intentionally left for a later iteration after the foundation SDKs.
+- [x] T061 Add a PHP SDK package with initialization, manual capture, async transport, and uncaught handler support. (sdks/php/; Client::init/captureException/captureMessage/flush/shutdown; in-process queue flushed via register_shutdown_function; set_exception_handler + fatal error shutdown hook; curl transport with 2s timeout; PHPUnit tests; CI gated on php+composer availability)
 
 ## Phase 12: Release Markers
 
