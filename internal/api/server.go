@@ -49,6 +49,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:
+		writeJSON(w, map[string]any{"status": "ok"})
 	case r.URL.Path == "/api/v1/events" && r.Method == http.MethodPost:
 		s.ingestHandler.ServeHTTP(w, r)
 	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodPost:

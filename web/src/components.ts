@@ -28,6 +28,9 @@ import {
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "./format.js";
 import type { ApiAlert, ApiEvent, ApiIssue, ApiRelease, ApiSettings, RawRecord } from "./types.js";
 
+const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
+const maxNearbyReleases = 5;
+
 export function renderIssueListMarkup(issues: ApiIssue[], query: string, selectedIssueId: string | null, error: unknown = null): string {
   if (error) {
     return `<div class="error">Issues unavailable. ${escapeHtml(errorMessage(error))}</div>`;
@@ -88,7 +91,7 @@ export function renderEmptyIssues(setupGuide: string): string {
   `;
 }
 
-export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[]): string {
+export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], releases: ApiRelease[] = []): string {
   const id = firstIdentifier(issue);
   const title = issueTitle(issue);
   const normalizedTitle = issueNormalizedTitle(issue);
@@ -152,6 +155,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[]): st
       ${lastEvent ? renderDataSection("Exception", eventException(lastEvent)) : renderEmptySection("Exception", "No exception data returned.")}
       ${lastEvent ? renderDataSection("Context", eventContext(lastEvent)) : renderEmptySection("Context", "No contextual fields were returned for the latest event.")}
       ${renderStacktrace(lastEvent ? eventStacktrace(lastEvent) : [])}
+      ${renderNearbyReleasesPanel(releases, issueLastSeen(issue))}
       <div class="section section-scrollable">
         <h3>Events in this issue</h3>
         ${renderEventButtons(events, "", "scrollable-list")}
@@ -244,7 +248,7 @@ export function renderErrorDetailMarkup(error: unknown): string {
   return `<div class="error">Unable to load detail. ${escapeHtml(errorMessage(error))}</div>`;
 }
 
-export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null): string {
+export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null, releases: ApiRelease[] = []): string {
   if (liveError) {
     return `<div class="empty">Live stream unavailable. Reconnecting…</div>`;
   }
@@ -258,28 +262,127 @@ export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null
     `;
   }
 
-  return events
-    .map((event) => {
-      const id = firstIdentifier(event);
-      const issueId = eventIssueId(event);
-      const title = eventTitle(event);
-      const timestamp = formatTime(eventTimestamp(event));
-      const severity = eventSeverity(event) || "info";
-      const severityClass = severity === "error" || severity === "fatal" ? "bad" : severity === "warning" ? "warn" : "";
-      return `
-        <button class="item" type="button" data-live-event-id="${escapeAttr(id)}">
-          <div class="item-title">
-            <span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity)}</span>
-            ${escapeHtml(title)}
-          </div>
-          <div class="item-meta">
-            <span>${escapeHtml(String(issueId || "No issue"))}</span>
-            <span>${escapeHtml(timestamp || "No timestamp")}</span>
-          </div>
-        </button>
-      `;
-    })
-    .join("");
+  // Sort releases descending by observedAt for efficient lookup
+  const sortedReleases = releases
+    .map((r) => ({ release: r, ts: toTimestampMs(readFirst(r, ["observedAt", "observed_at", "createdAt", "created_at"])) }))
+    .filter((r) => r.ts > 0)
+    .sort((a, b) => b.ts - a.ts);
+
+  const rows: string[] = [];
+  const emittedRelease = new Set<number>();
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    const eventTs = toTimestampMs(eventTimestamp(event));
+    const nextEventTs = i + 1 < events.length ? toTimestampMs(eventTimestamp(events[i + 1])) : 0;
+
+    const id = firstIdentifier(event);
+    const issueId = eventIssueId(event);
+    const title = eventTitle(event);
+    const timestamp = formatTime(eventTimestamp(event));
+    const severity = eventSeverity(event) || "info";
+    const severityClass = severity === "error" || severity === "fatal" ? "bad" : severity === "warning" ? "warn" : "";
+
+    rows.push(`
+      <button class="item" type="button" data-live-event-id="${escapeAttr(id)}">
+        <div class="item-title">
+          <span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity)}</span>
+          ${escapeHtml(title)}
+        </div>
+        <div class="item-meta">
+          <span>${escapeHtml(String(issueId || "No issue"))}</span>
+          <span>${escapeHtml(timestamp || "No timestamp")}</span>
+        </div>
+      </button>
+    `);
+
+    // After this event, insert release dividers that fall between this event and the next
+    if (nextEventTs > 0 && eventTs > 0) {
+      for (const { release, ts } of sortedReleases) {
+        if (emittedRelease.has(ts)) {
+          continue;
+        }
+        if (ts <= eventTs && ts > nextEventTs) {
+          emittedRelease.add(ts);
+          rows.push(renderReleaseDivider(release, ts));
+        }
+      }
+    }
+  }
+
+  return rows.join("");
+}
+
+function renderReleaseDivider(release: ApiRelease, ts: number): string {
+  const name = readString(release, ["name", "Name"]) || "Release";
+  const environment = readString(release, ["environment", "Environment"]) || "";
+  const age = formatAge(ts);
+  return `
+    <div class="release-divider">
+      <span class="release-divider-icon" aria-hidden="true">&#9650;</span>
+      <span class="release-divider-name">${escapeHtml(name)}</span>
+      ${environment ? `<span class="chip" style="font-size:0.7rem">${escapeHtml(environment)}</span>` : ""}
+      <span class="release-divider-time">${escapeHtml(age ? `${age} ago` : "")}</span>
+    </div>
+  `;
+}
+
+function renderNearbyReleasesPanel(releases: ApiRelease[], lastSeen: unknown): string {
+  const lastSeenMs = toTimestampMs(lastSeen);
+  if (!lastSeenMs) {
+    return "";
+  }
+
+  const windowStart = lastSeenMs - nearbyReleaseWindowMs;
+
+  const nearby = releases
+    .map((r) => ({ release: r, ts: toTimestampMs(readFirst(r, ["observedAt", "observed_at", "createdAt", "created_at"])) }))
+    .filter(({ ts }) => ts > 0 && ts >= windowStart && ts <= lastSeenMs)
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, maxNearbyReleases);
+
+  if (!nearby.length) {
+    return "";
+  }
+
+  return `
+    <div class="section">
+      <h3>Recent Releases</h3>
+      <p class="muted">Releases deployed within 72 hours before this issue was last seen.</p>
+      <div class="route-list">
+        ${nearby
+          .map(({ release, ts }) => {
+            const name = readString(release, ["name", "Name"]) || "Untitled release";
+            const environment = readString(release, ["environment", "Environment"]) || "n/a";
+            const version = readString(release, ["version", "Version"]);
+            const url = readString(release, ["url"]);
+            const age = formatAge(ts);
+            return `
+              <article class="route-item">
+                <div class="route-item-head">
+                  <strong>${escapeHtml(name)}</strong>
+                  <span class="chip">${escapeHtml(environment)}</span>
+                </div>
+                <div class="route-item-meta">
+                  <span>${escapeHtml(age ? `${age} ago` : formatTime(ts))}</span>
+                  ${version ? `<span>${escapeHtml(version)}</span>` : ""}
+                  ${url ? `<a href="${escapeAttr(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>` : ""}
+                </div>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function toTimestampMs(value: unknown): number {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+  const date = new Date(value as string | number | Date);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
 export function renderSetupGuide(): string {

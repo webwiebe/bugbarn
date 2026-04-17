@@ -31,6 +31,10 @@ spec:
               value: /var/lib/bugbarn/spool
             - name: BUGBARN_DB_PATH
               value: /var/lib/bugbarn/bugbarn.db
+            - name: BUGBARN_MAX_SPOOL_BYTES
+              value: "104857600"
+            - name: BUGBARN_SESSION_TTL_SECONDS
+              value: "86400"
             - name: BUGBARN_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -60,6 +64,26 @@ spec:
                   name: bugbarn-api-key
                   key: BUGBARN_SESSION_SECRET
                   optional: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
           volumeMounts:
             - name: bugbarn-data
               mountPath: /var/lib/bugbarn
