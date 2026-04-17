@@ -91,7 +91,7 @@ export function renderEmptyIssues(setupGuide: string): string {
   `;
 }
 
-export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], releases: ApiRelease[] = []): string {
+export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], releases: ApiRelease[] = [], hasMore = false): string {
   const id = firstIdentifier(issue);
   const title = issueTitle(issue);
   const normalizedTitle = issueNormalizedTitle(issue);
@@ -158,6 +158,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       ${renderNearbyReleasesPanel(releases, issueLastSeen(issue))}
       <div class="section section-scrollable">
         <h3>Events in this issue</h3>
+        ${hasMore ? `<button type="button" data-load-older class="load-older-btn">Load older events</button>` : ""}
         ${renderEventButtons(events, "", "scrollable-list")}
       </div>
       ${lastEvent ? renderDataSection("Latest event payload", eventPayload(lastEvent)) : ""}

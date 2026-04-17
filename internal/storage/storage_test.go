@@ -104,7 +104,7 @@ func TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable(t *test
 		t.Fatalf("unexpected representative event context: got %v want %q", got, want)
 	}
 
-	events, err := store.ListIssueEvents(ctx, issue1.ID)
+	events, _, err := store.ListIssueEvents(ctx, issue1.ID, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
