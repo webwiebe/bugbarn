@@ -266,6 +266,11 @@ button:disabled {
   gap: 0;
 }
 
+.event-list {
+  display: grid;
+  gap: 0;
+}
+
 .issue-table-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 124px 72px 72px;
@@ -523,6 +528,86 @@ button:disabled {
   max-height: 260px;
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.form-grid .field-wide {
+  grid-column: 1 / -1;
+}
+
+.form-grid textarea,
+.form-grid input[type="file"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.form-grid textarea {
+  resize: vertical;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.checkbox-field input {
+  width: 16px;
+  height: 16px;
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+}
+
+.route-list {
+  display: grid;
+  gap: 10px;
+}
+
+.route-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #191a12;
+}
+
+.route-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.route-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.section-scrollable {
+  max-height: 440px;
+  overflow: auto;
+}
+
+.scrollable-list {
+  max-height: 360px;
+  overflow: auto;
+}
+
 .stacktrace {
   display: grid;
   gap: 8px;
@@ -543,6 +628,17 @@ button:disabled {
   font-size: 12px;
 }
 
+.frame-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.frame-head {
+  display: grid;
+  gap: 2px;
+}
+
 .frame code {
   color: var(--accent);
 }
@@ -552,6 +648,27 @@ button:disabled {
   margin-top: 4px;
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+.frame-snippet {
+  margin: 0;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: #11120d;
+  color: #d9f99d;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.route-item a {
+  color: var(--accent);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.route-item a:hover {
+  text-decoration: underline;
 }
 
 .footer {
@@ -618,5 +735,9 @@ button:disabled {
 
   .toolbar button {
     flex: 1 1 120px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }

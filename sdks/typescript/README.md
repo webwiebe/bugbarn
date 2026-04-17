@@ -20,6 +20,8 @@ This keeps Rapid Root on a normal package-manager dependency without publishing 
 
 The package exposes both ESM and CommonJS entrypoints, so bundlers and Node runtimes can choose `import` or `require` without custom externalization rules.
 
+Captured events can carry `release` and `dist` metadata. Set them during `init()` or via `BUGBARN_RELEASE` and `BUGBARN_DIST` so later source-map uploads can be matched to the same build.
+
 ## Local package
 
 For local testing without the deployed web container, build a local tarball from this repository:
@@ -48,6 +50,8 @@ import { init } from "@bugbarn/typescript";
 init({
   apiKey: process.env.BUGBARN_API_KEY ?? "",
   endpoint: "https://bugbarn.test.wiebe.xyz/api/v1/events",
+  release: process.env.BUGBARN_RELEASE,
+  dist: process.env.BUGBARN_DIST,
 });
 ```
 
@@ -72,6 +76,31 @@ try {
     },
   });
 }
+```
+
+## Source map uploads
+
+BugBarn expects source map artifacts to be posted to `POST /api/v1/source-maps` on the same backend that receives events. The upload helper sends `multipart/form-data` with:
+
+- `release`
+- `dist` when present
+- `bundle_url`
+- `source_map` as the uploaded artifact
+
+Example:
+
+```ts
+import { readFile } from "node:fs/promises";
+import { uploadSourceMap } from "@bugbarn/typescript";
+
+await uploadSourceMap({
+  apiKey: process.env.BUGBARN_API_KEY ?? "",
+  endpoint: "https://bugbarn.test.wiebe.xyz/api/v1/source-maps",
+  release: process.env.BUGBARN_RELEASE ?? "",
+  dist: process.env.BUGBARN_DIST,
+  bundleUrl: "https://example.test/assets/app.js",
+  sourceMap: await readFile("./dist/app.js.map", "utf8"),
+});
 ```
 
 Read the testing API key from the cluster:

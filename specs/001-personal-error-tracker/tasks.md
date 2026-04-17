@@ -38,6 +38,7 @@
 - [x] T023 Implement fingerprint normalization for exception type, message, stack frames, and stable context.
 - [x] T024 Implement issue create/update logic from fingerprints.
 - [x] T025 Implement event persistence linked to issues.
+- [x] T077 Introduce a service layer and repository boundary so HTTP handlers do not own business logic or SQL details.
 
 ## Phase 5: Storage and Facets
 
@@ -69,6 +70,9 @@
 - [x] T070 Add a Sentry-inspired issue overview/detail layout pass with dense issue columns and issue/event summary headers.
 - [x] T071 Remove nonfunctional mirrored UI chrome, fake graphs, disabled actions, and placeholder rails until backing data exists.
 - [x] T072 Split the browser UI into typed data, domain, formatting, and component modules.
+- [x] T073 Add Releases, Alerts, and Settings views backed by same-origin routes with real forms and empty states.
+- [x] T074 Add issue resolve/reopen controls plus source map upload and settings forms.
+- [x] T075 Improve traceback rendering with fingerprint material and concise source snippets when provided by the backend.
 
 ## Phase 8: SDKs
 
@@ -78,6 +82,7 @@
 - [x] T047 Create Python sample app for uncaught exceptions.
 - [ ] T048 Add SDK shutdown/flush with bounded timeout.
 - [x] T064 Make the TypeScript SDK build into an installable package tarball served by the BugBarn web container for Rapid Root integration.
+- [x] T076 Add TypeScript release/dist event metadata capture and source map upload helper with a documented multipart backend contract.
 
 ## Phase 9: Deployment and Homelab CI/CD
 
@@ -105,7 +110,7 @@
 
 ## Phase 12: Release Markers
 
-- [ ] T066 Add release/notable-event marker persistence with project, environment, observed time, version/commit, URL, notes, and creator fields.
-- [ ] T067 Add release marker API endpoints for creating, listing, and querying nearby markers for an issue/event.
+- [x] T066 Add release/notable-event marker persistence with project, environment, observed time, version/commit, URL, notes, and creator fields.
+- [x] T067 Add release marker API endpoints for creating, listing, and querying nearby markers for an issue/event.
 - [ ] T068 Add web UI timeline markers so regressions can be visually linked to recent deploys.
 - [ ] T069 Add CI/GitHub Actions example for posting a BugBarn release marker after testing and staging deploys.

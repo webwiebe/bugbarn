@@ -11,8 +11,10 @@ import (
 )
 
 type ProcessedEvent struct {
-	Event       event.Event `json:"event"`
-	Fingerprint string      `json:"fingerprint"`
+	Event                  event.Event `json:"event"`
+	Fingerprint            string      `json:"fingerprint"`
+	FingerprintMaterial    string      `json:"fingerprintMaterial"`
+	FingerprintExplanation []string    `json:"fingerprintExplanation"`
 }
 
 func ProcessRecord(record spool.Record) (ProcessedEvent, error) {
@@ -26,9 +28,18 @@ func ProcessRecord(record spool.Record) (ProcessedEvent, error) {
 		return ProcessedEvent{}, fmt.Errorf("normalize event: %w", err)
 	}
 
+	fp := fingerprint.Fingerprint(evt)
+	material := fingerprint.Material(evt)
+	explanation := fingerprint.Explanation(evt)
+	evt.Fingerprint = fp
+	evt.FingerprintMaterial = material
+	evt.FingerprintExplanation = explanation
+
 	return ProcessedEvent{
-		Event:       evt,
-		Fingerprint: fingerprint.Fingerprint(evt),
+		Event:                  evt,
+		Fingerprint:            fp,
+		FingerprintMaterial:    material,
+		FingerprintExplanation: explanation,
 	}, nil
 }
 

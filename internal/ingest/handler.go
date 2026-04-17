@@ -36,6 +36,10 @@ func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyByt
 	}
 }
 
+func (h *Handler) ValidAPIKey(r *http.Request) bool {
+	return h != nil && h.auth != nil && h.auth.Valid(r.Header.Get(auth.HeaderAPIKey))
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.auth == nil || h.spool == nil {
 		http.Error(w, "ingest unavailable", http.StatusServiceUnavailable)
@@ -50,7 +54,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.auth.Valid(r.Header.Get(auth.HeaderAPIKey)) {
+	if !h.ValidAPIKey(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

@@ -3,18 +3,21 @@ package event
 import "time"
 
 type Event struct {
-	IngestID    string         `json:"ingestId,omitempty"`
-	ReceivedAt  time.Time      `json:"receivedAt,omitempty"`
-	ObservedAt  time.Time      `json:"observedAt,omitempty"`
-	Severity    string         `json:"severity,omitempty"`
-	Message     string         `json:"message,omitempty"`
-	Exception   Exception      `json:"exception,omitempty"`
-	Resource    map[string]any `json:"resource,omitempty"`
-	Attributes  map[string]any `json:"attributes,omitempty"`
-	TraceID     string         `json:"traceId,omitempty"`
-	SpanID      string         `json:"spanId,omitempty"`
-	SDKName     string         `json:"sdkName,omitempty"`
-	RawScrubbed map[string]any `json:"rawScrubbed,omitempty"`
+	IngestID               string         `json:"ingestId,omitempty"`
+	ReceivedAt             time.Time      `json:"receivedAt,omitempty"`
+	ObservedAt             time.Time      `json:"observedAt,omitempty"`
+	Severity               string         `json:"severity,omitempty"`
+	Message                string         `json:"message,omitempty"`
+	Exception              Exception      `json:"exception,omitempty"`
+	Resource               map[string]any `json:"resource,omitempty"`
+	Attributes             map[string]any `json:"attributes,omitempty"`
+	TraceID                string         `json:"traceId,omitempty"`
+	SpanID                 string         `json:"spanId,omitempty"`
+	SDKName                string         `json:"sdkName,omitempty"`
+	Fingerprint            string         `json:"fingerprint,omitempty"`
+	FingerprintMaterial    string         `json:"fingerprintMaterial,omitempty"`
+	FingerprintExplanation []string       `json:"fingerprintExplanation,omitempty"`
+	RawScrubbed            map[string]any `json:"rawScrubbed,omitempty"`
 }
 
 type Exception struct {

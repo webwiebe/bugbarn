@@ -17,6 +17,7 @@ This repository is being developed spec-first with GitHub Spec Kit. The root pro
 - Fast Go ingest service that accepts high-volume error/event payloads without doing transactional database writes in the request path.
 - Durable local spool plus background workers for normalization, PII scrubbing, fingerprinting, facet extraction, and persistence.
 - OpenTelemetry-shaped event model with permissive adapters for sender-specific formats.
+- TypeScript SDK support for release/dist metadata on captured events and source map uploads to the same backend.
 - Web interface for issue lists, event drill-down, and live event flow.
 - First SDKs for TypeScript and Python with default error-handler integration, with a future PHP SDK tracked separately.
 - Docker-first deployment with standalone binary support for low-powered hardware.
@@ -30,6 +31,7 @@ Use the documents in `specs/001-personal-error-tracker/` as the source of truth:
 - `plan.md`: technical approach and architecture
 - `tasks.md`: implementation backlog
 - `contracts/ingest-api.yaml`: initial API contract
+- `contracts/source-maps-api.yaml`: source map upload contract for release/dist-linked artifacts
 
 ## Local Development
 

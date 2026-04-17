@@ -47,7 +47,7 @@ As a user, I want a web interface that lists issues, shows their frequency and r
 
 1. **Given** processed issues, **When** the user opens the issue list, **Then** issues are sorted by a useful default such as most recent or highest frequency and include counts, first seen, last seen, project, severity, and selected facets.
 2. **Given** an issue with multiple events, **When** the user opens the issue detail page, **Then** they can inspect normalized exception data, scrubbed raw context, facets, and previous/next events.
-3. **Given** stored event context, **When** it appears in the UI, **Then** sensitive values have already been removed or redacted.
+3. **Given** stored event context, **When** it appears in the UI, **Then** sensitive values have already been removed or redacted and the fingerprint material used for grouping is visible.
 
 ### User Story 4 - Users Can Watch Live Event Flow (Priority: P2)
 
@@ -79,6 +79,20 @@ As a developer, I want TypeScript and Python SDKs that can become the default er
 
 **Note**: A future PHP SDK is desired, but it is out of scope for this foundation spec.
 
+### User Story 7 - Build Artifacts Can Be Linked Back to Errors (Priority: P3)
+
+As a developer, I want captured events to carry release and distribution metadata and to upload source maps for the corresponding build artifacts, so stack traces can be symbolicated later without a public registry.
+
+**Why this priority**: Release-aware metadata and artifact uploads make regressions easier to diagnose without turning the project into a package-hosting service.
+
+**Independent Test**: Capture a TypeScript error with `release` and `dist`, upload a source map artifact to the documented backend endpoint, and verify the backend can associate the artifact with the same build metadata.
+
+**Acceptance Scenarios**:
+
+1. **Given** a TypeScript app is initialized with release and dist values, **When** it captures an exception, **Then** the event payload includes those values for later lookup.
+2. **Given** a source map artifact and bundle URL, **When** the upload helper posts it to the backend, **Then** the backend receives a multipart upload keyed by release, dist, bundle URL, and source map file content.
+3. **Given** the source map endpoint is temporarily unavailable, **When** the upload helper is used, **Then** it fails independently of the application error-capture path.
+
 ### User Story 6 - Operators Can Configure Access and Deploy Simply (Priority: P3)
 
 As a self-hosting operator, I want simple application API keys, a local user login, Docker images, and a standalone binary path, so I can run the system on a small server without managing a large platform.
@@ -92,6 +106,21 @@ As a self-hosting operator, I want simple application API keys, a local user log
 1. **Given** a fresh deployment, **When** `BUGBARN_ADMIN_USERNAME` and `BUGBARN_ADMIN_PASSWORD` or a CLI setup command is provided, **Then** an initial admin user can log in.
 2. **Given** an application API key, **When** events are submitted, **Then** they are associated with the correct project/application.
 3. **Given** no valid API key, **When** an application submits an event, **Then** the ingest service rejects it before enqueueing.
+
+### User Story 8 - Users Can Manage Releases, Alerts, Settings, and Tracebacks (Priority: P3)
+
+As a user, I want releases, alerts, settings, issue resolution, source-map uploads, and clearer traceback detail in the UI, so I can correlate regressions with deploys and move through incidents without guessing at the backend shape.
+
+**Why this priority**: These controls turn the UI from a read-only event browser into a usable operational tool.
+
+**Independent Test**: Open the web UI, create or inspect a release marker, define an alert rule, resolve and reopen an issue, upload source maps, and inspect a stacktrace with source snippet data when the backend provides it.
+
+**Acceptance Scenarios**:
+
+1. **Given** the same-origin API exposes release marker data, **When** the user opens the Releases view, **Then** the UI lists release markers and provides a form for creating new markers.
+2. **Given** the same-origin API exposes alert rule data, **When** the user opens the Alerts view, **Then** the UI lists configured alerts and provides a form for creating new rules.
+3. **Given** an issue detail page, **When** the user resolves or reopens the issue, **Then** the UI calls the corresponding issue status endpoint and reflects the current state.
+4. **Given** source map upload support and frame source data, **When** the user opens Settings or an issue/event detail page, **Then** the UI can upload source maps and show a concise snippet when one is available.
 
 ## Requirements
 
@@ -128,6 +157,12 @@ As a self-hosting operator, I want simple application API keys, a local user log
 - **FR-029**: CI/CD MUST support testing and staging namespaces in the homelab K3S cluster.
 - **FR-030**: The system MUST support release or notable-event markers so regressions can be correlated with recent deploys or operational changes.
 - **FR-031**: Release markers SHOULD be linkable from issue/event timelines and SHOULD carry at least name, environment, observed time, optional commit/version, and optional URL.
+- **FR-032**: The TypeScript SDK MUST allow release and dist metadata to be attached to captured events, defaulting from SDK configuration and/or environment variables.
+- **FR-033**: The system MUST provide a source map upload endpoint that accepts multipart artifact uploads keyed by release, dist, and bundle URL.
+- **FR-034**: The web UI MUST expose releases, alerts, and settings views backed by same-origin API routes.
+- **FR-035**: The web UI MUST support resolving and reopening an issue from the issue detail view.
+- **FR-036**: The web UI MUST display fingerprint material and concise traceback source details when the backend provides them.
+- **FR-037**: The web UI SHOULD keep issue event lists scrollable and place them after the exception, context, and stacktrace sections.
 
 ### Non-Functional Requirements
 
@@ -169,6 +204,7 @@ As a self-hosting operator, I want simple application API keys, a local user log
 - Personal-use authentication can be simple but must not store plaintext passwords or API keys.
 - The canonical event model should be compatible with OpenTelemetry concepts without requiring every SDK to send native OTLP immediately.
 - Exact storage choices may evolve, but the request path must remain storage-decoupled.
-- Production deployment, multi-user roles, alerting, source maps, and advanced stack trace symbolication are out of scope for the first foundation spec unless added later.
+- Production deployment and multi-user roles remain out of scope for the first foundation spec unless added later.
+- Advanced browser-side symbolication remains a later backend concern.
 - Browser-side scripting source should be authored in TypeScript; generated JavaScript is acceptable as build output, but not as the preferred source format.
 - A future PHP SDK is desired, but it remains out of scope for the foundation release and is tracked in the backlog only.

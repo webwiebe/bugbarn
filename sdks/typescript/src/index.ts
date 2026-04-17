@@ -1,4 +1,5 @@
 import { createTransport } from "./transport.js";
+import { uploadSourceMap } from "./source-maps.js";
 import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, StackFrame, Transport } from "./types.js";
 
 const SDK_NAME = "bugbarn.typescript";
@@ -6,6 +7,8 @@ const SDK_VERSION = "0.1.0";
 
 let transport: Transport | null = null;
 let currentApiKey = "";
+let currentRelease: string | undefined;
+let currentDist: string | undefined;
 let handlersInstalled = false;
 
 function normalizeError(error: unknown): Error {
@@ -65,6 +68,8 @@ function buildEnvelope(error: unknown, options?: CaptureOptions): BugBarnEnvelop
     timestamp: new Date().toISOString(),
     severityText: "ERROR",
     body: normalized.message,
+    release: options?.release ?? currentRelease,
+    dist: options?.dist ?? currentDist,
     exception: {
       type: normalized.name || "Error",
       message: normalized.message,
@@ -103,6 +108,8 @@ function installDefaultHandlers(): void {
 
 export function init(options: BugBarnClientOptions): void {
   currentApiKey = options.apiKey;
+  currentRelease = options.release ?? process.env.BUGBARN_RELEASE ?? undefined;
+  currentDist = options.dist ?? process.env.BUGBARN_DIST ?? undefined;
   transport = options.transport ?? createTransport(options.apiKey, options.endpoint);
 
   if (options.installDefaultHandlers !== false) {
@@ -131,3 +138,4 @@ export function getApiKey(): string {
 }
 
 export { createTransport };
+export { uploadSourceMap };

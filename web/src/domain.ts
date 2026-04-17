@@ -42,6 +42,23 @@ export function issueFingerprint(issue: ApiIssue): string {
   return readString(issue, ["fingerprint", "Fingerprint"]);
 }
 
+export function issueStatus(issue: ApiIssue): string {
+  return readString(issue, ["status", "Status"]) || "unresolved";
+}
+
+export function issueFingerprintMaterial(issue: ApiIssue): RawRecord {
+  return readRecord(issue, [
+    "fingerprintMaterial",
+    "fingerprint_material",
+    "fingerprintParts",
+    "fingerprint_parts",
+    "fingerprintInputs",
+    "fingerprint_inputs",
+    "fingerprintDebug",
+    "fingerprint_debug",
+  ]);
+}
+
 export function issueLastSeen(issue: ApiIssue): unknown {
   return readFirst(issue, ["lastSeen", "LastSeen", "last_seen"]);
 }
@@ -105,6 +122,12 @@ export function eventTraceId(event: ApiEvent): string {
   const payload = eventPayload(event);
   const raw = eventRawScrubbed(event);
   return readString(payload, ["traceId", "trace_id", "TraceID"]) || readString(raw, ["traceId", "trace_id", "TraceID"]);
+}
+
+export function eventSpanId(event: ApiEvent): string {
+  const payload = eventPayload(event);
+  const raw = eventRawScrubbed(event);
+  return readString(payload, ["spanId", "span_id", "SpanID"]) || readString(raw, ["spanId", "span_id", "SpanID"]);
 }
 
 export function eventContext(event: ApiEvent): RawRecord {

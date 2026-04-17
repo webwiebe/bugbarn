@@ -1,0 +1,75 @@
+openapi: 3.1.0
+info:
+  title: BugBarn Source Map Upload API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+security:
+  - ApiKeyAuth: []
+paths:
+  /api/v1/source-maps:
+    post:
+      summary: Accept a source map artifact for later symbolication
+      operationId: uploadSourceMap
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [release, bundle_url, source_map]
+              properties:
+                release:
+                  type: string
+                dist:
+                  type: string
+                bundle_url:
+                  type: string
+                  description: Canonical URL or path of the generated JavaScript bundle
+                source_map:
+                  type: string
+                  format: binary
+                source_map_name:
+                  type: string
+                  description: Optional client-provided artifact name
+      responses:
+        '202':
+          description: Source map accepted for asynchronous processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceMapAccepted'
+        '400':
+          description: Payload cannot be parsed or exceeds supported shape
+        '401':
+          description: Missing or invalid API key
+        '413':
+          description: Payload exceeds configured size limit
+        '429':
+          description: Durable spool is full; sender should retry later
+        '503':
+          description: Upload service is temporarily unavailable
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-bugbarn-api-key
+  schemas:
+    SourceMapAccepted:
+      type: object
+      required: [accepted, artifactId]
+      properties:
+        accepted:
+          type: boolean
+          const: true
+        artifactId:
+          type: string
+        release:
+          type: string
+        dist:
+          type: string
+        bundleUrl:
+          type: string

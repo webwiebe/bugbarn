@@ -45,26 +45,65 @@ type Store struct {
 }
 
 type Issue struct {
-	ID                  string
-	Fingerprint         string
-	Title               string
-	NormalizedTitle     string
-	ExceptionType       string
-	FirstSeen           time.Time
-	LastSeen            time.Time
-	EventCount          int
-	RepresentativeEvent event.Event
+	ID                     string
+	Fingerprint            string
+	FingerprintMaterial    string
+	FingerprintExplanation []string
+	Title                  string
+	NormalizedTitle        string
+	ExceptionType          string
+	Status                 string
+	ResolvedAt             time.Time
+	ReopenedAt             time.Time
+	LastRegressedAt        time.Time
+	RegressionCount        int
+	FirstSeen              time.Time
+	LastSeen               time.Time
+	EventCount             int
+	RepresentativeEvent    event.Event
 }
 
 type Event struct {
+	ID                     string
+	IssueID                string
+	Fingerprint            string
+	FingerprintMaterial    string
+	FingerprintExplanation []string
+	ReceivedAt             time.Time
+	ObservedAt             time.Time
+	Severity               string
+	Message                string
+	Regressed              bool
+	Payload                event.Event
+}
+
+type Release struct {
 	ID          string
-	IssueID     string
-	Fingerprint string
-	ReceivedAt  time.Time
+	Name        string
+	Environment string
 	ObservedAt  time.Time
-	Severity    string
-	Message     string
-	Payload     event.Event
+	Version     string
+	CommitSHA   string
+	URL         string
+	Notes       string
+	CreatedBy   string
+	CreatedAt   time.Time
+}
+
+type Alert struct {
+	ID        string
+	Name      string
+	Enabled   bool
+	Severity  string
+	Rule      map[string]any
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type Setting struct {
+	Key       string
+	Value     string
+	UpdatedAt time.Time
 }
 
 func Open(path string) (*Store, error) {
@@ -107,12 +146,12 @@ func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.Proc
 		return Issue{}, Event{}, errors.New("storage is nil")
 	}
 
-	issue, issueID, err := s.upsertIssue(ctx, processed.Event, processed.Fingerprint)
+	issue, issueID, regressed, err := s.upsertIssue(ctx, processed)
 	if err != nil {
 		return Issue{}, Event{}, err
 	}
 
-	eventRow, eventRowID, err := s.insertEvent(ctx, issueID, processed)
+	eventRow, eventRowID, err := s.insertEvent(ctx, issueID, regressed, processed)
 	if err != nil {
 		return Issue{}, Event{}, err
 	}
@@ -129,9 +168,16 @@ func (s *Store) ListIssues(ctx context.Context) ([]Issue, error) {
 SELECT
 	id,
 	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
 	title,
 	normalized_title,
 	exception_type,
+	status,
+	resolved_at,
+	reopened_at,
+	last_regressed_at,
+	regression_count,
 	first_seen,
 	last_seen,
 	event_count,
@@ -170,9 +216,16 @@ func (s *Store) GetIssue(ctx context.Context, issueID string) (Issue, error) {
 SELECT
 	id,
 	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
 	title,
 	normalized_title,
 	exception_type,
+	status,
+	resolved_at,
+	reopened_at,
+	last_regressed_at,
+	regression_count,
 	first_seen,
 	last_seen,
 	event_count,
@@ -197,10 +250,13 @@ SELECT
 	id,
 	issue_id,
 	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
 	received_at,
 	observed_at,
 	severity,
 	message,
+	regressed,
 	event_json
 FROM events
 WHERE project_id = ? AND issue_id = ?
@@ -238,10 +294,13 @@ SELECT
 	id,
 	issue_id,
 	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
 	received_at,
 	observed_at,
 	severity,
 	message,
+	regressed,
 	event_json
 FROM events
 WHERE project_id = ? AND id = ?`,
@@ -252,9 +311,12 @@ WHERE project_id = ? AND id = ?`,
 	return scanEvent(row)
 }
 
-func (s *Store) ListRecentEvents(ctx context.Context, limit int) ([]Event, error) {
+func (s *Store) ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
+	}
+	if since.IsZero() {
+		since = time.Now().UTC().Add(-15 * time.Minute)
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -262,16 +324,20 @@ SELECT
 	id,
 	issue_id,
 	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
 	received_at,
 	observed_at,
 	severity,
 	message,
+	regressed,
 	event_json
 FROM events
-WHERE project_id = ?
-ORDER BY id DESC
+WHERE project_id = ? AND max(received_at, observed_at) >= ?
+ORDER BY max(received_at, observed_at) DESC, id DESC
 LIMIT ?`,
 		s.defaultProjectID,
+		formatTime(since.UTC()),
 		limit,
 	)
 	if err != nil {
@@ -326,9 +392,16 @@ func (s *Store) init(ctx context.Context) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 			fingerprint TEXT NOT NULL,
+			fingerprint_material TEXT NOT NULL DEFAULT '',
+			fingerprint_explanation_json TEXT NOT NULL DEFAULT '[]',
 			title TEXT NOT NULL,
 			normalized_title TEXT NOT NULL,
 			exception_type TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'unresolved',
+			resolved_at TEXT NOT NULL DEFAULT '',
+			reopened_at TEXT NOT NULL DEFAULT '',
+			last_regressed_at TEXT NOT NULL DEFAULT '',
+			regression_count INTEGER NOT NULL DEFAULT 0,
 			first_seen TEXT NOT NULL,
 			last_seen TEXT NOT NULL,
 			event_count INTEGER NOT NULL,
@@ -342,10 +415,13 @@ func (s *Store) init(ctx context.Context) error {
 			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 			issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
 			fingerprint TEXT NOT NULL,
+			fingerprint_material TEXT NOT NULL DEFAULT '',
+			fingerprint_explanation_json TEXT NOT NULL DEFAULT '[]',
 			received_at TEXT NOT NULL,
 			observed_at TEXT NOT NULL,
 			severity TEXT NOT NULL,
 			message TEXT NOT NULL,
+			regressed INTEGER NOT NULL DEFAULT 0,
 			event_json TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -358,14 +434,92 @@ func (s *Store) init(ctx context.Context) error {
 			facet_key TEXT NOT NULL,
 			facet_value TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS releases (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			environment TEXT NOT NULL DEFAULT '',
+			observed_at TEXT NOT NULL,
+			version TEXT NOT NULL DEFAULT '',
+			commit_sha TEXT NOT NULL DEFAULT '',
+			url TEXT NOT NULL DEFAULT '',
+			notes TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS alerts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			severity TEXT NOT NULL DEFAULT '',
+			rule_json TEXT NOT NULL DEFAULT '{}',
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS settings (
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			key TEXT NOT NULL,
+			value TEXT NOT NULL,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY(project_id, key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS source_maps (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			release TEXT NOT NULL,
+			dist TEXT NOT NULL DEFAULT '',
+			bundle_url TEXT NOT NULL,
+			name TEXT NOT NULL DEFAULT '',
+			content_type TEXT NOT NULL DEFAULT '',
+			source_map_blob BLOB NOT NULL DEFAULT X'',
+			size_bytes INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_issues_project_last_seen ON issues(project_id, last_seen DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_events_issue_id ON events(project_id, issue_id, id ASC)`,
+		`CREATE INDEX IF NOT EXISTS idx_events_project_received_at ON events(project_id, received_at DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_releases_project_observed_at ON releases(project_id, observed_at DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_facets_lookup ON event_facets(project_id, section, facet_key, facet_value)`,
 	}
 	for _, stmt := range schema {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
+	}
+
+	if err := ensureColumn(ctx, tx, "issues", "fingerprint_material", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "issues", "fingerprint_explanation_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "issues", "status", "TEXT NOT NULL DEFAULT 'unresolved'"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "issues", "resolved_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "issues", "reopened_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "issues", "last_regressed_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "issues", "regression_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "events", "fingerprint_material", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "events", "fingerprint_explanation_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "events", "regressed", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "source_maps", "source_map_blob", "BLOB NOT NULL DEFAULT X''"); err != nil {
+		return err
 	}
 
 	if _, err := tx.ExecContext(ctx, `
@@ -391,41 +545,65 @@ ON CONFLICT(slug) DO NOTHING`,
 	return nil
 }
 
-func (s *Store) upsertIssue(ctx context.Context, evt event.Event, providedFingerprint string) (Issue, int64, error) {
-	fingerprint := strings.TrimSpace(providedFingerprint)
-	if fingerprint == "" {
-		fingerprint = fingerprintFromEvent(evt)
+func (s *Store) upsertIssue(ctx context.Context, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
+	evt := processed.Event
+	fingerprintValue := strings.TrimSpace(processed.Fingerprint)
+	if fingerprintValue == "" {
+		fingerprintValue = fingerprintFromEvent(evt)
+	}
+	material := strings.TrimSpace(processed.FingerprintMaterial)
+	if material == "" {
+		material = evt.FingerprintMaterial
+	}
+	explanation := processed.FingerprintExplanation
+	if len(explanation) == 0 {
+		explanation = evt.FingerprintExplanation
 	}
 
 	title, normalizedTitle, exceptionType := issueDetails(evt)
 	seenAt := issueSeenAt(evt)
 	representative, err := marshalEvent(evt)
 	if err != nil {
-		return Issue{}, 0, err
+		return Issue{}, 0, false, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Issue{}, 0, err
+		return Issue{}, 0, false, err
 	}
 	defer tx.Rollback()
 
 	var (
-		id         int64
-		issue      Issue
-		existing   bool
-		eventCount int
-		firstSeen  string
-		lastSeen   string
+		id                   int64
+		issue                Issue
+		existing             bool
+		eventCount           int
+		firstSeen            string
+		lastSeen             string
+		resolvedAt           string
+		reopenedAt           string
+		lastRegressedAt      string
+		regressionCount      int
+		status               string
+		storedMaterial       string
+		storedExplanation    []byte
+		storedRepresentative []byte
 	)
 
 	err = tx.QueryRowContext(ctx, `
 SELECT
 	id,
 	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
 	title,
 	normalized_title,
 	exception_type,
+	status,
+	resolved_at,
+	reopened_at,
+	last_regressed_at,
+	regression_count,
 	first_seen,
 	last_seen,
 	event_count,
@@ -433,17 +611,24 @@ SELECT
 FROM issues
 WHERE project_id = ? AND fingerprint = ?`,
 		s.defaultProjectID,
-		fingerprint,
+		fingerprintValue,
 	).Scan(
 		&id,
 		&issue.Fingerprint,
+		&storedMaterial,
+		&storedExplanation,
 		&issue.Title,
 		&issue.NormalizedTitle,
 		&issue.ExceptionType,
+		&status,
+		&resolvedAt,
+		&reopenedAt,
+		&lastRegressedAt,
+		&regressionCount,
 		&firstSeen,
 		&lastSeen,
 		&eventCount,
-		&representative,
+		&storedRepresentative,
 	)
 	switch {
 	case err == nil:
@@ -451,98 +636,142 @@ WHERE project_id = ? AND fingerprint = ?`,
 	case errors.Is(err, sql.ErrNoRows):
 		existing = false
 	case err != nil:
-		return Issue{}, 0, err
+		return Issue{}, 0, false, err
 	}
 
 	if existing {
 		parsedFirstSeen, err := parseTime(firstSeen)
 		if err != nil {
-			return Issue{}, 0, err
+			return Issue{}, 0, false, err
 		}
 		parsedLastSeen, err := parseTime(lastSeen)
 		if err != nil {
-			return Issue{}, 0, err
+			return Issue{}, 0, false, err
 		}
-
+		issue.ID = formatID(issueIDPrefix, id)
 		issue.FirstSeen = parsedFirstSeen
 		issue.LastSeen = parsedLastSeen
-		issue.ID = formatID(issueIDPrefix, id)
 		issue.EventCount = eventCount + 1
+		issue.Status = status
+		issue.RegressionCount = regressionCount
+		issue.FingerprintMaterial = storedMaterial
+		issue.ResolvedAt, _ = parseTime(resolvedAt)
+		issue.ReopenedAt, _ = parseTime(reopenedAt)
+		issue.LastRegressedAt, _ = parseTime(lastRegressedAt)
+		if err := unmarshalStringSlice(storedExplanation, &issue.FingerprintExplanation); err != nil {
+			return Issue{}, 0, false, err
+		}
+		if err := json.Unmarshal(storedRepresentative, &issue.RepresentativeEvent); err != nil {
+			return Issue{}, 0, false, err
+		}
+		if issue.FingerprintMaterial == "" {
+			issue.FingerprintMaterial = material
+		}
+		if len(issue.FingerprintExplanation) == 0 {
+			issue.FingerprintExplanation = explanation
+		}
 		if seenAt.After(issue.LastSeen) {
 			issue.LastSeen = seenAt
 		}
 
-		if _, err := tx.ExecContext(ctx, `
-UPDATE issues
-SET last_seen = ?, event_count = event_count + 1, updated_at = CURRENT_TIMESTAMP
-WHERE id = ? AND project_id = ?`,
-			formatTime(issue.LastSeen),
-			id,
-			s.defaultProjectID,
-		); err != nil {
-			return Issue{}, 0, err
-		}
-	} else {
-		issue = Issue{
-			Fingerprint:         fingerprint,
-			Title:               title,
-			NormalizedTitle:     normalizedTitle,
-			ExceptionType:       exceptionType,
-			FirstSeen:           seenAt,
-			LastSeen:            seenAt,
-			EventCount:          1,
-			RepresentativeEvent: evt,
+		regressed := issue.Status == "resolved"
+		if regressed {
+			issue.Status = "unresolved"
+			issue.RegressionCount++
+			issue.ReopenedAt = seenAt
+			issue.LastRegressedAt = seenAt
+			issue.ResolvedAt = issue.ResolvedAt
 		}
 
-		res, err := tx.ExecContext(ctx, `
+		assignments := []string{
+			"last_seen = ?",
+			"event_count = event_count + 1",
+			"updated_at = CURRENT_TIMESTAMP",
+		}
+		args := []any{formatTime(issue.LastSeen)}
+		if regressed {
+			assignments = append(assignments, "status = 'unresolved'", "reopened_at = ?", "last_regressed_at = ?", "regression_count = regression_count + 1")
+			args = append(args, formatTime(issue.ReopenedAt), formatTime(issue.LastRegressedAt))
+		}
+		args = append(args, id, s.defaultProjectID)
+
+		if _, err := tx.ExecContext(ctx, `
+UPDATE issues
+SET `+strings.Join(assignments, ", ")+`
+WHERE id = ? AND project_id = ?`,
+			args...,
+		); err != nil {
+			return Issue{}, 0, false, err
+		}
+
+		if err := tx.Commit(); err != nil {
+			return Issue{}, 0, false, err
+		}
+		issue.Fingerprint = fingerprintValue
+		issue.RepresentativeEvent = evt
+		return issue, id, regressed, nil
+	}
+
+	issue = Issue{
+		Fingerprint:            fingerprintValue,
+		FingerprintMaterial:    material,
+		FingerprintExplanation: explanation,
+		Title:                  title,
+		NormalizedTitle:        normalizedTitle,
+		ExceptionType:          exceptionType,
+		Status:                 "unresolved",
+		FirstSeen:              seenAt,
+		LastSeen:               seenAt,
+		EventCount:             1,
+		RepresentativeEvent:    evt,
+	}
+
+	res, err := tx.ExecContext(ctx, `
 INSERT INTO issues (
 	project_id,
 	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
 	title,
 	normalized_title,
 	exception_type,
+	status,
 	first_seen,
 	last_seen,
 	event_count,
 	representative_event_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			s.defaultProjectID,
-			fingerprint,
-			title,
-			normalizedTitle,
-			exceptionType,
-			formatTime(seenAt),
-			formatTime(seenAt),
-			1,
-			representative,
-		)
-		if err != nil {
-			return Issue{}, 0, err
-		}
-
-		id, err = res.LastInsertId()
-		if err != nil {
-			return Issue{}, 0, err
-		}
-		issue.ID = formatID(issueIDPrefix, id)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.defaultProjectID,
+		fingerprintValue,
+		material,
+		mustMarshalStrings(explanation),
+		title,
+		normalizedTitle,
+		exceptionType,
+		"unresolved",
+		formatTime(seenAt),
+		formatTime(seenAt),
+		1,
+		representative,
+	)
+	if err != nil {
+		return Issue{}, 0, false, err
 	}
+
+	id, err = res.LastInsertId()
+	if err != nil {
+		return Issue{}, 0, false, err
+	}
+	issue.ID = formatID(issueIDPrefix, id)
 
 	if err := tx.Commit(); err != nil {
-		return Issue{}, 0, err
+		return Issue{}, 0, false, err
 	}
 
-	issue.RepresentativeEvent = evt
-	if existing {
-		// Preserve the stored representative event for existing issues.
-		if err := json.Unmarshal(representative, &issue.RepresentativeEvent); err != nil {
-			return Issue{}, 0, err
-		}
-	}
-
-	return issue, id, nil
+	return issue, id, false, nil
 }
 
-func (s *Store) insertEvent(ctx context.Context, issueID int64, processed worker.ProcessedEvent) (Event, int64, error) {
+func (s *Store) insertEvent(ctx context.Context, issueID int64, regressed bool, processed worker.ProcessedEvent) (Event, int64, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {
 		return Event{}, 0, err
@@ -561,19 +790,25 @@ INSERT INTO events (
 	project_id,
 	issue_id,
 	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
 	received_at,
 	observed_at,
 	severity,
 	message,
+	regressed,
 	event_json
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.defaultProjectID,
 		issueID,
 		processed.Fingerprint,
+		processed.FingerprintMaterial,
+		mustMarshalStrings(processed.FingerprintExplanation),
 		formatTime(receivedAt),
 		formatTime(observedAt),
 		processed.Event.Severity,
 		processed.Event.Message,
+		boolToInt(regressed),
 		payload,
 	)
 	if err != nil {
@@ -590,14 +825,17 @@ INSERT INTO events (
 	}
 
 	return Event{
-		ID:          formatID(eventIDPrefix, eventRowID),
-		IssueID:     formatID(issueIDPrefix, issueID),
-		Fingerprint: processed.Fingerprint,
-		ReceivedAt:  receivedAt,
-		ObservedAt:  observedAt,
-		Severity:    processed.Event.Severity,
-		Message:     processed.Event.Message,
-		Payload:     processed.Event,
+		ID:                     formatID(eventIDPrefix, eventRowID),
+		IssueID:                formatID(issueIDPrefix, issueID),
+		Fingerprint:            processed.Fingerprint,
+		FingerprintMaterial:    processed.FingerprintMaterial,
+		FingerprintExplanation: processed.FingerprintExplanation,
+		ReceivedAt:             receivedAt,
+		ObservedAt:             observedAt,
+		Severity:               processed.Event.Severity,
+		Message:                processed.Event.Message,
+		Regressed:              regressed,
+		Payload:                processed.Event,
 	}, eventRowID, nil
 }
 
@@ -723,20 +961,34 @@ func scanIssue(scanner interface {
 		id                int64
 		issue             Issue
 		representativeRaw []byte
+		explanationRaw    []byte
 		firstSeen         string
 		lastSeen          string
+		resolvedAt        string
+		reopenedAt        string
+		lastRegressedAt   string
 	)
 	if err := scanner.Scan(
 		&id,
 		&issue.Fingerprint,
+		&issue.FingerprintMaterial,
+		&explanationRaw,
 		&issue.Title,
 		&issue.NormalizedTitle,
 		&issue.ExceptionType,
+		&issue.Status,
+		&resolvedAt,
+		&reopenedAt,
+		&lastRegressedAt,
+		&issue.RegressionCount,
 		&firstSeen,
 		&lastSeen,
 		&issue.EventCount,
 		&representativeRaw,
 	); err != nil {
+		return Issue{}, err
+	}
+	if err := unmarshalStringSlice(explanationRaw, &issue.FingerprintExplanation); err != nil {
 		return Issue{}, err
 	}
 	if err := json.Unmarshal(representativeRaw, &issue.RepresentativeEvent); err != nil {
@@ -752,6 +1004,9 @@ func scanIssue(scanner interface {
 	}
 	issue.FirstSeen = parsedFirstSeen
 	issue.LastSeen = parsedLastSeen
+	issue.ResolvedAt, _ = parseTime(resolvedAt)
+	issue.ReopenedAt, _ = parseTime(reopenedAt)
+	issue.LastRegressedAt, _ = parseTime(lastRegressedAt)
 	issue.ID = formatID(issueIDPrefix, id)
 	return issue, nil
 }
@@ -760,23 +1015,31 @@ func scanEvent(scanner interface {
 	Scan(dest ...any) error
 }) (Event, error) {
 	var (
-		id         int64
-		issueID    int64
-		entry      Event
-		payload    []byte
-		receivedAt string
-		observedAt string
+		id             int64
+		issueID        int64
+		entry          Event
+		payload        []byte
+		explanationRaw []byte
+		receivedAt     string
+		observedAt     string
+		regressed      int
 	)
 	if err := scanner.Scan(
 		&id,
 		&issueID,
 		&entry.Fingerprint,
+		&entry.FingerprintMaterial,
+		&explanationRaw,
 		&receivedAt,
 		&observedAt,
 		&entry.Severity,
 		&entry.Message,
+		&regressed,
 		&payload,
 	); err != nil {
+		return Event{}, err
+	}
+	if err := unmarshalStringSlice(explanationRaw, &entry.FingerprintExplanation); err != nil {
 		return Event{}, err
 	}
 	if err := json.Unmarshal(payload, &entry.Payload); err != nil {
@@ -792,6 +1055,7 @@ func scanEvent(scanner interface {
 	}
 	entry.ReceivedAt = parsedReceivedAt
 	entry.ObservedAt = parsedObservedAt
+	entry.Regressed = regressed != 0
 	entry.ID = formatID(eventIDPrefix, id)
 	entry.IssueID = formatID(issueIDPrefix, issueID)
 	return entry, nil
@@ -904,4 +1168,65 @@ func normalizeTitle(value string) string {
 	value = whitespace.ReplaceAllString(value, " ")
 	value = trimPunctuation.ReplaceAllString(value, "")
 	return value
+}
+
+func ensureColumn(ctx context.Context, tx *sql.Tx, table, column, definition string) error {
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			typ     string
+			notNull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, definition))
+	return err
+}
+
+func mustMarshalStrings(values []string) string {
+	if len(values) == 0 {
+		return "[]"
+	}
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return "[]"
+	}
+	return string(payload)
+}
+
+func unmarshalStringSlice(raw []byte, dest *[]string) error {
+	if len(raw) == 0 {
+		*dest = nil
+		return nil
+	}
+	if err := json.Unmarshal(raw, dest); err != nil {
+		*dest = nil
+		return err
+	}
+	return nil
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }

@@ -13,7 +13,10 @@
       <aside class="sidebar" aria-label="Primary">
         <div class="side-mark" aria-hidden="true">BB</div>
         <nav class="side-nav">
-          <a class="active" href="#/">Issues</a>
+          <a class="active" href="#/issues" data-route="issues">Issues</a>
+          <a href="#/releases" data-route="releases">Releases</a>
+          <a href="#/alerts" data-route="alerts">Alerts</a>
+          <a href="#/settings" data-route="settings">Settings</a>
         </nav>
       </aside>
 
@@ -27,11 +30,6 @@
           </div>
 
           <div class="toolbar">
-            <label class="field">
-              <span>API base</span>
-              <input id="api-base" type="text" spellcheck="false" placeholder="http://localhost:8080" />
-            </label>
-            <button id="save-api" type="button">Save</button>
             <button id="refresh-all" type="button">Refresh</button>
           </div>
         </header>

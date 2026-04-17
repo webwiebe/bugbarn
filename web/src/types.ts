@@ -26,6 +26,16 @@ export interface ApiIssue extends RawRecord {
   eventCount?: number;
   event_count?: number;
   count?: number;
+  Status?: string;
+  status?: string;
+  fingerprintMaterial?: RawRecord;
+  fingerprint_material?: RawRecord;
+  fingerprintParts?: RawRecord;
+  fingerprint_parts?: RawRecord;
+  fingerprintInputs?: RawRecord;
+  fingerprint_inputs?: RawRecord;
+  fingerprintDebug?: RawRecord;
+  fingerprint_debug?: RawRecord;
 }
 
 export interface ApiEvent extends RawRecord {
@@ -60,16 +70,74 @@ export interface ApiEvent extends RawRecord {
   exception?: RawRecord | { message?: string };
 }
 
+export interface ApiRelease extends RawRecord {
+  id?: string | number;
+  ID?: string | number;
+  name?: string;
+  Name?: string;
+  environment?: string;
+  Environment?: string;
+  observedAt?: string | number;
+  observed_at?: string | number;
+  version?: string;
+  Version?: string;
+  commitSha?: string;
+  commit_sha?: string;
+  url?: string;
+  notes?: string;
+  createdAt?: string | number;
+  created_at?: string | number;
+}
+
+export interface ApiAlert extends RawRecord {
+  id?: string | number;
+  ID?: string | number;
+  name?: string;
+  Name?: string;
+  enabled?: boolean;
+  Enabled?: boolean;
+  query?: string;
+  Query?: string;
+  condition?: string;
+  Condition?: string;
+  target?: string;
+  Target?: string;
+  lastTriggeredAt?: string | number;
+  last_triggered_at?: string | number;
+  createdAt?: string | number;
+  created_at?: string | number;
+}
+
+export interface ApiSettings extends RawRecord {
+  username?: string;
+  Username?: string;
+  displayName?: string;
+  display_name?: string;
+  email?: string;
+  Email?: string;
+  timezone?: string;
+  timezoneName?: string;
+  defaultEnvironment?: string;
+  default_environment?: string;
+  liveWindowMinutes?: number;
+  live_window_minutes?: number;
+  stacktraceContextLines?: number;
+  stacktrace_context_lines?: number;
+}
+
 export interface AppState {
-  apiBase: string;
   authChecked: boolean;
   authRequired: boolean;
   authenticated: boolean;
   username: string;
+  currentRoute: "issues" | "releases" | "alerts" | "settings";
   issues: ApiIssue[];
   issueQuery: string;
   selectedIssueId: string | null;
   selectedEventId: string | null;
+  releases: ApiRelease[];
+  alerts: ApiAlert[];
+  settings: ApiSettings | null;
   liveEvents: ApiEvent[];
   liveError: Error | null;
   liveTimer: number | null;
@@ -77,11 +145,10 @@ export interface AppState {
 }
 
 export interface AppElements {
-  apiBase: HTMLInputElement;
-  saveApi: HTMLButtonElement;
   refreshAll: HTMLButtonElement;
   overviewView: HTMLElement;
   detailView: HTMLElement;
+  navLinks: NodeListOf<HTMLAnchorElement>;
   issueCount: HTMLElement;
   issueFilter: HTMLInputElement;
   issueList: HTMLElement;

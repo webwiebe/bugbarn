@@ -9,13 +9,13 @@ Build a small self-hosted error tracker with a Go ingest/API/worker service, loc
 ## Technical Context
 
 **Language/Version**: Go 1.24+ for ingest/API/worker; TypeScript for web and TS SDK; Python 3.11+ for Python SDK. Browser-side scripting source should be TypeScript, not hand-written JavaScript.
-**Primary Dependencies**: Go standard HTTP stack, OpenTelemetry semantic conventions where useful, SQLite driver, frontend framework selected during implementation, OpenAPI tooling  
-**Storage**: Local append-only disk spool in request path; SQLite default for processed issues/events/facets; Postgres-compatible repository boundary if complexity stays low  
-**Testing**: Go unit/integration/benchmark tests, SDK tests, frontend component/browser smoke tests, OpenAPI contract checks, load fixtures  
-**Target Platform**: Linux containers, standalone Go binary, Raspberry Pi-class hardware, K3S testing/staging  
-**Project Type**: Monorepo with service, web app, SDK packages, and infra manifests  
-**Performance Goals**: p95 ingest below 10 ms for durable enqueue under normal load; explicit backpressure instead of unbounded memory; initial benchmark target of 1,000 small events/sec on dev hardware  
-**Constraints**: No request-path issue/event DB inserts; scrub before persistence/UI; no external SaaS dependencies required; simple personal-use auth  
+**Primary Dependencies**: Go standard HTTP stack, OpenTelemetry semantic conventions where useful, SQLite driver, frontend framework selected during implementation, OpenAPI tooling
+**Storage**: Local append-only disk spool in request path; SQLite default for processed issues/events/facets behind repository interfaces; consider `sqlc` for typed SQL generation once queries stabilize
+**Testing**: Go unit/integration/benchmark tests, SDK tests, frontend component/browser smoke tests, OpenAPI contract checks, load fixtures
+**Target Platform**: Linux containers, standalone Go binary, Raspberry Pi-class hardware, K3S testing/staging
+**Project Type**: Monorepo with service, web app, SDK packages, and infra manifests
+**Performance Goals**: p95 ingest below 10 ms for durable enqueue under normal load; explicit backpressure instead of unbounded memory; initial benchmark target of 1,000 small events/sec on dev hardware
+**Constraints**: No request-path issue/event DB inserts; scrub before persistence/UI; no external SaaS dependencies required; simple personal-use auth
 
 ## Constitution Check
 
@@ -62,9 +62,10 @@ specs/
 ### Runtime Components
 
 - **`cmd/bugbarn`**: Process entrypoint. It wires config, storage, the spool, the HTTP server, and the background worker together. `worker-once` is the maintenance path for draining the current spool once.
-- **Ingest/API service**: `internal/api` owns the HTTP server and route dispatch, while `internal/ingest` owns API key auth, request limits, and durable spool append.
+- **HTTP/API layer**: `internal/api` owns route dispatch, request parsing, authentication/session handling, and response formatting.
+- **Service layer**: `internal/service` owns business use cases and calls repository interfaces.
 - **Worker**: `internal/worker` reads spool records, parses payloads, normalizes to canonical events, scrubs PII, computes fingerprints, and hands processed events to storage.
-- **Storage**: `internal/storage` owns SQLite schema creation, issue/event/facet persistence, and read/query operations.
+- **Repositories**: `internal/storage` owns SQLite schema creation, migrations, issue/event/facet persistence, and read/query operations behind repository interfaces.
 - **Web UI**: Separate deployable browser client that stays TypeScript-first and calls read/live APIs.
 - **SDKs**: Lightweight clients that capture errors, build canonical envelopes, and send asynchronously.
 
@@ -114,6 +115,15 @@ specs/
 - `GET /api/v1/events/{id}`: event detail
 - `GET /api/v1/facets`: discovered facets
 - `GET /api/v1/live/events`: server-sent events or websocket live stream
+- `GET /api/v1/releases`: release marker list
+- `POST /api/v1/releases`: create release marker
+- `GET /api/v1/alerts`: alert rule list
+- `POST /api/v1/alerts`: create alert rule
+- `GET /api/v1/settings`: session/workspace settings
+- `POST /api/v1/settings`: update settings
+- `POST /api/v1/source-maps`: upload source maps or artifact metadata
+- `POST /api/v1/issues/{id}/resolve`: mark issue resolved
+- `POST /api/v1/issues/{id}/reopen`: reopen resolved issue
 - `POST /api/v1/login`: user login
 - `POST /api/v1/projects`: project management
 - `POST /api/v1/projects/{id}/keys`: API key management

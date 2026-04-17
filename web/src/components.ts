@@ -1,4 +1,4 @@
-import { collectKeyValues, hasKeys, isRecord, readString } from "./data.js";
+import { collectKeyValues, hasKeys, isRecord, readFirst, readString } from "./data.js";
 import {
   eventContext,
   eventException,
@@ -6,6 +6,7 @@ import {
   eventPayload,
   eventRawScrubbed,
   eventSeverity,
+  eventSpanId,
   eventSpans,
   eventStacktrace,
   eventTimestamp,
@@ -16,13 +17,15 @@ import {
   issueEventCount,
   issueExceptionType,
   issueFingerprint,
+  issueFingerprintMaterial,
   issueFirstSeen,
   issueLastSeen,
   issueNormalizedTitle,
+  issueStatus,
   issueTitle,
 } from "./domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "./format.js";
-import type { ApiEvent, ApiIssue, RawRecord } from "./types.js";
+import type { ApiAlert, ApiEvent, ApiIssue, ApiRelease, ApiSettings, RawRecord } from "./types.js";
 
 export function renderIssueListMarkup(issues: ApiIssue[], query: string, selectedIssueId: string | null, error: unknown = null): string {
   if (error) {
@@ -88,8 +91,10 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[]): st
   const fingerprint = issueFingerprint(issue);
   const firstSeen = formatTime(issueFirstSeen(issue));
   const lastSeen = formatTime(issueLastSeen(issue));
+  const status = issueStatus(issue);
   const eventCount = issueEventCount(issue, events.length);
-  const lastEvent = events[0];
+  const lastEvent = events[0] || null;
+  const fingerprintMaterial = buildFingerprintMaterial(issue, lastEvent);
   const fields = collectKeyValues(issue, [
     "id",
     "ID",
@@ -115,6 +120,8 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[]): st
     "eventCount",
     "EventCount",
     "event_count",
+    "status",
+    "Status",
   ]);
 
   return `
@@ -126,21 +133,26 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[]): st
       </div>
       <div class="link-row">
         <button type="button" data-copy-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>Copy issue id</button>
+        ${status === "resolved" ? `<button type="button" data-reopen-issue="${escapeAttr(id)}" ${id ? "" : "disabled"}>Reopen issue</button>` : `<button type="button" data-resolve-issue="${escapeAttr(id)}" ${id ? "" : "disabled"}>Resolve issue</button>`}
       </div>
     </div>
     <div class="issue-stats">
       <div><span>Events</span><strong>${escapeHtml(String(eventCount))}</strong></div>
       <div><span>First seen</span><strong>${escapeHtml(firstSeen || "n/a")}</strong></div>
       <div><span>Last seen</span><strong>${escapeHtml(lastSeen || "n/a")}</strong></div>
-      <div><span>Fingerprint</span><strong>${escapeHtml(fingerprint || "n/a")}</strong></div>
+      <div><span>Status</span><strong>${escapeHtml(status)}</strong></div>
     </div>
     <div class="detail-main">
-      <div class="section">
+      ${renderFingerprintSection(fingerprint, fingerprintMaterial)}
+      ${lastEvent ? renderDataSection("Exception", eventException(lastEvent)) : renderEmptySection("Exception", "No exception data returned.")}
+      ${lastEvent ? renderDataSection("Context", eventContext(lastEvent)) : renderEmptySection("Context", "No contextual fields were returned for the latest event.")}
+      ${renderStacktrace(lastEvent ? eventStacktrace(lastEvent) : [])}
+      <div class="section section-scrollable">
         <h3>Events in this issue</h3>
-        ${renderEventButtons(events)}
+        ${renderEventButtons(events, "", "scrollable-list")}
       </div>
-      ${lastEvent ? renderDataSection("Latest event context", eventContext(lastEvent)) : ""}
-      ${lastEvent ? renderDataSection("Latest exception", eventException(lastEvent)) : ""}
+      ${lastEvent ? renderDataSection("Latest event payload", eventPayload(lastEvent)) : ""}
+      ${lastEvent ? renderDataSection("Scrubbed payload", eventRawScrubbed(lastEvent)) : ""}
       ${renderDataSection("Issue data", fields)}
     </div>
   `;
@@ -181,6 +193,12 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
     "ReceivedAt",
     "observedAt",
     "ObservedAt",
+    "traceId",
+    "trace_id",
+    "TraceID",
+    "spanId",
+    "span_id",
+    "SpanID",
   ]);
 
   return `
@@ -188,7 +206,7 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
       <div>
         <p class="eyebrow">${escapeHtml(eventSeverity(event) || "event")}</p>
         <h3>${escapeHtml(title)}</h3>
-        <p class="muted">${escapeHtml(eventUrl(event) || eventTraceId(event) || id || "No request context")}</p>
+        <p class="muted">${escapeHtml(eventUrl(event) || eventTraceId(event) || eventSpanId(event) || id || "No request context")}</p>
       </div>
       <div class="link-row">
         <button type="button" data-open-issue="${escapeAttr(issueId)}" ${issueId ? "" : "disabled"}>Open issue</button>
@@ -206,10 +224,9 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
       ${renderDataSection("Exception", exception)}
       ${renderDataSection("Context", context)}
       ${renderStacktrace(stacktrace)}
-      ${renderSpans(spans)}
-      <div class="section">
+      <div class="section section-scrollable">
         <h3>Issue events</h3>
-        ${renderEventButtons(issueEvents, id)}
+        ${renderEventButtons(issueEvents, id, "scrollable-list")}
       </div>
       ${renderDataSection("Scrubbed payload", rawScrubbed)}
       ${renderDataSection("Normalized payload", payload)}
@@ -255,9 +272,9 @@ export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null
     .join("");
 }
 
-export function renderSetupGuide(apiBase: string): string {
-  const endpoint = `${apiBase || window.location.origin}/api/v1/events`;
-  const packageUrl = `${apiBase || window.location.origin}/packages/typescript/bugbarn-typescript-0.1.0.tgz`;
+export function renderSetupGuide(): string {
+  const endpoint = `${window.location.origin}/api/v1/events`;
+  const packageUrl = `${window.location.origin}/packages/typescript/bugbarn-typescript-0.1.0.tgz`;
   const testApiKeyCommand = "kubectl -n bugbarn-testing get secret bugbarn-api-key -o jsonpath='{.data.BUGBARN_API_KEY}' | base64 -d; echo";
   const stagingApiKeyCommand = "kubectl -n bugbarn-staging get secret bugbarn-api-key -o jsonpath='{.data.BUGBARN_API_KEY}' | base64 -d; echo";
   return `
@@ -311,6 +328,285 @@ init(
   `;
 }
 
+export function renderReleasesViewMarkup(releases: ApiRelease[], error: unknown = null): string {
+  return `
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">Releases</p>
+        <h2>Release markers</h2>
+      </div>
+      <span class="chip">${escapeHtml(String(releases.length))}</span>
+    </div>
+    <div class="detail-main">
+      <div class="section">
+        <h3>Recent release markers</h3>
+        ${error ? `<div class="error">Unable to load releases. ${escapeHtml(errorMessage(error))}</div>` : renderReleaseList(releases)}
+      </div>
+      <div class="section">
+        <h3>Mark a release</h3>
+        <p class="muted">POST /api/v1/releases</p>
+        <form class="form-grid" id="release-form">
+          ${renderField("Name", "name", "text", "1.4.0")}
+          ${renderField("Environment", "environment", "text", "testing")}
+          ${renderField("Observed at", "observedAt", "datetime-local")}
+          ${renderField("Version", "version", "text", "v1.4.0")}
+          ${renderField("Commit sha", "commitSha", "text", "abc123")}
+          ${renderField("URL", "url", "url", "https://example.com/release-notes")}
+          <label class="field field-wide">
+            <span>Notes</span>
+            <textarea name="notes" rows="4" placeholder="Deployment note, bug fix, or incident context"></textarea>
+          </label>
+          <div class="link-row form-actions">
+            <button type="submit">Publish release marker</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null): string {
+  return `
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">Alerts</p>
+        <h2>Alert rules</h2>
+      </div>
+      <span class="chip">${escapeHtml(String(alerts.length))}</span>
+    </div>
+    <div class="detail-main">
+      <div class="section">
+        <h3>Configured alerts</h3>
+        ${error ? `<div class="error">Unable to load alerts. ${escapeHtml(errorMessage(error))}</div>` : renderAlertList(alerts)}
+      </div>
+      <div class="section">
+        <h3>Create alert</h3>
+        <p class="muted">POST /api/v1/alerts</p>
+        <form class="form-grid" id="alert-form">
+          ${renderField("Name", "name", "text", "500s on checkout")}
+          ${renderField("Condition", "condition", "text", "event_count > 10")}
+          ${renderField("Query", "query", "text", "environment:testing")}
+          ${renderField("Target", "target", "text", "ops@example.com")}
+          <label class="field field-wide checkbox-field">
+            <input name="enabled" type="checkbox" checked />
+            <span>Enabled</span>
+          </label>
+          <div class="link-row form-actions">
+            <button type="submit">Create alert</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+export function renderSettingsViewMarkup(settings: ApiSettings | null, username: string, error: unknown = null): string {
+  const displayName = settings?.displayName || settings?.display_name || username || "";
+  const timezone = settings?.timezone || settings?.timezoneName || "";
+  const defaultEnvironment = settings?.defaultEnvironment || settings?.default_environment || "";
+  const liveWindowMinutes = settings?.liveWindowMinutes ?? settings?.live_window_minutes ?? 15;
+  const stacktraceContextLines = settings?.stacktraceContextLines ?? settings?.stacktrace_context_lines ?? 3;
+
+  return `
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">Settings</p>
+        <h2>Workspace settings</h2>
+      </div>
+      <span class="chip">${escapeHtml(username || "signed in")}</span>
+    </div>
+    <div class="detail-main">
+      <div class="section">
+        <h3>Session</h3>
+        ${error ? `<div class="error">Unable to load settings. ${escapeHtml(errorMessage(error))}</div>` : ""}
+        <div class="grid">
+          <div class="kv"><span>Username</span><span>${escapeHtml(username || "n/a")}</span></div>
+          <div class="kv"><span>Display name</span><span>${escapeHtml(displayName || "n/a")}</span></div>
+          <div class="kv"><span>Timezone</span><span>${escapeHtml(timezone || "n/a")}</span></div>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Preferences</h3>
+        <p class="muted">POST /api/v1/settings</p>
+        <form class="form-grid" id="settings-form">
+          ${renderField("Display name", "displayName", "text", displayName)}
+          ${renderField("Timezone", "timezone", "text", timezone || "Europe/Amsterdam")}
+          ${renderField("Default environment", "defaultEnvironment", "text", defaultEnvironment || "testing")}
+          ${renderField("Live window minutes", "liveWindowMinutes", "number", String(liveWindowMinutes))}
+          ${renderField("Stacktrace context lines", "stacktraceContextLines", "number", String(stacktraceContextLines))}
+          <div class="link-row form-actions">
+            <button type="submit">Save settings</button>
+          </div>
+        </form>
+      </div>
+      <div class="section">
+        <h3>Source maps</h3>
+        <p class="muted">Upload source maps so frames can show a short source snippet instead of only minified output.</p>
+        <form class="form-grid" id="source-map-form" enctype="multipart/form-data">
+          ${renderField("Release", "release", "text", "")}
+          ${renderField("Environment", "environment", "text", defaultEnvironment || "testing")}
+          ${renderField("URL prefix", "urlPrefix", "text", "https://app.example.com/static/")}
+          <label class="field field-wide">
+            <span>Source map files</span>
+            <input name="files" type="file" accept=".map,.js,.ts" multiple />
+          </label>
+          <div class="link-row form-actions">
+            <button type="submit">Upload source maps</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function renderReleaseList(releases: ApiRelease[]): string {
+  if (!releases.length) {
+    return `
+      <div class="empty">
+        <strong>No release markers yet.</strong>
+        <p>Use the form below or wire the release marker endpoint to link deploys with regressions.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="route-list">
+      ${releases
+        .map((release) => {
+          const title = readString(release, ["name", "Name"]) || "Untitled release";
+          const environment = readString(release, ["environment", "Environment"]) || "n/a";
+          const observedAt = formatTime(readFirst(release, ["observedAt", "observed_at", "createdAt", "created_at"])) || "n/a";
+          const version = readString(release, ["version", "Version"]);
+          const commitSha = readString(release, ["commitSha", "commit_sha"]);
+          const url = readString(release, ["url"]);
+          const notes = readString(release, ["notes"]);
+          return `
+            <article class="route-item">
+              <div class="route-item-head">
+                <strong>${escapeHtml(title)}</strong>
+                <span class="chip">${escapeHtml(environment)}</span>
+              </div>
+              <div class="route-item-meta">
+                <span>${escapeHtml(observedAt)}</span>
+                ${version ? `<span>${escapeHtml(version)}</span>` : ""}
+                ${commitSha ? `<span>${escapeHtml(commitSha)}</span>` : ""}
+                ${url ? `<a href="${escapeAttr(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>` : ""}
+              </div>
+              ${notes ? `<p class="muted">${escapeHtml(notes)}</p>` : ""}
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderAlertList(alerts: ApiAlert[]): string {
+  if (!alerts.length) {
+    return `
+      <div class="empty">
+        <strong>No alert rules yet.</strong>
+        <p>Use the form below to create the first rule once the backend supports it.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="route-list">
+      ${alerts
+        .map((alert) => {
+          const title = readString(alert, ["name", "Name"]) || "Untitled alert";
+          const condition = readString(alert, ["condition", "Condition", "query", "Query"]) || "n/a";
+          const target = readString(alert, ["target", "Target"]) || "n/a";
+          const enabled = Boolean(alert.enabled ?? alert.Enabled);
+          const lastTriggeredAt = formatTime(readFirst(alert, ["lastTriggeredAt", "last_triggered_at"])) || "never";
+          return `
+            <article class="route-item">
+              <div class="route-item-head">
+                <strong>${escapeHtml(title)}</strong>
+                <span class="chip ${enabled ? "" : "bad"}">${escapeHtml(enabled ? "enabled" : "disabled")}</span>
+              </div>
+              <div class="route-item-meta">
+                <span>${escapeHtml(condition)}</span>
+                <span>${escapeHtml(target)}</span>
+                <span>${escapeHtml(lastTriggeredAt)}</span>
+              </div>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderField(label: string, name: string, type: "text" | "number" | "url" | "datetime-local" = "text", value = ""): string {
+  return `
+    <label class="field">
+      <span>${escapeHtml(label)}</span>
+      <input name="${escapeAttr(name)}" type="${type}" value="${escapeAttr(value)}" />
+    </label>
+  `;
+}
+
+function renderEmptySection(title: string, message: string): string {
+  return `
+    <div class="section">
+      <h3>${escapeHtml(title)}</h3>
+      <div class="empty">
+        <p>${escapeHtml(message)}</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderFingerprintSection(fingerprint: string, material: RawRecord): string {
+  const fields = hasKeys(material) ? material : {};
+  return `
+    <div class="section">
+      <h3>Fingerprint</h3>
+      <p class="muted">BugBarn groups events by a stable fingerprint derived from normalized exception data, message text, stack frames, and selected stable context.</p>
+      <div class="grid">
+        <div class="kv">
+          <span>Fingerprint hash</span>
+          <span>${escapeHtml(fingerprint || "n/a")}</span>
+        </div>
+      </div>
+      ${renderRecord(fields, "No fingerprint material fields were returned by the backend.")}
+    </div>
+  `;
+}
+
+function buildFingerprintMaterial(issue: ApiIssue, lastEvent: ApiEvent | null): RawRecord {
+  const direct = issueFingerprintMaterial(issue);
+  if (hasKeys(direct)) {
+    return direct;
+  }
+
+  const material: RawRecord = {};
+  const exception = lastEvent ? eventException(lastEvent) : {};
+  const context = lastEvent ? eventContext(lastEvent) : {};
+  const stacktrace = lastEvent ? eventStacktrace(lastEvent) : [];
+
+  material["normalized exception type"] = issueExceptionType(issue) || readString(exception, ["type", "Type"]) || "n/a";
+  material["normalized message"] = issueNormalizedTitle(issue) || readString(exception, ["message", "Message"]) || "n/a";
+  if (hasKeys(context)) {
+    material["stable context"] = context;
+  }
+  if (stacktrace.length) {
+    material["stack frames"] = stacktrace.slice(0, 5).map((frame) => {
+      if (!isRecord(frame)) {
+        return String(frame);
+      }
+      const fn = readString(frame, ["function", "Function", "name", "Name"]) || "<anonymous>";
+      const file = readString(frame, ["file", "File", "filename", "Filename", "path", "Path"]);
+      const line = readString(frame, ["line", "Line", "lineno", "Lineno"]);
+      return `${fn}${file ? ` @ ${file}${line ? `:${line}` : ""}` : ""}`;
+    });
+  }
+
+  return material;
+}
+
 function filterIssues(issues: ApiIssue[], query: string): ApiIssue[] {
   const normalizedQuery = query.trim().toLowerCase();
   return issues.filter((issue) => {
@@ -345,10 +641,10 @@ function renderDataSection(title: string, data: RawRecord): string {
   `;
 }
 
-function renderRecord(data: RawRecord): string {
+function renderRecord(data: RawRecord, emptyMessage = "No data returned."): string {
   const entries = Object.entries(data).filter(([, value]) => value !== null && value !== undefined && value !== "");
   if (!entries.length) {
-    return `<div class="empty">No data returned.</div>`;
+    return `<div class="empty">${escapeHtml(emptyMessage)}</div>`;
   }
   return `
     <div class="grid">
@@ -371,41 +667,74 @@ function renderStacktrace(stacktrace: unknown[]): string {
       <h3>Stacktrace</h3>
       <div class="stacktrace">
         ${stacktrace
-          .map((frame, index) => {
-            if (!isRecord(frame)) {
-              return `<div class="frame"><span>#${index + 1}</span><code>${escapeHtml(String(frame))}</code></div>`;
-            }
-            const fn = readString(frame, ["function", "Function", "name", "Name"]) || "<anonymous>";
-            const file = readString(frame, ["file", "File", "filename", "Filename", "path", "Path"]);
-            const line = readString(frame, ["line", "Line", "lineno", "Lineno"]);
-            const column = readString(frame, ["column", "Column", "colno", "Colno"]);
-            const location = [file, line ? `:${line}` : "", column ? `:${column}` : ""].join("");
-            return `
-              <div class="frame">
-                <span>#${index + 1}</span>
-                <div>
-                  <code>${escapeHtml(fn)}</code>
-                  <small>${escapeHtml(location || "unknown source")}</small>
-                </div>
-              </div>
-            `;
-          })
+          .map((frame, index) => renderFrame(frame, index))
           .join("")}
       </div>
     </div>
   `;
 }
 
-function renderSpans(spans: unknown[]): string {
-  if (!spans.length) {
-    return "";
+function renderFrame(frame: unknown, index: number): string {
+  if (!isRecord(frame)) {
+    return `<div class="frame"><span>#${index + 1}</span><code>${escapeHtml(String(frame))}</code></div>`;
   }
+
+  const fn = readString(frame, ["function", "Function", "name", "Name"]) || "<anonymous>";
+  const file = readString(frame, ["file", "File", "filename", "Filename", "path", "Path"]);
+  const line = readString(frame, ["line", "Line", "lineno", "Lineno"]);
+  const column = readString(frame, ["column", "Column", "colno", "Colno"]);
+  const location = [file, line ? `:${line}` : "", column ? `:${column}` : ""].join("");
+  const snippet = readFrameSnippet(frame);
+
   return `
-    <div class="section">
-      <h3>Spans</h3>
-      <pre class="pre">${escapeHtml(JSON.stringify(spans, null, 2))}</pre>
-    </div>
+    <article class="frame">
+      <span>#${index + 1}</span>
+      <div class="frame-body">
+        <div class="frame-head">
+          <code>${escapeHtml(fn)}</code>
+          <small>${escapeHtml(location || "unknown source")}</small>
+        </div>
+        ${snippet ? `<pre class="frame-snippet">${escapeHtml(snippet)}</pre>` : ""}
+      </div>
+    </article>
   `;
+}
+
+function readFrameSnippet(frame: RawRecord): string {
+  const direct = readFirst(frame, [
+    "snippet",
+    "Snippet",
+    "sourceSnippet",
+    "source_snippet",
+    "contextLine",
+    "context_line",
+    "lineText",
+    "line_text",
+  ]);
+  if (typeof direct === "string" && direct.trim()) {
+    return direct;
+  }
+  if (Array.isArray(direct)) {
+    return direct.map((line) => String(line)).join("\n");
+  }
+
+  const source = readFirst(frame, ["source", "Source", "code", "Code"]);
+  if (typeof source === "string" && source.trim()) {
+    return source;
+  }
+
+  const pre = toLines(readFirst(frame, ["preContext", "PreContext", "pre_context"]));
+  const post = toLines(readFirst(frame, ["postContext", "PostContext", "post_context"]));
+  const context = readString(frame, ["contextLine", "context_line", "ContextLine"]);
+  const lines = [...pre, ...(context ? [context] : []), ...post];
+  return lines.join("\n");
+}
+
+function toLines(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((line) => String(line)).filter(Boolean);
 }
 
 function renderEventNavigation(events: ApiEvent[], activeId: string): string {
@@ -424,13 +753,13 @@ function renderEventNavigation(events: ApiEvent[], activeId: string): string {
   `;
 }
 
-function renderEventButtons(events: ApiEvent[], activeId = ""): string {
+function renderEventButtons(events: ApiEvent[], activeId = "", className = ""): string {
   if (!events.length) {
     return `<div class="empty">No events returned.</div>`;
   }
 
   return `
-    <div class="grid">
+    <div class="event-list${className ? ` ${className}` : ""}">
       ${events
         .map((event) => {
           const id = firstIdentifier(event);

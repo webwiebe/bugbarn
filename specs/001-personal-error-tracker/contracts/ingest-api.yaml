@@ -60,6 +60,10 @@ components:
           type: integer
         body:
           description: Human-readable event body or log message
+        release:
+          type: string
+        dist:
+          type: string
         resource:
           type: object
           additionalProperties: true

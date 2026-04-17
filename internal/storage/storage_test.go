@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
+	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
@@ -20,55 +21,49 @@ func TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable(t *test
 	defer store.Close()
 
 	ctx := context.Background()
-	first := worker.ProcessedEvent{
-		Fingerprint: "fingerprint-abc",
-		Event: event.Event{
-			ReceivedAt: time.Date(2026, 4, 15, 12, 0, 1, 0, time.UTC),
-			ObservedAt: time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC),
-			Severity:   "ERROR",
-			Message:    "request failed for user 12345",
-			Exception: event.Exception{
-				Type:    "panic",
-				Message: "request failed for user 12345",
-			},
-			Attributes: map[string]any{
+	first := processedEventFrom(event.Event{
+		ReceivedAt: time.Date(2026, 4, 15, 12, 0, 1, 0, time.UTC),
+		ObservedAt: time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC),
+		Severity:   "ERROR",
+		Message:    "request failed for user 12345",
+		Exception: event.Exception{
+			Type:    "panic",
+			Message: "request failed for user 12345",
+		},
+		Attributes: map[string]any{
+			"service": "api",
+		},
+		RawScrubbed: map[string]any{
+			"attributes": map[string]any{
 				"service": "api",
 			},
-			RawScrubbed: map[string]any{
-				"attributes": map[string]any{
-					"service": "api",
-				},
-				"resource": map[string]any{
-					"host": "app-1",
-				},
+			"resource": map[string]any{
+				"host": "app-1",
 			},
 		},
-	}
+	})
 
-	second := worker.ProcessedEvent{
-		Fingerprint: "fingerprint-abc",
-		Event: event.Event{
-			ReceivedAt: time.Date(2026, 4, 15, 12, 5, 1, 0, time.UTC),
-			ObservedAt: time.Date(2026, 4, 15, 12, 5, 0, 0, time.UTC),
-			Severity:   "ERROR",
-			Message:    "request failed for user 99999",
-			Exception: event.Exception{
-				Type:    "panic",
-				Message: "request failed for user 99999",
-			},
-			Attributes: map[string]any{
+	second := processedEventFrom(event.Event{
+		ReceivedAt: time.Date(2026, 4, 15, 12, 5, 1, 0, time.UTC),
+		ObservedAt: time.Date(2026, 4, 15, 12, 5, 0, 0, time.UTC),
+		Severity:   "ERROR",
+		Message:    "request failed for user 99999",
+		Exception: event.Exception{
+			Type:    "panic",
+			Message: "request failed for user 99999",
+		},
+		Attributes: map[string]any{
+			"service": "api",
+		},
+		RawScrubbed: map[string]any{
+			"attributes": map[string]any{
 				"service": "api",
 			},
-			RawScrubbed: map[string]any{
-				"attributes": map[string]any{
-					"service": "api",
-				},
-				"resource": map[string]any{
-					"host": "app-1",
-				},
+			"resource": map[string]any{
+				"host": "app-1",
 			},
 		},
-	}
+	})
 
 	issue1, event1, err := store.PersistProcessedEvent(ctx, first)
 	if err != nil {
@@ -133,4 +128,115 @@ func TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable(t *test
 	if got, want := gotEvent.Payload.RawScrubbed["resource"].(map[string]any)["host"], "app-1"; got != want {
 		t.Fatalf("unexpected stored payload context: got %v want %q", got, want)
 	}
+	if got := gotIssue.FingerprintMaterial; got == "" {
+		t.Fatal("expected issue fingerprint material")
+	}
+	if got := gotIssue.FingerprintExplanation; len(got) == 0 {
+		t.Fatal("expected issue fingerprint explanation")
+	}
+	if got := event1.FingerprintMaterial; got == "" {
+		t.Fatal("expected event fingerprint material")
+	}
+	if got := event1.FingerprintExplanation; len(got) == 0 {
+		t.Fatal("expected event fingerprint explanation")
+	}
+}
+
+func TestResolveIssueReopensOnRegressionAndLiveEventsAreWindowed(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
+	first := processedEventForIssue(time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC), "request failed for user 12345")
+	second := processedEventForIssue(base.Add(-5*time.Minute), "request failed for user 67890")
+
+	issue, _, err := store.PersistProcessedEvent(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.PersistProcessedEvent(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, err := store.ResolveIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Status != "resolved" {
+		t.Fatalf("unexpected resolved status: %q", resolved.Status)
+	}
+	if resolved.ResolvedAt.IsZero() {
+		t.Fatal("expected resolved timestamp")
+	}
+
+	regression := processedEventForIssue(base, "request failed for user 99999")
+	regressionIssue, regressionEvent, err := store.PersistProcessedEvent(ctx, regression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if regressionIssue.Status != "unresolved" {
+		t.Fatalf("unexpected regression status: %q", regressionIssue.Status)
+	}
+	if regressionIssue.RegressionCount != 1 {
+		t.Fatalf("unexpected regression count: %d", regressionIssue.RegressionCount)
+	}
+	if !regressionEvent.Regressed {
+		t.Fatal("expected event to be marked as regression")
+	}
+	if regressionIssue.LastRegressedAt.IsZero() {
+		t.Fatal("expected regression timestamp")
+	}
+
+	oldEvent := processedEventForIssue(time.Date(2026, 4, 15, 8, 0, 0, 0, time.UTC), "stale error")
+	if _, _, err := store.PersistProcessedEvent(ctx, oldEvent); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := store.ListRecentEvents(ctx, 50, time.Date(2026, 4, 15, 11, 30, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range events {
+		if item.ObservedAt.Before(time.Date(2026, 4, 15, 11, 30, 0, 0, time.UTC)) && item.ReceivedAt.Before(time.Date(2026, 4, 15, 11, 30, 0, 0, time.UTC)) {
+			t.Fatalf("unexpected stale live event: %#v", item)
+		}
+	}
+}
+
+func processedEventFrom(evt event.Event) worker.ProcessedEvent {
+	snapshot := fingerprint.SnapshotFor(evt)
+	fp := fingerprint.Fingerprint(evt)
+	evt.Fingerprint = fp
+	evt.FingerprintMaterial = snapshot.Material
+	evt.FingerprintExplanation = snapshot.Explanation
+	return worker.ProcessedEvent{
+		Event:                  evt,
+		Fingerprint:            fp,
+		FingerprintMaterial:    snapshot.Material,
+		FingerprintExplanation: snapshot.Explanation,
+	}
+}
+
+func processedEventForIssue(observed time.Time, message string) worker.ProcessedEvent {
+	evt := event.Event{
+		ObservedAt: observed,
+		ReceivedAt: observed.Add(1 * time.Second),
+		Severity:   "ERROR",
+		Message:    message,
+		Exception: event.Exception{
+			Type:    "panic",
+			Message: message,
+		},
+		Attributes: map[string]any{
+			"service.name": "api",
+			"release":      "v1.2.3",
+		},
+	}
+	return processedEventFrom(evt)
 }

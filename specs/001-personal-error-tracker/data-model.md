@@ -66,6 +66,9 @@ One occurrence after normalization and scrubbing.
 - `environment`
 - `host`
 - `fingerprint`
+- `fingerprint_material`
+- `fingerprint_explanation_json`
+- `is_regression`
 
 ## Issue
 
@@ -83,6 +86,12 @@ Deduplicated group of related events.
 - `last_seen_at`
 - `event_count`
 - `status`: unresolved, resolved, ignored
+- `resolved_at`
+- `reopened_at`
+- `last_regressed_at`
+- `regression_count`
+- `fingerprint_material`
+- `fingerprint_explanation_json`
 - `created_at`
 - `updated_at`
 
@@ -126,6 +135,50 @@ Deploy or notable-event record used to correlate regressions with recent changes
 - `created_by`
 - `created_at`
 
+## AlertRule
+
+User-configured alert definition for issue or event patterns.
+
+- `id`
+- `project_id`
+- `name`
+- `condition`
+- `query`
+- `target`
+- `enabled`
+- `last_triggered_at`
+- `created_at`
+- `updated_at`
+
+## UserSetting
+
+Per-user or workspace preference stored by the settings view.
+
+- `id`
+- `user_id`
+- `display_name`
+- `timezone`
+- `default_environment`
+- `live_window_minutes`
+- `stacktrace_context_lines`
+- `created_at`
+- `updated_at`
+
+## SourceMapArtifact
+
+Uploaded source map artifact for later symbolication and traceback rendering.
+
+- `id`
+- `project_id`
+- `release`
+- `dist`
+- `bundle_url`
+- `name`
+- `content_type`
+- `source_map_blob`
+- `size_bytes`
+- `created_at`
+
 ## Relationships
 
 - A project has many API keys, issues, events, and facet keys.
@@ -134,3 +187,6 @@ Deploy or notable-event record used to correlate regressions with recent changes
 - An event has many event facets.
 - Facet keys are discovered from scrubbed event attributes and resource data.
 - Release markers belong to one project and are displayed near issues/events by time and environment.
+- Alert rules belong to one project and are evaluated against issue/event activity.
+- User settings may be scoped per user or workspace depending on deployment configuration.
+- Source map artifacts belong to one project and can later be used for traceback symbolication.
