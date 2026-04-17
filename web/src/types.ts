@@ -159,6 +159,7 @@ export interface AppState {
   username: string;
   projects: ApiProject[];
   currentProject: string;
+  currentEnv: string;
   currentRoute: "issues" | "releases" | "alerts" | "settings";
   issues: ApiIssue[];
   issueQuery: string;

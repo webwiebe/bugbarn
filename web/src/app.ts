@@ -20,6 +20,7 @@ const liveWindowMinutes = 15;
 
 const sidebarKey = "bugbarn_sidebar";
 const projectKey = "bugbarn_project";
+const envKey = "bugbarn_env";
 
 const state: AppState = {
   authChecked: false,
@@ -28,6 +29,7 @@ const state: AppState = {
   username: "",
   projects: [],
   currentProject: localStorage.getItem(projectKey) ?? "default",
+  currentEnv: localStorage.getItem(envKey) ?? "",
   currentRoute: "issues",
   issues: [],
   issueQuery: "",
@@ -73,6 +75,7 @@ const bbMenuUser = document.getElementById("bb-menu-user") as HTMLElement | null
 const bbLogout = document.getElementById("bb-logout") as HTMLButtonElement | null;
 const sidebarToggle = document.getElementById("sidebar-toggle") as HTMLButtonElement | null;
 const projectSelect = document.getElementById("project-select") as HTMLSelectElement | null;
+const envSelect = document.getElementById("env-select") as HTMLSelectElement | null;
 
 function applySidebarState(): void {
   const expanded = localStorage.getItem(sidebarKey) === "expanded";
@@ -127,7 +130,16 @@ projectSelect?.addEventListener("change", () => {
   const slug = projectSelect.value;
   state.currentProject = slug;
   localStorage.setItem(projectKey, slug);
-  void refreshAll();
+  state.currentEnv = "";
+  localStorage.removeItem(envKey);
+  void Promise.all([loadEnvironments(), refreshAll()]);
+});
+
+envSelect?.addEventListener("change", () => {
+  const env = envSelect.value;
+  state.currentEnv = env;
+  localStorage.setItem(envKey, env);
+  void loadIssues();
 });
 
 async function logout(): Promise<void> {
@@ -168,7 +180,7 @@ async function start(): Promise<void> {
     renderLogin();
     return;
   }
-  await Promise.all([loadProjects(), refreshAll()]);
+  await Promise.all([loadProjects(), loadEnvironments(), refreshAll()]);
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -310,6 +322,9 @@ async function loadIssues(): Promise<void> {
     if (state.issueQuery) {
       params.set("q", state.issueQuery);
     }
+    if (state.currentEnv) {
+      params.set("attributes.environment", state.currentEnv);
+    }
     const qs = params.toString();
     const payload = await fetchJson(`/api/v1/issues${qs ? `?${qs}` : ""}`);
     state.issues = normalizeList<ApiIssue>(payload, "issues");
@@ -403,6 +418,30 @@ function renderProjectSwitcher(): void {
     })
     .join("");
   projectSelect.hidden = state.projects.length <= 1;
+}
+
+async function loadEnvironments(): Promise<void> {
+  try {
+    const payload = await fetchJson("/api/v1/facets/attributes.environment", true);
+    const raw = payload as Record<string, unknown>;
+    const envs = Array.isArray(raw?.["values"]) ? (raw["values"] as string[]) : [];
+    renderEnvSwitcher(envs);
+  } catch {
+    renderEnvSwitcher([]);
+  }
+}
+
+function renderEnvSwitcher(envs: string[]): void {
+  if (!envSelect) return;
+  const current = state.currentEnv;
+  envSelect.innerHTML = `<option value="">All environments</option>` +
+    envs
+      .map((e) => {
+        const selected = e === current ? ' selected' : '';
+        return `<option value="${escapeHtml(e)}"${selected}>${escapeHtml(e)}</option>`;
+      })
+      .join("");
+  envSelect.hidden = envs.length === 0;
 }
 
 async function loadIssueDetail(issueId: string): Promise<void> {
@@ -874,7 +913,7 @@ function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents:
   setActiveView("detail");
   const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
   elements.detailTitle.textContent = eventTitle(event);
-  elements.detailBody.innerHTML = renderEventDetailMarkup(event, issue, issueEvents, hasMore);
+  elements.detailBody.innerHTML = renderEventDetailMarkup(event, issue, issueEvents, hasMore, state.releases);
   wireEventDetailActions(issueId);
 
   if (hasMore && issueId) {
