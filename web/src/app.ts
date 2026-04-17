@@ -493,14 +493,24 @@ async function fetchJson(path: string, allowMissing = false): Promise<unknown> {
   }
 }
 
+function getCSRFToken(): string {
+  const match = document.cookie.match(/(?:^|;\s*)bugbarn_csrf=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
 async function postJson(path: string, body: unknown): Promise<unknown> {
+  const csrf = getCSRFToken();
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  if (csrf) {
+    headers["X-BugBarn-CSRF"] = csrf;
+  }
   const response = await fetch(apiUrl(path), {
     method: "POST",
     credentials: "include",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (response.status === httpUnauthorized) {
@@ -516,9 +526,15 @@ async function postJson(path: string, body: unknown): Promise<unknown> {
 }
 
 async function postFormData(path: string, formData: FormData): Promise<unknown> {
+  const csrf = getCSRFToken();
+  const headers: Record<string, string> = {};
+  if (csrf) {
+    headers["X-BugBarn-CSRF"] = csrf;
+  }
   const response = await fetch(apiUrl(path), {
     method: "POST",
     credentials: "include",
+    headers: Object.keys(headers).length ? headers : undefined,
     body: formData,
   });
   if (response.status === httpUnauthorized) {

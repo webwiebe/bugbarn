@@ -88,121 +88,84 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// CSRF check: enforce double-submit cookie for state-changing session requests.
-	// Skip for: OPTIONS (handled above), ingest endpoint (API key auth), login/logout.
-	if isCSRFProtected(r) && s.users != nil && s.users.Enabled() {
-		if !s.validCSRF(r) {
-			http.Error(w, "invalid or missing CSRF token", http.StatusForbidden)
-			return
-		}
-	}
-
+	// Public endpoints — no authentication required.
 	switch {
 	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:
 		writeJSON(w, map[string]any{"status": "ok"})
-	case r.URL.Path == "/api/v1/events" && r.Method == http.MethodPost:
-		s.ingestHandler.ServeHTTP(w, r)
-	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodGet:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		s.listSourceMaps(w, r)
-	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodPost:
-		if !s.authorized(r) && (s.ingestHandler == nil || !s.ingestHandler.ValidAPIKey(r)) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		s.uploadSourceMap(w, r)
+		return
 	case r.URL.Path == "/api/v1/login" && r.Method == http.MethodPost:
 		s.login(w, r)
+		return
 	case r.URL.Path == "/api/v1/logout" && r.Method == http.MethodPost:
 		s.logout(w, r)
+		return
 	case r.URL.Path == "/api/v1/me" && r.Method == http.MethodGet:
 		s.me(w, r)
-	case r.URL.Path == "/api/v1/settings" && (r.Method == http.MethodGet || r.Method == http.MethodPut || r.Method == http.MethodPost):
-		if !s.authorized(r) {
+		return
+	}
+
+	// Ingest endpoint — API key authentication only (handled by the ingest handler itself).
+	if r.URL.Path == "/api/v1/events" && r.Method == http.MethodPost {
+		s.ingestHandler.ServeHTTP(w, r)
+		return
+	}
+
+	// All remaining endpoints require authentication. When auth is configured, the
+	// request must carry either a valid session cookie or a valid API key. API keys
+	// are accepted on all protected endpoints so that CI/CD scripts can call the
+	// releases, source-maps, and other management endpoints without a browser session.
+	if s.users != nil && s.users.Enabled() {
+		_, usingSession := s.sessionUser(r)
+		usingAPIKey := s.ingestHandler != nil && s.ingestHandler.ValidAPIKey(r)
+
+		if !usingSession && !usingAPIKey {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		// CSRF protection: only applies to session-authenticated state-changing requests.
+		// API key requests are authenticated out-of-band, so CSRF doesn't apply.
+		if usingSession && !usingAPIKey && isCSRFProtected(r) {
+			if !s.validCSRF(r) {
+				http.Error(w, "invalid or missing CSRF token", http.StatusForbidden)
+				return
+			}
+		}
+	}
+
+	// Protected route dispatch.
+	switch {
+	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodGet:
+		s.listSourceMaps(w, r)
+	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodPost:
+		s.uploadSourceMap(w, r)
+	case r.URL.Path == "/api/v1/settings" && (r.Method == http.MethodGet || r.Method == http.MethodPut || r.Method == http.MethodPost):
 		s.serveSettingsRoute(w, r)
 	case r.URL.Path == "/api/v1/releases" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.serveReleasesRoot(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/releases/"):
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.serveReleaseRoute(w, r)
 	case r.URL.Path == "/api/v1/alerts" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.serveAlertsRoot(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/alerts/"):
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.serveAlertRoute(w, r)
 	case r.URL.Path == "/api/v1/issues" && r.Method == http.MethodGet:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.listIssues(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/issues/"):
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.serveIssueRoute(w, r)
 	case r.URL.Path == "/api/v1/events/stream" && r.Method == http.MethodGet:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.streamEvents(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/events/") && r.Method == http.MethodGet:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.getEvent(w, r)
 	case r.URL.Path == "/api/v1/live/events" && r.Method == http.MethodGet:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.listRecentEvents(w, r)
 	case r.URL.Path == "/api/v1/projects" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.serveProjectsRoot(w, r)
 	case r.URL.Path == "/api/v1/apikeys" && r.Method == http.MethodGet:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.listAPIKeys(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/apikeys/") && r.Method == http.MethodDelete:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.deleteAPIKey(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/facets") && r.Method == http.MethodGet:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		s.serveFacetsRoute(w, r)
 	default:
 		http.NotFound(w, r)
@@ -277,14 +240,6 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"authenticated": true, "authEnabled": true, "username": username})
-}
-
-func (s *Server) authorized(r *http.Request) bool {
-	if s == nil || s.users == nil || !s.users.Enabled() {
-		return true
-	}
-	_, ok := s.sessionUser(r)
-	return ok
 }
 
 func (s *Server) sessionUser(r *http.Request) (string, bool) {
