@@ -29,6 +29,7 @@ type Repository interface {
 	GetSettings(context.Context) (map[string]string, error)
 	UpdateSettings(context.Context, map[string]string) error
 	UploadSourceMap(context.Context, storage.SourceMapUpload) (storage.SourceMap, error)
+	ListSourceMaps(context.Context) ([]storage.SourceMapMeta, error)
 	ListFacetKeys(context.Context, int64) ([]string, error)
 	ListFacetValues(context.Context, int64, string) ([]string, error)
 }
@@ -129,6 +130,10 @@ func (s *Service) UpdateSettings(ctx context.Context, values map[string]string) 
 
 func (s *Service) UploadSourceMap(ctx context.Context, upload storage.SourceMapUpload) (storage.SourceMap, error) {
 	return s.repo.UploadSourceMap(ctx, upload)
+}
+
+func (s *Service) ListSourceMaps(ctx context.Context) ([]storage.SourceMapMeta, error) {
+	return s.repo.ListSourceMaps(ctx)
 }
 
 func (s *Service) ListFacetKeys(ctx context.Context, projectID int64) ([]string, error) {

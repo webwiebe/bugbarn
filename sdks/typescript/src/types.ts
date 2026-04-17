@@ -56,6 +56,17 @@ export type SourceMapUploadOptions = {
   release: string;
   dist?: string;
   bundleUrl: string;
+  /** File content (Blob/ArrayBuffer) or a Node.js file path string */
   sourceMap: string | ArrayBuffer | Blob;
+  /** Preferred name for the stored source map file */
+  sourceMapName?: string;
+  /** @deprecated Use sourceMapName instead */
   sourceMapFilename?: string;
+};
+
+export type SourceMapUploaderConfig = {
+  apiKey: string;
+  endpoint?: string;
+  release: string;
+  dist?: string;
 };

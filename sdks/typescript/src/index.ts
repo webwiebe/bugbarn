@@ -1,5 +1,5 @@
 import { createTransport } from "./transport.js";
-import { uploadSourceMap } from "./source-maps.js";
+import { uploadSourceMap, createSourceMapUploader } from "./source-maps.js";
 import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, StackFrame, Transport } from "./types.js";
 
 const SDK_NAME = "bugbarn.typescript";
@@ -138,4 +138,4 @@ export function getApiKey(): string {
 }
 
 export { createTransport };
-export { uploadSourceMap };
+export { uploadSourceMap, createSourceMapUploader };

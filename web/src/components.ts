@@ -799,13 +799,28 @@ function renderFrame(frame: unknown, index: number): string {
   const location = [file, line ? `:${line}` : "", column ? `:${column}` : ""].join("");
   const snippet = readFrameSnippet(frame);
 
+  // Original (symbolicated) position fields — try all common naming variants
+  const origFn = readString(frame, ["originalFunction", "original_function", "OriginalFunction"]);
+  const origFile = readString(frame, ["originalFile", "original_file", "OriginalFile"]);
+  const origLine = readString(frame, ["originalLine", "original_line", "OriginalLine"]);
+  const origColumn = readString(frame, ["originalColumn", "original_column", "OriginalColumn"]);
+
+  const hasOriginal = Boolean(origFn ?? origFile ?? origLine);
+  const displayFn = origFn ?? fn;
+  const origLocation = origFile
+    ? [origFile, origLine ? `:${origLine}` : "", origColumn ? `:${origColumn}` : ""].join("")
+    : "";
+
   return `
-    <article class="frame">
+    <article class="frame${hasOriginal ? " symbolicated" : ""}">
       <span>#${index + 1}</span>
       <div class="frame-body">
         <div class="frame-head">
-          <code>${escapeHtml(fn)}</code>
-          <small>${escapeHtml(location || "unknown source")}</small>
+          <code>${escapeHtml(displayFn)}</code>
+          ${hasOriginal && origLocation
+            ? `<small style="color:var(--accent)">${escapeHtml(origLocation)}</small>`
+            : ""}
+          <small style="${hasOriginal ? "color:var(--muted);font-size:11px;opacity:0.7" : ""}">${escapeHtml(location || "unknown source")}</small>
         </div>
         ${snippet ? `<pre class="frame-snippet">${escapeHtml(snippet)}</pre>` : ""}
       </div>

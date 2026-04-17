@@ -328,7 +328,7 @@ func TestServeHTTPUserAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessions := auth.NewSessionManager("test-secret", time.Hour)
-	server := NewServerWithAuth(nil, store, userAuth, sessions)
+	server := NewServerWithAuth(nil, store, userAuth, sessions, nil)
 
 	t.Run("query endpoints require session", func(t *testing.T) {
 		rr := httptest.NewRecorder()

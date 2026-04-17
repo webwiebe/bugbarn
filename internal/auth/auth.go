@@ -234,8 +234,9 @@ func SessionCookie(token string, expires time.Time, secure bool) *http.Cookie {
 		Path:     "/",
 		Expires:  expires,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   secure,
+		// Secure: true  // enable this behind TLS; leave off for localhost dev
 	}
 }
 
@@ -246,9 +247,47 @@ func ClearSessionCookie(secure bool) *http.Cookie {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+	}
+}
+
+// CSRFCookie returns the companion CSRF cookie for a session token.
+// HttpOnly=false so JavaScript can read and attach it as X-BugBarn-CSRF.
+func CSRFCookie(sessionToken string, expires time.Time, secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     "bugbarn_csrf",
+		Value:    CSRFToken(sessionToken),
+		Path:     "/",
+		Expires:  expires,
+		HttpOnly: false,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   secure,
 	}
+}
+
+// ClearCSRFCookie clears the CSRF cookie on logout.
+func ClearCSRFCookie(secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     "bugbarn_csrf",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+	}
+}
+
+// CSRFToken derives a CSRF token from a session token using HMAC-SHA256.
+// The result is the first 16 bytes of the HMAC, hex-encoded (32 chars).
+// The cookie must be JS-readable (HttpOnly=false, SameSite=Lax) so the
+// browser can attach it as the X-BugBarn-CSRF request header.
+func CSRFToken(sessionToken string) string {
+	mac := hmac.New(sha256.New, []byte("csrf"))
+	mac.Write([]byte(sessionToken))
+	sum := mac.Sum(nil)
+	return hex.EncodeToString(sum[:16])
 }
 
 func sign(secret, payload []byte) []byte {

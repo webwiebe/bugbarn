@@ -32,4 +32,11 @@ type StackFrame struct {
 	Line     int    `json:"line,omitempty"`
 	Column   int    `json:"column,omitempty"`
 	Module   string `json:"module,omitempty"`
+
+	// Original position fields populated by source map symbolication.
+	OriginalFunction string `json:"originalFunction,omitempty"`
+	OriginalFile     string `json:"originalFile,omitempty"`
+	OriginalLine     int    `json:"originalLine,omitempty"`
+	OriginalColumn   int    `json:"originalColumn,omitempty"`
+	Snippet          string `json:"snippet,omitempty"`
 }

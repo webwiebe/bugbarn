@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
@@ -17,20 +18,59 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
+// loginAttempt tracks the rate-limit window for a single IP.
+type loginAttempt struct {
+	count       int
+	windowStart time.Time
+}
+
+const (
+	loginRateLimit   = 10             // max attempts per window
+	loginRateWindow  = time.Minute    // window duration
+	loginCleanupFreq = 5 * time.Minute // how often to purge stale entries
+)
+
 type Server struct {
-	ingestHandler *ingest.Handler
-	store         *storage.Store
-	service       *service.Service
-	users         *auth.UserAuthenticator
-	sessions      *auth.SessionManager
+	ingestHandler  *ingest.Handler
+	store          *storage.Store
+	service        *service.Service
+	users          *auth.UserAuthenticator
+	sessions       *auth.SessionManager
+	allowedOrigins []string // parsed from BUGBARN_ALLOWED_ORIGINS
+
+	loginLimiter sync.Map // map[string]*loginAttempt
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
 	return &Server{ingestHandler: ingestHandler, store: store, service: service.New(store)}
 }
 
-func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, users *auth.UserAuthenticator, sessions *auth.SessionManager) *Server {
-	return &Server{ingestHandler: ingestHandler, store: store, service: service.New(store), users: users, sessions: sessions}
+func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, users *auth.UserAuthenticator, sessions *auth.SessionManager, allowedOrigins []string) *Server {
+	s := &Server{
+		ingestHandler:  ingestHandler,
+		store:          store,
+		service:        service.New(store),
+		users:          users,
+		sessions:       sessions,
+		allowedOrigins: allowedOrigins,
+	}
+	go s.cleanupLoginLimiter()
+	return s
+}
+
+// cleanupLoginLimiter periodically removes stale IP entries from the login limiter.
+func (s *Server) cleanupLoginLimiter() {
+	ticker := time.NewTicker(loginCleanupFreq)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-loginRateWindow)
+		s.loginLimiter.Range(func(key, value any) bool {
+			if a, ok := value.(*loginAttempt); ok && a.windowStart.Before(cutoff) {
+				s.loginLimiter.Delete(key)
+			}
+			return true
+		})
+	}
 }
 
 type route struct {
@@ -41,11 +81,20 @@ type route struct {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	setCORSHeaders(w, r)
+	s.setCORSHeaders(w, r)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+
+	// CSRF check: enforce double-submit cookie for state-changing session requests.
+	// Skip for: OPTIONS (handled above), ingest endpoint (API key auth), login/logout.
+	if isCSRFProtected(r) && s.users != nil && s.users.Enabled() {
+		if !s.validCSRF(r) {
+			http.Error(w, "invalid or missing CSRF token", http.StatusForbidden)
+			return
+		}
 	}
 
 	switch {
@@ -53,6 +102,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"status": "ok"})
 	case r.URL.Path == "/api/v1/events" && r.Method == http.MethodPost:
 		s.ingestHandler.ServeHTTP(w, r)
+	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodGet:
+		if !s.authorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		s.listSourceMaps(w, r)
 	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodPost:
 		if !s.authorized(r) && (s.ingestHandler == nil || !s.ingestHandler.ValidAPIKey(r)) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -159,6 +214,24 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"authenticated": true, "authEnabled": false})
 		return
 	}
+
+	// Rate-limit by client IP.
+	ip := clientIP(r)
+	now := time.Now()
+	val, _ := s.loginLimiter.LoadOrStore(ip, &loginAttempt{windowStart: now})
+	attempt := val.(*loginAttempt)
+	if now.Sub(attempt.windowStart) >= loginRateWindow {
+		// Window has expired; reset.
+		attempt.count = 0
+		attempt.windowStart = now
+	}
+	attempt.count++
+	if attempt.count > loginRateLimit {
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
+		return
+	}
+
 	var request struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -180,12 +253,16 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	http.SetCookie(w, auth.SessionCookie(token, expires, secureCookie(r)))
+	secure := secureCookie(r)
+	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
+	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
 	writeJSON(w, map[string]any{"authenticated": true, "authEnabled": true, "username": s.users.Username()})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, auth.ClearSessionCookie(secureCookie(r)))
+	secure := secureCookie(r)
+	http.SetCookie(w, auth.ClearSessionCookie(secure))
+	http.SetCookie(w, auth.ClearCSRFCookie(secure))
 	writeJSON(w, map[string]any{"authenticated": false})
 }
 
@@ -687,6 +764,22 @@ func (s *Server) reopenIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"issue": item})
 }
 
+func (s *Server) listSourceMaps(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil || s.service == nil {
+		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	items, err := s.service.ListSourceMaps(r.Context())
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	if items == nil {
+		items = []storage.SourceMapMeta{}
+	}
+	writeJSON(w, map[string]any{"sourceMaps": items})
+}
+
 func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil || s.service == nil {
 		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
@@ -827,16 +920,98 @@ func writeStorageError(w http.ResponseWriter, err error) {
 	http.Error(w, "storage error", http.StatusInternalServerError)
 }
 
-func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+// setCORSHeaders applies CORS policy. We never use * because BugBarn uses
+// cookies (credentials), which require an explicit reflected origin.
+//
+//   - If BUGBARN_ALLOWED_ORIGINS is set (parsed into s.allowedOrigins), any
+//     request whose Origin matches the list is reflected with credentials.
+//   - Otherwise we only reflect the origin when it is same-origin (Origin
+//     host == Host header), so localhost dev still works without configuration.
+//   - Vary: Origin is always emitted so CDNs don't cache the wrong value.
+func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Vary", "Origin")
+	w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-csrf")
+
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	} else {
+		return
+	}
+
+	if len(s.allowedOrigins) > 0 {
+		for _, allowed := range s.allowedOrigins {
+			if strings.EqualFold(origin, allowed) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				return
+			}
+		}
+		// Origin not in the explicit list — don't set ACAO.
+		return
+	}
+
+	// No explicit list: allow same-origin only.
+	if sameOrigin(origin, r.Host) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Add("Vary", "Origin")
 	}
-	w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key")
+}
+
+// sameOrigin returns true when the request Origin matches the Host header,
+// i.e. the browser and the API server are on the same host+port.
+func sameOrigin(origin, host string) bool {
+	// origin is a full URL like "http://localhost:8080"; strip the scheme.
+	stripped := origin
+	if i := strings.Index(stripped, "://"); i >= 0 {
+		stripped = stripped[i+3:]
+	}
+	// Remove any trailing slash.
+	stripped = strings.TrimRight(stripped, "/")
+	// host may or may not include port; compare case-insensitively.
+	return strings.EqualFold(stripped, host)
+}
+
+// isCSRFProtected returns true for state-changing requests that are NOT the
+// ingest endpoint (which uses API key auth) and NOT login/logout.
+func isCSRFProtected(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodDelete:
+		// Ingest and login/logout are excluded.
+		switch r.URL.Path {
+		case "/api/v1/events", "/api/v1/login", "/api/v1/logout":
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// validCSRF checks the double-submit cookie pattern: the X-BugBarn-CSRF
+// header must match the CSRF token derived from the session cookie.
+func (s *Server) validCSRF(r *http.Request) bool {
+	sessionCookie, err := r.Cookie("bugbarn_session")
+	if err != nil {
+		return false
+	}
+	expected := auth.CSRFToken(sessionCookie.Value)
+	provided := r.Header.Get("X-BugBarn-CSRF")
+	return provided == expected
+}
+
+// clientIP extracts the best-effort client IP from the request.
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		// Take the first (leftmost) address — the original client.
+		if idx := strings.Index(forwarded, ","); idx > 0 {
+			return strings.TrimSpace(forwarded[:idx])
+		}
+		return strings.TrimSpace(forwarded)
+	}
+	// RemoteAddr is "ip:port".
+	addr := r.RemoteAddr
+	if idx := strings.LastIndex(addr, ":"); idx > 0 {
+		return addr[:idx]
+	}
+	return addr
 }
 
 func secureCookie(r *http.Request) bool {

@@ -55,6 +55,10 @@ func run() error {
 		}
 	}
 
+	if cfg.sessionSecret == "" {
+		log.Println("warning: BUGBARN_SESSION_SECRET is not set; sessions will not persist across restarts")
+	}
+
 	store, err := storage.Open(cfg.dbPath)
 	if err != nil {
 		return err
@@ -84,7 +88,7 @@ func run() error {
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.maxBodyBytes)
 	server := &http.Server{
 		Addr:    cfg.addr,
-		Handler: api.NewServerWithAuth(handler, store, userAuth, sessionManager),
+		Handler: api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins),
 	}
 
 	errCh := make(chan error, 1)
@@ -114,6 +118,7 @@ type config struct {
 	adminPasswordBcrypt string
 	sessionSecret       string
 	sessionTTL          time.Duration
+	allowedOrigins      []string
 	spoolDir            string
 	dbPath              string
 	maxBodyBytes        int64
@@ -135,6 +140,13 @@ func loadConfig() config {
 		maxBodyBytes:        1 << 20,
 	}
 
+	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				cfg.allowedOrigins = append(cfg.allowedOrigins, trimmed)
+			}
+		}
+	}
 	if raw := os.Getenv("BUGBARN_MAX_BODY_BYTES"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
 			cfg.maxBodyBytes = parsed
@@ -392,6 +404,8 @@ func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.St
 					// Stop processing this batch; retry remaining records next tick.
 					break
 				}
+				// Annotate JS stack frames with original positions from stored source maps.
+				processed.Event = worker.SymbolicateEvent(ctx, processed.Event, store)
 				if _, _, err := store.PersistProcessedEvent(ctx, processed); err != nil {
 					retryCounts[record.IngestID]++
 					log.Printf("worker persist record %s (attempt %d): %v", record.IngestID, retryCounts[record.IngestID], err)
