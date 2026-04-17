@@ -10,14 +10,36 @@
   </head>
   <body>
     <div class="app-frame">
-      <aside class="sidebar" aria-label="Primary">
-        <div class="side-mark" aria-hidden="true">BB</div>
+      <aside class="sidebar" id="sidebar" aria-label="Primary">
+        <div class="side-top">
+          <button class="side-mark" id="bb-btn" type="button" aria-label="BugBarn menu" aria-haspopup="true" aria-expanded="false">BB</button>
+          <div class="bb-menu" id="bb-menu" hidden role="menu">
+            <div class="bb-menu-user" id="bb-menu-user">BugBarn</div>
+            <div class="bb-menu-divider"></div>
+            <button class="bb-menu-item" id="bb-logout" type="button" role="menuitem">Log out</button>
+          </div>
+        </div>
+
         <nav class="side-nav">
-          <a class="active" href="#/issues" data-route="issues">Issues</a>
-          <a href="#/releases" data-route="releases">Releases</a>
-          <a href="#/alerts" data-route="alerts">Alerts</a>
-          <a href="#/settings" data-route="settings">Settings</a>
+          <a class="active" href="#/issues" data-route="issues">
+            <span class="nav-icon" aria-hidden="true">⚠</span>
+            <span class="nav-label">Issues</span>
+          </a>
+          <a href="#/releases" data-route="releases">
+            <span class="nav-icon" aria-hidden="true">↑</span>
+            <span class="nav-label">Releases</span>
+          </a>
+          <a href="#/alerts" data-route="alerts">
+            <span class="nav-icon" aria-hidden="true">◉</span>
+            <span class="nav-label">Alerts</span>
+          </a>
+          <a href="#/settings" data-route="settings">
+            <span class="nav-icon" aria-hidden="true">⚙</span>
+            <span class="nav-label">Settings</span>
+          </a>
         </nav>
+
+        <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Expand sidebar">›</button>
       </aside>
 
       <div class="workspace">
@@ -25,7 +47,7 @@
           <div class="brand">
             <div>
               <p class="eyebrow">BugBarn</p>
-              <h1>Errors & outages</h1>
+              <h1>Errors &amp; outages</h1>
             </div>
           </div>
 

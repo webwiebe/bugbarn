@@ -60,6 +60,82 @@ const elements: AppElements = {
 
 elements.issueFilter.value = state.issueQuery;
 
+const appFrame = document.querySelector<HTMLElement>(".app-frame");
+const bbBtn = document.getElementById("bb-btn") as HTMLButtonElement | null;
+const bbMenu = document.getElementById("bb-menu") as HTMLElement | null;
+const bbMenuUser = document.getElementById("bb-menu-user") as HTMLElement | null;
+const bbLogout = document.getElementById("bb-logout") as HTMLButtonElement | null;
+const sidebarToggle = document.getElementById("sidebar-toggle") as HTMLButtonElement | null;
+
+const sidebarKey = "bugbarn_sidebar";
+
+function applySidebarState(): void {
+  const expanded = localStorage.getItem(sidebarKey) === "expanded";
+  appFrame?.classList.toggle("sidebar-open", expanded);
+  if (sidebarToggle) {
+    sidebarToggle.textContent = expanded ? "‹" : "›";
+    sidebarToggle.setAttribute("aria-label", expanded ? "Collapse sidebar" : "Expand sidebar");
+  }
+}
+
+applySidebarState();
+
+sidebarToggle?.addEventListener("click", () => {
+  const isOpen = appFrame?.classList.toggle("sidebar-open") ?? false;
+  localStorage.setItem(sidebarKey, isOpen ? "expanded" : "collapsed");
+  if (sidebarToggle) {
+    sidebarToggle.textContent = isOpen ? "‹" : "›";
+    sidebarToggle.setAttribute("aria-label", isOpen ? "Collapse sidebar" : "Expand sidebar");
+  }
+});
+
+function closeBBMenu(): void {
+  bbMenu?.setAttribute("hidden", "");
+  bbBtn?.setAttribute("aria-expanded", "false");
+}
+
+bbBtn?.addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  const isHidden = bbMenu?.hasAttribute("hidden");
+  if (isHidden) {
+    bbMenu?.removeAttribute("hidden");
+    bbBtn?.setAttribute("aria-expanded", "true");
+  } else {
+    closeBBMenu();
+  }
+});
+
+document.addEventListener("click", closeBBMenu);
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") {
+    closeBBMenu();
+    bbBtn?.focus();
+  }
+});
+
+bbLogout?.addEventListener("click", () => {
+  void logout();
+});
+
+async function logout(): Promise<void> {
+  try {
+    await fetch(apiUrl("/api/v1/logout"), { method: "POST", credentials: "include" });
+  } catch {
+    // ignore network errors on logout
+  }
+  state.authenticated = false;
+  state.username = "";
+  stopLiveStream();
+  renderLogin();
+}
+
+function updateBBMenuUser(): void {
+  if (bbMenuUser) {
+    bbMenuUser.textContent = state.username || "BugBarn";
+  }
+}
+
 elements.refreshAll.addEventListener("click", () => {
   void refreshAll();
 });
@@ -74,6 +150,7 @@ void start();
 
 async function start(): Promise<void> {
   await loadSession();
+  updateBBMenuUser();
   route();
   if (state.authRequired && !state.authenticated) {
     renderLogin();
@@ -576,6 +653,7 @@ function renderDetail(): void {
 
 function renderLogin(error = ""): void {
   stopLiveStream();
+  appFrame?.classList.add("app-locked");
   setActiveView("detail");
   setRouteChip("Login", "warn");
   elements.issueCount.textContent = "Locked";
@@ -627,6 +705,8 @@ async function login(username: string, password: string): Promise<void> {
     state.authRequired = Boolean(payload.authEnabled);
     state.authenticated = Boolean(payload.authenticated);
     state.username = readString(payload, ["username"]);
+    appFrame?.classList.remove("app-locked");
+    updateBBMenuUser();
     setStatus(state.username ? `Logged in as ${state.username}.` : "Logged in.");
     await refreshAll();
   } catch (error) {
