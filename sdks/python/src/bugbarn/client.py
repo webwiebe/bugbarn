@@ -83,11 +83,12 @@ class Transport:
         joiner.join(timeout=timeout)
         return not joiner.is_alive()
 
-    def close(self, timeout: float = 2.0) -> None:
+    def close(self, timeout: float = 2.0) -> bool:
         """Flush remaining events then stop the transport thread."""
-        self.flush(timeout=timeout)
+        drained = self.flush(timeout=timeout)
         self._closed.set()
-        self._worker.join(timeout=max(timeout, 0.1))
+        self._worker.join(timeout=0.1)
+        return drained
 
     def _run(self) -> None:
         while not self._closed.is_set():
@@ -192,7 +193,7 @@ def init(
     if install_excepthook and not _install_hook:
         sys.excepthook = _excepthook
         _install_hook = True
-    atexit.register(lambda: _transport.close(timeout=2.0) if _transport else None)
+    atexit.register(lambda: shutdown(timeout=2.0))
 
 
 def flush(timeout: float = 2.0) -> bool:
@@ -200,6 +201,16 @@ def flush(timeout: float = 2.0) -> bool:
     if _transport is None:
         return True
     return _transport.flush(timeout=timeout)
+
+
+def shutdown(timeout: float = 2.0) -> bool:
+    """Flush queued events, stop the background worker, and detach the global transport."""
+    global _transport
+    if _transport is None:
+        return True
+    drained = _transport.close(timeout=timeout)
+    _transport = None
+    return drained
 
 
 def capture_exception(

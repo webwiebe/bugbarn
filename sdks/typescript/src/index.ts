@@ -4,6 +4,7 @@ import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, StackFrame,
 
 const SDK_NAME = "bugbarn.typescript";
 const SDK_VERSION = "0.1.0";
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 2000;
 
 let transport: Transport | null = null;
 let currentApiKey = "";
@@ -96,15 +97,47 @@ function installDefaultHandlers(): void {
 
   process.on("uncaughtException", (error: Error) => {
     void captureException(error).finally(() => {
-      process.exit(1);
+      void shutdown(DEFAULT_SHUTDOWN_TIMEOUT_MS).finally(() => {
+        process.exit(1);
+      });
     });
   });
 
   process.on("unhandledRejection", (reason: unknown) => {
     void captureException(reason).finally(() => {
-      process.exit(1);
+      void shutdown(DEFAULT_SHUTDOWN_TIMEOUT_MS).finally(() => {
+        process.exit(1);
+      });
     });
   });
+
+  process.on("beforeExit", () => {
+    void flush(DEFAULT_SHUTDOWN_TIMEOUT_MS);
+  });
+}
+
+function normalizeFlushTimeout(timeoutMs?: number): number {
+  return timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | false> {
+  if (timeoutMs <= 0) {
+    return promise;
+  }
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<false>((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 export function init(options: BugBarnClientOptions): void {
@@ -127,12 +160,20 @@ export async function captureException(error: unknown, options?: CaptureOptions)
   await transport.send(buildEnvelope(error, options));
 }
 
-export async function flush(): Promise<void> {
+export async function flush(timeoutMs?: number): Promise<boolean> {
   if (!transport) {
-    return;
+    return true;
   }
 
-  await transport.flush();
+  const normalizedTimeout = normalizeFlushTimeout(timeoutMs);
+  const result = await withTimeout(transport.flush({ timeoutMs: normalizedTimeout }), normalizedTimeout);
+  return result !== false;
+}
+
+export async function shutdown(timeoutMs?: number): Promise<boolean> {
+  const drained = await flush(timeoutMs);
+  transport = null;
+  return drained;
 }
 
 export function getApiKey(): string {

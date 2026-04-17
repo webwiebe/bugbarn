@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
 
-import { captureException, createTransport, flush, getApiKey, init, uploadSourceMap } from "../dist/esm/index.js";
+import { captureException, createTransport, flush, getApiKey, init, shutdown, uploadSourceMap } from "../dist/esm/index.js";
 
 test("init stores transport and api key", async () => {
   const events = [];
@@ -41,8 +41,10 @@ test("flush delegates to transport", async () => {
   let flushed = false;
   const transport = {
     async send() {},
-    async flush() {
+    async flush(options) {
       flushed = true;
+      assert.equal(options.timeoutMs, 2000);
+      return true;
     },
   };
 
@@ -52,8 +54,49 @@ test("flush delegates to transport", async () => {
     installDefaultHandlers: false,
   });
 
-  await flush();
+  const drained = await flush();
   assert.equal(flushed, true);
+  assert.equal(drained, true);
+});
+
+test("flush returns false after bounded timeout", async () => {
+  const transport = {
+    async send() {},
+    async flush() {
+      await new Promise(() => {});
+    },
+  };
+
+  init({
+    apiKey: "bb_live_test",
+    transport,
+    installDefaultHandlers: false,
+  });
+
+  assert.equal(await flush(5), false);
+});
+
+test("shutdown flushes and detaches the transport", async () => {
+  let flushes = 0;
+  const transport = {
+    async send() {
+      throw new Error("detached transport should not be used");
+    },
+    async flush() {
+      flushes += 1;
+      return true;
+    },
+  };
+
+  init({
+    apiKey: "bb_live_test",
+    transport,
+    installDefaultHandlers: false,
+  });
+
+  assert.equal(await shutdown(25), true);
+  await captureException(new Error("after shutdown"));
+  assert.equal(flushes, 1);
 });
 
 test("transport sends api key header to ingest endpoint", async () => {
@@ -137,4 +180,5 @@ test("commonjs consumers can require the package entry", async () => {
   assert.equal(typeof sdk.init, "function");
   assert.equal(typeof sdk.captureException, "function");
   assert.equal(typeof sdk.createTransport, "function");
+  assert.equal(typeof sdk.shutdown, "function");
 });

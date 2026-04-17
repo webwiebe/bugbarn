@@ -55,10 +55,10 @@ init({
 });
 ```
 
-The SDK installs `uncaughtException` and `unhandledRejection` handlers by default. Pass `installDefaultHandlers: false` when you only want manual capture calls.
+The SDK installs `uncaughtException` and `unhandledRejection` handlers by default. Pass `installDefaultHandlers: false` when you only want manual capture calls. Before exiting short-lived scripts, call `flush(timeoutMs)` or `shutdown(timeoutMs)` so queued events have a bounded amount of time to leave the process.
 
 ```ts
-import { captureException, init } from "@bugbarn/typescript";
+import { captureException, flush, init } from "@bugbarn/typescript";
 
 init({
   apiKey: process.env.BUGBARN_API_KEY ?? "",
@@ -75,6 +75,7 @@ try {
       environment: "testing",
     },
   });
+  await flush(2000);
 }
 ```
 

@@ -5,23 +5,27 @@ import sys
 import unittest
 from unittest import mock
 
-from bugbarn.client import Envelope, Transport, capture_exception, init
+from bugbarn.client import Envelope, Transport, capture_exception, flush, init, shutdown
 
 
 class RecordingTransport:
     def __init__(self):
         self.events = []
         self.closed = False
+        self.flush_timeout = None
 
     def submit(self, event):
         self.events.append(event)
         return True
 
     def flush(self, timeout: float = 2.0) -> bool:
+        self.flush_timeout = timeout
         return True
 
     def close(self, timeout: float = 2.0):
         self.closed = True
+        self.flush_timeout = timeout
+        return True
 
 
 class SDKTests(unittest.TestCase):
@@ -38,6 +42,17 @@ class SDKTests(unittest.TestCase):
         self.assertEqual(transport.events[0].tags["service"], "api")
         self.assertEqual(transport.events[0].sender["sdk"]["name"], "bugbarn.python")
         self.assertEqual(transport.events[0].sender["sdk"]["version"], "0.1.0")
+
+    def test_flush_and_shutdown_use_bounded_timeout(self):
+        transport = RecordingTransport()
+        init(api_key="bb_live_test", transport=transport)
+
+        self.assertTrue(flush(timeout=0.25))
+        self.assertEqual(transport.flush_timeout, 0.25)
+        self.assertTrue(shutdown(timeout=0.5))
+        self.assertTrue(transport.closed)
+        self.assertEqual(transport.flush_timeout, 0.5)
+        self.assertFalse(capture_exception(RuntimeError("after shutdown")))
 
     def test_optional_excepthook_installation(self):
         transport = RecordingTransport()

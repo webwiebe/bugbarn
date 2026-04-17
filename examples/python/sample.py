@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from bugbarn.client import capture_exception, init
+from bugbarn.client import capture_exception, init, shutdown
 
 
 def main() -> None:
@@ -24,8 +24,8 @@ def main() -> None:
         tags={"sample": "python"},
         extra={"mode": "manual"},
     )
+    shutdown(timeout=2.0)
 
 
 if __name__ == "__main__":
     main()
-

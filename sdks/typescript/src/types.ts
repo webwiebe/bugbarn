@@ -9,6 +9,10 @@ export type BugBarnClientOptions = {
   transport?: Transport;
 };
 
+export type FlushOptions = {
+  timeoutMs?: number;
+};
+
 export type CaptureOptions = {
   attributes?: Record<string, unknown>;
   release?: string;
@@ -49,7 +53,7 @@ export type BugBarnEnvelope = {
 
 export type Transport = {
   send(event: BugBarnEnvelope): Promise<void>;
-  flush(): Promise<void>;
+  flush(options?: FlushOptions): Promise<boolean | void>;
 };
 
 export type SourceMapUploadOptions = {

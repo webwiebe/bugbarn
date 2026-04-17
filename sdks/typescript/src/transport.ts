@@ -1,6 +1,7 @@
-import type { BugBarnEnvelope, Transport } from "./types.js";
+import type { BugBarnEnvelope, FlushOptions, Transport } from "./types.js";
 
 const DEFAULT_ENDPOINT = "/api/v1/events";
+const DEFAULT_FLUSH_TIMEOUT_MS = 2000;
 
 function resolveUrl(endpoint: string): string {
   if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
@@ -20,16 +21,16 @@ export function createTransport(apiKey: string, endpoint = DEFAULT_ENDPOINT, pro
     if (!flushScheduled) {
       flushScheduled = true;
       setTimeout(() => {
-        void flush().catch(() => {});
+        void drain().catch(() => {});
       }, 0);
     }
   }
 
-  async function flush(): Promise<void> {
+  async function drain(): Promise<void> {
     if (flushInFlight) {
       await flushInFlight;
       if (queue.length > 0) {
-        return flush();
+        return drain();
       }
       return;
     }
@@ -66,7 +67,29 @@ export function createTransport(apiKey: string, endpoint = DEFAULT_ENDPOINT, pro
     } finally {
       flushInFlight = null;
       if (queue.length > 0) {
-        void flush();
+        void drain();
+      }
+    }
+  }
+
+  async function flush(options: FlushOptions = {}): Promise<boolean> {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_FLUSH_TIMEOUT_MS;
+    if (timeoutMs <= 0) {
+      await drain();
+      return true;
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        drain().then(() => true),
+        new Promise<boolean>((resolve) => {
+          timeout = setTimeout(() => resolve(false), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
       }
     }
   }

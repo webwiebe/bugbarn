@@ -80,7 +80,7 @@
 - [x] T045 Create TypeScript sample app for uncaught exceptions and unhandled promise rejections.
 - [x] T046 Create Python SDK package with initialization, manual capture, async transport, and `sys.excepthook` support.
 - [x] T047 Create Python sample app for uncaught exceptions.
-- [ ] T048 Add SDK shutdown/flush with bounded timeout.
+- [x] T048 Add SDK shutdown/flush with bounded timeout.
 - [x] T064 Make the TypeScript SDK build into an installable package tarball served by the BugBarn web container for Rapid Root integration.
 - [x] T076 Add TypeScript release/dist event metadata capture and source map upload helper with a documented multipart backend contract.
 
