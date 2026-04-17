@@ -272,6 +272,7 @@ async function loadCurrentRouteData(): Promise<void> {
   }
   if (state.currentRoute === "settings") {
     await loadSettings();
+    loadSdkInfo();
     return;
   }
   if (state.selectedEventId) {
@@ -343,6 +344,24 @@ async function loadSettings(): Promise<void> {
   } catch (error) {
     state.settings = null;
     renderSettingsView(error);
+  }
+}
+
+async function loadSdkInfo(): Promise<void> {
+  const el = document.getElementById("sdk-info");
+  if (!el) return;
+  try {
+    const res = await fetch("/packages/typescript/latest.json");
+    if (!res.ok) throw new Error(`${res.status}`);
+    const info = await res.json() as { version: string; filename: string; url: string };
+    const absUrl = `${window.location.origin}${info.url}`;
+    el.innerHTML = `
+      <div class="kv"><span>Version</span><span>${escapeHtml(info.version)}</span></div>
+      <div class="kv"><span>Tarball URL</span><code class="sdk-url">${escapeHtml(absUrl)}</code></div>
+      <div class="kv"><span>Install</span><code class="sdk-url">pnpm add ${escapeHtml(absUrl)}</code></div>
+    `;
+  } catch {
+    el.innerHTML = `<div class="kv"><span>Status</span><span>Package not yet published — deploy the web container first.</span></div>`;
   }
 }
 

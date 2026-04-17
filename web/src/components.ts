@@ -553,6 +553,13 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
         </form>
       </div>
       <div class="section">
+        <h3>SDK</h3>
+        <p class="muted">Install the TypeScript SDK in your project to capture errors automatically.</p>
+        <div id="sdk-info" class="grid">
+          <div class="kv"><span>Status</span><span>Loading…</span></div>
+        </div>
+      </div>
+      <div class="section">
         <h3>Source maps</h3>
         <p class="muted">Upload source maps so frames can show a short source snippet instead of only minified output.</p>
         <form class="form-grid" id="source-map-form" enctype="multipart/form-data">

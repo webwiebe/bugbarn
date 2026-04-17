@@ -592,6 +592,16 @@ button:disabled {
   font-size: 12px;
 }
 
+.sdk-url {
+  display: block;
+  word-break: break-all;
+  font-size: 12px;
+  background: var(--surface-2, #1e1e1e);
+  padding: 4px 6px;
+  border-radius: 4px;
+  user-select: all;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;

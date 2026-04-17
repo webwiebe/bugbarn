@@ -7,4 +7,16 @@ set -e
 mkdir -p /srv/packages/typescript
 cp /tmp/sdk-package/*.tgz /srv/packages/typescript/ 2>/dev/null || true
 
+# Write latest.json so consumers can discover the current package URL without
+# knowing the content-hash suffix in advance.
+tarball=$(ls /srv/packages/typescript/bugbarn-typescript-*.tgz 2>/dev/null | sort | tail -1)
+if [ -n "$tarball" ]; then
+  filename=$(basename "$tarball")
+  version="${filename#bugbarn-typescript-}"
+  version="${version%.tgz}"
+  printf '{"version":"%s","filename":"%s","url":"/packages/typescript/%s"}\n' \
+    "$version" "$filename" "$filename" \
+    > /srv/packages/typescript/latest.json
+fi
+
 exec caddy file-server --root /srv --listen :8080
