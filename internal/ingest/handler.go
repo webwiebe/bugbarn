@@ -37,7 +37,17 @@ func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyByt
 }
 
 func (h *Handler) ValidAPIKey(r *http.Request) bool {
-	return h != nil && h.auth != nil && h.auth.ValidWithContext(r.Context(), r.Header.Get(auth.HeaderAPIKey))
+	_, ok := h.APIKeyProject(r)
+	return ok
+}
+
+// APIKeyProject validates the API key from the request and returns the
+// associated project ID. For env-var static keys, projectID=0 is returned.
+func (h *Handler) APIKeyProject(r *http.Request) (projectID int64, ok bool) {
+	if h == nil || h.auth == nil {
+		return 0, true
+	}
+	return h.auth.ValidWithProject(r.Context(), r.Header.Get(auth.HeaderAPIKey))
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

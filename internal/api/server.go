@@ -25,8 +25,8 @@ type loginAttempt struct {
 }
 
 const (
-	loginRateLimit   = 10             // max attempts per window
-	loginRateWindow  = time.Minute    // window duration
+	loginRateLimit   = 10              // max attempts per window
+	loginRateWindow  = time.Minute     // window duration
 	loginCleanupFreq = 5 * time.Minute // how often to purge stale entries
 )
 
@@ -114,9 +114,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// request must carry either a valid session cookie or a valid API key. API keys
 	// are accepted on all protected endpoints so that CI/CD scripts can call the
 	// releases, source-maps, and other management endpoints without a browser session.
+	var resolvedProjectID int64
 	if s.users != nil && s.users.Enabled() {
 		_, usingSession := s.sessionUser(r)
-		usingAPIKey := s.ingestHandler != nil && s.ingestHandler.ValidAPIKey(r)
+		var apiKeyProjectID int64
+		usingAPIKey := false
+		if s.ingestHandler != nil {
+			pid, ok := s.ingestHandler.APIKeyProject(r)
+			if ok {
+				usingAPIKey = true
+				apiKeyProjectID = pid
+			}
+		}
 
 		if !usingSession && !usingAPIKey {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -131,6 +140,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
+		// Resolve project ID: API key binding takes precedence.
+		if usingAPIKey && apiKeyProjectID > 0 {
+			resolvedProjectID = apiKeyProjectID
+		} else if usingSession {
+			slug := r.Header.Get("X-BugBarn-Project")
+			if slug == "" {
+				slug = "default"
+			}
+			if proj, err := s.store.ProjectBySlug(r.Context(), slug); err == nil {
+				resolvedProjectID = proj.ID
+			}
+		}
+	}
+	if resolvedProjectID > 0 {
+		r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
 	}
 
 	// Protected route dispatch.
@@ -381,7 +406,11 @@ func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
 
 	if suffix == "" {
 		// GET /api/v1/facets — list all facet keys.
-		keys, err := s.service.ListFacetKeys(r.Context(), s.store.DefaultProjectID())
+		projectID, ok := storage.ProjectIDFromContext(r.Context())
+		if !ok {
+			projectID = s.store.DefaultProjectID()
+		}
+		keys, err := s.service.ListFacetKeys(r.Context(), projectID)
 		if err != nil {
 			writeStorageError(w, err)
 			return
@@ -394,7 +423,11 @@ func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// GET /api/v1/facets/{key} — list values for a key.
-	values, err := s.service.ListFacetValues(r.Context(), s.store.DefaultProjectID(), suffix)
+	projectID, ok := storage.ProjectIDFromContext(r.Context())
+	if !ok {
+		projectID = s.store.DefaultProjectID()
+	}
+	values, err := s.service.ListFacetValues(r.Context(), projectID, suffix)
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -885,7 +918,7 @@ func writeStorageError(w http.ResponseWriter, err error) {
 //   - Vary: Origin is always emitted so CDNs don't cache the wrong value.
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Vary", "Origin")
-	w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-csrf")
+	w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-csrf, x-bugbarn-project")
 
 	origin := r.Header.Get("Origin")
 	if origin == "" {

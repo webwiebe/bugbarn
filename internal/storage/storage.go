@@ -44,6 +44,20 @@ type Store struct {
 	defaultProjectID int64
 }
 
+type ctxProjectKey struct{}
+
+// WithProjectID returns a context carrying the given project ID for use by Store methods.
+func WithProjectID(ctx context.Context, id int64) context.Context {
+	return context.WithValue(ctx, ctxProjectKey{}, id)
+}
+
+// ProjectIDFromContext extracts the project ID stored by WithProjectID.
+// Returns (id, true) when a positive project ID is present, (0, false) otherwise.
+func ProjectIDFromContext(ctx context.Context) (int64, bool) {
+	id, ok := ctx.Value(ctxProjectKey{}).(int64)
+	return id, ok && id > 0
+}
+
 type Issue struct {
 	ID                     string
 	Fingerprint            string
@@ -151,17 +165,22 @@ func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.Proc
 		return Issue{}, Event{}, errors.New("storage is nil")
 	}
 
-	issue, issueID, regressed, err := s.upsertIssue(ctx, processed)
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
+	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
 	if err != nil {
 		return Issue{}, Event{}, err
 	}
 
-	eventRow, eventRowID, err := s.insertEvent(ctx, issueID, regressed, processed)
+	eventRow, eventRowID, err := s.insertEvent(ctx, projectID, issueID, regressed, processed)
 	if err != nil {
 		return Issue{}, Event{}, err
 	}
 
-	if err := s.insertFacets(ctx, issueID, eventRowID, processed.Event); err != nil {
+	if err := s.insertFacets(ctx, projectID, issueID, eventRowID, processed.Event); err != nil {
 		return Issue{}, Event{}, err
 	}
 
@@ -210,8 +229,13 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]I
 		}
 	}
 
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	conditions := []string{"i.project_id = ?"}
-	whereArgs := []any{s.defaultProjectID}
+	whereArgs := []any{projectID}
 
 	switch filter.Status {
 	case "open":
@@ -237,7 +261,7 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]I
 		for _, f := range facetFilters {
 			subqueries = append(subqueries,
 				`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
-			fromArgs = append(fromArgs, s.defaultProjectID, f.k, f.v)
+			fromArgs = append(fromArgs, projectID, f.k, f.v)
 		}
 		fromClause = fmt.Sprintf(`issues i INNER JOIN (%s) ef ON i.id = ef.issue_id`,
 			strings.Join(subqueries, " INTERSECT "))
@@ -296,6 +320,11 @@ func (s *Store) GetIssue(ctx context.Context, issueID string) (Issue, error) {
 		return Issue{}, err
 	}
 
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	row := s.db.QueryRowContext(ctx, `
 SELECT
 	id,
@@ -316,7 +345,7 @@ SELECT
 	representative_event_json
 FROM issues
 WHERE project_id = ? AND id = ?`,
-		s.defaultProjectID,
+		projectID,
 		rowID,
 	)
 
@@ -327,6 +356,11 @@ func (s *Store) ListIssueEvents(ctx context.Context, issueID string) ([]Event, e
 	rowID, err := parseID(issueIDPrefix, issueID)
 	if err != nil {
 		return nil, err
+	}
+
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -345,7 +379,7 @@ SELECT
 FROM events
 WHERE project_id = ? AND issue_id = ?
 ORDER BY id ASC`,
-		s.defaultProjectID,
+		projectID,
 		rowID,
 	)
 	if err != nil {
@@ -373,6 +407,11 @@ func (s *Store) GetEvent(ctx context.Context, eventID string) (Event, error) {
 		return Event{}, err
 	}
 
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	row := s.db.QueryRowContext(ctx, `
 SELECT
 	id,
@@ -388,7 +427,7 @@ SELECT
 	event_json
 FROM events
 WHERE project_id = ? AND id = ?`,
-		s.defaultProjectID,
+		projectID,
 		rowID,
 	)
 
@@ -401,6 +440,11 @@ func (s *Store) ListRecentEvents(ctx context.Context, limit int, since time.Time
 	}
 	if since.IsZero() {
 		since = time.Now().UTC().Add(-15 * time.Minute)
+	}
+
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -420,7 +464,7 @@ FROM events
 WHERE project_id = ? AND max(received_at, observed_at) >= ?
 ORDER BY max(received_at, observed_at) DESC, id DESC
 LIMIT ?`,
-		s.defaultProjectID,
+		projectID,
 		formatTime(since.UTC()),
 		limit,
 	)
@@ -644,7 +688,7 @@ ON CONFLICT(slug) DO NOTHING`,
 	return nil
 }
 
-func (s *Store) upsertIssue(ctx context.Context, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
+func (s *Store) upsertIssue(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
 	evt := processed.Event
 	fingerprintValue := strings.TrimSpace(processed.Fingerprint)
 	if fingerprintValue == "" {
@@ -709,7 +753,7 @@ SELECT
 	representative_event_json
 FROM issues
 WHERE project_id = ? AND fingerprint = ?`,
-		s.defaultProjectID,
+		projectID,
 		fingerprintValue,
 	).Scan(
 		&id,
@@ -791,7 +835,7 @@ WHERE project_id = ? AND fingerprint = ?`,
 			assignments = append(assignments, "status = 'unresolved'", "reopened_at = ?", "last_regressed_at = ?", "regression_count = regression_count + 1")
 			args = append(args, formatTime(issue.ReopenedAt), formatTime(issue.LastRegressedAt))
 		}
-		args = append(args, id, s.defaultProjectID)
+		args = append(args, id, projectID)
 
 		if _, err := tx.ExecContext(ctx, `
 UPDATE issues
@@ -839,7 +883,7 @@ INSERT INTO issues (
 	event_count,
 	representative_event_json
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.defaultProjectID,
+		projectID,
 		fingerprintValue,
 		material,
 		mustMarshalStrings(explanation),
@@ -869,7 +913,7 @@ INSERT INTO issues (
 	return issue, id, false, nil
 }
 
-func (s *Store) insertEvent(ctx context.Context, issueID int64, regressed bool, processed worker.ProcessedEvent) (Event, int64, error) {
+func (s *Store) insertEvent(ctx context.Context, projectID int64, issueID int64, regressed bool, processed worker.ProcessedEvent) (Event, int64, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {
 		return Event{}, 0, err
@@ -897,7 +941,7 @@ INSERT INTO events (
 	regressed,
 	event_json
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.defaultProjectID,
+		projectID,
 		issueID,
 		processed.Fingerprint,
 		processed.FingerprintMaterial,
@@ -937,7 +981,7 @@ INSERT INTO events (
 	}, eventRowID, nil
 }
 
-func (s *Store) insertFacets(ctx context.Context, issueID, eventID int64, processed event.Event) error {
+func (s *Store) insertFacets(ctx context.Context, projectID int64, issueID, eventID int64, processed event.Event) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -961,7 +1005,7 @@ func (s *Store) insertFacets(ctx context.Context, issueID, eventID int64, proces
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value)
 VALUES (?, ?, ?, ?, ?, ?)`,
-			s.defaultProjectID,
+			projectID,
 			eventID,
 			issueID,
 			row.section,
@@ -1475,11 +1519,17 @@ UPDATE api_keys SET last_used_at = ? WHERE key_sha256 = ?`,
 	return err
 }
 
-// ValidAPIKeySHA256 returns true if there exists an api_key row with the given SHA-256 hex digest.
-func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (bool, error) {
-	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_keys WHERE key_sha256 = ?`, keySHA256).Scan(&count)
-	return count > 0, err
+// ValidAPIKeySHA256 returns the project_id for the API key matching the given SHA-256 hex digest.
+// Returns (0, false, nil) when no matching key exists.
+func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, found bool, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT project_id FROM api_keys WHERE key_sha256 = ?`, keySHA256).Scan(&projectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return projectID, true, nil
 }
 
 // ProjectBySlug returns the project with the given slug.

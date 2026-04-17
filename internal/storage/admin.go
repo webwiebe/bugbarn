@@ -49,6 +49,11 @@ func (s *Store) setIssueStatus(ctx context.Context, issueID, status string) (Iss
 		return Issue{}, err
 	}
 
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Issue{}, err
@@ -63,7 +68,7 @@ SET status = ?,
 	reopened_at = CASE WHEN ? = 'unresolved' THEN ? ELSE reopened_at END,
 	updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND project_id = ?`
-	if _, err := tx.ExecContext(ctx, query, status, status, now, status, now, rowID, s.defaultProjectID); err != nil {
+	if _, err := tx.ExecContext(ctx, query, status, status, now, status, now, rowID, projectID); err != nil {
 		return Issue{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -74,6 +79,11 @@ WHERE id = ? AND project_id = ?`
 }
 
 func (s *Store) ListReleases(ctx context.Context) ([]Release, error) {
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 SELECT
 	id,
@@ -89,7 +99,7 @@ SELECT
 FROM releases
 WHERE project_id = ?
 ORDER BY observed_at DESC, id DESC`,
-		s.defaultProjectID,
+		projectID,
 	)
 	if err != nil {
 		return nil, err
@@ -113,6 +123,11 @@ func (s *Store) GetRelease(ctx context.Context, releaseID string) (Release, erro
 		return Release{}, err
 	}
 
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	row := s.db.QueryRowContext(ctx, `
 SELECT
 	id,
@@ -127,7 +142,7 @@ SELECT
 	created_at
 FROM releases
 WHERE project_id = ? AND id = ?`,
-		s.defaultProjectID,
+		projectID,
 		rowID,
 	)
 	return scanRelease(row)
@@ -139,6 +154,11 @@ func (s *Store) CreateRelease(ctx context.Context, release Release) (Release, er
 	}
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
+	}
+
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
 	}
 
 	res, err := s.db.ExecContext(ctx, `
@@ -153,7 +173,7 @@ INSERT INTO releases (
 	notes,
 	created_by
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.defaultProjectID,
+		projectID,
 		release.Name,
 		release.Environment,
 		formatTime(release.ObservedAt),
@@ -187,6 +207,11 @@ func (s *Store) UpdateRelease(ctx context.Context, releaseID string, release Rel
 		release.ObservedAt = time.Now().UTC()
 	}
 
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	if _, err := s.db.ExecContext(ctx, `
 UPDATE releases
 SET name = ?, environment = ?, observed_at = ?, version = ?, commit_sha = ?, url = ?, notes = ?, created_by = ?
@@ -199,7 +224,7 @@ WHERE project_id = ? AND id = ?`,
 		release.URL,
 		release.Notes,
 		release.CreatedBy,
-		s.defaultProjectID,
+		projectID,
 		rowID,
 	); err != nil {
 		return Release{}, err
@@ -213,11 +238,20 @@ func (s *Store) DeleteRelease(ctx context.Context, releaseID string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM releases WHERE project_id = ? AND id = ?`, s.defaultProjectID, rowID)
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM releases WHERE project_id = ? AND id = ?`, projectID, rowID)
 	return err
 }
 
 func (s *Store) ListAlerts(ctx context.Context) ([]Alert, error) {
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 SELECT
 	id,
@@ -230,7 +264,7 @@ SELECT
 FROM alerts
 WHERE project_id = ?
 ORDER BY id DESC`,
-		s.defaultProjectID,
+		projectID,
 	)
 	if err != nil {
 		return nil, err
@@ -253,6 +287,10 @@ func (s *Store) GetAlert(ctx context.Context, alertID string) (Alert, error) {
 	if err != nil {
 		return Alert{}, err
 	}
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
 	row := s.db.QueryRowContext(ctx, `
 SELECT
 	id,
@@ -264,7 +302,7 @@ SELECT
 	updated_at
 FROM alerts
 WHERE project_id = ? AND id = ?`,
-		s.defaultProjectID,
+		projectID,
 		rowID,
 	)
 	return scanAlert(row)
@@ -278,6 +316,10 @@ func (s *Store) CreateAlert(ctx context.Context, alert Alert) (Alert, error) {
 		alert.Rule = map[string]any{}
 	}
 	now := time.Now().UTC()
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO alerts (
 	project_id,
@@ -286,7 +328,7 @@ INSERT INTO alerts (
 	severity,
 	rule_json
 ) VALUES (?, ?, ?, ?, ?)`,
-		s.defaultProjectID,
+		projectID,
 		alert.Name,
 		boolToInt(alert.Enabled),
 		alert.Severity,
@@ -316,6 +358,10 @@ func (s *Store) UpdateAlert(ctx context.Context, alertID string, alert Alert) (A
 	if alert.Rule == nil {
 		alert.Rule = map[string]any{}
 	}
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
 	if _, err := s.db.ExecContext(ctx, `
 UPDATE alerts
 SET name = ?, enabled = ?, severity = ?, rule_json = ?, updated_at = CURRENT_TIMESTAMP
@@ -324,7 +370,7 @@ WHERE project_id = ? AND id = ?`,
 		boolToInt(alert.Enabled),
 		alert.Severity,
 		mustMarshalObject(alert.Rule),
-		s.defaultProjectID,
+		projectID,
 		rowID,
 	); err != nil {
 		return Alert{}, err
@@ -337,16 +383,25 @@ func (s *Store) DeleteAlert(ctx context.Context, alertID string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM alerts WHERE project_id = ? AND id = ?`, s.defaultProjectID, rowID)
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM alerts WHERE project_id = ? AND id = ?`, projectID, rowID)
 	return err
 }
 
 func (s *Store) GetSettings(ctx context.Context) (map[string]string, error) {
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 SELECT key, value
 FROM settings
 WHERE project_id = ?`,
-		s.defaultProjectID,
+		projectID,
 	)
 	if err != nil {
 		return nil, err
@@ -365,6 +420,11 @@ WHERE project_id = ?`,
 }
 
 func (s *Store) UpdateSettings(ctx context.Context, values map[string]string) error {
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -379,7 +439,7 @@ func (s *Store) UpdateSettings(ctx context.Context, values map[string]string) er
 INSERT INTO settings (project_id, key, value, updated_at)
 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(project_id, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
-			s.defaultProjectID,
+			projectID,
 			key,
 			value,
 		); err != nil {
@@ -398,6 +458,10 @@ func (s *Store) UploadSourceMap(ctx context.Context, upload SourceMapUpload) (So
 		return SourceMap{}, errors.New("source map bundle URL is required")
 	}
 	now := time.Now().UTC()
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO source_maps (
 	project_id,
@@ -409,7 +473,7 @@ INSERT INTO source_maps (
 	source_map_blob,
 	size_bytes
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.defaultProjectID,
+		projectID,
 		upload.Release,
 		upload.Dist,
 		upload.BundleURL,
@@ -440,6 +504,10 @@ INSERT INTO source_maps (
 // FindSourceMap looks up the raw source map blob for the given release, dist, and bundleURL.
 // Returns nil, nil if no matching row is found.
 func (s *Store) FindSourceMap(ctx context.Context, release, dist, bundleURL string) ([]byte, error) {
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
 	var blob []byte
 	err := s.db.QueryRowContext(ctx, `
 SELECT source_map_blob
@@ -447,7 +515,7 @@ FROM source_maps
 WHERE project_id = ? AND release = ? AND dist = ? AND bundle_url = ?
 ORDER BY id DESC
 LIMIT 1`,
-		s.defaultProjectID,
+		projectID,
 		release,
 		dist,
 		bundleURL,
@@ -463,23 +531,27 @@ LIMIT 1`,
 
 // SourceMapMeta holds the metadata columns for a source map row (no blob).
 type SourceMapMeta struct {
-	ID         string    `json:"id"`
-	Release    string    `json:"release"`
-	Dist       string    `json:"dist"`
-	BundleURL  string    `json:"bundleUrl"`
-	Name       string    `json:"name"`
-	SizeBytes  int64     `json:"size"`
-	CreatedAt  time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
+	Release   string    `json:"release"`
+	Dist      string    `json:"dist"`
+	BundleURL string    `json:"bundleUrl"`
+	Name      string    `json:"name"`
+	SizeBytes int64     `json:"size"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // ListSourceMaps returns metadata for all source maps in the project (no blob).
 func (s *Store) ListSourceMaps(ctx context.Context) ([]SourceMapMeta, error) {
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, release, dist, bundle_url, name, size_bytes, created_at
 FROM source_maps
 WHERE project_id = ?
 ORDER BY id DESC`,
-		s.defaultProjectID,
+		projectID,
 	)
 	if err != nil {
 		return nil, err

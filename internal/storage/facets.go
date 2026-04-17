@@ -114,6 +114,11 @@ func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64,
 		return nil
 	}
 
+	projectID, ok := ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -124,7 +129,7 @@ func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64,
 	var keyCount int
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT facet_key) FROM event_facets WHERE project_id = ?`,
-		s.defaultProjectID,
+		projectID,
 	).Scan(&keyCount); err != nil {
 		return err
 	}
@@ -138,7 +143,7 @@ func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64,
 		var existingKeyCount int
 		if err := tx.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
-			s.defaultProjectID, k,
+			projectID, k,
 		).Scan(&existingKeyCount); err != nil {
 			return err
 		}
@@ -153,7 +158,7 @@ func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64,
 		var valueExists int
 		if err := tx.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`,
-			s.defaultProjectID, k, v,
+			projectID, k, v,
 		).Scan(&valueExists); err != nil {
 			return err
 		}
@@ -164,7 +169,7 @@ func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64,
 			var distinctValueCount int
 			if err := tx.QueryRowContext(ctx,
 				`SELECT COUNT(DISTINCT facet_value) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
-				s.defaultProjectID, k,
+				projectID, k,
 			).Scan(&distinctValueCount); err != nil {
 				return err
 			}
@@ -176,7 +181,7 @@ func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64,
 		section := rootSection(k)
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value) VALUES (?, ?, ?, ?, ?, ?)`,
-			s.defaultProjectID, eventID, issueID, section, k, v,
+			projectID, eventID, issueID, section, k, v,
 		); err != nil {
 			return err
 		}

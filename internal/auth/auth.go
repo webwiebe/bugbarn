@@ -21,14 +21,20 @@ const HeaderAPIKey = "x-bugbarn-api-key"
 
 // DBKeyLookup is called by Authorizer.ValidWithDB to check whether a SHA-256
 // hex digest exists in the database. Returning (false, nil) means "not found".
+// Deprecated: use DBKeyLookupWithProject instead.
 type DBKeyLookup func(ctx context.Context, keySHA256 string) (bool, error)
+
+// DBKeyLookupWithProject is called by Authorizer.ValidWithProject to look up an
+// API key's project association. Returns (projectID, true, nil) on match,
+// (0, false, nil) when not found.
+type DBKeyLookupWithProject func(ctx context.Context, keySHA256 string) (projectID int64, found bool, err error)
 
 // DBKeyTouch is called after a successful DB-based auth to update last_used_at.
 type DBKeyTouch func(ctx context.Context, keySHA256 string) error
 
 type Authorizer struct {
 	apiKeyHash []byte
-	dbLookup   DBKeyLookup
+	dbLookup   DBKeyLookupWithProject
 	dbTouch    DBKeyTouch
 }
 
@@ -58,7 +64,7 @@ func NewHashed(apiKeySHA256 string) (*Authorizer, error) {
 
 // WithDBLookup returns a copy of the Authorizer that will also accept API keys
 // found in the database. The lookup and touch functions are called per-request.
-func (a *Authorizer) WithDBLookup(lookup DBKeyLookup, touch DBKeyTouch) *Authorizer {
+func (a *Authorizer) WithDBLookup(lookup DBKeyLookupWithProject, touch DBKeyTouch) *Authorizer {
 	if a == nil {
 		return &Authorizer{dbLookup: lookup, dbTouch: touch}
 	}
@@ -77,36 +83,44 @@ func (a *Authorizer) Valid(provided string) bool {
 	return a.ValidWithContext(context.Background(), provided)
 }
 
-// ValidWithContext checks the provided key against the env-var hash first, then
-// the DB lookup if configured. It also calls the touch function on DB hits.
-func (a *Authorizer) ValidWithContext(ctx context.Context, provided string) bool {
+// ValidWithProject checks the provided key and returns the associated project ID.
+// For env-var static keys, projectID=0 is returned (global/admin access).
+// Returns (projectID, true) on success, (0, false) on failure.
+func (a *Authorizer) ValidWithProject(ctx context.Context, provided string) (projectID int64, ok bool) {
 	if a == nil || !a.Enabled() {
-		return true
+		return 0, true
 	}
 
 	provided = strings.TrimSpace(provided)
 	sum := sha256.Sum256([]byte(provided))
 	hexSum := hex.EncodeToString(sum[:])
 
-	// Check static env-var hash.
+	// Check static env-var hash first (global access, no project binding).
 	if len(a.apiKeyHash) == sha256.Size {
 		if subtle.ConstantTimeCompare(sum[:], a.apiKeyHash) == 1 {
-			return true
+			return 0, true
 		}
 	}
 
 	// Check DB-stored keys.
 	if a.dbLookup != nil {
-		ok, err := a.dbLookup(ctx, hexSum)
-		if err == nil && ok {
+		pid, found, err := a.dbLookup(ctx, hexSum)
+		if err == nil && found {
 			if a.dbTouch != nil {
 				_ = a.dbTouch(ctx, hexSum)
 			}
-			return true
+			return pid, true
 		}
 	}
 
-	return false
+	return 0, false
+}
+
+// ValidWithContext checks the provided key against the env-var hash first, then
+// the DB lookup if configured. It also calls the touch function on DB hits.
+func (a *Authorizer) ValidWithContext(ctx context.Context, provided string) bool {
+	_, ok := a.ValidWithProject(ctx, provided)
+	return ok
 }
 
 type UserAuthenticator struct {

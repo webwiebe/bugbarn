@@ -13,16 +13,21 @@ import {
 import { normalizeList, normalizeObject, readString } from "./data.js";
 import { eventIssueId, eventTimestamp, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
-import type { ApiAlert, ApiEvent, ApiIssue, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
+import type { ApiAlert, ApiEvent, ApiIssue, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
 
 const httpUnauthorized = 401;
 const liveWindowMinutes = 15;
+
+const sidebarKey = "bugbarn_sidebar";
+const projectKey = "bugbarn_project";
 
 const state: AppState = {
   authChecked: false,
   authRequired: false,
   authenticated: false,
   username: "",
+  projects: [],
+  currentProject: localStorage.getItem(projectKey) ?? "default",
   currentRoute: "issues",
   issues: [],
   issueQuery: "",
@@ -66,8 +71,7 @@ const bbMenu = document.getElementById("bb-menu") as HTMLElement | null;
 const bbMenuUser = document.getElementById("bb-menu-user") as HTMLElement | null;
 const bbLogout = document.getElementById("bb-logout") as HTMLButtonElement | null;
 const sidebarToggle = document.getElementById("sidebar-toggle") as HTMLButtonElement | null;
-
-const sidebarKey = "bugbarn_sidebar";
+const projectSelect = document.getElementById("project-select") as HTMLSelectElement | null;
 
 function applySidebarState(): void {
   const expanded = localStorage.getItem(sidebarKey) === "expanded";
@@ -118,6 +122,13 @@ bbLogout?.addEventListener("click", () => {
   void logout();
 });
 
+projectSelect?.addEventListener("change", () => {
+  const slug = projectSelect.value;
+  state.currentProject = slug;
+  localStorage.setItem(projectKey, slug);
+  void refreshAll();
+});
+
 async function logout(): Promise<void> {
   try {
     await fetch(apiUrl("/api/v1/logout"), { method: "POST", credentials: "include" });
@@ -156,7 +167,7 @@ async function start(): Promise<void> {
     renderLogin();
     return;
   }
-  await refreshAll();
+  await Promise.all([loadProjects(), refreshAll()]);
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -365,6 +376,30 @@ async function loadSdkInfo(): Promise<void> {
   }
 }
 
+async function loadProjects(): Promise<void> {
+  try {
+    const payload = await fetchJson("/api/v1/projects", true);
+    state.projects = payload ? normalizeList<ApiProject>(payload, "projects") : [];
+  } catch {
+    state.projects = [];
+  }
+  renderProjectSwitcher();
+}
+
+function renderProjectSwitcher(): void {
+  if (!projectSelect) return;
+  const current = state.currentProject;
+  projectSelect.innerHTML = state.projects
+    .map((p) => {
+      const slug = String(p.slug ?? p.Slug ?? "default");
+      const name = String(p.name ?? p.Name ?? slug);
+      const selected = slug === current ? ' selected' : '';
+      return `<option value="${escapeHtml(slug)}"${selected}>${escapeHtml(name)}</option>`;
+    })
+    .join("");
+  projectSelect.hidden = state.projects.length <= 1;
+}
+
 async function loadIssueDetail(issueId: string): Promise<void> {
   setDetailLoading(`Issue ${issueId}`);
   try {
@@ -479,7 +514,11 @@ async function fetchJson(path: string, allowMissing = false): Promise<unknown> {
     return existing;
   }
 
-  const request = fetch(url, { credentials: "include", headers: { Accept: "application/json" } }).then(async (response) => {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (state.currentProject && state.currentProject !== "default") {
+    headers["X-BugBarn-Project"] = state.currentProject;
+  }
+  const request = fetch(url, { credentials: "include", headers }).then(async (response) => {
     if (response.status === httpUnauthorized) {
       state.authRequired = true;
       state.authenticated = false;

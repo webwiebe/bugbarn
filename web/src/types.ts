@@ -108,6 +108,15 @@ export interface ApiAlert extends RawRecord {
   created_at?: string | number;
 }
 
+export interface ApiProject extends RawRecord {
+  id?: string | number;
+  ID?: string | number;
+  slug?: string;
+  Slug?: string;
+  name?: string;
+  Name?: string;
+}
+
 export interface ApiSettings extends RawRecord {
   username?: string;
   Username?: string;
@@ -133,6 +142,8 @@ export interface AppState {
   authRequired: boolean;
   authenticated: boolean;
   username: string;
+  projects: ApiProject[];
+  currentProject: string;
   currentRoute: "issues" | "releases" | "alerts" | "settings";
   issues: ApiIssue[];
   issueQuery: string;
