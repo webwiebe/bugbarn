@@ -288,7 +288,12 @@ func runAPIKeyCmd(cfg config, args []string) error {
 		ctx := context.Background()
 		project, err := store.ProjectBySlug(ctx, *projectSlug)
 		if err != nil {
-			return fmt.Errorf("project %q not found: %w", *projectSlug, err)
+			// Auto-create the project if it doesn't exist yet.
+			project, err = store.CreateProject(ctx, *projectSlug, *projectSlug)
+			if err != nil {
+				return fmt.Errorf("create project %q: %w", *projectSlug, err)
+			}
+			fmt.Printf("Project %q created automatically.\n", *projectSlug)
 		}
 		// Generate a 32-byte random key.
 		var raw [32]byte
