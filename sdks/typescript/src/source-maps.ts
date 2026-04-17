@@ -23,19 +23,18 @@ function resolveUrl(endpoint: string): string {
   return `http://127.0.0.1${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
 }
 
-async function toBlob(sourceMap: SourceMapUploadOptions["sourceMap"]): Promise<Blob> {
+async function toBlob(sourceMap: SourceMapUploadOptions["sourceMap"], sourceMapPath?: string): Promise<Blob> {
+  if (sourceMapPath) {
+    const { readFile } = await import("node:fs/promises");
+    const contents = await readFile(sourceMapPath);
+    return new Blob([contents], { type: "application/json" });
+  }
+
   if (sourceMap instanceof Blob) {
     return sourceMap;
   }
 
-  // Node.js file path string
-  if (typeof sourceMap === "string") {
-    const { readFile } = await import("node:fs/promises");
-    const contents = await readFile(sourceMap);
-    return new Blob([contents], { type: "application/json" });
-  }
-
-  return new Blob([sourceMap], { type: "application/json" });
+  return new Blob([sourceMap ?? ""], { type: "application/json" });
 }
 
 export async function uploadSourceMap(options: SourceMapUploadOptions): Promise<void> {
@@ -51,7 +50,7 @@ export async function uploadSourceMap(options: SourceMapUploadOptions): Promise<
     formData.set("source_map_name", (options.sourceMapName ?? options.sourceMapFilename)!);
   }
 
-  const blob = await toBlob(options.sourceMap);
+  const blob = await toBlob(options.sourceMap ?? "", options.sourceMapPath);
   formData.set("source_map", blob, options.sourceMapName ?? options.sourceMapFilename ?? "source.map");
 
   const response = await fetch(resolveUrl(options.endpoint ?? DEFAULT_ENDPOINT), {
@@ -80,8 +79,10 @@ export async function uploadSourceMap(options: SourceMapUploadOptions): Promise<
 export function createSourceMapUploader(config: SourceMapUploaderConfig) {
   return async function upload(params: {
     bundleUrl: string;
-    /** File path (Node.js) or Blob/ArrayBuffer (browser) */
-    sourceMap: string | Blob | ArrayBuffer;
+    /** Source map content as string, Blob, or ArrayBuffer */
+    sourceMap?: string | Blob | ArrayBuffer;
+    /** Node.js file path to read the source map from */
+    sourceMapPath?: string;
     sourceMapName?: string;
   }): Promise<void> {
     await uploadSourceMap({
@@ -90,7 +91,8 @@ export function createSourceMapUploader(config: SourceMapUploaderConfig) {
       release: config.release,
       dist: config.dist,
       bundleUrl: params.bundleUrl,
-      sourceMap: params.sourceMap,
+      sourceMap: params.sourceMap ?? "",
+      sourceMapPath: params.sourceMapPath,
       sourceMapName: params.sourceMapName,
     });
   };

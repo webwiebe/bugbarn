@@ -56,8 +56,10 @@ export type SourceMapUploadOptions = {
   release: string;
   dist?: string;
   bundleUrl: string;
-  /** File content (Blob/ArrayBuffer) or a Node.js file path string */
-  sourceMap: string | ArrayBuffer | Blob;
+  /** Source map content as a string, Blob, or ArrayBuffer. Required when sourceMapPath is not set. */
+  sourceMap?: string | ArrayBuffer | Blob;
+  /** Node.js file path to read the source map from (alternative to sourceMap) */
+  sourceMapPath?: string;
   /** Preferred name for the stored source map file */
   sourceMapName?: string;
   /** @deprecated Use sourceMapName instead */
