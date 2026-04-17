@@ -37,7 +37,7 @@ func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyByt
 }
 
 func (h *Handler) ValidAPIKey(r *http.Request) bool {
-	return h != nil && h.auth != nil && h.auth.Valid(r.Header.Get(auth.HeaderAPIKey))
+	return h != nil && h.auth != nil && h.auth.ValidWithContext(r.Context(), r.Header.Get(auth.HeaderAPIKey))
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

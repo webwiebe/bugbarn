@@ -71,6 +71,19 @@ export function issueEventCount(issue: ApiIssue, fallback = 0): number {
   return readNumber(issue, ["eventCount", "EventCount", "event_count", "count"]) || fallback;
 }
 
+export function issueSeverity(issue: ApiIssue): string {
+  // Try to read severity from the representative event embedded in the issue.
+  const rep = issue.RepresentativeEvent ?? issue.representative_event;
+  if (isRecord(rep)) {
+    const sev = readString(rep as Record<string, unknown>, ["severity", "Severity", "severityText", "SeverityText"]);
+    if (sev) {
+      return sev;
+    }
+  }
+  // Fall back to issue-level severity if it exists.
+  return readString(issue as Record<string, unknown>, ["severity", "Severity"]);
+}
+
 export function eventIssueId(event: ApiEvent): string {
   const direct = readString(event, ["issueId", "IssueID", "issue_id"]);
   if (direct) {

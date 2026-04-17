@@ -96,3 +96,21 @@ jobs:
             kubectl -n bugbarn-${DEPLOY_ENV} get pods -l app.kubernetes.io/name=bugbarn -o wide
             kubectl -n bugbarn-${DEPLOY_ENV} get pods -l app.kubernetes.io/name=bugbarn-web -o wide
           "
+
+      - name: Post release marker
+        if: ${{ vars.BUGBARN_ENDPOINT != '' && secrets.BUGBARN_API_KEY != '' }}
+        env:
+          BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
+          BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY }}
+        run: |
+          set -euo pipefail
+          curl -sf -X POST "${BUGBARN_ENDPOINT}/api/v1/releases" \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
+            -d "{
+              \"name\": \"${GITHUB_SHA:0:7}\",
+              \"environment\": \"${DEPLOY_ENV}\",
+              \"version\": \"${GITHUB_SHA}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\",
+              \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
+            }" || echo "BugBarn release marker skipped (endpoint unreachable)"

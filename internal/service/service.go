@@ -9,6 +9,7 @@ import (
 
 type Repository interface {
 	ListIssues(context.Context) ([]storage.Issue, error)
+	ListIssuesFiltered(context.Context, storage.IssueFilter) ([]storage.Issue, error)
 	GetIssue(context.Context, string) (storage.Issue, error)
 	ListIssueEvents(context.Context, string) ([]storage.Event, error)
 	GetEvent(context.Context, string) (storage.Event, error)
@@ -28,6 +29,8 @@ type Repository interface {
 	GetSettings(context.Context) (map[string]string, error)
 	UpdateSettings(context.Context, map[string]string) error
 	UploadSourceMap(context.Context, storage.SourceMapUpload) (storage.SourceMap, error)
+	ListFacetKeys(context.Context, int64) ([]string, error)
+	ListFacetValues(context.Context, int64, string) ([]string, error)
 }
 
 type Service struct {
@@ -40,6 +43,10 @@ func New(repo Repository) *Service {
 
 func (s *Service) ListIssues(ctx context.Context) ([]storage.Issue, error) {
 	return s.repo.ListIssues(ctx)
+}
+
+func (s *Service) ListIssuesFiltered(ctx context.Context, filter storage.IssueFilter) ([]storage.Issue, error) {
+	return s.repo.ListIssuesFiltered(ctx, filter)
 }
 
 func (s *Service) GetIssue(ctx context.Context, id string) (storage.Issue, error) {
@@ -122,4 +129,12 @@ func (s *Service) UpdateSettings(ctx context.Context, values map[string]string) 
 
 func (s *Service) UploadSourceMap(ctx context.Context, upload storage.SourceMapUpload) (storage.SourceMap, error) {
 	return s.repo.UploadSourceMap(ctx, upload)
+}
+
+func (s *Service) ListFacetKeys(ctx context.Context, projectID int64) ([]string, error) {
+	return s.repo.ListFacetKeys(ctx, projectID)
+}
+
+func (s *Service) ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error) {
+	return s.repo.ListFacetValues(ctx, projectID, key)
 }

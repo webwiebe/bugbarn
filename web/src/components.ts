@@ -21,6 +21,7 @@ import {
   issueFirstSeen,
   issueLastSeen,
   issueNormalizedTitle,
+  issueSeverity,
   issueStatus,
   issueTitle,
 } from "./domain.js";
@@ -32,7 +33,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
     return `<div class="error">Issues unavailable. ${escapeHtml(errorMessage(error))}</div>`;
   }
 
-  const filtered = filterIssues(issues, query);
+  const filtered = query ? filterIssues(issues, query) : issues;
   if (!filtered.length) {
     return "";
   }
@@ -40,8 +41,9 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
   return `
     <div class="issue-table-head">
       <span>Issue</span>
+      <span>Severity</span>
       <span>Last seen</span>
-      <span>Age</span>
+      <span>First seen</span>
       <span>Events</span>
     </div>
     ${filtered
@@ -50,13 +52,16 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
         const title = issueTitle(issue);
         const count = issueEventCount(issue);
         const lastSeen = formatTime(issueLastSeen(issue));
-        const age = formatAge(issueFirstSeen(issue));
+        const firstSeen = formatTime(issueFirstSeen(issue));
         const active = id && String(id) === String(selectedIssueId) ? "active" : "";
+        const severity = issueSeverity(issue);
+        const severityClass = severity === "error" || severity === "fatal" ? "bad" : severity === "warning" ? "warn" : "";
         return `
           <button class="item issue-row ${active}" type="button" data-issue-id="${escapeAttr(id)}">
             <div class="item-title"><span class="status-dot"></span>${escapeHtml(title)}</div>
+            <span class="issue-cell"><span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity || "n/a")}</span></span>
             <span class="issue-cell">${escapeHtml(lastSeen || "No timestamp")}</span>
-            <span class="issue-cell">${escapeHtml(age || "n/a")}</span>
+            <span class="issue-cell">${escapeHtml(firstSeen || "n/a")}</span>
             <span class="issue-cell">${escapeHtml(String(count))}</span>
             <div class="item-meta">
               <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
@@ -241,14 +246,14 @@ export function renderErrorDetailMarkup(error: unknown): string {
 
 export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null): string {
   if (liveError) {
-    return `<div class="empty">Live endpoint unavailable. Polling will keep trying.</div>`;
+    return `<div class="empty">Live stream unavailable. Reconnecting…</div>`;
   }
 
   if (!events.length) {
     return `
       <div class="empty">
         <strong>No live events yet.</strong>
-        <p>Send an exception with one of the SDK snippets and this list will update on the next poll.</p>
+        <p>Send an exception with one of the SDK snippets and new events will appear here in real time.</p>
       </div>
     `;
   }
@@ -259,9 +264,14 @@ export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null
       const issueId = eventIssueId(event);
       const title = eventTitle(event);
       const timestamp = formatTime(eventTimestamp(event));
+      const severity = eventSeverity(event) || "info";
+      const severityClass = severity === "error" || severity === "fatal" ? "bad" : severity === "warning" ? "warn" : "";
       return `
         <button class="item" type="button" data-live-event-id="${escapeAttr(id)}">
-          <div class="item-title">${escapeHtml(title)}</div>
+          <div class="item-title">
+            <span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity)}</span>
+            ${escapeHtml(title)}
+          </div>
           <div class="item-meta">
             <span>${escapeHtml(String(issueId || "No issue"))}</span>
             <span>${escapeHtml(timestamp || "No timestamp")}</span>

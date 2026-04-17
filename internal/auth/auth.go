@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -18,8 +19,17 @@ import (
 
 const HeaderAPIKey = "x-bugbarn-api-key"
 
+// DBKeyLookup is called by Authorizer.ValidWithDB to check whether a SHA-256
+// hex digest exists in the database. Returning (false, nil) means "not found".
+type DBKeyLookup func(ctx context.Context, keySHA256 string) (bool, error)
+
+// DBKeyTouch is called after a successful DB-based auth to update last_used_at.
+type DBKeyTouch func(ctx context.Context, keySHA256 string) error
+
 type Authorizer struct {
 	apiKeyHash []byte
+	dbLookup   DBKeyLookup
+	dbTouch    DBKeyTouch
 }
 
 func New(apiKey string) *Authorizer {
@@ -46,21 +56,57 @@ func NewHashed(apiKeySHA256 string) (*Authorizer, error) {
 	return &Authorizer{apiKeyHash: decoded}, nil
 }
 
+// WithDBLookup returns a copy of the Authorizer that will also accept API keys
+// found in the database. The lookup and touch functions are called per-request.
+func (a *Authorizer) WithDBLookup(lookup DBKeyLookup, touch DBKeyTouch) *Authorizer {
+	if a == nil {
+		return &Authorizer{dbLookup: lookup, dbTouch: touch}
+	}
+	return &Authorizer{apiKeyHash: a.apiKeyHash, dbLookup: lookup, dbTouch: touch}
+}
+
+// Enabled returns true when at least one auth mechanism is configured.
 func (a *Authorizer) Enabled() bool {
-	return a != nil && len(a.apiKeyHash) == sha256.Size
+	if a == nil {
+		return false
+	}
+	return len(a.apiKeyHash) == sha256.Size || a.dbLookup != nil
 }
 
 func (a *Authorizer) Valid(provided string) bool {
+	return a.ValidWithContext(context.Background(), provided)
+}
+
+// ValidWithContext checks the provided key against the env-var hash first, then
+// the DB lookup if configured. It also calls the touch function on DB hits.
+func (a *Authorizer) ValidWithContext(ctx context.Context, provided string) bool {
 	if a == nil || !a.Enabled() {
 		return true
 	}
 
-	sum := sha256.Sum256([]byte(strings.TrimSpace(provided)))
-	if len(a.apiKeyHash) != len(sum) {
-		return false
+	provided = strings.TrimSpace(provided)
+	sum := sha256.Sum256([]byte(provided))
+	hexSum := hex.EncodeToString(sum[:])
+
+	// Check static env-var hash.
+	if len(a.apiKeyHash) == sha256.Size {
+		if subtle.ConstantTimeCompare(sum[:], a.apiKeyHash) == 1 {
+			return true
+		}
 	}
 
-	return subtle.ConstantTimeCompare(sum[:], a.apiKeyHash) == 1
+	// Check DB-stored keys.
+	if a.dbLookup != nil {
+		ok, err := a.dbLookup(ctx, hexSum)
+		if err == nil && ok {
+			if a.dbTouch != nil {
+				_ = a.dbTouch(ctx, hexSum)
+			}
+			return true
+		}
+	}
+
+	return false
 }
 
 type UserAuthenticator struct {

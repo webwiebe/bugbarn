@@ -141,6 +141,11 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DefaultProjectID returns the numeric ID of the default project.
+func (s *Store) DefaultProjectID() int64 {
+	return s.defaultProjectID
+}
+
 func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.ProcessedEvent) (Issue, Event, error) {
 	if s == nil || s.db == nil {
 		return Issue{}, Event{}, errors.New("storage is nil")
@@ -160,33 +165,112 @@ func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.Proc
 		return Issue{}, Event{}, err
 	}
 
+	if err := s.PersistFacets(ctx, eventRowID, issueID, extractFacets(processed.Event)); err != nil {
+		return Issue{}, Event{}, err
+	}
+
 	return issue, eventRow, nil
 }
 
+// IssueFilter holds optional filters and sort order for ListIssuesFiltered.
+type IssueFilter struct {
+	// Sort is one of "last_seen", "first_seen", "event_count". Default: "last_seen".
+	Sort string
+	// Status filters by issue status: "open" maps to "unresolved", "resolved" to "resolved".
+	// Empty string means no filter (all issues).
+	Status string
+	// Query is a case-insensitive substring matched against title and normalized_title.
+	Query string
+	// Facets is an optional map of facet key→value pairs to filter by.
+	// Issues must match ALL provided facet filters (AND semantics).
+	Facets map[string]string
+}
+
 func (s *Store) ListIssues(ctx context.Context) ([]Issue, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	return s.ListIssuesFiltered(ctx, IssueFilter{})
+}
+
+func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]Issue, error) {
+	var orderBy string
+	switch filter.Sort {
+	case "first_seen":
+		orderBy = "first_seen DESC, id DESC"
+	case "event_count":
+		orderBy = "event_count DESC, id DESC"
+	default:
+		orderBy = "last_seen DESC, id DESC"
+	}
+
+	// Collect non-empty facet filters.
+	type kv struct{ k, v string }
+	var facetFilters []kv
+	for fk, fv := range filter.Facets {
+		if strings.TrimSpace(fk) != "" && strings.TrimSpace(fv) != "" {
+			facetFilters = append(facetFilters, kv{fk, fv})
+		}
+	}
+
+	conditions := []string{"i.project_id = ?"}
+	whereArgs := []any{s.defaultProjectID}
+
+	switch filter.Status {
+	case "open":
+		conditions = append(conditions, "i.status = 'unresolved'")
+	case "resolved":
+		conditions = append(conditions, "i.status = 'resolved'")
+	}
+
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		conditions = append(conditions, "(i.title LIKE ? OR i.normalized_title LIKE ?)")
+		like := "%" + q + "%"
+		whereArgs = append(whereArgs, like, like)
+	}
+
+	// fromArgs holds bindings for subquery ?-placeholders in the FROM clause.
+	// They must come before whereArgs in the final args slice.
+	var fromArgs []any
+	var fromClause string
+	if len(facetFilters) > 0 {
+		// Build an INTERSECT subquery: one branch per facet filter that returns
+		// matching issue_ids. The join enforces AND semantics across all filters.
+		var subqueries []string
+		for _, f := range facetFilters {
+			subqueries = append(subqueries,
+				`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
+			fromArgs = append(fromArgs, s.defaultProjectID, f.k, f.v)
+		}
+		fromClause = fmt.Sprintf(`issues i INNER JOIN (%s) ef ON i.id = ef.issue_id`,
+			strings.Join(subqueries, " INTERSECT "))
+	} else {
+		fromClause = "issues i"
+	}
+
+	// Combine: subquery bindings first (appear in FROM clause), then WHERE bindings.
+	args := append(fromArgs, whereArgs...)
+
+	sqlQuery := `
 SELECT
-	id,
-	fingerprint,
-	fingerprint_material,
-	fingerprint_explanation_json,
-	title,
-	normalized_title,
-	exception_type,
-	status,
-	resolved_at,
-	reopened_at,
-	last_regressed_at,
-	regression_count,
-	first_seen,
-	last_seen,
-	event_count,
-	representative_event_json
-FROM issues
-WHERE project_id = ?
-ORDER BY last_seen DESC, id DESC`,
-		s.defaultProjectID,
-	)
+	i.id,
+	i.fingerprint,
+	i.fingerprint_material,
+	i.fingerprint_explanation_json,
+	i.title,
+	i.normalized_title,
+	i.exception_type,
+	i.status,
+	i.resolved_at,
+	i.reopened_at,
+	i.last_regressed_at,
+	i.regression_count,
+	i.first_seen,
+	i.last_seen,
+	i.event_count,
+	i.representative_event_json
+FROM ` + fromClause + `
+WHERE ` + strings.Join(conditions, " AND ") + `
+ORDER BY i.` + orderBy
+
+	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -475,6 +559,21 @@ func (s *Store) init(ctx context.Context) error {
 			source_map_blob BLOB NOT NULL DEFAULT X'',
 			size_bytes INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT UNIQUE NOT NULL,
+			password_bcrypt TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS api_keys (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			project_id INTEGER NOT NULL REFERENCES projects(id),
+			key_sha256 TEXT UNIQUE NOT NULL,
+			created_at TEXT NOT NULL,
+			last_used_at TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_issues_project_last_seen ON issues(project_id, last_seen DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_events_issue_id ON events(project_id, issue_id, id ASC)`,
@@ -1228,4 +1327,170 @@ func boolToInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+// User represents an admin user stored in the database.
+type User struct {
+	ID             int64
+	Username       string
+	PasswordBcrypt string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// Project represents a project row.
+type Project struct {
+	ID        int64
+	Name      string
+	Slug      string
+	CreatedAt time.Time
+}
+
+// APIKey represents an API key row (the plaintext key is never stored).
+type APIKey struct {
+	ID         int64
+	Name       string
+	ProjectID  int64
+	KeySHA256  string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+}
+
+// UpsertUser creates a user or updates their password if the username already exists.
+func (s *Store) UpsertUser(ctx context.Context, username, passwordBcrypt string) error {
+	now := formatTime(time.Now().UTC())
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO users (username, password_bcrypt, created_at, updated_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(username) DO UPDATE SET password_bcrypt = excluded.password_bcrypt, updated_at = excluded.updated_at`,
+		username, passwordBcrypt, now, now,
+	)
+	return err
+}
+
+// CreateProject inserts a new project row; returns an error if the slug already exists.
+func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, error) {
+	now := formatTime(time.Now().UTC())
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO projects (name, slug, created_at) VALUES (?, ?, ?)`,
+		name, slug, now,
+	)
+	if err != nil {
+		return Project{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Project{}, err
+	}
+	return Project{ID: id, Name: name, Slug: slug, CreatedAt: time.Now().UTC()}, nil
+}
+
+// ListProjects returns all projects ordered by id.
+func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, created_at FROM projects ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var projects []Project
+	for rows.Next() {
+		var p Project
+		var createdAt string
+		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &createdAt); err != nil {
+			return nil, err
+		}
+		p.CreatedAt, _ = parseTime(createdAt)
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
+}
+
+// CreateAPIKey stores an API key's SHA-256 hash and returns the resulting row.
+func (s *Store) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256 string) (APIKey, error) {
+	now := formatTime(time.Now().UTC())
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO api_keys (name, project_id, key_sha256, created_at) VALUES (?, ?, ?, ?)`,
+		name, projectID, keySHA256, now,
+	)
+	if err != nil {
+		return APIKey{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return APIKey{}, err
+	}
+	return APIKey{ID: id, Name: name, ProjectID: projectID, KeySHA256: keySHA256, CreatedAt: time.Now().UTC()}, nil
+}
+
+// ListAPIKeys returns all API key rows (without the plaintext key).
+func (s *Store) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, name, project_id, key_sha256, created_at, last_used_at
+FROM api_keys ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []APIKey
+	for rows.Next() {
+		var k APIKey
+		var createdAt string
+		var lastUsedAt sql.NullString
+		if err := rows.Scan(&k.ID, &k.Name, &k.ProjectID, &k.KeySHA256, &createdAt, &lastUsedAt); err != nil {
+			return nil, err
+		}
+		k.CreatedAt, _ = parseTime(createdAt)
+		if lastUsedAt.Valid {
+			k.LastUsedAt, _ = parseTime(lastUsedAt.String)
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+// DeleteAPIKey removes the API key with the given id.
+func (s *Store) DeleteAPIKey(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// TouchAPIKey updates last_used_at for the key matching the given SHA-256 hex.
+func (s *Store) TouchAPIKey(ctx context.Context, keySHA256 string) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE api_keys SET last_used_at = ? WHERE key_sha256 = ?`,
+		formatTime(time.Now().UTC()), keySHA256,
+	)
+	return err
+}
+
+// ValidAPIKeySHA256 returns true if there exists an api_key row with the given SHA-256 hex digest.
+func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_keys WHERE key_sha256 = ?`, keySHA256).Scan(&count)
+	return count > 0, err
+}
+
+// ProjectBySlug returns the project with the given slug.
+func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
+	var p Project
+	var createdAt string
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, slug, created_at FROM projects WHERE slug = ?`, slug).
+		Scan(&p.ID, &p.Name, &p.Slug, &createdAt)
+	if err != nil {
+		return Project{}, err
+	}
+	p.CreatedAt, _ = parseTime(createdAt)
+	return p, nil
 }

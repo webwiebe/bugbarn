@@ -17,7 +17,10 @@ class RecordingTransport:
         self.events.append(event)
         return True
 
-    def close(self):
+    def flush(self, timeout: float = 2.0) -> bool:
+        return True
+
+    def close(self, timeout: float = 2.0):
         self.closed = True
 
 

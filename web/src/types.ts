@@ -125,6 +125,9 @@ export interface ApiSettings extends RawRecord {
   stacktrace_context_lines?: number;
 }
 
+export type IssueSort = "last_seen" | "first_seen" | "event_count";
+export type IssueStatus = "all" | "open" | "resolved";
+
 export interface AppState {
   authChecked: boolean;
   authRequired: boolean;
@@ -133,6 +136,8 @@ export interface AppState {
   currentRoute: "issues" | "releases" | "alerts" | "settings";
   issues: ApiIssue[];
   issueQuery: string;
+  issueSort: IssueSort;
+  issueStatus: IssueStatus;
   selectedIssueId: string | null;
   selectedEventId: string | null;
   releases: ApiRelease[];
@@ -141,6 +146,9 @@ export interface AppState {
   liveEvents: ApiEvent[];
   liveError: Error | null;
   liveTimer: number | null;
+  liveSource: EventSource | null;
+  liveReconnectDelay: number;
+  liveConnected: boolean;
   inFlight: Map<string, Promise<unknown>>;
 }
 

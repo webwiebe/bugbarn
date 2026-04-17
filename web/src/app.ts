@@ -1,5 +1,4 @@
 import {
-  filteredIssueCount,
   renderAlertsViewMarkup,
   renderEmptyIssues,
   renderErrorDetailMarkup,
@@ -14,7 +13,7 @@ import {
 import { normalizeList, normalizeObject, readString } from "./data.js";
 import { eventIssueId, eventTimestamp, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
-import type { ApiAlert, ApiEvent, ApiIssue, ApiRelease, ApiSettings, AppElements, AppState, RawRecord } from "./types.js";
+import type { ApiAlert, ApiEvent, ApiIssue, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
 
 const httpUnauthorized = 401;
 const liveWindowMinutes = 15;
@@ -27,6 +26,8 @@ const state: AppState = {
   currentRoute: "issues",
   issues: [],
   issueQuery: "",
+  issueSort: "last_seen",
+  issueStatus: "all",
   selectedIssueId: null,
   selectedEventId: null,
   releases: [],
@@ -35,6 +36,9 @@ const state: AppState = {
   liveEvents: [],
   liveError: null,
   liveTimer: null,
+  liveSource: null,
+  liveReconnectDelay: 3000,
+  liveConnected: false,
   inFlight: new Map<string, Promise<unknown>>(),
 };
 
@@ -64,7 +68,7 @@ window.addEventListener("hashchange", () => {
   route();
   void refreshAll();
 });
-window.addEventListener("beforeunload", stopLivePolling);
+window.addEventListener("beforeunload", stopLiveStream);
 
 void start();
 
@@ -206,7 +210,18 @@ async function loadCurrentRouteData(): Promise<void> {
 
 async function loadIssues(): Promise<void> {
   try {
-    const payload = await fetchJson("/api/v1/issues");
+    const params = new URLSearchParams();
+    if (state.issueSort && state.issueSort !== "last_seen") {
+      params.set("sort", state.issueSort);
+    }
+    if (state.issueStatus && state.issueStatus !== "all") {
+      params.set("status", state.issueStatus);
+    }
+    if (state.issueQuery) {
+      params.set("q", state.issueQuery);
+    }
+    const qs = params.toString();
+    const payload = await fetchJson(`/api/v1/issues${qs ? `?${qs}` : ""}`);
     state.issues = normalizeList<ApiIssue>(payload, "issues");
     setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
@@ -299,35 +314,66 @@ async function loadEventDetail(eventId: string): Promise<void> {
 }
 
 async function loadLiveEvents(): Promise<void> {
-  setLiveStatus("Polling");
-  try {
-    const payload = await fetchJson("/api/v1/live/events", true);
-    const events = payload ? normalizeList<ApiEvent>(payload, "events") : [];
-    state.liveEvents = events
-      .filter((event) => toTimestampMs(eventTimestamp(event)) >= Date.now() - liveWindowMinutes * 60 * 1000)
-      .sort((a, b) => toTimestampMs(eventTimestamp(b)) - toTimestampMs(eventTimestamp(a)))
-      .slice(0, 12);
-    state.liveError = null;
-    renderLiveList();
-    setLiveStatus(state.liveEvents.length ? `Live ${state.liveEvents.length}` : "Idle", state.liveEvents.length ? "warn" : "");
-  } catch (error) {
-    state.liveEvents = [];
-    state.liveError = error instanceof Error ? error : new Error(errorMessage(error));
-    renderLiveList();
-    setLiveStatus("Unavailable", "bad");
-  }
+  startLiveStream();
+}
 
-  stopLivePolling();
-  state.liveTimer = window.setInterval(() => {
-    void loadLiveEvents();
-  }, 10000);
+function startLiveStream(): void {
+  stopLiveStream();
+
+  const since = new Date(Date.now() - liveWindowMinutes * 60 * 1000).toISOString();
+  const url = `/api/v1/events/stream?since=${encodeURIComponent(since)}`;
+
+  const source = new EventSource(url);
+  state.liveSource = source;
+
+  source.onopen = () => {
+    state.liveConnected = true;
+    state.liveReconnectDelay = 3000;
+    state.liveError = null;
+    setLiveStatus("Connected", "ok");
+  };
+
+  source.onmessage = (ev: MessageEvent) => {
+    try {
+      const event = JSON.parse(ev.data as string) as ApiEvent;
+      state.liveEvents = [event, ...state.liveEvents].slice(0, 200);
+      state.liveError = null;
+      renderLiveList();
+      setLiveStatus(`Live ${state.liveEvents.length}`, "warn");
+    } catch {
+      // malformed event data — skip
+    }
+  };
+
+  source.onerror = () => {
+    state.liveConnected = false;
+    source.close();
+    state.liveSource = null;
+    setLiveStatus("Reconnecting", "warn");
+
+    const delay = state.liveReconnectDelay;
+    state.liveReconnectDelay = Math.min(delay * 2, 30000);
+    state.liveTimer = window.setTimeout(() => {
+      state.liveTimer = null;
+      startLiveStream();
+    }, delay);
+  };
 }
 
 function stopLivePolling(): void {
+  stopLiveStream();
+}
+
+function stopLiveStream(): void {
+  if (state.liveSource) {
+    state.liveSource.close();
+    state.liveSource = null;
+  }
   if (state.liveTimer) {
-    window.clearInterval(state.liveTimer);
+    window.clearTimeout(state.liveTimer);
     state.liveTimer = null;
   }
+  state.liveConnected = false;
 }
 
 async function fetchJson(path: string, allowMissing = false): Promise<unknown> {
@@ -414,7 +460,7 @@ function renderIssuesView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Select an issue";
   elements.detailBody.innerHTML = "";
-  const count = filteredIssueCount(state.issues, state.issueQuery);
+  const count = state.issues.length;
   elements.overviewView.innerHTML = `
     <div class="view-head">
       <div>
@@ -422,30 +468,53 @@ function renderIssuesView(error: unknown = null): void {
         <h2 id="issue-count">${escapeHtml(error ? "Unavailable" : `${count} issue${count === 1 ? "" : "s"}`)}</h2>
       </div>
       <div class="view-actions">
-        <input id="issue-filter" type="search" placeholder="is unresolved" aria-label="Filter issues" />
+        <input id="issue-filter" type="search" placeholder="Search issues…" aria-label="Search issues" value="${escapeHtml(state.issueQuery)}" />
+        <select id="issue-sort" aria-label="Sort issues">
+          <option value="last_seen"${state.issueSort === "last_seen" ? " selected" : ""}>Last seen</option>
+          <option value="first_seen"${state.issueSort === "first_seen" ? " selected" : ""}>First seen</option>
+          <option value="event_count"${state.issueSort === "event_count" ? " selected" : ""}>Event count</option>
+        </select>
       </div>
+    </div>
+    <div class="issue-status-tabs" role="tablist">
+      <button class="tab${state.issueStatus === "all" ? " active" : ""}" data-status="all" role="tab">All</button>
+      <button class="tab${state.issueStatus === "open" ? " active" : ""}" data-status="open" role="tab">Open</button>
+      <button class="tab${state.issueStatus === "resolved" ? " active" : ""}" data-status="resolved" role="tab">Resolved</button>
     </div>
     <div id="issue-list" class="list issue-list" aria-live="polite"></div>
   `;
   elements.issueCount = byId<HTMLElement>("issue-count");
   elements.issueFilter = byId<HTMLInputElement>("issue-filter");
   elements.issueList = byId<HTMLElement>("issue-list");
-  elements.issueFilter.value = state.issueQuery;
+
   elements.issueFilter.addEventListener("input", () => {
-    state.issueQuery = elements.issueFilter.value.trim().toLowerCase();
-    renderIssuesList(error);
+    state.issueQuery = elements.issueFilter.value.trim();
+    void loadIssues();
   });
+
+  byId<HTMLSelectElement>("issue-sort").addEventListener("change", (ev) => {
+    state.issueSort = (ev.target as HTMLSelectElement).value as IssueSort;
+    void loadIssues();
+  });
+
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-status]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.issueStatus = (btn.getAttribute("data-status") ?? "all") as IssueStatus;
+      void loadIssues();
+    });
+  });
+
   renderIssuesList(error);
 }
 
 function renderIssuesList(error: unknown = null): void {
   if (error) {
     elements.issueCount.textContent = "Unavailable";
-    elements.issueList.innerHTML = renderIssueListMarkup([], state.issueQuery, state.selectedIssueId, error);
+    elements.issueList.innerHTML = renderIssueListMarkup([], "", state.selectedIssueId, error);
     return;
   }
 
-  const count = filteredIssueCount(state.issues, state.issueQuery);
+  const count = state.issues.length;
   elements.issueCount.textContent = `${count} issue${count === 1 ? "" : "s"}`;
 
   if (!count) {
@@ -453,7 +522,7 @@ function renderIssuesList(error: unknown = null): void {
     return;
   }
 
-  elements.issueList.innerHTML = renderIssueListMarkup(state.issues, state.issueQuery, state.selectedIssueId);
+  elements.issueList.innerHTML = renderIssueListMarkup(state.issues, "", state.selectedIssueId);
   elements.issueList.querySelectorAll("[data-issue-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const issueId = button.getAttribute("data-issue-id");
@@ -506,7 +575,7 @@ function renderDetail(): void {
 }
 
 function renderLogin(error = ""): void {
-  stopLivePolling();
+  stopLiveStream();
   setActiveView("detail");
   setRouteChip("Login", "warn");
   elements.issueCount.textContent = "Locked";

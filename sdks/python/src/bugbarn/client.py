@@ -76,9 +76,18 @@ class Transport:
         except queue.Full:
             return False
 
-    def close(self) -> None:
+    def flush(self, timeout: float = 2.0) -> bool:
+        """Drain the in-flight queue within *timeout* seconds. Returns True if drained."""
+        joiner = threading.Thread(target=self.queue.join, daemon=True)
+        joiner.start()
+        joiner.join(timeout=timeout)
+        return not joiner.is_alive()
+
+    def close(self, timeout: float = 2.0) -> None:
+        """Flush remaining events then stop the transport thread."""
+        self.flush(timeout=timeout)
         self._closed.set()
-        self._worker.join(timeout=1.0)
+        self._worker.join(timeout=max(timeout, 0.1))
 
     def _run(self) -> None:
         while not self._closed.is_set():
@@ -183,7 +192,14 @@ def init(
     if install_excepthook and not _install_hook:
         sys.excepthook = _excepthook
         _install_hook = True
-    atexit.register(lambda: _transport.close() if _transport else None)
+    atexit.register(lambda: _transport.close(timeout=2.0) if _transport else None)
+
+
+def flush(timeout: float = 2.0) -> bool:
+    """Drain all queued events within *timeout* seconds. Returns True if fully drained."""
+    if _transport is None:
+        return True
+    return _transport.flush(timeout=timeout)
 
 
 def capture_exception(
