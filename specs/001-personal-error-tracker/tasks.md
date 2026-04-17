@@ -112,5 +112,5 @@
 
 - [x] T066 Add release/notable-event marker persistence with project, environment, observed time, version/commit, URL, notes, and creator fields.
 - [x] T067 Add release marker API endpoints for creating, listing, and querying nearby markers for an issue/event.
-- [ ] T068 Add web UI timeline markers so regressions can be visually linked to recent deploys.
+- [X] T068 Add web UI timeline markers so regressions can be visually linked to recent deploys.
 - [x] T069 Add CI/GitHub Actions example for posting a BugBarn release marker after testing and staging deploys. (docs/ci-integration.md updated; monorepo matrix pattern and per-component API key guidance included)

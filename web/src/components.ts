@@ -30,6 +30,7 @@ import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiRelease, ApiSettings, 
 
 const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
+const occurrenceBucketCount = 24;
 
 export function renderIssueListMarkup(issues: ApiIssue[], query: string, selectedIssueId: string | null, error: unknown = null): string {
   if (error) {
@@ -40,6 +41,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
   if (!filtered.length) {
     return "";
   }
+  const maxEvents = filtered.reduce((max, issue) => Math.max(max, issueEventCount(issue)), 1);
 
   return `
     <div class="issue-table-head">
@@ -47,6 +49,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
       <span>Severity</span>
       <span>Last seen</span>
       <span>First seen</span>
+      <span>Trend</span>
       <span>Events</span>
     </div>
     ${filtered
@@ -65,6 +68,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
             <span class="issue-cell"><span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity || "n/a")}</span></span>
             <span class="issue-cell">${escapeHtml(lastSeen || "No timestamp")}</span>
             <span class="issue-cell">${escapeHtml(firstSeen || "n/a")}</span>
+            <span class="issue-cell">${renderIssueCountMeter(count, maxEvents)}</span>
             <span class="issue-cell">${escapeHtml(String(count))}</span>
             <div class="item-meta">
               <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
@@ -151,6 +155,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       <div><span>Status</span><strong>${escapeHtml(status)}</strong></div>
     </div>
     <div class="detail-main">
+      ${renderOccurrenceTimeline(events, releases, "", eventCount, hasMore)}
       ${renderFingerprintSection(fingerprint, fingerprintMaterial)}
       ${lastEvent ? renderDataSection("Exception", eventException(lastEvent)) : renderEmptySection("Exception", "No exception data returned.")}
       ${lastEvent ? renderDataSection("Context", eventContext(lastEvent)) : renderEmptySection("Context", "No contextual fields were returned for the latest event.")}
@@ -168,7 +173,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
   `;
 }
 
-export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[], hasMore = false): string {
+export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[], hasMore = false, releases: ApiRelease[] = []): string {
   const id = firstIdentifier(event);
   const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
   const title = eventTitle(event);
@@ -231,6 +236,7 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
       <div><span>Severity</span><strong>${escapeHtml(eventSeverity(event) || "n/a")}</strong></div>
     </div>
     <div class="detail-main">
+      ${renderOccurrenceTimeline(issueEvents, releases, id, issueEvents.length, hasMore)}
       ${renderDataSection("Exception", exception)}
       ${renderDataSection("Context", context)}
       ${renderStacktrace(stacktrace)}
@@ -376,6 +382,97 @@ function renderNearbyReleasesPanel(releases: ApiRelease[], lastSeen: unknown): s
           .join("")}
       </div>
     </div>
+  `;
+}
+
+function renderIssueCountMeter(count: number, maxCount: number): string {
+  const width = maxCount > 0 ? Math.max(4, Math.round((count / maxCount) * 100)) : 0;
+  return `
+    <span class="count-meter" title="${escapeAttr(`${count} events`)}" aria-label="${escapeAttr(`${count} events`)}">
+      <span class="count-meter-fill" style="width:${escapeAttr(String(width))}%"></span>
+    </span>
+  `;
+}
+
+function renderOccurrenceTimeline(events: ApiEvent[], releases: ApiRelease[], activeEventId = "", totalCount = events.length, hasMore = false): string {
+  const points = events
+    .map((event) => ({
+      event,
+      id: firstIdentifier(event),
+      ts: toTimestampMs(eventTimestamp(event)),
+    }))
+    .filter((point) => point.ts > 0)
+    .sort((a, b) => a.ts - b.ts);
+
+  if (!points.length) {
+    return `
+      <div class="section">
+        <h3>Event occurrences</h3>
+        <div class="empty">No timestamped events returned.</div>
+      </div>
+    `;
+  }
+
+  const minEventTs = points[0].ts;
+  const maxEventTs = points[points.length - 1].ts;
+  const span = Math.max(maxEventTs - minEventTs, 60 * 1000);
+  const bucketSize = span / occurrenceBucketCount;
+  const buckets = Array.from({ length: occurrenceBucketCount }, () => 0);
+  for (const point of points) {
+    const bucket = Math.min(occurrenceBucketCount - 1, Math.max(0, Math.floor((point.ts - minEventTs) / bucketSize)));
+    buckets[bucket] += 1;
+  }
+  const maxBucket = Math.max(...buckets, 1);
+  const active = points.find((point) => activeEventId && String(point.id) === String(activeEventId));
+  const releaseMarkers = releases
+    .map((release) => ({ release, ts: toTimestampMs(readFirst(release, ["observedAt", "observed_at", "createdAt", "created_at"])) }))
+    .filter(({ ts }) => ts >= minEventTs && ts <= maxEventTs)
+    .sort((a, b) => a.ts - b.ts);
+  const label = hasMore
+    ? `Showing ${points.length} recent timestamped events of ${totalCount || points.length}+ loaded/known events`
+    : `Showing ${points.length} timestamped events${totalCount > points.length ? ` of ${totalCount}` : ""}`;
+
+  return `
+    <div class="section occurrence-section">
+      <div class="section-head">
+        <div>
+          <h3>Event occurrences</h3>
+          <p class="muted">${escapeHtml(label)}</p>
+        </div>
+        <span class="chip">${escapeHtml(formatTime(minEventTs) || "n/a")} - ${escapeHtml(formatTime(maxEventTs) || "n/a")}</span>
+      </div>
+      <div class="occurrence-chart" role="img" aria-label="${escapeAttr("Event occurrence timeline")}">
+        <div class="occurrence-bars">
+          ${buckets
+            .map((count) => {
+              const height = count ? Math.max(12, Math.round((count / maxBucket) * 100)) : 3;
+              return `<span class="occurrence-bar${count ? " active" : ""}" style="height:${escapeAttr(String(height))}%" title="${escapeAttr(`${count} events`)}"></span>`;
+            })
+            .join("")}
+        </div>
+        ${releaseMarkers
+          .map(({ release, ts }) => renderReleaseMarker(release, ((ts - minEventTs) / span) * 100))
+          .join("")}
+        ${active ? `<span class="event-marker" style="left:${escapeAttr(String(Math.max(0, Math.min(100, ((active.ts - minEventTs) / span) * 100))))}%" title="Selected event"></span>` : ""}
+      </div>
+      <div class="occurrence-axis">
+        <span>${escapeHtml(formatTime(minEventTs) || "Start")}</span>
+        <span>${escapeHtml(formatTime(maxEventTs) || "End")}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderReleaseMarker(release: ApiRelease, left: number): string {
+  const name = readString(release, ["name", "Name"]) || "Release";
+  const environment = readString(release, ["environment", "Environment"]) || "";
+  const clampedLeft = Math.max(0, Math.min(100, left));
+  const title = environment ? `${name} (${environment})` : name;
+  return `
+    <span class="release-marker" style="left:${escapeAttr(String(clampedLeft))}%" title="${escapeAttr(title)}">
+      <span class="release-marker-pin" aria-hidden="true"></span>
+      <span class="release-marker-label">${escapeHtml(name)}</span>
+    </span>
   `;
 }
 
@@ -595,9 +692,9 @@ function renderApiKeyTable(keys: ApiApiKey[]): string {
     return `<p class="muted">No API keys found. Use the CLI to create one.</p>`;
   }
   const rows = keys.map((k) => {
-    const name = readFirst(k, "name", "Name") ?? "—";
-    const scope = readFirst(k, "scope", "Scope") ?? "full";
-    const lastUsed = readFirst(k, "lastUsedAt", "LastUsedAt") as string | undefined;
+    const name = readFirst(k, ["name", "Name"]) ?? "—";
+    const scope = String(readFirst(k, ["scope", "Scope"]) || "full");
+    const lastUsed = readFirst(k, ["lastUsedAt", "LastUsedAt"]) as string | undefined;
     return `<div class="kv">
       <span>${escapeHtml(String(name))}</span>
       <span><span class="chip chip-${escapeAttr(scope)}">${escapeHtml(scope)}</span>${lastUsed ? ` · last used ${escapeHtml(lastUsed)}` : ""}</span>
