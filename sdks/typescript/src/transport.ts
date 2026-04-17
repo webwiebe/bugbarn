@@ -10,7 +10,7 @@ function resolveUrl(endpoint: string): string {
   return `http://127.0.0.1${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
 }
 
-export function createTransport(apiKey: string, endpoint = DEFAULT_ENDPOINT): Transport {
+export function createTransport(apiKey: string, endpoint = DEFAULT_ENDPOINT, project?: string): Transport {
   const queue: BugBarnEnvelope[] = [];
   let flushScheduled = false;
   let flushInFlight: Promise<void> | null = null;
@@ -42,12 +42,16 @@ export function createTransport(apiKey: string, endpoint = DEFAULT_ENDPOINT): Tr
 
     flushInFlight = (async () => {
       for (const event of batch) {
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          "x-bugbarn-api-key": apiKey,
+        };
+        if (project) {
+          headers["x-bugbarn-project"] = project;
+        }
         const response = await fetch(resolveUrl(endpoint), {
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-bugbarn-api-key": apiKey,
-          },
+          headers,
           body: JSON.stringify(event),
         });
 

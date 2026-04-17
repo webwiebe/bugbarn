@@ -141,15 +141,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Resolve project ID: API key binding takes precedence.
-		if usingAPIKey && apiKeyProjectID > 0 {
+		// Resolve project ID. X-BugBarn-Project header takes precedence for both
+		// API key and session requests — it auto-creates the project if unknown,
+		// so a single shared API key can route events to any project via the header.
+		if slug := r.Header.Get("X-BugBarn-Project"); slug != "" {
+			if proj, err := s.store.EnsureProject(r.Context(), slug); err == nil {
+				resolvedProjectID = proj.ID
+			}
+		} else if usingAPIKey && apiKeyProjectID > 0 {
 			resolvedProjectID = apiKeyProjectID
 		} else if usingSession {
-			slug := r.Header.Get("X-BugBarn-Project")
-			if slug == "" {
-				slug = "default"
-			}
-			if proj, err := s.store.ProjectBySlug(r.Context(), slug); err == nil {
+			if proj, err := s.store.ProjectBySlug(r.Context(), "default"); err == nil {
 				resolvedProjectID = proj.ID
 			}
 		}

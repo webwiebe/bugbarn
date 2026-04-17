@@ -4,6 +4,8 @@ export type BugBarnClientOptions = {
   installDefaultHandlers?: boolean;
   release?: string;
   dist?: string;
+  /** Project slug within this BugBarn instance. Events and source maps are routed to this project. */
+  project?: string;
   transport?: Transport;
 };
 
@@ -55,6 +57,8 @@ export type SourceMapUploadOptions = {
   endpoint?: string;
   release: string;
   dist?: string;
+  /** Project slug — routes the source map to a specific project within the BugBarn instance. */
+  project?: string;
   bundleUrl: string;
   /** Source map content as a string, Blob, or ArrayBuffer. Required when sourceMapPath is not set. */
   sourceMap?: string | ArrayBuffer | Blob;
@@ -71,4 +75,5 @@ export type SourceMapUploaderConfig = {
   endpoint?: string;
   release: string;
   dist?: string;
+  project?: string;
 };

@@ -53,11 +53,13 @@ export async function uploadSourceMap(options: SourceMapUploadOptions): Promise<
   const blob = await toBlob(options.sourceMap ?? "", options.sourceMapPath);
   formData.set("source_map", blob, options.sourceMapName ?? options.sourceMapFilename ?? "source.map");
 
+  const headers: Record<string, string> = { "x-bugbarn-api-key": options.apiKey };
+  if (options.project) {
+    headers["x-bugbarn-project"] = options.project;
+  }
   const response = await fetch(resolveUrl(options.endpoint ?? DEFAULT_ENDPOINT), {
     method: "POST",
-    headers: {
-      "x-bugbarn-api-key": options.apiKey,
-    },
+    headers,
     body: formData,
   });
 
@@ -90,6 +92,7 @@ export function createSourceMapUploader(config: SourceMapUploaderConfig) {
       endpoint: config.endpoint,
       release: config.release,
       dist: config.dist,
+      project: config.project,
       bundleUrl: params.bundleUrl,
       sourceMap: params.sourceMap ?? "",
       sourceMapPath: params.sourceMapPath,

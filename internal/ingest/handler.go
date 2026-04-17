@@ -91,6 +91,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr:    r.RemoteAddr,
 		ContentLength: int64(len(body)),
 		BodyBase64:    base64.StdEncoding.EncodeToString(body),
+		ProjectSlug:   r.Header.Get("x-bugbarn-project"),
 	}); err != nil {
 		if errors.Is(err, spool.ErrFull) {
 			w.Header().Set("Retry-After", "1")

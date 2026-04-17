@@ -9,6 +9,7 @@ let transport: Transport | null = null;
 let currentApiKey = "";
 let currentRelease: string | undefined;
 let currentDist: string | undefined;
+let currentProject: string | undefined;
 let handlersInstalled = false;
 
 function normalizeError(error: unknown): Error {
@@ -110,7 +111,8 @@ export function init(options: BugBarnClientOptions): void {
   currentApiKey = options.apiKey;
   currentRelease = options.release ?? process.env.BUGBARN_RELEASE ?? undefined;
   currentDist = options.dist ?? process.env.BUGBARN_DIST ?? undefined;
-  transport = options.transport ?? createTransport(options.apiKey, options.endpoint);
+  currentProject = options.project ?? process.env.BUGBARN_PROJECT ?? undefined;
+  transport = options.transport ?? createTransport(options.apiKey, options.endpoint, currentProject);
 
   if (options.installDefaultHandlers !== false) {
     installDefaultHandlers();

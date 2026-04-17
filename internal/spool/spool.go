@@ -26,6 +26,7 @@ type Record struct {
 	RemoteAddr    string    `json:"remoteAddr,omitempty"`
 	ContentLength int64     `json:"contentLength,omitempty"`
 	BodyBase64    string    `json:"bodyBase64"`
+	ProjectSlug   string    `json:"projectSlug,omitempty"`
 }
 
 // cursor tracks the byte offset of the last successfully processed record.

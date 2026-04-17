@@ -1532,6 +1532,15 @@ func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projec
 	return projectID, true, nil
 }
 
+// EnsureProject returns the project with the given slug, creating it if it does not exist.
+func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error) {
+	p, err := s.ProjectBySlug(ctx, slug)
+	if err == nil {
+		return p, nil
+	}
+	return s.CreateProject(ctx, slug, slug)
+}
+
 // ProjectBySlug returns the project with the given slug.
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
 	var p Project

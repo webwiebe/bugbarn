@@ -409,9 +409,18 @@ func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.St
 					// Stop processing this batch; retry remaining records next tick.
 					break
 				}
+				// Resolve project from the slug stored in the spool record.
+				persistCtx := ctx
+				if record.ProjectSlug != "" {
+					if proj, err := store.EnsureProject(ctx, record.ProjectSlug); err == nil {
+						persistCtx = storage.WithProjectID(ctx, proj.ID)
+					} else {
+						log.Printf("worker ensure project %q: %v", record.ProjectSlug, err)
+					}
+				}
 				// Annotate JS stack frames with original positions from stored source maps.
-				processed.Event = worker.SymbolicateEvent(ctx, processed.Event, store)
-				if _, _, err := store.PersistProcessedEvent(ctx, processed); err != nil {
+				processed.Event = worker.SymbolicateEvent(persistCtx, processed.Event, store)
+				if _, _, err := store.PersistProcessedEvent(persistCtx, processed); err != nil {
 					retryCounts[record.IngestID]++
 					log.Printf("worker persist record %s (attempt %d): %v", record.IngestID, retryCounts[record.IngestID], err)
 					if retryCounts[record.IngestID] >= workerMaxRetries {
