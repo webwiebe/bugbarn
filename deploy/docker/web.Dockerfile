@@ -16,17 +16,26 @@ COPY sdks/typescript/package*.json ./
 RUN npm ci
 
 COPY sdks/typescript/ ./
-RUN npm run build && npm pack
+# Derive a stable 12-char content hash from source files. The same SDK source
+# always produces the same hash, so the tarball URL is immutable per content.
+# When the SDK source changes the hash changes, producing a new URL.
+RUN SDK_HASH=$(find src -type f | sort | xargs sha256sum | sha256sum | cut -c1-12) && \
+    npm version "0.1.0-${SDK_HASH}" --no-git-tag-version && \
+    npm run build && npm pack
 
 FROM caddy:2.8-alpine
 
 WORKDIR /srv
 
 COPY --from=web-build /app/web/dist /srv/dist
-COPY --from=sdk-build /app/sdks/typescript/bugbarn-typescript-0.1.0.tgz /srv/packages/typescript/bugbarn-typescript-0.1.0.tgz
+# Stage the SDK tarball under /tmp so the entrypoint can copy it to the
+# persistent /srv/packages volume on startup, preserving previous versions.
+COPY --from=sdk-build /app/sdks/typescript/bugbarn-typescript-*.tgz /tmp/sdk-package/
 COPY web/index.html /srv/index.html
 COPY web/styles.css /srv/styles.css
+COPY deploy/docker/web-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8080
 
-CMD ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
