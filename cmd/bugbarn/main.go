@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/alert"
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
@@ -86,7 +87,16 @@ func run() error {
 
 	svc := service.NewWithBus(store, bus)
 
-	go runBackgroundWorker(ctx, cfg.spoolDir, store, svc)
+	selfReporting := cfg.selfEndpoint != "" && cfg.selfAPIKey != ""
+	if selfReporting {
+		bb.Init(bb.Options{
+			APIKey:   cfg.selfAPIKey,
+			Endpoint: cfg.selfEndpoint,
+		})
+		log.Printf("self-reporting enabled → %s", cfg.selfEndpoint)
+	}
+
+	go runBackgroundWorker(ctx, cfg.spoolDir, store, svc, selfReporting)
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -100,9 +110,14 @@ func run() error {
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.maxBodyBytes)
 	go handler.Start(ctx)
 
+	var httpHandler http.Handler = api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins)
+	if selfReporting {
+		httpHandler = bb.RecoverMiddleware(httpHandler)
+	}
+
 	server := &http.Server{
 		Addr:    cfg.addr,
-		Handler: api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins),
+		Handler: httpHandler,
 	}
 
 	errCh := make(chan error, 1)
@@ -114,6 +129,9 @@ func run() error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if selfReporting {
+			bb.Shutdown(2 * time.Second)
+		}
 		return server.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -138,6 +156,8 @@ type config struct {
 	maxBodyBytes        int64
 	maxSpoolBytes       int64
 	publicURL           string
+	selfEndpoint        string
+	selfAPIKey          string
 }
 
 func loadConfig() config {
@@ -154,6 +174,8 @@ func loadConfig() config {
 		dbPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
 		maxBodyBytes:        1 << 20,
 		publicURL:           os.Getenv("BUGBARN_PUBLIC_URL"),
+		selfEndpoint:        os.Getenv("BUGBARN_SELF_ENDPOINT"),
+		selfAPIKey:          os.Getenv("BUGBARN_SELF_API_KEY"),
 	}
 
 	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {
@@ -382,7 +404,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.Store, svc *service.Service) {
+func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.Store, svc *service.Service, selfReporting bool) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -419,6 +441,9 @@ func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.St
 						if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
 							log.Printf("worker dead-letter write %s: %v", record.IngestID, dlErr)
 						}
+						if selfReporting {
+							bb.CaptureMessage(fmt.Sprintf("dead-letter: ingest %s: %v", record.IngestID, err))
+						}
 						delete(retryCounts, record.IngestID)
 						// Advance cursor past this dead-lettered record.
 						offset = entry.EndOffset
@@ -448,6 +473,9 @@ func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.St
 						log.Printf("worker dead-lettering record %s after %d persist attempts", record.IngestID, retryCounts[record.IngestID])
 						if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
 							log.Printf("worker dead-letter write %s: %v", record.IngestID, dlErr)
+						}
+						if selfReporting {
+							bb.CaptureMessage(fmt.Sprintf("dead-letter persist: ingest %s: %v", record.IngestID, persistErr))
 						}
 						delete(retryCounts, record.IngestID)
 						// Advance cursor past this dead-lettered record.

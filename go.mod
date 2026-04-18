@@ -3,13 +3,16 @@ module github.com/wiebe-xyz/bugbarn
 go 1.26
 
 require (
+	github.com/go-sourcemap/sourcemap v2.1.4+incompatible
+	github.com/wiebe-xyz/bugbarn-go v0.0.0-00010101000000-000000000000
 	golang.org/x/crypto v0.50.0
 	modernc.org/sqlite v1.48.2
 )
 
+replace github.com/wiebe-xyz/bugbarn-go => ./sdks/go
+
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect

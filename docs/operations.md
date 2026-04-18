@@ -91,3 +91,31 @@ Use the key as the `X-BugBarn-Api-Key` header in SDK configuration.
 | `BUGBARN_ADMIN_PASSWORD_BCRYPT` | — | Bootstrap admin bcrypt hash (preferred) |
 | `BUGBARN_SESSION_SECRET` | — | Secret for session token signing (random 32+ chars) |
 | `BUGBARN_SESSION_TTL_SECONDS` | `43200` | Session lifetime (default 12h) |
+| `BUGBARN_PUBLIC_URL` | — | Public base URL included in alert webhook payloads as issue deep-link |
+| `BUGBARN_SELF_ENDPOINT` | — | BugBarn ingest endpoint for self-reporting (dogfooding) |
+| `BUGBARN_SELF_API_KEY` | — | Ingest API key for self-reporting |
+
+## Self-Reporting (Dogfooding)
+
+BugBarn can report its own panics and dead-lettered events back to a BugBarn project. This requires a running BugBarn instance and a project + ingest key to send to (can be the same instance).
+
+**Setup**:
+
+```sh
+# Create a project and ingest key for self-monitoring
+bugbarn project create --name="BugBarn Self"
+bugbarn apikey create --project=bugbarn-self --name=self --scope=ingest
+# → prints the key once; copy it
+```
+
+**Configure**:
+
+```sh
+export BUGBARN_SELF_ENDPOINT=https://bugbarn.example.com/api/v1/events
+export BUGBARN_SELF_API_KEY=<key from above>
+```
+
+When both are set the server will:
+- Capture any HTTP handler panics as `FATAL` events
+- Capture dead-lettered ingest records (after 3 failed processing attempts) as `ERROR` events
+- Flush its event queue on graceful shutdown
