@@ -1144,11 +1144,22 @@ button:disabled {
   flex-direction: row;
   gap: 8px;
   align-items: center;
-  padding: 8px 0;
+  padding: 8px 16px;
+}
+
+#log-level-filter {
+  padding: 0 10px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
 }
 
 #log-search {
-  width: 200px;
+  width: 240px;
 }
 
 #log-list {
