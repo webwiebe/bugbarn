@@ -7,6 +7,7 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
+	"github.com/wiebe-xyz/bugbarn/internal/logstream"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -18,8 +19,14 @@ type Server struct {
 	users          *auth.UserAuthenticator
 	sessions       *auth.SessionManager
 	allowedOrigins []string // parsed from BUGBARN_ALLOWED_ORIGINS
+	logHub         *logstream.Hub
 
 	loginLimiter sync.Map // map[string]*loginAttempt
+}
+
+// SetLogHub wires the in-memory log streaming hub into the server.
+func (s *Server) SetLogHub(h *logstream.Hub) {
+	s.logHub = h
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
@@ -55,6 +62,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Log ingest endpoint — wildcard CORS, accepts ingest-scope or full-scope API keys.
+	if r.URL.Path == "/api/v1/logs" && r.Method == http.MethodPost {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-project")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		// Resolve project from API key / header.
+		var logProjectID int64
+		if s.ingestHandler != nil {
+			pid, _, ok := s.ingestHandler.APIKeyProjectScope(r)
+			if ok && pid > 0 {
+				logProjectID = pid
+			}
+		}
+		if slug := r.Header.Get("X-BugBarn-Project"); slug != "" && s.store != nil {
+			if proj, err := s.store.EnsureProject(r.Context(), slug); err == nil {
+				logProjectID = proj.ID
+			}
+		}
+		if logProjectID > 0 {
+			r = r.WithContext(storage.WithProjectID(r.Context(), logProjectID))
+		}
+		s.serveLogsIngest(w, r)
+		return
+	}
+	if r.URL.Path == "/api/v1/logs" && r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-project")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
@@ -156,6 +195,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.listIssues(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/issues/"):
 		s.serveIssueRoute(w, r)
+	case r.URL.Path == "/api/v1/logs" && r.Method == http.MethodGet:
+		s.serveLogs(w, r)
+	case r.URL.Path == "/api/v1/logs/stream" && r.Method == http.MethodGet:
+		s.serveLogsStream(w, r)
 	case r.URL.Path == "/api/v1/events/stream" && r.Method == http.MethodGet:
 		s.streamEvents(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/events/") && r.Method == http.MethodGet:

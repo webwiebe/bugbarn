@@ -28,6 +28,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
+	"github.com/wiebe-xyz/bugbarn/internal/logstream"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -110,7 +111,10 @@ func run() error {
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.maxBodyBytes)
 	go handler.Start(ctx)
 
-	var httpHandler http.Handler = api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins)
+	logHub := logstream.NewHub()
+	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins)
+	apiServer.SetLogHub(logHub)
+	var httpHandler http.Handler = apiServer
 	if selfReporting {
 		httpHandler = bb.RecoverMiddleware(httpHandler)
 	}

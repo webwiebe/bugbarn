@@ -151,6 +151,16 @@ func (s *Store) init(ctx context.Context) error {
 			fired_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_alert_firings_lookup ON alert_firings(alert_id, issue_id, fired_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS log_entries (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id  INTEGER NOT NULL,
+			received_at TEXT NOT NULL,
+			level_num   INTEGER NOT NULL DEFAULT 30,
+			level       TEXT NOT NULL DEFAULT 'info',
+			message     TEXT NOT NULL,
+			data_json   TEXT NOT NULL DEFAULT '{}'
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_log_entries_project_id ON log_entries(project_id, id DESC)`,
 	}
 	for _, stmt := range schema {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
@@ -192,6 +202,14 @@ func (s *Store) init(ctx context.Context) error {
 		return err
 	}
 	if err := ensureColumn(ctx, tx, "api_keys", "scope", "TEXT NOT NULL DEFAULT 'full'"); err != nil {
+		return err
+	}
+
+	// Log entry columns (added in case an older DB exists without them)
+	if err := ensureColumn(ctx, tx, "log_entries", "level_num", "INTEGER NOT NULL DEFAULT 30"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "log_entries", "data_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
 		return err
 	}
 

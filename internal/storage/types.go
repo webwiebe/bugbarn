@@ -151,3 +151,14 @@ type facetRow struct {
 	key     string
 	value   string
 }
+
+// LogEntry represents a single structured log line stored per project.
+type LogEntry struct {
+	ID         int64          `json:"id"`
+	ProjectID  int64          `json:"project_id,omitempty"`
+	ReceivedAt time.Time      `json:"received_at"`
+	LevelNum   int            `json:"level_num"`
+	Level      string         `json:"level"`
+	Message    string         `json:"message"`
+	Data       map[string]any `json:"data,omitempty"`
+}
