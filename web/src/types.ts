@@ -104,28 +104,15 @@ export interface ApiRelease extends RawRecord {
 }
 
 export interface ApiAlert extends RawRecord {
-  id?: string | number;
-  ID?: string | number;
+  id?: string;
   name?: string;
-  Name?: string;
   enabled?: boolean;
-  Enabled?: boolean;
-  query?: string;
-  Query?: string;
   condition?: string;
-  Condition?: string;
-  target?: string;
-  Target?: string;
-  lastTriggeredAt?: string | number;
-  last_triggered_at?: string | number;
-  createdAt?: string | number;
-  created_at?: string | number;
   webhook_url?: string;
-  WebhookURL?: string;
   threshold?: number;
-  Threshold?: number;
   cooldown_minutes?: number;
-  CooldownMinutes?: number;
+  last_fired_at?: string;
+  created_at?: string;
 }
 
 export interface ApiApiKey extends RawRecord {

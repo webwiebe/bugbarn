@@ -764,6 +764,41 @@ button:disabled {
   color: #7ecb7e;
 }
 
+.chip.chip-slack {
+  background: #1a2a1a;
+  color: #4ade80;
+}
+
+.chip.chip-discord {
+  background: #1a1a35;
+  color: #818cf8;
+}
+
+.btn-sm {
+  font-size: 11px;
+  padding: 3px 10px;
+  min-height: 24px;
+}
+
+.btn-danger {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: #401423;
+}
+
+.url-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  display: block;
+  font-size: 11px;
+}
+
 .link-row {
   display: flex;
   flex-wrap: wrap;

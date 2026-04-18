@@ -124,18 +124,18 @@ type Release struct {
 
 // Alert represents a project alert row.
 type Alert struct {
-	ID              string
-	Name            string
-	Enabled         bool
-	Severity        string
-	Rule            map[string]any
-	WebhookURL      string
-	Condition       string
-	Threshold       int
-	CooldownMinutes int
-	LastFiredAt     time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	Enabled         bool           `json:"enabled"`
+	Severity        string         `json:"severity,omitempty"`
+	Rule            map[string]any `json:"rule,omitempty"`
+	WebhookURL      string         `json:"webhook_url,omitempty"`
+	Condition       string         `json:"condition,omitempty"`
+	Threshold       int            `json:"threshold,omitempty"`
+	CooldownMinutes int            `json:"cooldown_minutes,omitempty"`
+	LastFiredAt     time.Time      `json:"last_fired_at,omitempty"`
+	CreatedAt       time.Time      `json:"created_at,omitempty"`
+	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
 }
 
 // Setting represents a project setting row.

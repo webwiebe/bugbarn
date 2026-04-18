@@ -632,6 +632,16 @@ async function postJson(path: string, body: unknown): Promise<unknown> {
   return text ? JSON.parse(text) as unknown : null;
 }
 
+async function deleteJson(path: string): Promise<unknown> {
+  const csrf = getCSRFToken();
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (csrf) headers["X-BugBarn-CSRF"] = csrf;
+  const response = await fetch(apiUrl(path), { method: "DELETE", credentials: "include", headers });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`.trim());
+  const text = await response.text();
+  return text ? JSON.parse(text) as unknown : null;
+}
+
 async function postFormData(path: string, formData: FormData): Promise<unknown> {
   const csrf = getCSRFToken();
   const headers: Record<string, string> = {};
@@ -1031,6 +1041,23 @@ function wireAlertActions(): void {
     event.preventDefault();
     void submitAlertForm(form);
   });
+
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-action='delete-alert']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset["id"];
+      if (id) void deleteAlert(id);
+    });
+  });
+}
+
+async function deleteAlert(id: string): Promise<void> {
+  try {
+    await deleteJson(`/api/v1/alerts/${encodeURIComponent(id)}`);
+    setStatus("Alert deleted.");
+    await loadAlerts();
+  } catch (error) {
+    setStatus(`Failed to delete alert: ${errorMessage(error)}`);
+  }
 }
 
 function wireSettingsActions(): void {
@@ -1069,16 +1096,12 @@ async function submitReleaseForm(form: HTMLFormElement): Promise<void> {
 
 async function submitAlertForm(form: HTMLFormElement): Promise<void> {
   const data = new FormData(form);
-  const thresholdRaw = data.get("threshold");
   const cooldownRaw = data.get("cooldown_minutes");
   try {
     await postJson("/api/v1/alerts", {
       name: String(data.get("name") || ""),
       condition: String(data.get("condition") || ""),
-      query: String(data.get("query") || ""),
-      target: String(data.get("target") || ""),
       webhook_url: String(data.get("webhook_url") || ""),
-      threshold: thresholdRaw ? Number(thresholdRaw) : undefined,
       cooldown_minutes: cooldownRaw ? Number(cooldownRaw) : undefined,
       enabled: data.get("enabled") !== null,
     });

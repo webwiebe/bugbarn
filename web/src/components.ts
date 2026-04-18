@@ -674,15 +674,18 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
       </div>
       <div class="section">
         <h3>Create alert</h3>
-        <p class="muted">POST /api/v1/alerts</p>
+        <p class="muted">Alerts fire when a condition is met. Paste a Slack or Discord webhook URL and it will auto-detect the format.</p>
         <form class="form-grid" id="alert-form">
-          ${renderField("Name", "name", "text", "500s on checkout")}
-          ${renderField("Condition", "condition", "text", "event_count > 10")}
-          ${renderField("Query", "query", "text", "environment:testing")}
-          ${renderField("Target", "target", "text", "ops@example.com")}
-          ${renderField("Webhook URL", "webhook_url", "url", "")}
-          ${renderField("Threshold", "threshold", "number", "")}
-          ${renderField("Cooldown minutes", "cooldown_minutes", "number", "")}
+          ${renderField("Name", "name", "text", "New errors on checkout")}
+          <label class="field">
+            <span>Condition</span>
+            <select name="condition">
+              <option value="new_issue">New issue created</option>
+              <option value="regression">Issue regressed</option>
+            </select>
+          </label>
+          ${renderField("Webhook URL", "webhook_url", "url", "https://hooks.slack.com/…")}
+          ${renderField("Cooldown (minutes)", "cooldown_minutes", "number", "60")}
           <label class="field field-wide checkbox-field">
             <input name="enabled" type="checkbox" checked />
             <span>Enabled</span>
@@ -829,12 +832,25 @@ function renderReleaseList(releases: ApiRelease[]): string {
   `;
 }
 
+function webhookBadge(webhookUrl: string | undefined): string {
+  if (!webhookUrl) return "";
+  if (webhookUrl.includes("hooks.slack.com")) return `<span class="chip chip-slack">Slack</span>`;
+  if (webhookUrl.includes("discord.com/api/webhooks")) return `<span class="chip chip-discord">Discord</span>`;
+  return `<span class="chip">Webhook</span>`;
+}
+
+function conditionLabel(condition: string | undefined): string {
+  if (condition === "new_issue") return "New issue";
+  if (condition === "regression") return "Regression";
+  return condition || "n/a";
+}
+
 function renderAlertList(alerts: ApiAlert[]): string {
   if (!alerts.length) {
     return `
       <div class="empty">
         <strong>No alert rules yet.</strong>
-        <p>Use the form below to create the first rule once the backend supports it.</p>
+        <p>Use the form below to create the first rule.</p>
       </div>
     `;
   }
@@ -843,21 +859,28 @@ function renderAlertList(alerts: ApiAlert[]): string {
     <div class="route-list">
       ${alerts
         .map((alert) => {
-          const title = readString(alert, ["name", "Name"]) || "Untitled alert";
-          const condition = readString(alert, ["condition", "Condition", "query", "Query"]) || "n/a";
-          const target = readString(alert, ["target", "Target"]) || "n/a";
-          const enabled = Boolean(alert.enabled ?? alert.Enabled);
-          const lastTriggeredAt = formatTime(readFirst(alert, ["lastTriggeredAt", "last_triggered_at"])) || "never";
+          const id = alert.id ?? "";
+          const title = alert.name || "Untitled alert";
+          const condition = alert.condition ?? "";
+          const webhookUrl = alert.webhook_url ?? "";
+          const cooldown = alert.cooldown_minutes ?? 0;
+          const enabled = Boolean(alert.enabled);
+          const lastFiredAt = formatTime(alert.last_fired_at) || "never";
           return `
             <article class="route-item">
               <div class="route-item-head">
                 <strong>${escapeHtml(title)}</strong>
                 <span class="chip ${enabled ? "" : "bad"}">${escapeHtml(enabled ? "enabled" : "disabled")}</span>
+                ${webhookBadge(webhookUrl)}
               </div>
               <div class="route-item-meta">
-                <span>${escapeHtml(condition)}</span>
-                <span>${escapeHtml(target)}</span>
-                <span>${escapeHtml(lastTriggeredAt)}</span>
+                <span>${escapeHtml(conditionLabel(condition))}</span>
+                ${cooldown ? `<span>cooldown ${escapeHtml(String(cooldown))}m</span>` : ""}
+                <span>last fired: ${escapeHtml(lastFiredAt)}</span>
+              </div>
+              ${webhookUrl ? `<div class="route-item-meta"><span class="muted url-truncate">${escapeHtml(webhookUrl)}</span></div>` : ""}
+              <div class="link-row">
+                <button class="btn-danger btn-sm" data-action="delete-alert" data-id="${escapeAttr(id)}">Delete</button>
               </div>
             </article>
           `;
