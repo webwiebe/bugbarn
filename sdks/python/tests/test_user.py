@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-import bugbarn.user as user_mod
 from bugbarn.user import set_user, clear_user, get_user
 from bugbarn.client import init, shutdown
 
