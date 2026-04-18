@@ -5,6 +5,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
+COPY sdks/go ./sdks/go
 
 RUN go build -o /out/bugbarn ./cmd/bugbarn
 
