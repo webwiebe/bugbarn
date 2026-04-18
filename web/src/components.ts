@@ -26,7 +26,7 @@ import {
   issueTitle,
 } from "./domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "./format.js";
-import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
+import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
 
 const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
@@ -1143,6 +1143,72 @@ function renderEventButtons(events: ApiEvent[], activeId = "", className = ""): 
           `;
         })
         .join("")}
+    </div>
+  `;
+}
+
+function renderLogData(data: Record<string, unknown>): string {
+  const keys = Object.keys(data).slice(0, 4);
+  return keys
+    .map((k) => {
+      const raw = String(data[k] ?? "");
+      const val = raw.length > 60 ? `${raw.slice(0, 60)}…` : raw;
+      return `${escapeHtml(k)}=${escapeHtml(val)}`;
+    })
+    .join(" ");
+}
+
+export function renderLogRow(entry: ApiLogEntry): string {
+  const hasData = entry.data && Object.keys(entry.data).length > 0;
+  const dataInline = hasData ? `<span class="log-data">${renderLogData(entry.data as Record<string, unknown>)}</span>` : "";
+  const dataExpanded = hasData
+    ? `<div class="log-data-expanded"><pre>${escapeHtml(JSON.stringify(entry.data, null, 2))}</pre></div>`
+    : "";
+  return `
+    <div class="log-row log-row-${escapeAttr(entry.level)}" data-log-id="${escapeAttr(String(entry.id))}">
+      <span class="log-time">${escapeHtml(formatTime(entry.received_at))}</span>
+      <span class="log-level log-level-${escapeAttr(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
+      <span class="log-msg">${escapeHtml(entry.message)}</span>
+      ${dataInline}
+      ${dataExpanded}
+    </div>
+  `;
+}
+
+export function renderLogsViewMarkup(logs: ApiLogEntry[], level: string, search: string): string {
+  const count = logs.length;
+  const levelOptions = [
+    { value: "", label: "All levels" },
+    { value: "trace", label: "Trace" },
+    { value: "debug", label: "Debug" },
+    { value: "info", label: "Info" },
+    { value: "warn", label: "Warn" },
+    { value: "error", label: "Error" },
+    { value: "fatal", label: "Fatal" },
+  ];
+
+  const listContent = count
+    ? logs.map(renderLogRow).join("")
+    : `<div class="empty">No log entries yet. Connect a project to start streaming logs.</div>`;
+
+  return `
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">Logs</p>
+        <h2>Log stream</h2>
+      </div>
+      <span class="chip">${escapeHtml(String(count))}</span>
+    </div>
+    <div class="log-toolbar">
+      <select id="log-level-filter" aria-label="Filter by level">
+        ${levelOptions.map((opt) => `<option value="${escapeAttr(opt.value)}"${opt.value === level ? " selected" : ""}>${escapeHtml(opt.label)}</option>`).join("")}
+      </select>
+      <input id="log-search" type="search" placeholder="Filter by message…" value="${escapeAttr(search)}" />
+      <button id="log-clear" type="button">Clear</button>
+      <span class="log-live-indicator" id="log-live-dot"></span>
+    </div>
+    <div id="log-list" class="log-list">
+      ${listContent}
     </div>
   `;
 }

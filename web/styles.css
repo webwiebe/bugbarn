@@ -1136,3 +1136,117 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Logs view ──────────────────────────────────────────── */
+
+.log-toolbar {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+#log-search {
+  width: 200px;
+}
+
+#log-list {
+  height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+
+.log-row {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border, var(--line));
+  font-family: monospace;
+  font-size: 12px;
+  min-height: 26px;
+  align-items: baseline;
+  cursor: pointer;
+}
+
+.log-row:hover {
+  background: var(--panel-alt);
+}
+
+.log-data-expanded {
+  display: none;
+  margin-left: 80px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.log-data-expanded pre {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-row.expanded .log-data-expanded {
+  display: block;
+}
+
+.log-row.expanded .log-msg {
+  white-space: normal;
+}
+
+.log-time {
+  width: 80px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.log-level {
+  width: 48px;
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 11px;
+  text-align: right;
+}
+
+.log-msg {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-data {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.log-level-trace { color: var(--muted); }
+.log-level-debug { color: #6ab0f5; }
+.log-level-info  { color: #7ecb7e; }
+.log-level-warn  { color: #f5c842; }
+.log-level-error { color: #f56c6c; }
+.log-level-fatal { color: #c040fb; }
+
+.log-live-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.log-live-indicator.connected {
+  background: #7ecb7e;
+  animation: log-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes log-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}

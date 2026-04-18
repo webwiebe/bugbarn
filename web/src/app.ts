@@ -6,6 +6,8 @@ import {
   renderIssueDetailMarkup,
   renderIssueListMarkup,
   renderLiveListMarkup,
+  renderLogRow,
+  renderLogsViewMarkup,
   renderReleasesViewMarkup,
   renderSettingsViewMarkup,
   renderSetupGuide,
@@ -13,7 +15,7 @@ import {
 import { normalizeList, normalizeObject, readString } from "./data.js";
 import { eventIssueId, eventTimestamp, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
-import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
+import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
 
 const httpUnauthorized = 401;
 const liveWindowMinutes = 15;
@@ -48,6 +50,10 @@ const state: AppState = {
   liveReconnectDelay: 3000,
   liveConnected: false,
   inFlight: new Map<string, Promise<unknown>>(),
+  logs: [],
+  logLevel: "",
+  logSearch: "",
+  logSSE: null,
 };
 
 const elements: AppElements = {
@@ -237,6 +243,9 @@ function route(): void {
   } else if (kind === "alerts") {
     state.currentRoute = "alerts";
     setRouteChip("Alerts");
+  } else if (kind === "logs") {
+    state.currentRoute = "logs";
+    setRouteChip("Logs");
   } else if (kind === "settings") {
     state.currentRoute = "settings";
     setRouteChip("Settings");
@@ -286,12 +295,20 @@ async function loadSession(): Promise<void> {
 }
 
 async function loadCurrentRouteData(): Promise<void> {
+  if (state.currentRoute !== "logs") {
+    disconnectLogSSE();
+  }
   if (state.currentRoute === "releases") {
     await loadReleases();
     return;
   }
   if (state.currentRoute === "alerts") {
     await loadAlerts();
+    return;
+  }
+  if (state.currentRoute === "logs") {
+    await loadLogs();
+    connectLogSSE();
     return;
   }
   if (state.currentRoute === "settings") {
@@ -1213,6 +1230,127 @@ function renderLiveList(): void {
       }
     });
   });
+}
+
+async function loadLogs(): Promise<void> {
+  try {
+    const params = new URLSearchParams();
+    if (state.logLevel) {
+      params.set("level", state.logLevel);
+    }
+    if (state.logSearch) {
+      params.set("q", state.logSearch);
+    }
+    params.set("limit", "200");
+    const qs = params.toString();
+    const payload = await fetchJson(`/api/v1/logs${qs ? `?${qs}` : ""}`, true);
+    const raw = payload as Record<string, unknown> | null;
+    state.logs = Array.isArray(raw?.["logs"]) ? (raw["logs"] as ApiLogEntry[]) : [];
+    renderLogsView();
+  } catch {
+    state.logs = [];
+    renderLogsView();
+  }
+}
+
+function connectLogSSE(): void {
+  disconnectLogSSE();
+  const url = apiUrl("/api/v1/logs/stream");
+  const source = new EventSource(url, { withCredentials: true });
+  state.logSSE = source;
+
+  source.onopen = () => {
+    const dot = document.getElementById("log-live-dot");
+    dot?.classList.add("connected");
+  };
+
+  source.onmessage = (ev: MessageEvent) => {
+    try {
+      const entry = JSON.parse(ev.data as string) as ApiLogEntry;
+      state.logs = [entry, ...state.logs].slice(0, 500);
+      const list = document.getElementById("log-list");
+      if (list) {
+        const row = document.createElement("div");
+        row.innerHTML = renderLogRow(entry);
+        const newRow = row.firstElementChild as HTMLElement | null;
+        if (newRow) {
+          list.insertBefore(newRow, list.firstChild);
+          wireLogRowClick(newRow);
+          if (list.children.length > 500) {
+            list.removeChild(list.lastChild as Node);
+          }
+        }
+      }
+    } catch {
+      // malformed SSE data — skip
+    }
+  };
+
+  source.onerror = () => {
+    const dot = document.getElementById("log-live-dot");
+    dot?.classList.remove("connected");
+  };
+}
+
+function disconnectLogSSE(): void {
+  if (state.logSSE) {
+    state.logSSE.close();
+    state.logSSE = null;
+  }
+}
+
+function renderLogsView(): void {
+  setActiveView("overview");
+  elements.detailTitle.textContent = "Logs";
+  elements.detailBody.innerHTML = "";
+  elements.overviewView.innerHTML = renderLogsViewMarkup(state.logs, state.logLevel, state.logSearch);
+  wireLogsView();
+}
+
+function wireLogRowClick(row: HTMLElement): void {
+  row.addEventListener("click", () => {
+    row.classList.toggle("expanded");
+  });
+}
+
+function wireLogsView(): void {
+  const levelFilter = document.getElementById("log-level-filter") as HTMLSelectElement | null;
+  const searchInput = document.getElementById("log-search") as HTMLInputElement | null;
+  const clearBtn = document.getElementById("log-clear") as HTMLButtonElement | null;
+  const list = document.getElementById("log-list");
+
+  levelFilter?.addEventListener("change", () => {
+    state.logLevel = levelFilter.value;
+    void loadLogs();
+  });
+
+  let debounceTimer: number | null = null;
+  searchInput?.addEventListener("input", () => {
+    if (debounceTimer !== null) {
+      window.clearTimeout(debounceTimer);
+    }
+    debounceTimer = window.setTimeout(() => {
+      debounceTimer = null;
+      state.logSearch = searchInput.value.trim();
+      void loadLogs();
+    }, 300);
+  });
+
+  clearBtn?.addEventListener("click", () => {
+    state.logs = [];
+    if (list) {
+      list.innerHTML = `<div class="empty">No log entries yet. Connect a project to start streaming logs.</div>`;
+    }
+  });
+
+  list?.querySelectorAll<HTMLElement>(".log-row").forEach((row) => {
+    wireLogRowClick(row);
+  });
+
+  const dot = document.getElementById("log-live-dot");
+  if (state.logSSE && state.logSSE.readyState === EventSource.OPEN) {
+    dot?.classList.add("connected");
+  }
 }
 
 function setActiveView(view: "overview" | "detail"): void {

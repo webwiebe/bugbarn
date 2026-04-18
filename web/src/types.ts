@@ -139,6 +139,15 @@ export interface ApiProject extends RawRecord {
   Name?: string;
 }
 
+export interface ApiLogEntry {
+  id: number
+  received_at: string
+  level_num: number
+  level: string
+  message: string
+  data?: Record<string, unknown>
+}
+
 export interface ApiSettings extends RawRecord {
   username?: string;
   Username?: string;
@@ -167,7 +176,7 @@ export interface AppState {
   projects: ApiProject[];
   currentProject: string;
   currentEnv: string;
-  currentRoute: "issues" | "releases" | "alerts" | "settings";
+  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs";
   issues: ApiIssue[];
   issueQuery: string;
   issueSort: IssueSort;
@@ -185,6 +194,10 @@ export interface AppState {
   liveReconnectDelay: number;
   liveConnected: boolean;
   inFlight: Map<string, Promise<unknown>>;
+  logs: ApiLogEntry[];
+  logLevel: string;
+  logSearch: string;
+  logSSE: EventSource | null;
 }
 
 export interface AppElements {
