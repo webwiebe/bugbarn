@@ -194,3 +194,5 @@ export { createTransport };
 export { uploadSourceMap, createSourceMapUploader };
 export { setUser, clearUser } from "./user.js";
 export { addBreadcrumb, clearBreadcrumbs } from "./breadcrumbs.js";
+export { createBugBarnDestination } from "./pino-transport.js";
+export type { BugBarnTransportOptions } from "./pino-transport.js";
