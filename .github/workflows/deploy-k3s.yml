@@ -46,7 +46,9 @@ jobs:
         run: |
           set -euo pipefail
           DOCKER_CONFIG_DIR="${RUNNER_TEMP}/docker-config-${GITHUB_RUN_ID}"
-          mkdir -p "$DOCKER_CONFIG_DIR"
+          mkdir -p "$DOCKER_CONFIG_DIR/cli-plugins"
+          # Mirror CLI plugins so buildx is loadable from the isolated config dir.
+          cp "${HOME}/.docker/cli-plugins/"* "$DOCKER_CONFIG_DIR/cli-plugins/" 2>/dev/null || true
           printf '{"auths":{},"credsStore":""}\n' > "$DOCKER_CONFIG_DIR/config.json"
           export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
           docker buildx build \
