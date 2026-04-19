@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bugbarn
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: bugbarn.wiebe.xyz
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn-web
+                port:
+                  name: http
+  tls:
+    - hosts:
+        - bugbarn.wiebe.xyz
+      secretName: bugbarn-wiebe-xyz-tls

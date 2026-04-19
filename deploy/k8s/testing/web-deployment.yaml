@@ -17,10 +17,12 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/hostname: k3s1
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: bugbarn-web
           image: bugbarn/web
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
               name: http

@@ -1,0 +1,129 @@
+name: Release and Deploy Staging
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SERVICE_IMAGE: ghcr.io/webwiebe/bugbarn/service
+  WEB_IMAGE: ghcr.io/webwiebe/bugbarn/web
+  K3S_HOST: k3s1.nijmegen.wiebe.xyz
+  K3S_USER: root
+  NAMESPACE: bugbarn-staging
+
+jobs:
+  retag-images:
+    runs-on: [self-hosted, build]
+    timeout-minutes: 15
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+
+      - name: Retag images to semver
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.ref_name }}"
+          DOCKER_CONFIG_DIR="${RUNNER_TEMP}/docker-config-${GITHUB_RUN_ID}"
+          mkdir -p "$DOCKER_CONFIG_DIR"
+          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' \
+            "$(printf '%s:%s' '${{ github.actor }}' '${{ secrets.GITHUB_TOKEN }}' | base64)" \
+            > "$DOCKER_CONFIG_DIR/config.json"
+          export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+
+          # Walk back up to 20 commits to find the SHA-tagged image
+          for sha in $(git log --format='%H' -20); do
+            SHORT="${sha:0:40}"
+            if docker manifest inspect "${SERVICE_IMAGE}:${SHORT}" > /dev/null 2>&1; then
+              echo "Found image at commit ${SHORT:0:7}"
+              docker buildx imagetools create \
+                --tag "${SERVICE_IMAGE}:${VERSION}" \
+                "${SERVICE_IMAGE}:${SHORT}"
+              docker buildx imagetools create \
+                --tag "${WEB_IMAGE}:${VERSION}" \
+                "${WEB_IMAGE}:${SHORT}"
+              echo "sha=${SHORT}" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "ERROR: No GHCR image found in the last 20 commits" && exit 1
+
+  deploy:
+    needs: retag-images
+    runs-on: [self-hosted, build]
+    timeout-minutes: 15
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Transfer manifests
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
+          scp -o StrictHostKeyChecking=no -r deploy \
+            "${K3S_USER}@${K3S_HOST}:/tmp/bugbarn-deploy/deploy"
+
+      - name: Decrypt and apply secret
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_STAGING }}
+        run: |
+          set -euo pipefail
+          sops -d deploy/k8s/staging/secret.yaml | \
+            ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl apply -f -"
+
+      - name: Create GHCR pull secret
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            kubectl create secret docker-registry ghcr-secret \
+              --docker-server=ghcr.io \
+              --docker-username='${{ github.actor }}' \
+              --docker-password='${{ secrets.GITHUB_TOKEN }}' \
+              --namespace=${NAMESPACE} \
+              --dry-run=client -o yaml | kubectl apply -f -
+          "
+
+      - name: Apply manifests and roll out
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.ref_name }}"
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            set -euo pipefail
+            kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/staging
+            kubectl -n ${NAMESPACE} set image deployment/bugbarn \
+              bugbarn=${SERVICE_IMAGE}:${VERSION}
+            kubectl -n ${NAMESPACE} set image deployment/bugbarn-web \
+              bugbarn-web=${WEB_IMAGE}:${VERSION}
+            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn --timeout=180s
+            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-web --timeout=180s
+          "
+
+      - name: Post release marker
+        if: vars.BUGBARN_ENDPOINT != ''
+        env:
+          BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
+          BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY }}
+        run: |
+          curl -sf -X POST "${BUGBARN_ENDPOINT}/api/v1/releases" \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
+            -d "{
+              \"name\": \"${{ github.ref_name }}\",
+              \"environment\": \"staging\",
+              \"version\": \"${{ github.ref_name }}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ github.ref_name }}\",
+              \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
+            }" || echo "BugBarn release marker skipped"

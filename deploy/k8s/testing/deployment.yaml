@@ -5,6 +5,8 @@ metadata:
 spec:
   replicas: 1
   revisionHistoryLimit: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: bugbarn
@@ -17,10 +19,12 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/hostname: k3s1
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: bugbarn
           image: bugbarn/service
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
               name: http
@@ -35,54 +39,60 @@ spec:
               value: "104857600"
             - name: BUGBARN_SESSION_TTL_SECONDS
               value: "86400"
+            - name: LITESTREAM_REPLICA_PATH
+              value: testing/bugbarn.db
             - name: BUGBARN_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: bugbarn-api-key
+                  name: bugbarn-secrets
                   key: BUGBARN_API_KEY
-            - name: BUGBARN_API_KEY_SHA256
-              valueFrom:
-                secretKeyRef:
-                  name: bugbarn-api-key
-                  key: BUGBARN_API_KEY_SHA256
-                  optional: true
             - name: BUGBARN_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: bugbarn-api-key
+                  name: bugbarn-secrets
                   key: BUGBARN_ADMIN_USERNAME
                   optional: true
             - name: BUGBARN_ADMIN_PASSWORD_BCRYPT
               valueFrom:
                 secretKeyRef:
-                  name: bugbarn-api-key
+                  name: bugbarn-secrets
                   key: BUGBARN_ADMIN_PASSWORD_BCRYPT
                   optional: true
             - name: BUGBARN_SESSION_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: bugbarn-api-key
+                  name: bugbarn-secrets
                   key: BUGBARN_SESSION_SECRET
                   optional: true
+            - name: LITESTREAM_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: LITESTREAM_ACCESS_KEY_ID
+            - name: LITESTREAM_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: LITESTREAM_SECRET_ACCESS_KEY
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 50m
+              memory: 64Mi
             limits:
-              cpu: 500m
-              memory: 256Mi
+              cpu: 250m
+              memory: 128Mi
           livenessProbe:
             httpGet:
               path: /api/v1/health
               port: 8080
-            initialDelaySeconds: 15
+            initialDelaySeconds: 30
             periodSeconds: 20
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /api/v1/health
               port: 8080
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
           volumeMounts:
             - name: bugbarn-data

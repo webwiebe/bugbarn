@@ -4,21 +4,21 @@ metadata:
   name: bugbarn
 spec:
   replicas: 1
-  revisionHistoryLimit: 1
+  revisionHistoryLimit: 2
   strategy:
     type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: bugbarn
-      app.kubernetes.io/environment: staging
+      app.kubernetes.io/environment: production
   template:
     metadata:
       labels:
         app.kubernetes.io/name: bugbarn
-        app.kubernetes.io/environment: staging
+        app.kubernetes.io/environment: production
     spec:
       nodeSelector:
-        kubernetes.io/hostname: k3s1
+        kubernetes.io/hostname: layer7-prod
       imagePullSecrets:
         - name: ghcr-secret
       containers:
@@ -40,7 +40,7 @@ spec:
             - name: BUGBARN_SESSION_TTL_SECONDS
               value: "86400"
             - name: LITESTREAM_REPLICA_PATH
-              value: staging/bugbarn.db
+              value: production/bugbarn.db
             - name: BUGBARN_API_KEY
               valueFrom:
                 secretKeyRef:

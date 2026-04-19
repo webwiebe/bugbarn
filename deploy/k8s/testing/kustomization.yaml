@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: bugbarn-testing
 resources:
   - namespace.yaml
-  - secret.yaml
   - pvc.yaml
   - deployment.yaml
   - service.yaml
@@ -12,6 +11,8 @@ resources:
   - ingress.yaml
 images:
   - name: bugbarn/service
+    newName: ghcr.io/webwiebe/bugbarn/service
     newTag: local
   - name: bugbarn/web
+    newName: ghcr.io/webwiebe/bugbarn/web
     newTag: local

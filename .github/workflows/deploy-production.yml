@@ -1,0 +1,148 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_version:
+        description: 'Version to deploy (e.g. v0.1.0) — must already be on staging'
+        required: true
+        type: string
+      confirmed:
+        description: 'I confirm this version is validated on staging'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SERVICE_IMAGE: ghcr.io/webwiebe/bugbarn/service
+  WEB_IMAGE: ghcr.io/webwiebe/bugbarn/web
+  K3S_HOST: layer7.wiebe.xyz
+  K3S_USER: deployer
+  NAMESPACE: bugbarn-production
+
+jobs:
+  preflight:
+    runs-on: [self-hosted, build]
+    timeout-minutes: 5
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - name: Require confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirmed }}" != "true" ]; then
+            echo "ERROR: Set 'confirmed' to true to proceed with production deploy"
+            exit 1
+          fi
+
+      - name: Verify image exists in GHCR
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.production_version }}"
+          DOCKER_CONFIG_DIR="${RUNNER_TEMP}/docker-config-${GITHUB_RUN_ID}"
+          mkdir -p "$DOCKER_CONFIG_DIR"
+          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' \
+            "$(printf '%s:%s' '${{ github.actor }}' '${{ secrets.GITHUB_TOKEN }}' | base64)" \
+            > "$DOCKER_CONFIG_DIR/config.json"
+          export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+          docker manifest inspect "${SERVICE_IMAGE}:${VERSION}" > /dev/null || \
+            { echo "ERROR: ${SERVICE_IMAGE}:${VERSION} not found in GHCR"; exit 1; }
+          docker manifest inspect "${WEB_IMAGE}:${VERSION}" > /dev/null || \
+            { echo "ERROR: ${WEB_IMAGE}:${VERSION} not found in GHCR"; exit 1; }
+          echo "Images verified for ${VERSION}"
+
+  deploy:
+    needs: preflight
+    runs-on: [self-hosted, build]
+    timeout-minutes: 20
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Transfer manifests
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
+          scp -o StrictHostKeyChecking=no -r deploy \
+            "${K3S_USER}@${K3S_HOST}:/tmp/bugbarn-deploy/deploy"
+
+      - name: Decrypt and apply secret
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_PRODUCTION }}
+        run: |
+          set -euo pipefail
+          sops -d deploy/k8s/production/secret.yaml | \
+            ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl apply -f -"
+
+      - name: Create GHCR pull secret
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            kubectl create secret docker-registry ghcr-secret \
+              --docker-server=ghcr.io \
+              --docker-username='${{ github.actor }}' \
+              --docker-password='${{ secrets.GITHUB_TOKEN }}' \
+              --namespace=${NAMESPACE} \
+              --dry-run=client -o yaml | kubectl apply -f -
+          "
+
+      - name: Apply manifests and roll out
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.production_version }}"
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            set -euo pipefail
+            kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/production
+            kubectl -n ${NAMESPACE} set image deployment/bugbarn \
+              bugbarn=${SERVICE_IMAGE}:${VERSION}
+            kubectl -n ${NAMESPACE} set image deployment/bugbarn-web \
+              bugbarn-web=${WEB_IMAGE}:${VERSION}
+            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn --timeout=180s
+            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-web --timeout=180s
+          "
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            kubectl -n ${NAMESPACE} rollout undo deployment/bugbarn || true
+            kubectl -n ${NAMESPACE} rollout undo deployment/bugbarn-web || true
+            echo 'Rollback triggered'
+          " || true
+
+      - name: Post release marker
+        if: vars.BUGBARN_ENDPOINT != ''
+        env:
+          BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
+          BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY }}
+        run: |
+          curl -sf -X POST "${BUGBARN_ENDPOINT}/api/v1/releases" \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
+            -d "{
+              \"name\": \"${{ github.event.inputs.production_version }}\",
+              \"environment\": \"production\",
+              \"version\": \"${{ github.event.inputs.production_version }}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ github.event.inputs.production_version }}\",
+              \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
+            }" || echo "BugBarn release marker skipped"
+
+      - name: Summary
+        run: |
+          echo "## Production Deploy Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | \`${{ github.event.inputs.production_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| URL | https://bugbarn.wiebe.xyz |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Namespace | \`${NAMESPACE}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Cluster | \`${K3S_HOST}\` |" >> "$GITHUB_STEP_SUMMARY"
