@@ -104,8 +104,35 @@ sidebarToggle?.addEventListener("click", () => {
 });
 
 const mobileMenuBtn = document.getElementById("mobile-menu-btn") as HTMLButtonElement | null;
+const mobileSidebar = document.getElementById("sidebar") as HTMLElement | null;
+
+function openMobileSidebar(): void {
+  if (!mobileSidebar) return;
+  Object.assign(mobileSidebar.style, {
+    display: "flex",
+    flexDirection: "column",
+    position: "fixed",
+    top: "0",
+    left: "0",
+    width: "100%",
+    height: "100%",
+    zIndex: "200",
+    background: "#1d1e16",
+    padding: "20px 16px",
+    overflowY: "auto",
+  });
+  appFrame?.classList.add("mobile-nav-open");
+  if (mobileMenuBtn) {
+    mobileMenuBtn.textContent = "✕";
+    mobileMenuBtn.setAttribute("aria-expanded", "true");
+    mobileMenuBtn.setAttribute("aria-label", "Close navigation");
+  }
+}
 
 function closeMobileNav(): void {
+  if (mobileSidebar) {
+    mobileSidebar.style.cssText = "";
+  }
   appFrame?.classList.remove("mobile-nav-open");
   if (mobileMenuBtn) {
     mobileMenuBtn.textContent = "☰";
@@ -115,10 +142,12 @@ function closeMobileNav(): void {
 }
 
 mobileMenuBtn?.addEventListener("click", () => {
-  const isOpen = appFrame?.classList.toggle("mobile-nav-open") ?? false;
-  mobileMenuBtn.textContent = isOpen ? "✕" : "☰";
-  mobileMenuBtn.setAttribute("aria-expanded", String(isOpen));
-  mobileMenuBtn.setAttribute("aria-label", isOpen ? "Close navigation" : "Open navigation");
+  const isOpen = appFrame?.classList.contains("mobile-nav-open") ?? false;
+  if (isOpen) {
+    closeMobileNav();
+  } else {
+    openMobileSidebar();
+  }
 });
 
 document.querySelectorAll<HTMLAnchorElement>(".side-nav a").forEach((link) => {
