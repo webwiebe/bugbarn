@@ -119,6 +119,7 @@ jobs:
           prune=( \( -path './.git' -o -path './.cache' -o -path './.ci-venv' -o -path '*/node_modules' -o -path '*/.venv' \) -prune -o )
           python3 -m venv .ci-venv
           . .ci-venv/bin/activate
+          python -m pip install --upgrade pip
           python -m pip install build pytest ruff
           while IFS= read -r manifest; do
             dir="$(dirname "$manifest")"

@@ -9,6 +9,10 @@ concurrency:
   group: deploy-staging
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SERVICE_IMAGE: ghcr.io/webwiebe/bugbarn/service
