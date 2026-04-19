@@ -281,6 +281,10 @@ h2 {
   justify-content: flex-end;
 }
 
+.mobile-menu-btn {
+  display: none;
+}
+
 #project-select,
 #env-select {
   font-size: 13px;
@@ -1092,6 +1096,47 @@ button:disabled {
   }
 
   .panel-live {
+    display: none;
+  }
+
+  .mobile-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .app-frame.mobile-nav-open .sidebar {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    padding: 20px 16px;
+    overflow-y: auto;
+    flex-direction: column;
+  }
+
+  .app-frame.mobile-nav-open .nav-label {
+    display: inline;
+  }
+
+  .app-frame.mobile-nav-open .side-nav a {
+    padding: 14px 12px;
+    font-size: 15px;
+  }
+
+  .app-frame.mobile-nav-open .sidebar-toggle {
     display: none;
   }
 }

@@ -103,6 +103,28 @@ sidebarToggle?.addEventListener("click", () => {
   }
 });
 
+const mobileMenuBtn = document.getElementById("mobile-menu-btn") as HTMLButtonElement | null;
+
+function closeMobileNav(): void {
+  appFrame?.classList.remove("mobile-nav-open");
+  if (mobileMenuBtn) {
+    mobileMenuBtn.textContent = "☰";
+    mobileMenuBtn.setAttribute("aria-expanded", "false");
+    mobileMenuBtn.setAttribute("aria-label", "Open navigation");
+  }
+}
+
+mobileMenuBtn?.addEventListener("click", () => {
+  const isOpen = appFrame?.classList.toggle("mobile-nav-open") ?? false;
+  mobileMenuBtn.textContent = isOpen ? "✕" : "☰";
+  mobileMenuBtn.setAttribute("aria-expanded", String(isOpen));
+  mobileMenuBtn.setAttribute("aria-label", isOpen ? "Close navigation" : "Open navigation");
+});
+
+document.querySelectorAll<HTMLAnchorElement>(".side-nav a").forEach((link) => {
+  link.addEventListener("click", closeMobileNav);
+});
+
 function closeBBMenu(): void {
   bbMenu?.setAttribute("hidden", "");
   bbBtn?.setAttribute("aria-expanded", "false");
