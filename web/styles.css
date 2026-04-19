@@ -1180,7 +1180,8 @@ button:disabled {
   }
 
   .toolbar button {
-    flex: 1 1 120px;
+    width: 100%;
+    flex: none;
   }
 
   .form-grid {
@@ -1221,6 +1222,7 @@ button:disabled {
 .log-row {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 4px 8px;
   border-bottom: 1px solid var(--border, var(--line));
@@ -1237,7 +1239,8 @@ button:disabled {
 
 .log-data-expanded {
   display: none;
-  margin-left: 80px;
+  flex: 0 0 100%;
+  padding-left: 80px;
   font-size: 11px;
   color: var(--muted);
 }
