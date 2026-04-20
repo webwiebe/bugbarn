@@ -78,6 +78,12 @@ jobs:
           scp -o StrictHostKeyChecking=no -r deploy \
             "${K3S_USER}@${K3S_HOST}:/tmp/bugbarn-deploy/deploy"
 
+      - name: Ensure namespace exists
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/production/namespace.yaml"
+
       - name: Decrypt and apply secret
         env:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_PRODUCTION }}
