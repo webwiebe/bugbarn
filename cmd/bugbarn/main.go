@@ -209,33 +209,41 @@ func loadConfig() config {
 		}
 	}
 
-	cfg.digest = digest.Config{
-		Day:         0, // Sunday
-		Hour:        8,
-		WebhookURL:  os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
-		SMTPHost:    os.Getenv("BUGBARN_SMTP_HOST"),
-		SMTPPort:    587,
-		SMTPUser:    os.Getenv("BUGBARN_SMTP_USER"),
-		SMTPPass:    os.Getenv("BUGBARN_SMTP_PASS"),
-		SMTPFrom:    os.Getenv("BUGBARN_SMTP_FROM"),
-		To:          os.Getenv("BUGBARN_DIGEST_TO"),
-		PublicURL:   cfg.publicURL,
-		ProjectSlug: getenv("BUGBARN_DIGEST_PROJECT", "default"),
+	// Digest config — SMTP vars use the same names as rapid-root (no BUGBARN_ prefix).
+	// Toggle email with BUGBARN_DIGEST_ENABLED=true|false independent of credentials.
+	smtpPort := 587
+	if raw := os.Getenv("SMTP_PORT"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			smtpPort = parsed
+		}
 	}
+	digestDay := 0
 	if raw := os.Getenv("BUGBARN_DIGEST_DAY"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 6 {
-			cfg.digest.Day = parsed
+			digestDay = parsed
 		}
 	}
+	digestHour := 8
 	if raw := os.Getenv("BUGBARN_DIGEST_HOUR"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 23 {
-			cfg.digest.Hour = parsed
+			digestHour = parsed
 		}
 	}
-	if raw := os.Getenv("BUGBARN_SMTP_PORT"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			cfg.digest.SMTPPort = parsed
-		}
+	cfg.digest = digest.Config{
+		Day:         digestDay,
+		Hour:        digestHour,
+		WebhookURL:  os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
+		PublicURL:   cfg.publicURL,
+		ProjectSlug: getenv("BUGBARN_DIGEST_PROJECT", "default"),
+		Mail: digest.MailConfig{
+			Enabled: os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
+			Host:    os.Getenv("SMTP_HOST"),
+			Port:    smtpPort,
+			User:    os.Getenv("SMTP_USER"),
+			Pass:    os.Getenv("SMTP_PASS"),
+			From:    os.Getenv("SMTP_FROM"),
+			To:      os.Getenv("BUGBARN_DIGEST_TO"),
+		},
 	}
 
 	return cfg

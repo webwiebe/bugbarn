@@ -1,5 +1,7 @@
 # BugBarn
 
+[![Barnaby](https://tamagotchi.nijmegen.wiebe.xyz/api/v1/pets/webwiebe/bugbarn/badge.svg)](https://tamagotchi.nijmegen.wiebe.xyz/pet/webwiebe/bugbarn)
+
 Barebones self-hosted error tracking for personal infrastructure and small projects.
 
 This repository is being developed spec-first with GitHub Spec Kit. The root product ask is captured in `specs/001-personal-error-tracker/` and governed by `.specify/memory/constitution.md`.

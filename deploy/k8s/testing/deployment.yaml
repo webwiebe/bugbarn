@@ -74,6 +74,54 @@ spec:
                 secretKeyRef:
                   name: bugbarn-secrets
                   key: LITESTREAM_SECRET_ACCESS_KEY
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: SMTP_HOST
+                  optional: true
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: SMTP_PORT
+                  optional: true
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: SMTP_PASS
+                  optional: true
+            - name: SMTP_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: SMTP_FROM
+                  optional: true
+            - name: BUGBARN_DIGEST_ENABLED
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: BUGBARN_DIGEST_ENABLED
+                  optional: true
+            - name: BUGBARN_DIGEST_TO
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: BUGBARN_DIGEST_TO
+                  optional: true
+            - name: BUGBARN_DIGEST_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: BUGBARN_DIGEST_WEBHOOK_URL
+                  optional: true
           resources:
             requests:
               cpu: 50m

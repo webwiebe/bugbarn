@@ -6,37 +6,35 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
-// Config holds the delivery settings for the weekly digest.
+// Config controls when and how the digest is delivered.
+// Toggle email via Mail.Enabled; toggle webhook by setting/clearing WebhookURL.
+// Neither channel starting means no scheduler goroutine is launched.
 type Config struct {
-	// Scheduling
-	Day  int // 0=Sunday … 6=Saturday (UTC)
-	Hour int // 0–23 (UTC)
+	// Scheduling (UTC)
+	Day  int // 0=Sunday … 6=Saturday
+	Hour int // 0–23
 
-	// Webhook delivery
+	// Webhook delivery — set to "" to disable
 	WebhookURL string
 
-	// Email delivery
-	SMTPHost string
-	SMTPPort int
-	SMTPUser string
-	SMTPPass string
-	SMTPFrom string
-	To       string
+	// Email delivery — set Mail.Enabled=false to disable without losing credentials
+	Mail MailConfig
 
 	// Display
 	PublicURL   string
 	ProjectSlug string
 }
 
-// Enabled reports whether at least one delivery channel is configured.
+// Enabled reports whether at least one delivery channel is active.
 func (c Config) Enabled() bool {
-	return c.WebhookURL != "" || (c.SMTPHost != "" && c.To != "")
+	return c.WebhookURL != "" || c.Mail.active()
 }
 
 // Store is the subset of storage.Store used by the digest.
@@ -45,14 +43,15 @@ type Store interface {
 	DefaultProjectID() int64
 }
 
-// payload is the JSON shape posted to the webhook.
+// payload is the JSON shape POSTed to the webhook.
 type payload struct {
-	Type        string         `json:"type"`
-	PeriodStart string         `json:"period_start"`
-	PeriodEnd   string         `json:"period_end"`
-	Project     string         `json:"project"`
-	Stats       statsBlock     `json:"stats"`
-	TopIssues   []issueBlock   `json:"top_issues"`
+	Type        string       `json:"type"`
+	PeriodStart string       `json:"period_start"`
+	PeriodEnd   string       `json:"period_end"`
+	Project     string       `json:"project"`
+	PublicURL   string       `json:"public_url,omitempty"`
+	Stats       statsBlock   `json:"stats"`
+	TopIssues   []issueBlock `json:"top_issues"`
 }
 
 type statsBlock struct {
@@ -76,12 +75,14 @@ func buildPayload(cfg Config, data storage.DigestData, since, now time.Time) pay
 		PeriodStart: since.UTC().Format(time.RFC3339),
 		PeriodEnd:   now.UTC().Format(time.RFC3339),
 		Project:     cfg.ProjectSlug,
+		PublicURL:   cfg.PublicURL,
 		Stats: statsBlock{
 			TotalEvents:    data.TotalEvents,
 			NewIssues:      data.NewIssues,
 			ResolvedIssues: data.ResolvedIssues,
 			Regressions:    data.Regressions,
 		},
+		TopIssues: []issueBlock{},
 	}
 	for _, iss := range data.TopIssues {
 		ib := issueBlock{
@@ -95,21 +96,19 @@ func buildPayload(cfg Config, data storage.DigestData, since, now time.Time) pay
 		}
 		p.TopIssues = append(p.TopIssues, ib)
 	}
-	if p.TopIssues == nil {
-		p.TopIssues = []issueBlock{}
-	}
 	return p
 }
 
-// Send gathers digest data and delivers it to all configured channels.
-// Errors from individual channels are logged but do not suppress other channels.
+// Send gathers digest data and delivers to all configured channels.
+// Each channel is attempted independently; failures are returned but do not
+// suppress other channels.
 func Send(ctx context.Context, cfg Config, store Store) []error {
 	now := time.Now().UTC()
 	since := now.AddDate(0, 0, -7)
 
 	data, err := store.WeeklyDigest(ctx, store.DefaultProjectID(), since)
 	if err != nil {
-		return []error{fmt.Errorf("digest gather: %w", err)}
+		return []error{fmt.Errorf("gather: %w", err)}
 	}
 
 	p := buildPayload(cfg, data, since, now)
@@ -118,13 +117,15 @@ func Send(ctx context.Context, cfg Config, store Store) []error {
 
 	if cfg.WebhookURL != "" {
 		if err := sendWebhook(ctx, cfg.WebhookURL, p); err != nil {
-			errs = append(errs, fmt.Errorf("digest webhook: %w", err))
+			log.Printf("digest webhook: %v", err)
+			errs = append(errs, fmt.Errorf("webhook: %w", err))
 		}
 	}
 
-	if cfg.SMTPHost != "" && cfg.To != "" {
-		if err := sendEmail(cfg, p, since, now); err != nil {
-			errs = append(errs, fmt.Errorf("digest email: %w", err))
+	if cfg.Mail.active() {
+		if err := sendEmailDigest(cfg.Mail, p, since, now); err != nil {
+			log.Printf("digest email: %v", err)
+			errs = append(errs, fmt.Errorf("email: %w", err))
 		}
 	}
 
