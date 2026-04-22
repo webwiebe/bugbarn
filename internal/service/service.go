@@ -52,8 +52,8 @@ func NewWithBus(repo Repository, bus *domainevents.Bus) *Service {
 	return &Service{repo: repo, bus: bus}
 }
 
-// PublishIssueEvent publishes IssueCreated or IssueRegressed domain events
-// when a new event is persisted. Safe to call when bus is nil.
+// PublishIssueEvent publishes domain events after a successful event persist.
+// Safe to call when bus is nil.
 func (s *Service) PublishIssueEvent(issue storage.Issue, projectID int64, isNew bool, isRegressed bool) {
 	if s.bus == nil {
 		return
@@ -64,6 +64,8 @@ func (s *Service) PublishIssueEvent(issue storage.Issue, projectID int64, isNew 
 	if isRegressed {
 		s.bus.Publish(domainevents.IssueRegressed{Issue: issue, ProjectID: projectID})
 	}
+	// Always publish so event_count_exceeds rules can be evaluated.
+	s.bus.Publish(domainevents.IssueEventRecorded{Issue: issue, ProjectID: projectID})
 }
 
 func (s *Service) ListIssues(ctx context.Context) ([]storage.Issue, error) {

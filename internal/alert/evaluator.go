@@ -31,6 +31,8 @@ func (e *Evaluator) HandleEvent(evt any) {
 		e.evaluate(ctx, v.ProjectID, v.Issue, "new_issue")
 	case domainevents.IssueRegressed:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "regression")
+	case domainevents.IssueEventRecorded:
+		e.evaluate(ctx, v.ProjectID, v.Issue, "event_count_exceeds")
 	}
 }
 
@@ -46,6 +48,9 @@ func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue storage
 			continue
 		}
 		if rule.Condition != conditionType {
+			continue
+		}
+		if conditionType == "event_count_exceeds" && (rule.Threshold <= 0 || issue.EventCount <= rule.Threshold) {
 			continue
 		}
 		if !e.cooldownPassed(ctx, rule, issue.ID) {

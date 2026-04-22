@@ -14,6 +14,14 @@ type IssueRegressed struct {
 	ProjectID int64
 }
 
+// IssueEventRecorded is published for every successfully persisted event,
+// regardless of whether the issue is new or regressed. Used to evaluate
+// event_count_exceeds alert conditions.
+type IssueEventRecorded struct {
+	Issue     storage.Issue
+	ProjectID int64
+}
+
 // EventDeadLettered is published when an ingest record cannot be processed after all retries.
 type EventDeadLettered struct {
 	IngestID string

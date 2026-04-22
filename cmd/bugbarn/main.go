@@ -23,6 +23,7 @@ import (
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/alert"
+	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
@@ -99,6 +100,8 @@ func run() error {
 
 	go runBackgroundWorker(ctx, cfg.spoolDir, store, svc, selfReporting)
 
+	digest.StartScheduler(ctx, cfg.digest, store)
+
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
 		return err
@@ -162,6 +165,7 @@ type config struct {
 	publicURL           string
 	selfEndpoint        string
 	selfAPIKey          string
+	digest              digest.Config
 }
 
 func loadConfig() config {
@@ -202,6 +206,35 @@ func loadConfig() config {
 	if raw := os.Getenv("BUGBARN_SESSION_TTL_SECONDS"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
 			cfg.sessionTTL = time.Duration(parsed) * time.Second
+		}
+	}
+
+	cfg.digest = digest.Config{
+		Day:         0, // Sunday
+		Hour:        8,
+		WebhookURL:  os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
+		SMTPHost:    os.Getenv("BUGBARN_SMTP_HOST"),
+		SMTPPort:    587,
+		SMTPUser:    os.Getenv("BUGBARN_SMTP_USER"),
+		SMTPPass:    os.Getenv("BUGBARN_SMTP_PASS"),
+		SMTPFrom:    os.Getenv("BUGBARN_SMTP_FROM"),
+		To:          os.Getenv("BUGBARN_DIGEST_TO"),
+		PublicURL:   cfg.publicURL,
+		ProjectSlug: getenv("BUGBARN_DIGEST_PROJECT", "default"),
+	}
+	if raw := os.Getenv("BUGBARN_DIGEST_DAY"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 6 {
+			cfg.digest.Day = parsed
+		}
+	}
+	if raw := os.Getenv("BUGBARN_DIGEST_HOUR"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 23 {
+			cfg.digest.Hour = parsed
+		}
+	}
+	if raw := os.Getenv("BUGBARN_SMTP_PORT"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			cfg.digest.SMTPPort = parsed
 		}
 	}
 
