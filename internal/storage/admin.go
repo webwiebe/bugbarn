@@ -333,26 +333,34 @@ func (s *Store) GetAlert(ctx context.Context, alertID string) (Alert, error) {
 	if !ok {
 		projectID = s.defaultProjectID
 	}
-	row := s.db.QueryRowContext(ctx, `
+
+	const sel = `
 SELECT
-	id,
-	name,
-	enabled,
-	severity,
-	rule_json,
-	webhook_url,
-	condition,
-	threshold,
-	cooldown_minutes,
-	last_fired_at,
-	created_at,
-	updated_at
-FROM alerts
-WHERE project_id = ? AND id = ?`,
-		projectID,
-		rowID,
-	)
-	return scanAlert(row)
+	a.id,
+	a.name,
+	a.enabled,
+	a.severity,
+	a.rule_json,
+	a.webhook_url,
+	a.condition,
+	a.threshold,
+	a.cooldown_minutes,
+	a.last_fired_at,
+	a.created_at,
+	a.updated_at,
+	COALESCE(p.slug, '') AS project_slug
+FROM alerts a
+LEFT JOIN projects p ON p.id = a.project_id`
+
+	var row *sql.Row
+	if projectID != 0 {
+		row = s.db.QueryRowContext(ctx, sel+`
+WHERE a.project_id = ? AND a.id = ?`, projectID, rowID)
+	} else {
+		row = s.db.QueryRowContext(ctx, sel+`
+WHERE a.id = ?`, rowID)
+	}
+	return scanAlertWithProject(row)
 }
 
 func (s *Store) CreateAlert(ctx context.Context, alert Alert) (Alert, error) {

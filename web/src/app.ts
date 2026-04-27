@@ -186,7 +186,12 @@ projectSelect?.addEventListener("change", () => {
   localStorage.setItem(projectKey, slug);
   state.currentEnv = "";
   localStorage.removeItem(envKey);
-  void Promise.all([loadEnvironments(), refreshAll()]);
+  if (slug === "__all") {
+    renderEnvSwitcher([]);
+    void refreshAll();
+  } else {
+    void Promise.all([loadEnvironments(), refreshAll()]);
+  }
 });
 
 envSelect?.addEventListener("change", () => {
@@ -234,7 +239,8 @@ async function start(): Promise<void> {
     renderLogin();
     return;
   }
-  await Promise.all([loadProjects(), loadEnvironments(), refreshAll()]);
+  const envLoad = state.currentProject !== "__all" ? loadEnvironments() : Promise.resolve();
+  await Promise.all([loadProjects(), envLoad, refreshAll()]);
 }
 
 function byId<T extends HTMLElement>(id: string): T {
