@@ -84,12 +84,15 @@ jobs:
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
             "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/production/namespace.yaml"
 
-      - name: Decrypt and apply secret
+      - name: Decrypt and apply secrets
         env:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_PRODUCTION }}
         run: |
           set -euo pipefail
           sops -d deploy/k8s/production/secret.yaml | \
+            ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl apply -f -"
+          sops -d deploy/k8s/production/smtp-secret.yaml | \
             ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
             "kubectl apply -f -"
 
