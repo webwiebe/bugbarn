@@ -47,18 +47,28 @@ func (h *Hub) Subscribe(projectID int64) (<-chan storage.LogEntry, func()) {
 	return ch, cancel
 }
 
-// Publish sends an entry to all current subscribers for that project.
+// Publish sends an entry to all current subscribers for that project,
+// and also to all-projects subscribers (those subscribed with projectID=0).
 // Uses non-blocking sends so slow consumers do not block the publisher.
 func (h *Hub) Publish(projectID int64, entry storage.LogEntry) {
 	h.mu.RLock()
 	chans := h.subs[projectID]
+	var allChans []chan storage.LogEntry
+	if projectID != 0 {
+		allChans = h.subs[0]
+	}
 	h.mu.RUnlock()
 
 	for _, ch := range chans {
 		select {
 		case ch <- entry:
 		default:
-			// slow consumer; drop entry
+		}
+	}
+	for _, ch := range allChans {
+		select {
+		case ch <- entry:
+		default:
 		}
 	}
 }

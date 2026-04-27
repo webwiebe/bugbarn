@@ -185,11 +185,8 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, ok := storage.ProjectIDFromContext(r.Context())
-	if !ok || projectID == 0 {
-		http.Error(w, "project required", http.StatusBadRequest)
-		return
-	}
+	projectID, _ := storage.ProjectIDFromContext(r.Context())
+	// projectID == 0 means all projects — handled by ListLogEntries
 
 	limit := 200
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -239,11 +236,8 @@ func (s *Server) serveLogsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, ok := storage.ProjectIDFromContext(r.Context())
-	if !ok || projectID == 0 {
-		http.Error(w, "project required", http.StatusBadRequest)
-		return
-	}
+	projectID, _ := storage.ProjectIDFromContext(r.Context())
+	// projectID == 0 means all projects — hub.Subscribe(0) receives from all projects
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

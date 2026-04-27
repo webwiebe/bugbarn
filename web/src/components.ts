@@ -63,6 +63,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
         const active = id && String(id) === String(selectedIssueId) ? "active" : "";
         const severity = issueSeverity(issue);
         const severityClass = severity === "error" || severity === "fatal" ? "bad" : severity === "warning" ? "warn" : "";
+        const projectSlug = issue.project_slug ? String(issue.project_slug) : "";
         return `
           <button class="item issue-row ${active}" type="button" data-issue-id="${escapeAttr(id)}">
             <div class="item-title"><span class="status-dot"></span>${escapeHtml(title)}</div>
@@ -74,6 +75,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
             <span class="issue-cell">${renderSparkline(issue.hourly_counts)}</span>
             <div class="item-meta">
               <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
+              ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
               <span>${escapeHtml(id)}</span>
             </div>
           </button>
@@ -866,11 +868,13 @@ function renderAlertList(alerts: ApiAlert[]): string {
           const cooldown = alert.cooldown_minutes ?? 0;
           const enabled = Boolean(alert.enabled);
           const lastFiredAt = formatTime(alert.last_fired_at) || "never";
+          const projectSlug = alert.project_slug ? String(alert.project_slug) : "";
           return `
             <article class="route-item">
               <div class="route-item-head">
                 <strong>${escapeHtml(title)}</strong>
                 <span class="chip ${enabled ? "" : "bad"}">${escapeHtml(enabled ? "enabled" : "disabled")}</span>
+                ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
                 ${webhookBadge(webhookUrl)}
               </div>
               <div class="route-item-meta">
@@ -1164,11 +1168,13 @@ export function renderLogRow(entry: ApiLogEntry): string {
   const dataExpanded = hasData
     ? `<div class="log-data-expanded"><pre>${escapeHtml(JSON.stringify(entry.data, null, 2))}</pre></div>`
     : "";
+  const projectBadge = entry.project_slug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7;margin-left:0.25rem">${escapeHtml(entry.project_slug)}</span>` : "";
   return `
     <div class="log-row log-row-${escapeAttr(entry.level)}" data-log-id="${escapeAttr(String(entry.id))}">
       <span class="log-time">${escapeHtml(formatTime(entry.received_at))}</span>
       <span class="log-level log-level-${escapeAttr(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
       <span class="log-msg">${escapeHtml(entry.message)}</span>
+      ${projectBadge}
       ${dataInline}
       ${dataExpanded}
     </div>

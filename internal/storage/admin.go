@@ -61,15 +61,26 @@ func (s *Store) setIssueStatus(ctx context.Context, issueID, status string) (Iss
 	defer tx.Rollback()
 
 	now := formatTime(time.Now().UTC())
-	query := `
+	var execErr error
+	if projectID != 0 {
+		_, execErr = tx.ExecContext(ctx, `
 UPDATE issues
 SET status = ?,
 	resolved_at = CASE WHEN ? = 'resolved' THEN ? ELSE resolved_at END,
 	reopened_at = CASE WHEN ? = 'unresolved' THEN ? ELSE reopened_at END,
 	updated_at = CURRENT_TIMESTAMP
-WHERE id = ? AND project_id = ?`
-	if _, err := tx.ExecContext(ctx, query, status, status, now, status, now, rowID, projectID); err != nil {
-		return Issue{}, err
+WHERE id = ? AND project_id = ?`, status, status, now, status, now, rowID, projectID)
+	} else {
+		_, execErr = tx.ExecContext(ctx, `
+UPDATE issues
+SET status = ?,
+	resolved_at = CASE WHEN ? = 'resolved' THEN ? ELSE resolved_at END,
+	reopened_at = CASE WHEN ? = 'unresolved' THEN ? ELSE reopened_at END,
+	updated_at = CURRENT_TIMESTAMP
+WHERE id = ?`, status, status, now, status, now, rowID)
+	}
+	if execErr != nil {
+		return Issue{}, execErr
 	}
 	if err := tx.Commit(); err != nil {
 		return Issue{}, err
@@ -252,25 +263,51 @@ func (s *Store) ListAlerts(ctx context.Context) ([]Alert, error) {
 		projectID = s.defaultProjectID
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	var query string
+	var args []any
+	if projectID != 0 {
+		query = `
 SELECT
-	id,
-	name,
-	enabled,
-	severity,
-	rule_json,
-	webhook_url,
-	condition,
-	threshold,
-	cooldown_minutes,
-	last_fired_at,
-	created_at,
-	updated_at
-FROM alerts
-WHERE project_id = ?
-ORDER BY id DESC`,
-		projectID,
-	)
+	a.id,
+	a.name,
+	a.enabled,
+	a.severity,
+	a.rule_json,
+	a.webhook_url,
+	a.condition,
+	a.threshold,
+	a.cooldown_minutes,
+	a.last_fired_at,
+	a.created_at,
+	a.updated_at,
+	COALESCE(p.slug, '') AS project_slug
+FROM alerts a
+LEFT JOIN projects p ON p.id = a.project_id
+WHERE a.project_id = ?
+ORDER BY a.id DESC`
+		args = []any{projectID}
+	} else {
+		query = `
+SELECT
+	a.id,
+	a.name,
+	a.enabled,
+	a.severity,
+	a.rule_json,
+	a.webhook_url,
+	a.condition,
+	a.threshold,
+	a.cooldown_minutes,
+	a.last_fired_at,
+	a.created_at,
+	a.updated_at,
+	COALESCE(p.slug, '') AS project_slug
+FROM alerts a
+LEFT JOIN projects p ON p.id = a.project_id
+ORDER BY a.id DESC`
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +315,7 @@ ORDER BY id DESC`,
 
 	var alerts []Alert
 	for rows.Next() {
-		item, err := scanAlert(rows)
+		item, err := scanAlertWithProject(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -651,6 +688,51 @@ func scanAlert(scanner interface {
 		&lastFiredAt,
 		&createdAt,
 		&updatedAt,
+	); err != nil {
+		return Alert{}, err
+	}
+	item.ID = formatID(alertIDPrefix, id)
+	item.Enabled = enabled != 0
+	item.LastFiredAt, _ = parseTime(lastFiredAt)
+	item.CreatedAt, _ = parseTime(createdAt)
+	item.UpdatedAt, _ = parseTime(updatedAt)
+	if len(ruleRaw) > 0 {
+		if err := json.Unmarshal(ruleRaw, &item.Rule); err != nil {
+			return Alert{}, err
+		}
+	}
+	if item.Rule == nil {
+		item.Rule = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanAlertWithProject(scanner interface {
+	Scan(dest ...any) error
+}) (Alert, error) {
+	var (
+		id          int64
+		item        Alert
+		ruleRaw     []byte
+		lastFiredAt string
+		createdAt   string
+		updatedAt   string
+		enabled     int
+	)
+	if err := scanner.Scan(
+		&id,
+		&item.Name,
+		&enabled,
+		&item.Severity,
+		&ruleRaw,
+		&item.WebhookURL,
+		&item.Condition,
+		&item.Threshold,
+		&item.CooldownMinutes,
+		&lastFiredAt,
+		&createdAt,
+		&updatedAt,
+		&item.ProjectSlug,
 	); err != nil {
 		return Alert{}, err
 	}
