@@ -32,22 +32,42 @@ func (s *Store) ListIssueEvents(ctx context.Context, issueID string, limit int, 
 	fetch := limit + 1
 
 	var rows *sql.Rows
-	if beforeID > 0 {
-		rows, err = s.db.QueryContext(ctx, `
+	if projectID != 0 {
+		if beforeID > 0 {
+			rows, err = s.db.QueryContext(ctx, `
 SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
        received_at, observed_at, severity, message, regressed, event_json
 FROM events
 WHERE project_id = ? AND issue_id = ? AND id < ?
 ORDER BY id DESC LIMIT ?`,
-			projectID, rowID, beforeID, fetch)
-	} else {
-		rows, err = s.db.QueryContext(ctx, `
+				projectID, rowID, beforeID, fetch)
+		} else {
+			rows, err = s.db.QueryContext(ctx, `
 SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
        received_at, observed_at, severity, message, regressed, event_json
 FROM events
 WHERE project_id = ? AND issue_id = ?
 ORDER BY id DESC LIMIT ?`,
-			projectID, rowID, fetch)
+				projectID, rowID, fetch)
+		}
+	} else {
+		if beforeID > 0 {
+			rows, err = s.db.QueryContext(ctx, `
+SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
+       received_at, observed_at, severity, message, regressed, event_json
+FROM events
+WHERE issue_id = ? AND id < ?
+ORDER BY id DESC LIMIT ?`,
+				rowID, beforeID, fetch)
+		} else {
+			rows, err = s.db.QueryContext(ctx, `
+SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
+       received_at, observed_at, severity, message, regressed, event_json
+FROM events
+WHERE issue_id = ?
+ORDER BY id DESC LIMIT ?`,
+				rowID, fetch)
+		}
 	}
 	if err != nil {
 		return nil, false, err

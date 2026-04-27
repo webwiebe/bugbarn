@@ -30,7 +30,7 @@ const state: AppState = {
   authenticated: false,
   username: "",
   projects: [],
-  currentProject: localStorage.getItem(projectKey) ?? "default",
+  currentProject: (() => { const v = localStorage.getItem(projectKey); return (v && v !== "default") ? v : "__all"; })(),
   currentEnv: localStorage.getItem(envKey) ?? "",
   currentRoute: "issues",
   issues: [],
@@ -186,7 +186,12 @@ projectSelect?.addEventListener("change", () => {
   localStorage.setItem(projectKey, slug);
   state.currentEnv = "";
   localStorage.removeItem(envKey);
-  void Promise.all([loadEnvironments(), refreshAll()]);
+  if (slug === "__all") {
+    renderEnvSwitcher([]);
+    void refreshAll();
+  } else {
+    void Promise.all([loadEnvironments(), refreshAll()]);
+  }
 });
 
 envSelect?.addEventListener("change", () => {
@@ -234,7 +239,8 @@ async function start(): Promise<void> {
     renderLogin();
     return;
   }
-  await Promise.all([loadProjects(), loadEnvironments(), refreshAll()]);
+  const envLoad = state.currentProject !== "__all" ? loadEnvironments() : Promise.resolve();
+  await Promise.all([loadProjects(), envLoad, refreshAll()]);
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -474,15 +480,17 @@ async function loadProjects(): Promise<void> {
 function renderProjectSwitcher(): void {
   if (!projectSelect) return;
   const current = state.currentProject;
-  projectSelect.innerHTML = state.projects
-    .map((p) => {
-      const slug = String(p.slug ?? p.Slug ?? "default");
-      const name = String(p.name ?? p.Name ?? slug);
-      const selected = slug === current ? ' selected' : '';
-      return `<option value="${escapeHtml(slug)}"${selected}>${escapeHtml(name)}</option>`;
-    })
-    .join("");
-  projectSelect.hidden = state.projects.length <= 1;
+  const allSelected = (current === "__all" || !current) ? ' selected' : '';
+  projectSelect.innerHTML = `<option value="__all"${allSelected}>All projects</option>` +
+    state.projects
+      .map((p) => {
+        const slug = String(p.slug ?? p.Slug ?? "default");
+        const name = String(p.name ?? p.Name ?? slug);
+        const selected = slug === current ? ' selected' : '';
+        return `<option value="${escapeHtml(slug)}"${selected}>${escapeHtml(name)}</option>`;
+      })
+      .join("");
+  projectSelect.hidden = state.projects.length === 0;
 }
 
 async function loadEnvironments(): Promise<void> {
@@ -629,7 +637,7 @@ async function fetchJson(path: string, allowMissing = false): Promise<unknown> {
   }
 
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (state.currentProject && state.currentProject !== "default") {
+  if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
     headers["X-BugBarn-Project"] = state.currentProject;
   }
   const request = fetch(url, { credentials: "include", headers }).then(async (response) => {
@@ -1214,7 +1222,7 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
   if (csrf) {
     headers["X-BugBarn-CSRF"] = csrf;
   }
-  if (state.currentProject && state.currentProject !== "default") {
+  if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
     headers["X-BugBarn-Project"] = state.currentProject;
   }
   return fetch(apiUrl(path), { credentials: "include", ...init, headers });

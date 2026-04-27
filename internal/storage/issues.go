@@ -21,11 +21,11 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]I
 	var orderBy string
 	switch filter.Sort {
 	case "first_seen":
-		orderBy = "first_seen DESC, id DESC"
+		orderBy = "i.first_seen DESC, i.id DESC"
 	case "event_count":
-		orderBy = "event_count DESC, id DESC"
+		orderBy = "i.event_count DESC, i.id DESC"
 	default:
-		orderBy = "last_seen DESC, id DESC"
+		orderBy = "i.last_seen DESC, i.id DESC"
 	}
 
 	// Collect non-empty facet filters.
@@ -41,9 +41,14 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]I
 	if !ok {
 		projectID = s.defaultProjectID
 	}
+	allProjects := projectID == 0
 
-	conditions := []string{"i.project_id = ?"}
-	whereArgs := []any{projectID}
+	var conditions []string
+	var whereArgs []any
+	if !allProjects {
+		conditions = append(conditions, "i.project_id = ?")
+		whereArgs = append(whereArgs, projectID)
+	}
 
 	switch filter.Status {
 	case "open":
@@ -70,14 +75,20 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]I
 		// matching issue_ids. The join enforces AND semantics across all filters.
 		var subqueries []string
 		for _, f := range facetFilters {
-			subqueries = append(subqueries,
-				`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
-			fromArgs = append(fromArgs, projectID, f.k, f.v)
+			if !allProjects {
+				subqueries = append(subqueries,
+					`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
+				fromArgs = append(fromArgs, projectID, f.k, f.v)
+			} else {
+				subqueries = append(subqueries,
+					`SELECT DISTINCT issue_id FROM event_facets WHERE facet_key = ? AND facet_value = ?`)
+				fromArgs = append(fromArgs, f.k, f.v)
+			}
 		}
-		fromClause = fmt.Sprintf(`issues i INNER JOIN (%s) ef ON i.id = ef.issue_id`,
+		fromClause = fmt.Sprintf(`issues i INNER JOIN (%s) ef ON i.id = ef.issue_id LEFT JOIN projects p ON p.id = i.project_id`,
 			strings.Join(subqueries, " INTERSECT "))
 	} else {
-		fromClause = "issues i"
+		fromClause = "issues i LEFT JOIN projects p ON p.id = i.project_id"
 	}
 
 	// Combine: subquery bindings first (appear in FROM clause), then WHERE bindings.
@@ -101,10 +112,15 @@ SELECT
 	i.first_seen,
 	i.last_seen,
 	i.event_count,
-	i.representative_event_json
-FROM ` + fromClause + `
-WHERE ` + strings.Join(conditions, " AND ") + `
-ORDER BY i.` + orderBy
+	i.representative_event_json,
+	COALESCE(p.slug, '') AS project_slug
+FROM ` + fromClause
+	if len(conditions) > 0 {
+		sqlQuery += `
+WHERE ` + strings.Join(conditions, " AND ")
+	}
+	sqlQuery += `
+ORDER BY ` + orderBy
 
 	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
@@ -137,30 +153,37 @@ func (s *Store) GetIssue(ctx context.Context, issueID string) (Issue, error) {
 		projectID = s.defaultProjectID
 	}
 
-	row := s.db.QueryRowContext(ctx, `
+	const sel = `
 SELECT
-	id,
-	fingerprint,
-	fingerprint_material,
-	fingerprint_explanation_json,
-	title,
-	normalized_title,
-	exception_type,
-	status,
-	mute_mode,
-	resolved_at,
-	reopened_at,
-	last_regressed_at,
-	regression_count,
-	first_seen,
-	last_seen,
-	event_count,
-	representative_event_json
-FROM issues
-WHERE project_id = ? AND id = ?`,
-		projectID,
-		rowID,
-	)
+	i.id,
+	i.fingerprint,
+	i.fingerprint_material,
+	i.fingerprint_explanation_json,
+	i.title,
+	i.normalized_title,
+	i.exception_type,
+	i.status,
+	i.mute_mode,
+	i.resolved_at,
+	i.reopened_at,
+	i.last_regressed_at,
+	i.regression_count,
+	i.first_seen,
+	i.last_seen,
+	i.event_count,
+	i.representative_event_json,
+	COALESCE(p.slug, '') AS project_slug
+FROM issues i
+LEFT JOIN projects p ON p.id = i.project_id`
+
+	var row *sql.Row
+	if projectID != 0 {
+		row = s.db.QueryRowContext(ctx, sel+`
+WHERE i.project_id = ? AND i.id = ?`, projectID, rowID)
+	} else {
+		row = s.db.QueryRowContext(ctx, sel+`
+WHERE i.id = ?`, rowID)
+	}
 
 	return scanIssue(row)
 }
@@ -449,6 +472,7 @@ func scanIssue(scanner interface {
 		&lastSeen,
 		&issue.EventCount,
 		&representativeRaw,
+		&issue.ProjectSlug,
 	); err != nil {
 		return Issue{}, err
 	}
@@ -489,12 +513,16 @@ func (s *Store) MuteIssue(ctx context.Context, issueID string, muteMode string) 
 	if !ok {
 		projectID = s.defaultProjectID
 	}
-	if _, err := s.db.ExecContext(ctx, `
-UPDATE issues
-SET status = 'muted', mute_mode = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ? AND project_id = ?`,
-		muteMode, rowID, projectID,
-	); err != nil {
+	if projectID != 0 {
+		_, err = s.db.ExecContext(ctx, `
+UPDATE issues SET status = 'muted', mute_mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?`,
+			muteMode, rowID, projectID)
+	} else {
+		_, err = s.db.ExecContext(ctx, `
+UPDATE issues SET status = 'muted', mute_mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			muteMode, rowID)
+	}
+	if err != nil {
 		return Issue{}, err
 	}
 	return s.GetIssue(ctx, issueID)
@@ -510,13 +538,18 @@ func (s *Store) UnmuteIssue(ctx context.Context, issueID string) (Issue, error) 
 	if !ok {
 		projectID = s.defaultProjectID
 	}
-	if _, err := s.db.ExecContext(ctx, `
-UPDATE issues
-SET status = 'unresolved', mute_mode = '', updated_at = CURRENT_TIMESTAMP
-WHERE id = ? AND project_id = ?`,
-		rowID, projectID,
-	); err != nil {
-		return Issue{}, err
+	var err2 error
+	if projectID != 0 {
+		_, err2 = s.db.ExecContext(ctx, `
+UPDATE issues SET status = 'unresolved', mute_mode = '', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?`,
+			rowID, projectID)
+	} else {
+		_, err2 = s.db.ExecContext(ctx, `
+UPDATE issues SET status = 'unresolved', mute_mode = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			rowID)
+	}
+	if err2 != nil {
+		return Issue{}, err2
 	}
 	return s.GetIssue(ctx, issueID)
 }
@@ -536,20 +569,26 @@ func (s *Store) HourlyEventCounts(ctx context.Context, issueIDs []int64) (map[in
 
 	// Build placeholder list.
 	placeholders := make([]string, len(issueIDs))
-	args := []any{projectID}
+	var args []any
+	if projectID != 0 {
+		args = append(args, projectID)
+	}
 	for i, id := range issueIDs {
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
 
+	var projectFilter string
+	if projectID != 0 {
+		projectFilter = "project_id = ? AND "
+	}
 	query := `
 SELECT
 	issue_id,
 	strftime('%Y-%m-%dT%H', observed_at) AS hour_bucket,
 	COUNT(*) AS cnt
 FROM events
-WHERE project_id = ?
-  AND issue_id IN (` + strings.Join(placeholders, ",") + `)
+WHERE ` + projectFilter + `issue_id IN (` + strings.Join(placeholders, ",") + `)
   AND observed_at >= datetime('now', '-24 hours')
 GROUP BY issue_id, hour_bucket`
 

@@ -13,8 +13,6 @@ type Store struct {
 	defaultProjectID int64
 }
 
-type ctxProjectKey struct{}
-
 // Issue represents a grouped error occurrence.
 type Issue struct {
 	ID                     string
@@ -34,6 +32,7 @@ type Issue struct {
 	LastSeen               time.Time
 	EventCount             int
 	RepresentativeEvent    event.Event
+	ProjectSlug            string `json:"project_slug,omitempty"`
 }
 
 // IssueHourlyCounts holds per-issue 24-hour event frequency data.
@@ -136,6 +135,7 @@ type Alert struct {
 	LastFiredAt     time.Time      `json:"last_fired_at,omitempty"`
 	CreatedAt       time.Time      `json:"created_at,omitempty"`
 	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
+	ProjectSlug     string         `json:"project_slug,omitempty"`
 }
 
 // Setting represents a project setting row.
@@ -154,11 +154,12 @@ type facetRow struct {
 
 // LogEntry represents a single structured log line stored per project.
 type LogEntry struct {
-	ID         int64          `json:"id"`
-	ProjectID  int64          `json:"project_id,omitempty"`
-	ReceivedAt time.Time      `json:"received_at"`
-	LevelNum   int            `json:"level_num"`
-	Level      string         `json:"level"`
-	Message    string         `json:"message"`
-	Data       map[string]any `json:"data,omitempty"`
+	ID          int64          `json:"id"`
+	ProjectID   int64          `json:"project_id,omitempty"`
+	ProjectSlug string         `json:"project_slug,omitempty"`
+	ReceivedAt  time.Time      `json:"received_at"`
+	LevelNum    int            `json:"level_num"`
+	Level       string         `json:"level"`
+	Message     string         `json:"message"`
+	Data        map[string]any `json:"data,omitempty"`
 }

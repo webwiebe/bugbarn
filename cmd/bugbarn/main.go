@@ -230,11 +230,10 @@ func loadConfig() config {
 		}
 	}
 	cfg.digest = digest.Config{
-		Day:         digestDay,
-		Hour:        digestHour,
-		WebhookURL:  os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
-		PublicURL:   cfg.publicURL,
-		ProjectSlug: getenv("BUGBARN_DIGEST_PROJECT", "default"),
+		Day:        digestDay,
+		Hour:       digestHour,
+		WebhookURL: os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
+		PublicURL:  cfg.publicURL,
 		Mail: digest.MailConfig{
 			Enabled: os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
 			Host:    os.Getenv("SMTP_HOST"),

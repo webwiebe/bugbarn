@@ -46,6 +46,7 @@ export interface ApiIssue extends RawRecord {
   fingerprint_debug?: RawRecord;
   hourly_counts?: number[];
   mute_mode?: string;
+  project_slug?: string;
 }
 
 export interface ApiEvent extends RawRecord {
@@ -113,6 +114,7 @@ export interface ApiAlert extends RawRecord {
   cooldown_minutes?: number;
   last_fired_at?: string;
   created_at?: string;
+  project_slug?: string;
 }
 
 export interface ApiApiKey extends RawRecord {
@@ -146,6 +148,7 @@ export interface ApiLogEntry {
   level: string
   message: string
   data?: Record<string, unknown>
+  project_slug?: string
 }
 
 export interface ApiSettings extends RawRecord {

@@ -69,34 +69,43 @@ func (s *Store) InsertLogEntries(ctx context.Context, entries []LogEntry) error 
 	return tx.Commit()
 }
 
-// ListLogEntries returns up to limit entries for a project, newest first.
+// ListLogEntries returns up to limit entries for a project (or all projects when projectID=0), newest first.
 // Optional filters: levelMin (numeric pino level, 0 = no filter), q (substring match on message),
 // beforeID (cursor, 0 = no cursor).
 func (s *Store) ListLogEntries(ctx context.Context, projectID int64, levelMin int, q string, limit int, beforeID int64) ([]LogEntry, error) {
-	args := []any{projectID}
+	var args []any
 	var conditions []string
-	conditions = append(conditions, "project_id = ?")
 
+	if projectID != 0 {
+		conditions = append(conditions, "le.project_id = ?")
+		args = append(args, projectID)
+	}
 	if levelMin > 0 {
-		conditions = append(conditions, "level_num >= ?")
+		conditions = append(conditions, "le.level_num >= ?")
 		args = append(args, levelMin)
 	}
 	if q != "" {
-		conditions = append(conditions, "message LIKE ?")
+		conditions = append(conditions, "le.message LIKE ?")
 		args = append(args, fmt.Sprintf("%%%s%%", q))
 	}
 	if beforeID > 0 {
-		conditions = append(conditions, "id < ?")
+		conditions = append(conditions, "le.id < ?")
 		args = append(args, beforeID)
 	}
 
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
 	query := fmt.Sprintf(`
-		SELECT id, project_id, received_at, level_num, level, message, data_json
-		FROM log_entries
-		WHERE %s
-		ORDER BY id DESC
+		SELECT le.id, le.project_id, le.received_at, le.level_num, le.level, le.message, le.data_json, COALESCE(p.slug, '') AS project_slug
+		FROM log_entries le
+		LEFT JOIN projects p ON p.id = le.project_id
+		%s
+		ORDER BY le.id DESC
 		LIMIT ?
-	`, strings.Join(conditions, " AND "))
+	`, whereClause)
 	args = append(args, limit)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -110,7 +119,7 @@ func (s *Store) ListLogEntries(ctx context.Context, projectID int64, levelMin in
 		var e LogEntry
 		var receivedAt string
 		var dataJSON string
-		if err := rows.Scan(&e.ID, &e.ProjectID, &receivedAt, &e.LevelNum, &e.Level, &e.Message, &dataJSON); err != nil {
+		if err := rows.Scan(&e.ID, &e.ProjectID, &receivedAt, &e.LevelNum, &e.Level, &e.Message, &dataJSON, &e.ProjectSlug); err != nil {
 			return nil, err
 		}
 		if t, err := time.Parse(time.RFC3339Nano, receivedAt); err == nil {

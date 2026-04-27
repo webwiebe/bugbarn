@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -195,11 +196,22 @@ func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64,
 }
 
 // ListFacetKeys returns all distinct facet keys observed for a project.
+// Pass projectID=0 to query across all projects.
 func (s *Store) ListFacetKeys(ctx context.Context, projectID int64) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT facet_key FROM event_facets WHERE project_id = ? ORDER BY facet_key ASC`,
-		projectID,
+	var (
+		rows *sql.Rows
+		err  error
 	)
+	if projectID != 0 {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT DISTINCT facet_key FROM event_facets WHERE project_id = ? ORDER BY facet_key ASC`,
+			projectID,
+		)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT DISTINCT facet_key FROM event_facets ORDER BY facet_key ASC`,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -217,11 +229,23 @@ func (s *Store) ListFacetKeys(ctx context.Context, projectID int64) ([]string, e
 }
 
 // ListFacetValues returns all distinct values observed for a facet key in a project.
+// Pass projectID=0 to query across all projects.
 func (s *Store) ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT facet_value FROM event_facets WHERE project_id = ? AND facet_key = ? ORDER BY facet_value ASC`,
-		projectID, key,
+	var (
+		rows *sql.Rows
+		err  error
 	)
+	if projectID != 0 {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT DISTINCT facet_value FROM event_facets WHERE project_id = ? AND facet_key = ? ORDER BY facet_value ASC`,
+			projectID, key,
+		)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT DISTINCT facet_value FROM event_facets WHERE facet_key = ? ORDER BY facet_value ASC`,
+			key,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}

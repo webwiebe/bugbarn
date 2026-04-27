@@ -165,13 +165,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if usingAPIKey && apiKeyProjectID > 0 {
 			resolvedProjectID = apiKeyProjectID
-		} else if usingSession {
+		} else if usingSession && r.Method != http.MethodGet {
+			// Non-GET writes without an explicit project header default to "default".
+			// GET requests leave resolvedProjectID = 0 = all-projects query mode.
 			if proj, err := s.store.ProjectBySlug(r.Context(), "default"); err == nil {
 				resolvedProjectID = proj.ID
 			}
 		}
-	}
-	if resolvedProjectID > 0 {
+		// Always store the resolved project in context so storage can distinguish
+		// "all projects" (0) from "no context set at all" (absent key).
 		r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
 	}
 

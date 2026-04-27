@@ -92,32 +92,35 @@ func deliverEmail(mc MailConfig, subject, plain, html string) error {
 
 // mailData is the template data bag for both plain and HTML renders.
 type mailData struct {
-	Project        string
 	Start, End     string
 	TotalEvents    int
 	NewIssues      int
 	ResolvedIssues int
 	Regressions    int
-	TopIssues      []issueBlock
+	Projects       []projectSection
 	PublicURL      string
 }
 
-var plainTmpl = template.Must(template.New("plain").Parse(`This week in {{.Project}} ({{.Start}} – {{.End}} UTC):
+var plainTmpl = template.Must(template.New("plain").Parse(`BugBarn weekly digest ({{.Start}} – {{.End}} UTC)
 
-  {{.TotalEvents}} events   {{.NewIssues}} new issues   {{.ResolvedIssues}} resolved   {{.Regressions}} regressions
+All projects: {{.TotalEvents}} events   {{.NewIssues}} new issues   {{.ResolvedIssues}} resolved   {{.Regressions}} regressions
+{{range .Projects}}
+── {{.Project}} ──
+  {{.Stats.TotalEvents}} events   {{.Stats.NewIssues}} new   {{.Stats.ResolvedIssues}} resolved   {{.Stats.Regressions}} regressions
 {{- if .TopIssues}}
 
-Top issues by volume:
-{{range .TopIssues}}  #{{.ID}}  {{.Title}}  ({{.EventCount}} events, {{.Status}})
-{{end}}{{- end}}{{- if .PublicURL}}
+  Top issues:
+{{range .TopIssues}}  · {{.Title}}  ({{.EventCount}} events, {{.Status}}){{if .URL}} — {{.URL}}{{end}}
+{{end}}{{- end}}{{end}}{{- if .PublicURL}}
 View all issues: {{.PublicURL}}
 {{- end}}`))
 
 var htmlTmpl = template.Must(template.New("html").Parse(`<!DOCTYPE html>
 <html>
-<body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-<h2 style="color:#1a1a1a">BugBarn weekly digest — {{.Project}}</h2>
-<p style="color:#555">{{.Start}} – {{.End}} UTC</p>
+<body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:24px">
+<h2 style="color:#1a1a1a">BugBarn weekly digest</h2>
+<p style="color:#555;margin-top:0">{{.Start}} – {{.End}} UTC</p>
+
 <table style="border-collapse:collapse;width:100%;margin:16px 0">
 <tr>
 <td style="padding:12px 16px;background:#f5f5f5;text-align:center">
@@ -138,23 +141,29 @@ var htmlTmpl = template.Must(template.New("html").Parse(`<!DOCTYPE html>
 </td>
 </tr>
 </table>
+
+{{range .Projects}}
+<h3 style="color:#1a1a1a;margin-top:28px;margin-bottom:4px;border-bottom:2px solid #eee;padding-bottom:6px">{{.Project}}</h3>
+<p style="color:#555;font-size:13px;margin:4px 0 8px">
+  {{.Stats.TotalEvents}} events &nbsp;·&nbsp; {{.Stats.NewIssues}} new &nbsp;·&nbsp; {{.Stats.ResolvedIssues}} resolved &nbsp;·&nbsp; {{.Stats.Regressions}} regressions
+</p>
 {{- if .TopIssues}}
-<h3 style="color:#1a1a1a;margin-top:24px">Top issues by volume</h3>
-<table style="border-collapse:collapse;width:100%">
+<table style="border-collapse:collapse;width:100%;margin-bottom:8px">
 <thead><tr style="background:#f5f5f5">
-  <th style="padding:8px 12px;text-align:left;font-size:12px;color:#555">Issue</th>
-  <th style="padding:8px 12px;text-align:right;font-size:12px;color:#555">Events</th>
-  <th style="padding:8px 12px;text-align:left;font-size:12px;color:#555">Status</th>
+  <th style="padding:6px 10px;text-align:left;font-size:12px;color:#555">Issue</th>
+  <th style="padding:6px 10px;text-align:right;font-size:12px;color:#555">Events</th>
+  <th style="padding:6px 10px;text-align:left;font-size:12px;color:#555">Status</th>
 </tr></thead>
 <tbody>
 {{range .TopIssues}}<tr style="border-top:1px solid #eee">
-  <td style="padding:8px 12px">{{if .URL}}<a href="{{.URL}}" style="color:#0066cc">{{.Title}}</a>{{else}}{{.Title}}{{end}}</td>
-  <td style="padding:8px 12px;text-align:right">{{.EventCount}}</td>
-  <td style="padding:8px 12px;color:#555">{{.Status}}</td>
+  <td style="padding:6px 10px;font-size:13px">{{if .URL}}<a href="{{.URL}}" style="color:#0066cc">{{.Title}}</a>{{else}}{{.Title}}{{end}}</td>
+  <td style="padding:6px 10px;text-align:right;font-size:13px">{{.EventCount}}</td>
+  <td style="padding:6px 10px;color:#555;font-size:13px">{{.Status}}</td>
 </tr>
 {{end}}</tbody>
 </table>
 {{- end}}
+{{end}}
 {{- if .PublicURL}}
 <p style="margin-top:24px"><a href="{{.PublicURL}}" style="color:#0066cc">View all issues →</a></p>
 {{- end}}
@@ -167,19 +176,19 @@ func sendEmailDigest(mc MailConfig, p payload, since, now time.Time) error {
 	}
 
 	d := mailData{
-		Project:        p.Project,
-		Start:          since.Format("Jan 2"),
-		End:            now.Format("Jan 2 2006"),
-		TotalEvents:    p.Stats.TotalEvents,
-		NewIssues:      p.Stats.NewIssues,
-		ResolvedIssues: p.Stats.ResolvedIssues,
-		Regressions:    p.Stats.Regressions,
-		TopIssues:      p.TopIssues,
-		PublicURL:      p.PublicURL,
+		Start:     since.Format("Jan 2"),
+		End:       now.Format("Jan 2 2006"),
+		Projects:  p.Projects,
+		PublicURL: p.PublicURL,
+	}
+	for _, sec := range p.Projects {
+		d.TotalEvents += sec.Stats.TotalEvents
+		d.NewIssues += sec.Stats.NewIssues
+		d.ResolvedIssues += sec.Stats.ResolvedIssues
+		d.Regressions += sec.Stats.Regressions
 	}
 
-	subject := fmt.Sprintf("[BugBarn] Weekly digest — %s — %s–%s",
-		p.Project, since.Format("Jan 2"), now.Format("Jan 2 2006"))
+	subject := fmt.Sprintf("[BugBarn] Weekly digest — %s–%s", since.Format("Jan 2"), now.Format("Jan 2 2006"))
 
 	var plain, html bytes.Buffer
 	if err := plainTmpl.Execute(&plain, d); err != nil {

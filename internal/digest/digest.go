@@ -28,8 +28,7 @@ type Config struct {
 	Mail MailConfig
 
 	// Display
-	PublicURL   string
-	ProjectSlug string
+	PublicURL string
 }
 
 // Enabled reports whether at least one delivery channel is active.
@@ -40,18 +39,22 @@ func (c Config) Enabled() bool {
 // Store is the subset of storage.Store used by the digest.
 type Store interface {
 	WeeklyDigest(ctx context.Context, projectID int64, since time.Time) (storage.DigestData, error)
-	DefaultProjectID() int64
+	ListProjects(ctx context.Context) ([]storage.Project, error)
 }
 
 // payload is the JSON shape POSTed to the webhook.
 type payload struct {
-	Type        string       `json:"type"`
-	PeriodStart string       `json:"period_start"`
-	PeriodEnd   string       `json:"period_end"`
-	Project     string       `json:"project"`
-	PublicURL   string       `json:"public_url,omitempty"`
-	Stats       statsBlock   `json:"stats"`
-	TopIssues   []issueBlock `json:"top_issues"`
+	Type        string           `json:"type"`
+	PeriodStart string           `json:"period_start"`
+	PeriodEnd   string           `json:"period_end"`
+	PublicURL   string           `json:"public_url,omitempty"`
+	Projects    []projectSection `json:"projects"`
+}
+
+type projectSection struct {
+	Project   string       `json:"project"`
+	Stats     statsBlock   `json:"stats"`
+	TopIssues []issueBlock `json:"top_issues"`
 }
 
 type statsBlock struct {
@@ -69,13 +72,9 @@ type issueBlock struct {
 	URL        string `json:"url,omitempty"`
 }
 
-func buildPayload(cfg Config, data storage.DigestData, since, now time.Time) payload {
-	p := payload{
-		Type:        "weekly_digest",
-		PeriodStart: since.UTC().Format(time.RFC3339),
-		PeriodEnd:   now.UTC().Format(time.RFC3339),
-		Project:     cfg.ProjectSlug,
-		PublicURL:   cfg.PublicURL,
+func buildSection(cfg Config, slug string, data storage.DigestData) projectSection {
+	sec := projectSection{
+		Project: slug,
 		Stats: statsBlock{
 			TotalEvents:    data.TotalEvents,
 			NewIssues:      data.NewIssues,
@@ -94,24 +93,46 @@ func buildPayload(cfg Config, data storage.DigestData, since, now time.Time) pay
 		if cfg.PublicURL != "" {
 			ib.URL = fmt.Sprintf("%s/#/issues/%s", cfg.PublicURL, iss.ID)
 		}
-		p.TopIssues = append(p.TopIssues, ib)
+		sec.TopIssues = append(sec.TopIssues, ib)
 	}
-	return p
+	return sec
 }
 
-// Send gathers digest data and delivers to all configured channels.
-// Each channel is attempted independently; failures are returned but do not
-// suppress other channels.
+// Send gathers digest data across all projects and delivers to all configured
+// channels. Projects with no activity in the period are silently skipped.
+// If no projects have any activity the send is a no-op. Each channel is
+// attempted independently; failures are returned but do not suppress others.
 func Send(ctx context.Context, cfg Config, store Store) []error {
 	now := time.Now().UTC()
 	since := now.AddDate(0, 0, -7)
 
-	data, err := store.WeeklyDigest(ctx, store.DefaultProjectID(), since)
+	projects, err := store.ListProjects(ctx)
 	if err != nil {
-		return []error{fmt.Errorf("gather: %w", err)}
+		return []error{fmt.Errorf("list projects: %w", err)}
 	}
 
-	p := buildPayload(cfg, data, since, now)
+	p := payload{
+		Type:        "weekly_digest",
+		PeriodStart: since.UTC().Format(time.RFC3339),
+		PeriodEnd:   now.UTC().Format(time.RFC3339),
+		PublicURL:   cfg.PublicURL,
+	}
+
+	for _, proj := range projects {
+		data, err := store.WeeklyDigest(ctx, proj.ID, since)
+		if err != nil {
+			return []error{fmt.Errorf("gather %s: %w", proj.Slug, err)}
+		}
+		if data.TotalEvents == 0 {
+			continue
+		}
+		p.Projects = append(p.Projects, buildSection(cfg, proj.Slug, data))
+	}
+
+	if len(p.Projects) == 0 {
+		log.Printf("digest: no activity across all projects, skipping")
+		return nil
+	}
 
 	var errs []error
 
