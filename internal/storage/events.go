@@ -110,7 +110,7 @@ func (s *Store) GetEvent(ctx context.Context, eventID string) (Event, error) {
 		projectID = s.defaultProjectID
 	}
 
-	row := s.db.QueryRowContext(ctx, `
+	const sel = `
 SELECT
 	id,
 	issue_id,
@@ -123,11 +123,16 @@ SELECT
 	message,
 	regressed,
 	event_json
-FROM events
-WHERE project_id = ? AND id = ?`,
-		projectID,
-		rowID,
-	)
+FROM events`
+
+	var row *sql.Row
+	if projectID != 0 {
+		row = s.db.QueryRowContext(ctx, sel+`
+WHERE project_id = ? AND id = ?`, projectID, rowID)
+	} else {
+		row = s.db.QueryRowContext(ctx, sel+`
+WHERE id = ?`, rowID)
+	}
 
 	return scanEvent(row)
 }
@@ -145,7 +150,11 @@ func (s *Store) ListRecentEvents(ctx context.Context, limit int, since time.Time
 		projectID = s.defaultProjectID
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	const recentSel = `
 SELECT
 	id,
 	issue_id,
@@ -158,14 +167,19 @@ SELECT
 	message,
 	regressed,
 	event_json
-FROM events
+FROM events`
+	sinceStr := formatTime(since.UTC())
+	if projectID != 0 {
+		rows, err = s.db.QueryContext(ctx, recentSel+`
 WHERE project_id = ? AND max(received_at, observed_at) >= ?
 ORDER BY max(received_at, observed_at) DESC, id DESC
-LIMIT ?`,
-		projectID,
-		formatTime(since.UTC()),
-		limit,
-	)
+LIMIT ?`, projectID, sinceStr, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, recentSel+`
+WHERE max(received_at, observed_at) >= ?
+ORDER BY max(received_at, observed_at) DESC, id DESC
+LIMIT ?`, sinceStr, limit)
+	}
 	if err != nil {
 		return nil, err
 	}

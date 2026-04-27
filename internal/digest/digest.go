@@ -118,10 +118,13 @@ func Send(ctx context.Context, cfg Config, store Store) []error {
 		PublicURL:   cfg.PublicURL,
 	}
 
+	var errs []error
 	for _, proj := range projects {
 		data, err := store.WeeklyDigest(ctx, proj.ID, since)
 		if err != nil {
-			return []error{fmt.Errorf("gather %s: %w", proj.Slug, err)}
+			log.Printf("digest: gather %s: %v", proj.Slug, err)
+			errs = append(errs, fmt.Errorf("gather %s: %w", proj.Slug, err))
+			continue
 		}
 		if data.TotalEvents == 0 {
 			continue
@@ -131,10 +134,8 @@ func Send(ctx context.Context, cfg Config, store Store) []error {
 
 	if len(p.Projects) == 0 {
 		log.Printf("digest: no activity across all projects, skipping")
-		return nil
+		return errs
 	}
-
-	var errs []error
 
 	if cfg.WebhookURL != "" {
 		if err := sendWebhook(ctx, cfg.WebhookURL, p); err != nil {
