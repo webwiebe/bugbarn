@@ -204,7 +204,7 @@ jobs:
           gh api repos/wiebe-xyz/rapid-root/dispatches \
             --method POST \
             --field event_type=apt-package-update \
-            --field 'client_payload[repo]=wiebe-xyz/bugbarn' \
+            --field 'client_payload[repo]=webwiebe/bugbarn' \
             --field 'client_payload[tag]=${{ needs.tag.outputs.version }}' \
             --field 'client_payload[asset_pattern]=*.deb'
 
