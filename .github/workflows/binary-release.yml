@@ -4,7 +4,7 @@ name: Binary Release
 # Publishes to:
 #   - APT repository:      https://webwiebe.nl/apt/  (via rapid-root centralized workflow)
 #   - Homebrew tap (MinIO): https://webwiebe.nl/brew/bugbarn-darwin-*.tar.gz
-#   - Homebrew tap (GitHub): wiebe-xyz/homebrew-buddy-tools Formula/bugbarn.rb
+#   - Homebrew tap (GitHub): webwiebe/homebrew-bugbarn Formula/bugbarn.rb
 #   - GitHub Releases:     attached .deb and .tar.gz files
 #
 # APT publishing is delegated to wiebe-xyz/rapid-root via repository_dispatch —
@@ -323,7 +323,7 @@ jobs:
           AMD64_SHA=$(cat darwin-download/darwin-amd64/bugbarn-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
           ARM64_SHA=$(cat darwin-download/darwin-arm64/bugbarn-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
 
-          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/wiebe-xyz/homebrew-buddy-tools.git tap-repo
+          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/webwiebe/homebrew-bugbarn.git tap-repo
           cd tap-repo
           mkdir -p Formula
 
@@ -360,6 +360,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Update bugbarn formula to ${VERSION}"
+            git commit -m "Update formula to ${VERSION}"
             git push
           fi
