@@ -241,6 +241,71 @@ async function start(): Promise<void> {
   }
   const envLoad = state.currentProject !== "__all" ? loadEnvironments() : (renderEnvSwitcher([]), Promise.resolve());
   await Promise.all([loadProjects(), envLoad, refreshAll()]);
+  initInstallPrompt();
+}
+
+// PWA install prompt — shown once until dismissed, never shown again after
+// the user installs or explicitly dismisses it.
+function initInstallPrompt(): void {
+  if (localStorage.getItem("pwa_prompt_dismissed")) return;
+
+  let deferredPrompt: Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> } | null = null;
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e as typeof deferredPrompt;
+    showInstallBanner(async () => {
+      if (!deferredPrompt) return;
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === "accepted") dismissInstallBanner();
+      deferredPrompt = null;
+    });
+  });
+
+  // Also hide the banner once the app is actually installed
+  window.addEventListener("appinstalled", () => dismissInstallBanner());
+}
+
+function showInstallBanner(onInstall: () => void): void {
+  const existing = document.getElementById("pwa-install-banner");
+  if (existing) return;
+
+  const banner = document.createElement("div");
+  banner.id = "pwa-install-banner";
+  banner.setAttribute("role", "banner");
+  banner.style.cssText = [
+    "position:fixed", "bottom:16px", "right:16px", "z-index:1000",
+    "display:flex", "align-items:center", "gap:10px",
+    "background:#161b22", "border:1px solid #21262d",
+    "border-radius:8px", "padding:12px 14px",
+    "font-size:13px", "color:#c9d1d9",
+    "box-shadow:0 4px 16px rgba(0,0,0,.5)",
+    "max-width:320px",
+  ].join(";");
+
+  banner.innerHTML = `
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d4a054" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+    <span>Install BugBarn as an app</span>
+    <button id="pwa-install-btn" style="background:#d4a054;color:#0f1117;border:none;border-radius:4px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Install</button>
+    <button id="pwa-dismiss-btn" aria-label="Dismiss" style="background:none;border:none;color:#8b949e;cursor:pointer;padding:2px 4px;font-size:16px;line-height:1">×</button>
+  `;
+
+  document.body.appendChild(banner);
+
+  document.getElementById("pwa-install-btn")?.addEventListener("click", () => {
+    onInstall();
+  });
+  document.getElementById("pwa-dismiss-btn")?.addEventListener("click", () => {
+    dismissInstallBanner();
+  });
+}
+
+function dismissInstallBanner(): void {
+  localStorage.setItem("pwa_prompt_dismissed", "1");
+  document.getElementById("pwa-install-banner")?.remove();
 }
 
 function byId<T extends HTMLElement>(id: string): T {

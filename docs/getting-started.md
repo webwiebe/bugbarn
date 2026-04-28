@@ -228,6 +228,16 @@ Once events are flowing:
 
 ---
 
+## 8. Install as an app (PWA)
+
+BugBarn is a Progressive Web App. On Android, Chrome will offer an "Install BugBarn as an app" prompt in the bottom-right corner after you open the UI — tap **Install** to add it to your home screen and launch it in standalone mode. On desktop Chrome and Edge, the install icon appears in the address bar.
+
+The prompt only appears once. If you dismissed it and want to install later, use the browser menu: **Chrome → Add to Home screen** (Android) or **Chrome → Install BugBarn** (desktop).
+
+Service worker updates are versioned by a hash of the compiled assets. New deployments automatically invalidate the old cache — you will always get the latest version within one page load after a deploy.
+
+---
+
 ## Next steps
 
 - [Overview](overview.md) — capabilities, architecture, and what BugBarn is not

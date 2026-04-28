@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <!-- Full-bleed background required for maskable icons -->
+  <rect width="192" height="192" fill="#0f1117"/>
+  <!-- Content kept within the 80% safe zone (centre 154x154) -->
+  <text x="96" y="124" text-anchor="middle"
+        font-family="ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace"
+        font-size="76" font-weight="700" fill="#d4a054">BB</text>
+</svg>
