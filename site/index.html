@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BugBarn — Self-hosted error tracking</title>
+  <meta name="description" content="Error tracking that lives on your infrastructure. Self-hosted, no per-event pricing, your data stays on your servers. Single binary, SQLite, open source." />
+  <meta property="og:title" content="BugBarn — Self-hosted error tracking" />
+  <meta property="og:description" content="Error tracking that lives on your infrastructure. Self-hosted, no per-event pricing, your data stays on your servers." />
+  <meta property="og:type" content="website" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0f1117',
+            surface: '#161b22',
+            border: '#21262d',
+            amber: {
+              muted: '#b5843a',
+              soft: '#d4a054',
+              dim: '#1e1608',
+            },
+            text: {
+              primary: '#e6edf3',
+              secondary: '#8b949e',
+              dim: '#484f58',
+            }
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0f1117;
+      color: #e6edf3;
+    }
+    .code-block {
+      background-color: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 0.5rem;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      padding: 1.25rem 1.5rem;
+      color: #c9d1d9;
+      white-space: pre;
+    }
+    .code-block .comment {
+      color: #484f58;
+    }
+    a { color: inherit; }
+    html { scroll-behavior: smooth; }
+  </style>
+</head>
+<body class="antialiased">
+
+  <!-- Nav -->
+  <nav style="border-bottom: 1px solid #21262d; background-color: #0f1117;">
+    <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+      <a href="/" class="font-mono text-lg font-semibold tracking-tight" style="color: #d4a054;">BugBarn</a>
+      <div class="flex items-center gap-6 text-sm" style="color: #8b949e;">
+        <a href="#features" class="hover:text-white transition-colors">Features</a>
+        <a href="#install" class="hover:text-white transition-colors">Install</a>
+        <a href="https://webwiebe.github.io/bugbarn/" class="hover:text-white transition-colors" target="_blank" rel="noopener">Docs</a>
+        <a href="https://github.com/webwiebe/bugbarn" class="hover:text-white transition-colors flex items-center gap-1.5" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="max-w-5xl mx-auto px-6 pt-24 pb-20">
+    <div class="max-w-2xl">
+      <div class="inline-flex items-center gap-2 text-xs font-mono px-3 py-1 rounded-full mb-8" style="background-color: #1e1608; color: #b5843a; border: 1px solid #2d1f06;">
+        v0.1 — open source · MIT license
+      </div>
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight leading-tight mb-5" style="color: #e6edf3;">
+        Error tracking that lives on<br class="hidden sm:block" /> your infrastructure
+      </h1>
+      <p class="text-lg mb-8" style="color: #8b949e; line-height: 1.7;">
+        Self-hosted, no per-event pricing — your errors, your server, your data.
+      </p>
+      <div class="flex flex-wrap gap-3 mb-8">
+        <a href="#install"
+           class="inline-flex items-center px-5 py-2.5 rounded-md text-sm font-medium transition-colors"
+           style="background-color: #b5843a; color: #0f1117;">
+          Install in 30 seconds
+        </a>
+        <a href="https://github.com/webwiebe/bugbarn"
+           target="_blank" rel="noopener"
+           class="inline-flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium transition-colors"
+           style="background-color: #161b22; color: #e6edf3; border: 1px solid #21262d;">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+          View on GitHub
+        </a>
+      </div>
+      <p class="text-xs font-mono" style="color: #484f58;">
+        Open source &nbsp;·&nbsp; MIT license &nbsp;·&nbsp; SQLite &nbsp;·&nbsp; Single binary
+      </p>
+    </div>
+  </section>
+
+  <!-- Problem callout -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <div class="rounded-lg p-6 sm:p-8" style="background-color: #161b22; border: 1px solid #21262d; border-left: 3px solid #b5843a;">
+      <p class="text-base leading-relaxed" style="color: #c9d1d9;">
+        Error tracking SaaS charges by the event. One bad deploy and your bill spikes.
+        BugBarn runs on your own server, stores everything in SQLite, and costs nothing
+        beyond your infrastructure.
+      </p>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="max-w-5xl mx-auto px-6 pb-24">
+    <h2 class="text-xl font-semibold mb-8 font-mono" style="color: #e6edf3;">
+      <span style="color: #b5843a;">#</span> Features
+    </h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+      <!-- Issue grouping -->
+      <div class="rounded-lg p-5" style="background-color: #161b22; border: 1px solid #21262d;">
+        <div class="mb-3" style="color: #b5843a;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 3h7v7H3z"/>
+            <path d="M14 3h7v7h-7z"/>
+            <path d="M14 14h7v7h-7z"/>
+            <path d="M3 14h7v7H3z"/>
+          </svg>
+        </div>
+        <h3 class="font-semibold text-sm mb-1.5" style="color: #e6edf3;">Issue grouping</h3>
+        <p class="text-sm leading-relaxed" style="color: #8b949e;">
+          Events with the same root cause group into one issue. Fingerprinted by exception type, message, and stack trace. No noise.
+        </p>
+      </div>
+
+      <!-- Alerts -->
+      <div class="rounded-lg p-5" style="background-color: #161b22; border: 1px solid #21262d;">
+        <div class="mb-3" style="color: #b5843a;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        </div>
+        <h3 class="font-semibold text-sm mb-1.5" style="color: #e6edf3;">Alerts</h3>
+        <p class="text-sm leading-relaxed" style="color: #8b949e;">
+          Webhook alerts to Slack, Discord, or any HTTP endpoint. Three conditions: new issue, regression, event count threshold.
+        </p>
+      </div>
+
+      <!-- Weekly digest -->
+      <div class="rounded-lg p-5" style="background-color: #161b22; border: 1px solid #21262d;">
+        <div class="mb-3" style="color: #b5843a;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+        </div>
+        <h3 class="font-semibold text-sm mb-1.5" style="color: #e6edf3;">Weekly digest</h3>
+        <p class="text-sm leading-relaxed" style="color: #8b949e;">
+          One email per week covering all your projects. Stats, top issues, links. Configurable day and hour.
+        </p>
+      </div>
+
+      <!-- Live log stream -->
+      <div class="rounded-lg p-5" style="background-color: #161b22; border: 1px solid #21262d;">
+        <div class="mb-3" style="color: #b5843a;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+        </div>
+        <h3 class="font-semibold text-sm mb-1.5" style="color: #e6edf3;">Live log stream</h3>
+        <p class="text-sm leading-relaxed" style="color: #8b949e;">
+          Ingest structured logs alongside errors. Stream them live in the UI over SSE.
+        </p>
+      </div>
+
+      <!-- Multi-project -->
+      <div class="rounded-lg p-5" style="background-color: #161b22; border: 1px solid #21262d;">
+        <div class="mb-3" style="color: #b5843a;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+          </svg>
+        </div>
+        <h3 class="font-semibold text-sm mb-1.5" style="color: #e6edf3;">Multi-project</h3>
+        <p class="text-sm leading-relaxed" style="color: #8b949e;">
+          One BugBarn instance, multiple projects. Unified "all projects" view with per-project chips.
+        </p>
+      </div>
+
+      <!-- Source maps -->
+      <div class="rounded-lg p-5" style="background-color: #161b22; border: 1px solid #21262d;">
+        <div class="mb-3" style="color: #b5843a;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="16 18 22 12 16 6"/>
+            <polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+        <h3 class="font-semibold text-sm mb-1.5" style="color: #e6edf3;">Source maps</h3>
+        <p class="text-sm leading-relaxed" style="color: #8b949e;">
+          Upload JavaScript source maps to get original file names and line numbers in stack traces.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section id="install" style="border-top: 1px solid #21262d;">
+    <div class="max-w-5xl mx-auto px-6 py-24">
+      <h2 class="text-xl font-semibold mb-2 font-mono" style="color: #e6edf3;">
+        <span style="color: #b5843a;">#</span> Install
+      </h2>
+      <p class="text-sm mb-10" style="color: #8b949e;">Pick the method that fits your setup.</p>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Homebrew -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b5843a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+            <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b949e;">Homebrew</span>
+          </div>
+          <div class="code-block">brew tap webwiebe/bugbarn
+brew install bugbarn</div>
+        </div>
+
+        <!-- APT -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b5843a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b949e;">APT (Debian/Ubuntu)</span>
+          </div>
+          <div class="code-block">curl -fsSL https://webwiebe.nl/apt/key.gpg \
+  | sudo gpg --dearmor \
+    -o /etc/apt/trusted.gpg.d/webwiebe.gpg
+echo "deb https://webwiebe.nl/apt/ stable main" \
+  | sudo tee \
+    /etc/apt/sources.list.d/webwiebe.list
+sudo apt-get update \
+  && sudo apt-get install bugbarn</div>
+        </div>
+
+        <!-- Docker -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b5843a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+              <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+            </svg>
+            <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b949e;">Docker</span>
+          </div>
+          <div class="code-block">docker run -d \
+  -e BUGBARN_API_KEY=your-key \
+  -e BUGBARN_ADMIN_USERNAME=admin \
+  -e BUGBARN_ADMIN_PASSWORD=your-password \
+  -p 8080:8080 \
+  -v bugbarn-data:/var/lib/bugbarn \
+  ghcr.io/webwiebe/bugbarn/service:latest</div>
+        </div>
+
+      </div>
+
+      <p class="mt-8 text-sm" style="color: #8b949e;">
+        Then open <span class="font-mono" style="color: #c9d1d9;">http://localhost:8080</span> — or read the
+        <a href="https://webwiebe.github.io/bugbarn/docs/getting-started"
+           class="underline hover:text-white transition-colors"
+           style="color: #b5843a;"
+           target="_blank" rel="noopener">full getting-started guide</a>
+        for Docker Compose, Kubernetes, and SDK setup.
+      </p>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section style="border-top: 1px solid #21262d;">
+    <div class="max-w-5xl mx-auto px-6 py-24">
+      <h2 class="text-xl font-semibold mb-10 font-mono" style="color: #e6edf3;">
+        <span style="color: #b5843a;">#</span> How it works
+      </h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+
+        <div class="relative">
+          <div class="text-xs font-mono font-bold mb-3 tabular-nums" style="color: #b5843a;">01</div>
+          <p class="text-sm leading-relaxed" style="color: #8b949e;">
+            Your app sends errors to
+            <span class="font-mono text-xs px-1.5 py-0.5 rounded" style="background-color: #161b22; color: #c9d1d9; border: 1px solid #21262d;">POST /api/v1/events</span>
+            — accepted immediately, processed async.
+          </p>
+        </div>
+
+        <div>
+          <div class="text-xs font-mono font-bold mb-3 tabular-nums" style="color: #b5843a;">02</div>
+          <p class="text-sm leading-relaxed" style="color: #8b949e;">
+            BugBarn fingerprints, groups, and stores everything in SQLite on your server.
+          </p>
+        </div>
+
+        <div>
+          <div class="text-xs font-mono font-bold mb-3 tabular-nums" style="color: #b5843a;">03</div>
+          <p class="text-sm leading-relaxed" style="color: #8b949e;">
+            Browse issues, set alerts, and get weekly digests — fully in your own infrastructure.
+          </p>
+        </div>
+
+        <div>
+          <div class="text-xs font-mono font-bold mb-3 tabular-nums" style="color: #b5843a;">04</div>
+          <p class="text-sm leading-relaxed" style="color: #8b949e;">
+            Privacy scrubbing runs automatically — emails, IPs, UUIDs, and secrets are redacted before storage.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer style="border-top: 1px solid #21262d;">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <p class="text-xs font-mono" style="color: #484f58;">
+        BugBarn &nbsp;·&nbsp; MIT License &nbsp;·&nbsp;
+        <a href="https://github.com/webwiebe/bugbarn" class="hover:text-white transition-colors" target="_blank" rel="noopener">github.com/webwiebe/bugbarn</a>
+      </p>
+      <div class="flex items-center gap-5 text-xs" style="color: #484f58;">
+        <a href="https://github.com/webwiebe/bugbarn" class="hover:text-white transition-colors" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://webwiebe.github.io/bugbarn/" class="hover:text-white transition-colors" target="_blank" rel="noopener">Docs</a>
+        <a href="https://webwiebe.github.io/bugbarn/docs/getting-started" class="hover:text-white transition-colors" target="_blank" rel="noopener">Getting Started</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
