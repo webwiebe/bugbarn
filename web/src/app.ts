@@ -239,7 +239,7 @@ async function start(): Promise<void> {
     renderLogin();
     return;
   }
-  const envLoad = state.currentProject !== "__all" ? loadEnvironments() : Promise.resolve();
+  const envLoad = state.currentProject !== "__all" ? loadEnvironments() : (renderEnvSwitcher([]), Promise.resolve());
   await Promise.all([loadProjects(), envLoad, refreshAll()]);
 }
 

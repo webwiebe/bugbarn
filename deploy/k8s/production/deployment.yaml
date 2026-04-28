@@ -31,6 +31,15 @@ spec:
           env:
             - name: BUGBARN_ADDR
               value: :8080
+            - name: BUGBARN_PUBLIC_URL
+              value: https://bugbarn.wiebe.xyz
+            - name: BUGBARN_SELF_ENDPOINT
+              value: https://bugbarn.wiebe.xyz
+            - name: BUGBARN_SELF_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_API_KEY
             - name: BUGBARN_SPOOL_DIR
               value: /var/lib/bugbarn/spool
             - name: BUGBARN_DB_PATH
