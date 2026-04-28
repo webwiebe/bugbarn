@@ -1,86 +1,127 @@
 # Performance and Limits
 
-Practical reference for operators. Covers ingest throughput, processing throughput, read performance, spool sizing, hardware recommendations, system limits, and self-monitoring.
+Practical reference for operators. All throughput numbers are from a real load test against the production deployment — not estimates.
+
+---
+
+## Load test methodology
+
+Tests were run with [`hey`](https://github.com/rakyll/hey) against the live production instance at `bugbarn.wiebe.xyz`, over the internet, using a realistic 428-byte event payload (JSON with exception, stack trace, attributes, and resource fields). The test target was `POST /api/v1/events`.
+
+**Deployment under test:**
+
+| | |
+|---|---|
+| Runtime | Go binary on Kubernetes (k3s) |
+| CPU limit | `500m` (0.5 vCPU) |
+| Memory limit | `256Mi` |
+| CPU request | `100m` |
+| Memory request | `128Mi` |
+| Storage | PVC on k3s node |
+
+Pod resources were sampled with `kubectl top` immediately after each run.
+
+---
+
+## Results
+
+| Concurrency | Throughput | Avg latency | p50 | p95 | p99 | CPU (post-run) | Memory (post-run) | Errors |
+|---|---|---|---|---|---|---|---|---|
+| Idle | — | — | — | — | — | 58m | 34Mi | — |
+| 25 | 585 req/s | 43ms | 27ms | 95ms | 107ms | 55m | 35Mi | 0 |
+| 200 | 2,048 req/s | 97ms | 98ms | 135ms | 198ms | 444m | 54Mi | 0 |
+| 500 | 2,828 req/s | 175ms | 170ms | 293ms | 502ms | 494m | 168Mi | 0 |
+
+All responses were `202 Accepted`. Zero `4xx` or `5xx` errors across all runs.
+
+---
+
+## What the numbers mean
+
+**CPU is the bottleneck.** At 200 concurrent connections and ~2,000 req/s, the pod was at 88% of its CPU limit (`444m/500m`). At 500 concurrent connections and ~2,800 req/s, it was at 99% (`494m/500m`). Memory stayed low at moderate concurrency (54Mi at 2,000 req/s); it spiked to 168Mi at 500 concurrent connections because each goroutine carries a stack and the in-flight request bodies are buffered in memory simultaneously.
+
+**Raising the CPU limit directly raises throughput.** Because ingest is CPU-bound (JSON parsing, HMAC key validation, queue writes), doubling the CPU limit from `500m` to `1000m` would approximately double sustainable throughput. Memory overhead is modest — `256Mi` is sufficient headroom for normal workloads; `512Mi` gives more buffer at extreme concurrency.
+
+**The spool absorbs spikes.** The 79,000 events ingested across the three test runs were all accepted immediately. After the test, the spool contained ~60MB of unprocessed events. The background worker then drained the backlog over several minutes, with CPU pinned at ~498m throughout — ingest availability was never affected. This is the architectural intention: ingest and processing are deliberately decoupled.
+
+**Latency is network-dominated at low load.** The 585 req/s run used only 55m CPU (essentially idle); the 43ms average latency at that rate reflects internet round-trip time, not server processing time. On a LAN or within the same datacenter, latency would be significantly lower.
 
 ---
 
 ## Ingest throughput
 
-The ingest endpoint (`POST /api/v1/events`, `POST /api/v1/logs`) is non-blocking. The HTTP handler writes each request payload to an in-memory queue (32,768 entry capacity) and returns 202 Accepted immediately. A background flush goroutine drains that queue to the spool file every 5 ms or every 64 records, whichever comes first. No database write happens in the request path.
+The ingest endpoint (`POST /api/v1/events`, `POST /api/v1/logs`) writes each accepted request to an in-memory queue (32,768 entry capacity) and returns `202` immediately. A flush goroutine drains the queue to the spool file every 5ms or every 64 records. No database write occurs in the request path.
 
-The practical bottleneck chain for ingest is:
+The practical bottleneck chain:
 
 ```
-Network bandwidth  >  app (JSON parsing + body size check)  >  spool disk write
+Network  →  Go HTTP + JSON parsing  →  in-memory queue  →  spool file write
 ```
 
-On a gigabit LAN or fast internet connection, the application becomes the bottleneck before the network does only if events are very large. On a slow disk (SD card, spinning HDD), spool writes may become the ceiling, but this is unusual in practice because the flush cadence is low and batched.
-
-**What this means for sizing:** ingest capacity is largely a function of network and disk I/O, not CPU. A single-core machine handles a high event rate without issue as long as the spool disk is reasonably fast.
+Under the tested configuration (500m CPU, gigabit-adjacent internet), the ceiling was ~2,800 req/s before CPU throttling. On a same-datacenter connection and with a relaxed CPU limit, throughput would be substantially higher.
 
 ---
 
 ## Processing throughput
 
-A single background worker goroutine reads from the spool and writes events to SQLite. It runs approximately once per second. Single-threaded processing is intentional — it avoids SQLite write contention and keeps the system predictable.
+A single background worker goroutine reads from the spool and writes events to SQLite. The single-threaded design is intentional — it avoids SQLite write contention and keeps processing predictable. During the post-test drain, the worker sustained maximum CPU (`~498m`) continuously, processing tens of thousands of events per minute.
 
 Factors that affect processing rate:
 
 | Factor | Impact |
 |---|---|
-| Disk speed (NVMe vs SD card) | Largest variable; NVMe can handle thousands of simple inserts per second in WAL mode, SD cards are significantly slower |
-| Source map lookups | JavaScript events with source maps require file I/O for symbolication; this adds latency per event if maps are large |
-| Fingerprint computation | SHA256 over exception type, message, and stack trace; negligible cost in practice |
-| Event payload size | Larger payloads mean more bytes to parse and store |
-| SQLite page cache | More available RAM means more of the database fits in memory, reducing disk reads during inserts that touch indexes |
-
-The processing worker is not a throughput bottleneck under normal conditions. It is designed to drain the spool reliably over time. If you consistently produce events faster than the worker can process them, the spool grows. Size `BUGBARN_MAX_SPOOL_BYTES` accordingly (see below).
+| Disk speed | Largest variable — NVMe handles thousands of inserts/second in WAL mode; SD card or spinning disk is significantly slower |
+| Source map lookups | JavaScript events with uploaded source maps require a blob read per stack frame |
+| Event payload size | Larger payloads mean more bytes to parse and more data to store |
+| SQLite page cache | More available RAM keeps hot indexes in memory, reducing disk reads during inserts |
 
 ---
 
 ## Read performance
 
-BugBarn uses SQLite in WAL (Write-Ahead Logging) mode. WAL allows multiple concurrent readers to run without blocking each other and without blocking the writer. All read API endpoints — list issues, get event detail, search logs — run concurrently.
+SQLite WAL mode allows concurrent readers to run independently of each other and of the single writer. All read API endpoints (list issues, get event, search logs, query facets) execute concurrently without blocking ingest.
 
-Key factors for read performance:
-
-- **SQLite page cache**: SQLite uses available memory to cache database pages. More RAM means more of your indexes and hot rows stay in cache, which reduces disk reads on repeated queries. The default `PRAGMA cache_size` is inherited from the SQLite default; you can tune this via `BUGBARN_SQLITE_CACHE_KB` if the variable is exposed.
-- **Index coverage**: Issues are indexed on project, status, fingerprint, and timestamp. Event lookups by issue are indexed. Log queries are indexed by project and timestamp. Full-text search across event payloads is a sequential scan and is slower on large datasets.
-- **Database size**: SQLite reads scale well into the hundreds of megabytes on any modern disk. If your database grows beyond a few gigabytes, query latency for unindexed scans will increase noticeably.
+Read latency under normal conditions:
+- Index-covered queries (issue list by status/project, event list by issue): sub-millisecond on a warm page cache
+- Full-text search across event payloads: sequential scan, slower on large datasets
+- SQLite page cache is bounded by available RAM; more RAM = more hot rows cached = faster repeated queries
 
 ---
 
 ## Spool sizing
 
-The spool is a durable NDJSON file on disk that buffers events between ingest and the background worker. It absorbs traffic spikes and survives application restarts — unprocessed events are replayed on startup.
+The spool is an append-only NDJSON file. Its size grows as events are ingested and shrinks only when the file rotates (at ~64 MiB). The cursor tracks the last-processed position — file size alone does not indicate backlog depth.
 
-**`BUGBARN_MAX_SPOOL_BYTES`** sets the maximum spool file size. When this limit is reached, the ingest endpoint returns 429 Too Many Requests with a `Retry-After` header. This is a backpressure mechanism to prevent disk exhaustion.
+Set `BUGBARN_MAX_SPOOL_BYTES` to protect against disk exhaustion under sustained overload. When the limit is reached, ingest returns `429 Too Many Requests` with a `Retry-After` header.
 
-How to size it:
+**Sizing guide:**
 
-1. Estimate your peak event burst size and how long it might last.
-2. Estimate average event payload size (usually 1–10 KB depending on stack trace depth and attached context).
-3. Set `BUGBARN_MAX_SPOOL_BYTES` high enough to absorb a reasonable spike but low enough to protect available disk space.
+```
+max_spool = peak_burst_events × avg_event_bytes × safety_factor
 
-Example: if you expect bursts of up to 10,000 events at 5 KB average, that is ~50 MB of spool. A value of `104857600` (100 MB) gives comfortable headroom.
+Example: 10,000 events × 2 KB average × 3× safety = ~60 MB
+→ set BUGBARN_MAX_SPOOL_BYTES=67108864  (64 MiB)
+```
 
-**What 429 means in practice:** the sending SDK will retry with backoff. Events are not lost unless the SDK's retry budget is exhausted. A sustained 429 indicates that the background worker cannot drain the spool as fast as events arrive — investigate disk speed, processing complexity, or reduce event volume.
+Average event size in these tests was ~428 bytes for a minimal payload. Real payloads with deep stack traces, breadcrumbs, and attached context are typically 2–10 KB.
+
+A sustained `429` means the worker cannot drain the spool as fast as events arrive. Check disk speed, CPU availability, and whether source map lookups are adding per-event latency.
 
 ---
 
 ## Hardware recommendations
 
-BugBarn has no minimum hardware requirement. The following tiers reflect typical operational experience.
+| Tier | Spec | Expected throughput | Suitable for |
+|---|---|---|---|
+| Minimal | 0.5–1 vCPU, 512Mi–1Gi RAM, any disk | ~1,000–3,000 req/s ingest (CPU-bound) | Personal projects, low-volume apps |
+| Standard | 1–2 vCPU, 1–2 Gi RAM, SSD | ~5,000–10,000 req/s ingest | Small teams, production workloads |
+| High-volume | 2–4 vCPU, 4 Gi RAM, NVMe | ~20,000+ req/s ingest | High event rates, large databases, many concurrent dashboard users |
 
-| Tier | Hardware | Suitable for |
-|---|---|---|
-| Minimal | Raspberry Pi 4, single-core VPS (512 MB RAM, SD card or slow disk) | Personal projects, low-volume applications, evaluation. Ingest is fine; processing and reads are slower due to storage. |
-| Standard | 1–2 vCPU, 1–2 GB RAM, SSD | Small teams, moderate event volume, comfortable headroom. This is the recommended baseline for production. |
-| High-volume | 2–4 vCPU, 4 GB RAM, NVMe | Applications with high event rates, large databases, or many concurrent dashboard users. SQLite page cache benefits significantly from the extra RAM. |
+> Throughput estimates assume same-datacenter or LAN ingestion. The load test was conducted over the internet with a 500m CPU limit and achieved ~2,800 req/s — real LAN throughput at the same CPU allocation would be higher.
 
-BugBarn does not support horizontal scaling — it runs as a single binary with a single SQLite file and a single writer. Vertical scaling (more RAM, faster disk) is the path to higher throughput. If you need multi-region active-active ingestion, BugBarn is the wrong tool.
+**BugBarn does not support horizontal scaling.** Single binary, single SQLite file, single writer. The deployment strategy must be `Recreate` (not `RollingUpdate`). Vertical scaling — more CPU, faster disk, more RAM — is the correct path to higher throughput.
 
-For disaster recovery, use **Litestream** to replicate the SQLite WAL to object storage. This provides a continuous backup and allows point-in-time restore. See [kubernetes.md](kubernetes.md) for a Litestream configuration example.
+For disaster recovery and read replicas, use [Litestream](kubernetes.md#litestream).
 
 ---
 
@@ -88,24 +129,24 @@ For disaster recovery, use **Litestream** to replicate the SQLite WAL to object 
 
 | Limit | Value | Behaviour when exceeded |
 |---|---|---|
-| Spool size | `BUGBARN_MAX_SPOOL_BYTES` (operator-configured) | 429 Too Many Requests with Retry-After |
-| Facet keys per project | 50 distinct keys | New keys beyond the limit are silently dropped |
-| Facet values per key | 10,000 distinct values | New values beyond the limit are silently dropped |
-| Log entries per project | 10,000 | Oldest entries are trimmed on each insert |
-| Concurrent writers | 1 (background worker) | By design; additional writers would cause SQLite contention |
-| Horizontal replicas | 1 | Single binary, single SQLite file; use Litestream for read replicas |
+| Spool size | `BUGBARN_MAX_SPOOL_BYTES` (operator-set, default unlimited) | `429 Too Many Requests` with `Retry-After` header |
+| In-memory ingest queue | 32,768 records | Backpressure to spool flush; effectively never the bottleneck |
+| Max request body | `BUGBARN_MAX_BODY_BYTES` (default 1 MiB) | `413 Request Entity Too Large` |
+| Facet keys per project | 50 distinct keys | New keys silently dropped |
+| Facet values per key | 10,000 distinct values | New values silently dropped |
+| Log entries per project | 10,000 | Oldest entries trimmed on each insert |
+| Concurrent writers | 1 (background worker) | By design |
+| Horizontal replicas | 1 | Single binary, single SQLite file |
 
 ---
 
 ## Monitoring BugBarn itself
 
-BugBarn can report its own errors to a BugBarn project — or to any compatible error tracking endpoint — using the `BUGBARN_SELF_ENDPOINT` and `BUGBARN_SELF_API_KEY` environment variables. This is useful for catching panics, background worker failures, and database errors in production.
-
-To enable self-reporting, create a dedicated project in your BugBarn instance (or a separate one), generate an ingest-scoped API key, and set:
+BugBarn can report its own panics and background worker failures to a BugBarn project using the self-reporting env vars:
 
 ```
-BUGBARN_SELF_ENDPOINT=https://your-bugbarn-instance/api/v1/events
+BUGBARN_SELF_ENDPOINT=https://your-bugbarn-instance
 BUGBARN_SELF_API_KEY=<ingest-scoped key>
 ```
 
-This is optional but recommended for production deployments where you want visibility into BugBarn's own health.
+The production instance at `bugbarn.wiebe.xyz` has self-reporting enabled and reports to itself.

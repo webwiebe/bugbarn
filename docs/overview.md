@@ -43,13 +43,24 @@ BugBarn stores everything locally in a SQLite file. Events are accepted asynchro
 
 BugBarn is designed to stay out of the way of your application. The ingest path is non-blocking by design: when your SDK sends an error event, the HTTP handler writes it to an in-memory queue and returns 202 Accepted immediately — it never touches the database during that request. A background flush writes batches to a durable spool file on disk every 5 milliseconds or every 64 records, whichever comes first. Your application's error-reporting call completes in microseconds regardless of what the database is doing.
 
-Go's goroutine model means the HTTP server handles thousands of concurrent connections with negligible overhead and no configuration required. Each connection gets its own lightweight goroutine; the runtime multiplexes these across available CPU cores automatically. Ingest throughput is limited by network bandwidth and JSON parsing speed — on modest hardware such as a Raspberry Pi 4 or a single-core VPS, the ingest path can saturate a gigabit network link before the application becomes the bottleneck.
+Go's goroutine model means the HTTP server handles thousands of concurrent connections with negligible overhead. Each connection gets its own lightweight goroutine; the runtime multiplexes these across available CPU cores automatically.
 
-The spool acts as a shock absorber. If your application fires a burst of thousands of events in a short window, they are accepted immediately and queued to disk. A single background worker then reads the spool and processes events at its own pace — normalising, fingerprinting, and writing to SQLite — without any of that work affecting ingest latency. This deliberately single-threaded design avoids write contention on SQLite. SQLite in WAL (Write-Ahead Logging) mode allows all read API endpoints to run concurrently and independently while the writer is active, so the dashboard stays fast even during heavy ingestion.
+**Load test results** — tested against the production deployment (k8s, `500m` CPU limit, `256Mi` memory limit) over the internet using `hey`:
 
-When limits are reached, BugBarn degrades gracefully. If the spool grows beyond the configured maximum size (`BUGBARN_MAX_SPOOL_BYTES`), ingest returns 429 Too Many Requests with a `Retry-After` header rather than writing to disk indefinitely. Log entries are trimmed to the most recent 10,000 per project on each insert. Facet keys and values beyond the cardinality limits are silently dropped rather than causing errors.
+| Concurrency | Throughput | Avg latency | p99 latency | CPU | Memory |
+|---|---|---|---|---|---|
+| Idle | — | — | — | 58m | 34Mi |
+| 25 | ~585 req/s | 43ms | 107ms | 55m | 35Mi |
+| 200 | ~2,050 req/s | 97ms | 198ms | 444m | 54Mi |
+| 500 | ~2,830 req/s | 175ms | 502ms | 494m | 168Mi |
 
-BugBarn runs comfortably on a Raspberry Pi or a $5 VPS; it scales up with the hardware it runs on. See [Performance and limits](deployment/performance.md) for hardware recommendations and detailed throughput guidance.
+All responses were `202` — zero errors across all tests. **CPU was the bottleneck** in every run, not memory or disk. At 500 concurrent connections the pod was at 99% of its CPU limit (`494m/500m`); raising the limit would proportionally increase throughput. Memory only spiked materially at extreme concurrency (500 goroutines × stack allocations + buffered request bodies).
+
+The spool acts as a shock absorber. The 79,000 events ingested during the test were accepted immediately; the background worker then drained the spool at maximum CPU rate over the following minutes — none of that backlog processing affected ingest availability. This is the spool's purpose: decouple ingest throughput from storage throughput.
+
+When limits are reached, BugBarn degrades gracefully. If the spool grows beyond the configured maximum size (`BUGBARN_MAX_SPOOL_BYTES`), ingest returns `429 Too Many Requests` with a `Retry-After` header. Log entries are trimmed to the most recent 10,000 per project. Facet keys and values beyond the cardinality limits are silently dropped.
+
+See [Performance and limits](deployment/performance.md) for hardware recommendations and detailed guidance.
 
 ---
 
