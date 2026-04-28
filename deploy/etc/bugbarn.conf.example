@@ -1,0 +1,69 @@
+# BugBarn configuration file
+# Copy this file to /etc/bugbarn/bugbarn.conf and edit as needed.
+# For user-specific installs, place it at ~/.config/bugbarn/bugbarn.conf.
+#
+# Environment variables already set in the process always take precedence
+# over values in this file. The systemd unit reads this file via EnvironmentFile.
+#
+# Lines starting with # are comments. Values may optionally be quoted.
+
+# Address to listen on (default: :8080)
+#BUGBARN_ADDR=:8080
+
+# Path to the SQLite database file (default: .data/bugbarn.db)
+# When running as a system service the recommended path is:
+BUGBARN_DB_PATH=/var/lib/bugbarn/bugbarn.db
+
+# Spool directory for durable pre-processing queue (default: .data/spool)
+BUGBARN_SPOOL_DIR=/var/lib/bugbarn/spool
+
+# Public URL used in alert notifications and digest emails
+#BUGBARN_PUBLIC_URL=https://bugs.example.com
+
+# Admin credentials for the web UI (use BUGBARN_ADMIN_PASSWORD_BCRYPT in production)
+#BUGBARN_ADMIN_USERNAME=admin
+#BUGBARN_ADMIN_PASSWORD=changeme
+#BUGBARN_ADMIN_PASSWORD_BCRYPT=
+
+# Session secret — generate with: openssl rand -hex 32
+#BUGBARN_SESSION_SECRET=
+
+# Allowed CORS origins, comma-separated (default: same-origin only)
+#BUGBARN_ALLOWED_ORIGINS=https://app.example.com
+
+# Maximum ingest body size in bytes (default: 1048576 = 1 MiB)
+#BUGBARN_MAX_BODY_BYTES=1048576
+
+# Maximum spool size in bytes; 0 = unlimited (default: 0)
+#BUGBARN_MAX_SPOOL_BYTES=0
+
+# Session TTL in seconds (default: 43200 = 12 hours)
+#BUGBARN_SESSION_TTL_SECONDS=43200
+
+# --- Digest / alert delivery ---
+
+# Weekly digest: day of week 0=Sunday … 6=Saturday (default: 0)
+#BUGBARN_DIGEST_DAY=0
+
+# Hour of day to send the digest, 0–23 (default: 8)
+#BUGBARN_DIGEST_HOUR=8
+
+# Recipient email address for the weekly digest
+#BUGBARN_DIGEST_TO=you@example.com
+
+# Set to "true" to enable email delivery for the digest
+#BUGBARN_DIGEST_ENABLED=false
+
+# Webhook URL to POST digest JSON to (optional)
+#BUGBARN_DIGEST_WEBHOOK_URL=
+
+# SMTP settings for email delivery
+#SMTP_HOST=smtp.example.com
+#SMTP_PORT=587
+#SMTP_USER=bugbarn@example.com
+#SMTP_PASS=
+#SMTP_FROM=bugbarn@example.com
+
+# --- Self-reporting (send errors to another BugBarn instance) ---
+#BUGBARN_SELF_ENDPOINT=https://bugs.example.com
+#BUGBARN_SELF_API_KEY=

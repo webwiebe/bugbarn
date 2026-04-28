@@ -1,0 +1,364 @@
+name: Binary Release
+
+# Builds and publishes bugbarn binaries on every push to main.
+# Publishes to:
+#   - APT repository:      https://webwiebe.nl/apt/  (via rapid-root centralized workflow)
+#   - Homebrew tap (MinIO): https://webwiebe.nl/brew/bugbarn-darwin-*.tar.gz
+#   - Homebrew tap (GitHub): wiebe-xyz/homebrew-buddy-tools Formula/bugbarn.rb
+#   - GitHub Releases:     attached .deb and .tar.gz files
+#
+# APT publishing is delegated to wiebe-xyz/rapid-root via repository_dispatch —
+# no MinIO credentials or GPG keys needed here for APT.
+# Brew tarballs are uploaded directly to MinIO (bucket: webwiebe-apt-repository,
+# under the brew/ prefix). No --delete flag is ever used, so other apps' files
+# in the shared bucket are never touched.
+#
+# Required GitHub secrets:
+#   RAPID_ROOT_DISPATCH_TOKEN  — PAT with repo scope on wiebe-xyz/rapid-root
+#   MINIO_ACCESS_KEY           — MinIO user: webwiebe-apt
+#   MINIO_SECRET_KEY           — MinIO password for webwiebe-apt
+#   MINIO_ENDPOINT             — https://s3.wiebe.xyz
+#   MINIO_BUCKET               — webwiebe-apt-repository
+#   TAP_GITHUB_TOKEN           — PAT with repo scope on wiebe-xyz/homebrew-buddy-tools
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next_version.outputs.version }}
+      version_num: ${{ steps.next_version.outputs.version_num }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          echo "Latest tag: ${LATEST_TAG}"
+
+      - name: Calculate next version
+        id: next_version
+        run: |
+          LATEST_TAG=${{ steps.latest_tag.outputs.tag }}
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          PATCH=$((PATCH + 1))
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "version_num=${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
+          echo "Next version: ${NEW_VERSION}"
+
+      - name: Create tag
+        run: |
+          NEW_VERSION=${{ steps.next_version.outputs.version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${NEW_VERSION}" -m "Release ${NEW_VERSION}"
+          git push origin "${NEW_VERSION}"
+
+  # ---------------------------------------------------------------------------
+  # Linux: build binaries and .deb packages
+  # ---------------------------------------------------------------------------
+  build-debs:
+    name: Build .deb Packages (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: tag
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Build binary
+        env:
+          GOOS: linux
+          VERSION: ${{ needs.tag.outputs.version_num }}
+        run: |
+          GOARCH="${{ matrix.arch }}"
+          export GOARCH
+          BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+          LDFLAGS="-X main.Version=v${VERSION} -X main.BuildTime=${BUILD_TIME}"
+          mkdir -p dist
+          go build -ldflags "${LDFLAGS}" -o dist/bugbarn-linux-${GOARCH} ./cmd/bugbarn
+
+      - name: Build .deb package
+        env:
+          VERSION: ${{ needs.tag.outputs.version_num }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p debs
+          envsubst < nfpm-bugbarn.yaml > nfpm-bugbarn-processed.yaml
+          nfpm package \
+            --config nfpm-bugbarn-processed.yaml \
+            --packager deb \
+            --target debs/
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debs-${{ matrix.arch }}
+          path: debs/*.deb
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # macOS: build versioned tarballs
+  # ---------------------------------------------------------------------------
+  build-darwin-tarballs:
+    name: Build macOS Tarballs (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: tag
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Build macOS binary
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.tag.outputs.version_num }}
+        run: |
+          BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+          LDFLAGS="-X main.Version=v${VERSION} -X main.BuildTime=${BUILD_TIME}"
+          mkdir -p dist
+          go build -ldflags "${LDFLAGS}" -o dist/bugbarn ./cmd/bugbarn
+          TARBALL="bugbarn-darwin-${{ matrix.arch }}-${VERSION}.tar.gz"
+          tar -czvf dist/${TARBALL} -C dist bugbarn
+          rm dist/bugbarn
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          for f in *.tar.gz; do sha256sum "$f" > "${f}.sha256"; done
+
+      - name: Upload tarball artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: darwin-${{ matrix.arch }}
+          path: dist/*.tar.gz*
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Attach release assets to GitHub Release, then trigger rapid-root APT update
+  # ---------------------------------------------------------------------------
+  attach-debs-to-release:
+    name: Attach .deb to Release
+    runs-on: ubuntu-latest
+    needs: [tag, build-debs]
+    steps:
+      - name: Download all .deb artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: debs-download
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find debs-download -name "*.deb" -exec cp {} release/ \;
+          cd release && sha256sum *.deb > checksums-deb.txt
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.version }}
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger rapid-root APT repository update
+        env:
+          GH_TOKEN: ${{ secrets.RAPID_ROOT_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/wiebe-xyz/rapid-root/dispatches \
+            --method POST \
+            --field event_type=apt-package-update \
+            --field 'client_payload[repo]=wiebe-xyz/bugbarn' \
+            --field 'client_payload[tag]=${{ needs.tag.outputs.version }}' \
+            --field 'client_payload[asset_pattern]=*.deb'
+
+  attach-tarballs-to-release:
+    name: Attach macOS Tarballs to Release
+    runs-on: ubuntu-latest
+    needs: [tag, build-darwin-tarballs]
+    steps:
+      - name: Download all darwin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: darwin-*
+          path: darwin-download
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find darwin-download -name "*.tar.gz" -exec cp {} release/ \;
+          find darwin-download -name "*.sha256" -exec cp {} release/ \;
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.version }}
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # macOS: publish tarballs + formula to MinIO and GitHub Homebrew tap
+  # ---------------------------------------------------------------------------
+  update-brew-repo:
+    name: Update Homebrew Tap (MinIO)
+    runs-on: ubuntu-latest
+    needs: [tag, build-darwin-tarballs]
+    steps:
+      - name: Download all darwin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: darwin-*
+          path: darwin-download
+
+      - name: Prepare brew repository
+        env:
+          VERSION: ${{ needs.tag.outputs.version_num }}
+        run: |
+          mkdir -p brew-repo/Formula
+          find darwin-download -name "*.tar.gz" -exec cp {} brew-repo/ \;
+          find darwin-download -name "*.sha256" -exec cp {} brew-repo/ \;
+
+          AMD64_SHA=$(cat brew-repo/bugbarn-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          ARM64_SHA=$(cat brew-repo/bugbarn-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+
+          cat > brew-repo/Formula/bugbarn.rb << EOF
+          class Bugbarn < Formula
+            desc "Self-hosted error tracking server"
+            homepage "https://github.com/wiebe-xyz/bugbarn"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://webwiebe.nl/brew/bugbarn-darwin-amd64-${VERSION}.tar.gz"
+                sha256 "${AMD64_SHA}"
+              elsif Hardware::CPU.arm?
+                url "https://webwiebe.nl/brew/bugbarn-darwin-arm64-${VERSION}.tar.gz"
+                sha256 "${ARM64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "bugbarn"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/bugbarn version")
+            end
+          end
+          EOF
+
+      - name: Deploy to MinIO (brew/ prefix — only adds bugbarn files)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+        run: |
+          pip install awscli
+          # No --delete: existing files from other apps are never touched.
+          aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
+            brew-repo/ \
+            s3://${MINIO_BUCKET}/brew/ \
+            --cache-control "public, max-age=3600, must-revalidate"
+
+  update-homebrew-tap:
+    name: Update GitHub Tap Repository
+    runs-on: ubuntu-latest
+    needs: [tag, update-brew-repo]
+    steps:
+      - name: Download darwin artifacts for checksums
+        uses: actions/download-artifact@v4
+        with:
+          pattern: darwin-*
+          path: darwin-download
+
+      - name: Generate formula and push to tap
+        env:
+          VERSION: ${{ needs.tag.outputs.version_num }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$TAP_GITHUB_TOKEN" ]; then
+            echo "ERROR: TAP_GITHUB_TOKEN secret is required"
+            exit 1
+          fi
+
+          AMD64_SHA=$(cat darwin-download/darwin-amd64/bugbarn-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          ARM64_SHA=$(cat darwin-download/darwin-arm64/bugbarn-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+
+          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/wiebe-xyz/homebrew-buddy-tools.git tap-repo
+          cd tap-repo
+          mkdir -p Formula
+
+          cat > Formula/bugbarn.rb << EOF
+          class Bugbarn < Formula
+            desc "Self-hosted error tracking server"
+            homepage "https://github.com/wiebe-xyz/bugbarn"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://webwiebe.nl/brew/bugbarn-darwin-amd64-${VERSION}.tar.gz"
+                sha256 "${AMD64_SHA}"
+              elsif Hardware::CPU.arm?
+                url "https://webwiebe.nl/brew/bugbarn-darwin-arm64-${VERSION}.tar.gz"
+                sha256 "${ARM64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "bugbarn"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/bugbarn version")
+            end
+          end
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/bugbarn.rb
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update bugbarn formula to ${VERSION}"
+            git push
+          fi

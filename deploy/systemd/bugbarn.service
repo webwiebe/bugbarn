@@ -1,0 +1,21 @@
+[Unit]
+Description=BugBarn error tracking service
+Documentation=https://github.com/wiebe-xyz/bugbarn
+After=network.target
+
+[Service]
+Type=simple
+User=bugbarn
+Group=bugbarn
+# The leading '-' means systemd won't fail if the file doesn't exist.
+EnvironmentFile=-/etc/bugbarn/bugbarn.conf
+ExecStart=/usr/bin/bugbarn
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bugbarn
+WorkingDirectory=/var/lib/bugbarn
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,43 @@
+name: bugbarn
+arch: "${GOARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: "Wiebe Zweers <bugbarn@wiebe.xyz>"
+description: |
+  BugBarn - Self-hosted error tracking server.
+  Lightweight error aggregation, alerting and a web UI.
+vendor: "BugBarn"
+homepage: "https://github.com/wiebe-xyz/bugbarn"
+license: "MIT"
+
+contents:
+  - src: ./dist/bugbarn-linux-${GOARCH}
+    dst: /usr/bin/bugbarn
+    file_info:
+      mode: 0755
+  - src: ./deploy/systemd/bugbarn.service
+    dst: /lib/systemd/system/bugbarn.service
+    file_info:
+      mode: 0644
+  - src: ./deploy/etc/bugbarn.conf.example
+    dst: /etc/bugbarn/bugbarn.conf.example
+    file_info:
+      mode: 0644
+  # Ensure directories exist with correct permissions.
+  - dst: /var/lib/bugbarn
+    type: dir
+    file_info:
+      mode: 0750
+      owner: bugbarn
+      group: bugbarn
+  - dst: /etc/bugbarn
+    type: dir
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: ./deploy/deb/postinstall.sh
+  preremove: ./deploy/deb/preremove.sh
+
+deb:
+  compression: gzip

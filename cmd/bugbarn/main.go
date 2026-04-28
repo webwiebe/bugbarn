@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -36,6 +38,12 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
+// Version and BuildTime are injected at build time via -ldflags.
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+)
+
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 func main() {
@@ -50,6 +58,9 @@ func run() error {
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "version", "--version", "-v":
+			fmt.Printf("bugbarn %s (built %s)\n", Version, BuildTime)
+			return nil
 		case "worker-once":
 			return runWorkerOnce(cfg)
 		case "user":
@@ -169,6 +180,8 @@ type config struct {
 }
 
 func loadConfig() config {
+	loadConfigFiles()
+
 	cfg := config{
 		addr:                getenv("BUGBARN_ADDR", ":8080"),
 		apiKey:              os.Getenv("BUGBARN_API_KEY"),
@@ -561,4 +574,58 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// loadConfigFiles applies KEY=VALUE config files to the process environment.
+// Files are read in order: system-wide first, then user-specific. Values from
+// later files win over earlier ones, but env vars already set in the environment
+// always take precedence over values in any file.
+//
+// Supported locations:
+//   - /etc/bugbarn/bugbarn.conf          (Linux system-wide, read by systemd EnvironmentFile)
+//   - ~/.config/bugbarn/bugbarn.conf     (XDG user config, Linux + macOS)
+func loadConfigFiles() {
+	candidates := []string{
+		"/etc/bugbarn/bugbarn.conf",
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, filepath.Join(home, ".config", "bugbarn", "bugbarn.conf"))
+	}
+	for _, path := range candidates {
+		if err := applyConfigFile(path); err != nil && !os.IsNotExist(err) {
+			log.Printf("warning: reading config file %s: %v", path, err)
+		}
+	}
+}
+
+// applyConfigFile reads KEY=VALUE pairs and sets them as environment variables
+// for keys not already set. Blank lines and # comments are ignored.
+// Values may optionally be wrapped in single or double quotes.
+func applyConfigFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			val = val[1 : len(val)-1]
+		}
+		if key != "" && os.Getenv(key) == "" {
+			os.Setenv(key, val) //nolint:errcheck
+		}
+	}
+	return scanner.Err()
 }
