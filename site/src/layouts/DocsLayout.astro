@@ -1,0 +1,263 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import Analytics from '../components/Analytics.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  currentSlug: string;
+}
+
+const { title, description = '', currentSlug } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+type NavItem = { label: string; slug: string };
+type NavSection = { section: string; items: NavItem[] };
+
+const nav: NavSection[] = [
+  {
+    section: 'Getting Started',
+    items: [
+      { label: 'Getting Started', slug: 'getting-started' },
+      { label: 'Overview',        slug: 'overview' },
+    ],
+  },
+  {
+    section: 'Architecture',
+    items: [
+      { label: 'Overview',        slug: 'architecture/overview' },
+      { label: 'Storage',         slug: 'architecture/storage' },
+      { label: 'Authentication',  slug: 'architecture/authentication' },
+    ],
+  },
+  {
+    section: 'Features',
+    items: [
+      { label: 'Issues',  slug: 'features/issues' },
+      { label: 'Alerts',  slug: 'features/alerts' },
+      { label: 'Digest',  slug: 'features/digest' },
+      { label: 'Logs',    slug: 'features/logs' },
+    ],
+  },
+  {
+    section: 'SDKs',
+    items: [
+      { label: 'Overview',       slug: 'sdks/overview' },
+      { label: 'Go SDK',         slug: 'sdks/go' },
+      { label: 'HTTP (any lang)', slug: 'sdks/http' },
+    ],
+  },
+  {
+    section: 'Deployment',
+    items: [
+      { label: 'Configuration', slug: 'deployment/configuration' },
+      { label: 'Kubernetes',    slug: 'deployment/kubernetes' },
+    ],
+  },
+  {
+    section: 'Reference',
+    items: [
+      { label: 'API Reference', slug: 'api' },
+    ],
+  },
+];
+---
+<!doctype html>
+<html lang="en" class="bg-[#0f1117] text-gray-100">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title} — BugBarn Docs</title>
+    <meta name="description" content={description} />
+    <Analytics />
+    <style>
+      /* Prose styles for rendered markdown */
+      .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+        color: #e6edf3;
+        font-weight: 600;
+        margin-top: 1.75em;
+        margin-bottom: 0.5em;
+        line-height: 1.3;
+      }
+      .prose h1 { font-size: 1.75rem; margin-top: 0; }
+      .prose h2 { font-size: 1.25rem; padding-bottom: 0.4em; border-bottom: 1px solid #21262d; }
+      .prose h3 { font-size: 1.05rem; }
+      .prose p { color: #8b949e; margin-bottom: 1em; line-height: 1.75; }
+      .prose ul, .prose ol { color: #8b949e; padding-left: 1.5rem; margin-bottom: 1em; }
+      .prose li { margin-bottom: 0.25em; line-height: 1.7; }
+      .prose a { color: #d4a054; text-decoration: underline; }
+      .prose a:hover { color: #e8b870; }
+      .prose strong { color: #c9d1d9; }
+      .prose code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        background-color: #161b22;
+        border: 1px solid #21262d;
+        border-radius: 4px;
+        padding: 0.15em 0.4em;
+        font-size: 0.85em;
+        color: #c9d1d9;
+      }
+      .prose pre {
+        background-color: #0d1117;
+        border: 1px solid #21262d;
+        border-radius: 8px;
+        padding: 1.25rem 1.5rem;
+        overflow-x: auto;
+        margin-bottom: 1.25em;
+      }
+      .prose pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 0.85rem;
+        color: #c9d1d9;
+      }
+      .prose blockquote {
+        border-left: 3px solid #d4a054;
+        padding-left: 1rem;
+        margin-left: 0;
+        margin-bottom: 1em;
+        color: #8b949e;
+        font-style: italic;
+      }
+      .prose hr {
+        border: none;
+        border-top: 1px solid #21262d;
+        margin: 2em 0;
+      }
+      .prose table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 1.25em;
+        font-size: 0.9rem;
+      }
+      .prose th {
+        color: #c9d1d9;
+        text-align: left;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 2px solid #21262d;
+      }
+      .prose td {
+        color: #8b949e;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid #21262d;
+      }
+    </style>
+  </head>
+  <body class="antialiased" style="background-color: #0f1117; color: #e6edf3;">
+
+    <!-- Top nav bar -->
+    <nav style="border-bottom: 1px solid #21262d; background-color: #0f1117; position: sticky; top: 0; z-index: 50;">
+      <div class="max-w-screen-xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-6">
+          <a href={`${base}/`} class="font-mono text-lg font-semibold tracking-tight" style="color: #d4a054;">BugBarn</a>
+          <span class="text-sm" style="color: #484f58;">/</span>
+          <span class="text-sm font-mono" style="color: #8b949e;">docs</span>
+        </div>
+        <div class="flex items-center gap-6 text-sm" style="color: #8b949e;">
+          <a href={`${base}/`} class="hover:text-white transition-colors">Home</a>
+          <a href="https://github.com/webwiebe/bugbarn" class="hover:text-white transition-colors flex items-center gap-1.5" target="_blank" rel="noopener">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+            GitHub
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Mobile sidebar toggle -->
+    <div class="lg:hidden" style="border-bottom: 1px solid #21262d; background-color: #0f1117;">
+      <button
+        id="sidebar-toggle"
+        class="w-full px-6 py-3 flex items-center gap-2 text-sm text-left"
+        style="color: #8b949e;"
+        aria-expanded="false"
+        aria-controls="sidebar"
+      >
+        <svg id="icon-open" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <line x1="2" y1="4" x2="14" y2="4"/>
+          <line x1="2" y1="8" x2="14" y2="8"/>
+          <line x1="2" y1="12" x2="14" y2="12"/>
+        </svg>
+        <svg id="icon-close" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none;">
+          <line x1="2" y1="2" x2="14" y2="14"/>
+          <line x1="14" y1="2" x2="2" y2="14"/>
+        </svg>
+        Navigation
+      </button>
+    </div>
+
+    <div class="max-w-screen-xl mx-auto flex">
+
+      <!-- Sidebar -->
+      <aside
+        id="sidebar"
+        class="hidden lg:block"
+        style="width: 240px; flex-shrink: 0; border-right: 1px solid #21262d; min-height: calc(100vh - 3.5rem); padding: 2rem 0;"
+      >
+        <nav aria-label="Documentation navigation">
+          {nav.map(({ section, items }) => (
+            <div style="margin-bottom: 1.75rem; padding: 0 1.25rem;">
+              <p style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #484f58; margin-bottom: 0.5rem; font-family: ui-monospace, monospace;">
+                {section}
+              </p>
+              <ul style="list-style: none; margin: 0; padding: 0;">
+                {items.map(({ label, slug }) => {
+                  const isActive = currentSlug === slug;
+                  return (
+                    <li>
+                      <a
+                        href={`${base}/docs/${slug}`}
+                        style={`display: block; padding: 0.3rem 0.5rem; border-radius: 5px; font-size: 0.875rem; text-decoration: none; transition: color 0.15s, background 0.15s; ${
+                          isActive
+                            ? 'color: #d4a054; background-color: rgba(212,160,84,0.1); font-weight: 500;'
+                            : 'color: #8b949e;'
+                        }`}
+                      >
+                        {label}
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <!-- Main content -->
+      <main style="flex: 1; min-width: 0; padding: 2.5rem 2rem 4rem;">
+        <article class="prose" style="max-width: 720px;">
+          <slot />
+        </article>
+      </main>
+
+    </div>
+
+    <script>
+      const toggle = document.getElementById('sidebar-toggle');
+      const sidebar = document.getElementById('sidebar');
+      const iconOpen = document.getElementById('icon-open');
+      const iconClose = document.getElementById('icon-close');
+
+      toggle?.addEventListener('click', () => {
+        const isOpen = sidebar?.classList.contains('block') && !sidebar.classList.contains('lg:block');
+        if (isOpen) {
+          sidebar?.classList.remove('block');
+          sidebar?.classList.add('hidden');
+          if (iconOpen) iconOpen.style.display = '';
+          if (iconClose) iconClose.style.display = 'none';
+          toggle.setAttribute('aria-expanded', 'false');
+        } else {
+          sidebar?.classList.remove('hidden');
+          sidebar?.classList.add('block');
+          if (iconOpen) iconOpen.style.display = 'none';
+          if (iconClose) iconClose.style.display = '';
+          toggle.setAttribute('aria-expanded', 'true');
+        }
+      });
+    </script>
+
+  </body>
+</html>

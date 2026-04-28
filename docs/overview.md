@@ -39,6 +39,20 @@ BugBarn stores everything locally in a SQLite file. Events are accepted asynchro
 
 ---
 
+## Performance
+
+BugBarn is designed to stay out of the way of your application. The ingest path is non-blocking by design: when your SDK sends an error event, the HTTP handler writes it to an in-memory queue and returns 202 Accepted immediately — it never touches the database during that request. A background flush writes batches to a durable spool file on disk every 5 milliseconds or every 64 records, whichever comes first. Your application's error-reporting call completes in microseconds regardless of what the database is doing.
+
+Go's goroutine model means the HTTP server handles thousands of concurrent connections with negligible overhead and no configuration required. Each connection gets its own lightweight goroutine; the runtime multiplexes these across available CPU cores automatically. Ingest throughput is limited by network bandwidth and JSON parsing speed — on modest hardware such as a Raspberry Pi 4 or a single-core VPS, the ingest path can saturate a gigabit network link before the application becomes the bottleneck.
+
+The spool acts as a shock absorber. If your application fires a burst of thousands of events in a short window, they are accepted immediately and queued to disk. A single background worker then reads the spool and processes events at its own pace — normalising, fingerprinting, and writing to SQLite — without any of that work affecting ingest latency. This deliberately single-threaded design avoids write contention on SQLite. SQLite in WAL (Write-Ahead Logging) mode allows all read API endpoints to run concurrently and independently while the writer is active, so the dashboard stays fast even during heavy ingestion.
+
+When limits are reached, BugBarn degrades gracefully. If the spool grows beyond the configured maximum size (`BUGBARN_MAX_SPOOL_BYTES`), ingest returns 429 Too Many Requests with a `Retry-After` header rather than writing to disk indefinitely. Log entries are trimmed to the most recent 10,000 per project on each insert. Facet keys and values beyond the cardinality limits are silently dropped rather than causing errors.
+
+BugBarn runs comfortably on a Raspberry Pi or a $5 VPS; it scales up with the hardware it runs on. See [Performance and limits](deployment/performance.md) for hardware recommendations and detailed throughput guidance.
+
+---
+
 ## What BugBarn is NOT
 
 - **Not an APM tool.** BugBarn tracks errors and logs. It does not instrument performance, traces, or metrics.
