@@ -35,20 +35,11 @@ COPY web/index.html /srv/index.html
 COPY web/styles.css /srv/styles.css
 COPY web/manifest.json /srv/manifest.json
 COPY web/sw.js /srv/sw.js
-COPY web/icons/ /tmp/icons-src/
+COPY web/icons/ /srv/icons/
 
-# Generate PNG icons from SVG sources, then stamp the service worker with a
-# hash of the compiled assets. Any change to dist/ produces a new hash, making
-# the browser detect a new SW version and purge stale caches automatically.
-RUN apk add --no-cache librsvg && \
-    mkdir -p /srv/icons && \
-    rsvg-convert -w 192 -h 192 /tmp/icons-src/icon.svg          -o /srv/icons/icon-192.png && \
-    rsvg-convert -w 512 -h 512 /tmp/icons-src/icon.svg          -o /srv/icons/icon-512.png && \
-    rsvg-convert -w 192 -h 192 /tmp/icons-src/icon-maskable.svg -o /srv/icons/icon-maskable-192.png && \
-    rsvg-convert -w 512 -h 512 /tmp/icons-src/icon-maskable.svg -o /srv/icons/icon-maskable-512.png && \
-    cp /tmp/icons-src/icon.svg /srv/icons/icon.svg && \
-    rm -rf /tmp/icons-src && \
-    BUILD_HASH=$(find /srv/dist -type f | sort | xargs sha256sum | sha256sum | cut -c1-12) && \
+# Stamp the service worker with a hash of the compiled assets. Any change to
+# dist/ produces a new hash → browser detects a new SW → old caches purged.
+RUN BUILD_HASH=$(find /srv/dist -type f | sort | xargs sha256sum | sha256sum | cut -c1-12) && \
     sed -i "s/__BUILD_HASH__/${BUILD_HASH}/g" /srv/sw.js
 
 COPY deploy/docker/web-entrypoint.sh /usr/local/bin/entrypoint.sh
