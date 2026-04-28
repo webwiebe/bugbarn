@@ -4,57 +4,92 @@ This guide gets BugBarn running locally and walks you through sending your first
 
 ---
 
-## Prerequisites
+## 1. Install BugBarn
 
-Choose one of:
-
-| Option | Requirement |
-|--------|-------------|
-| Binary | Go 1.22 or later |
-| Docker | Docker Engine with `docker compose` |
-
----
-
-## 1. Run locally
-
-### Option A — build and run the binary
+### Homebrew (macOS and Linux)
 
 ```sh
-go run ./cmd/bugbarn serve
+brew tap webwiebe/bugbarn
+brew install bugbarn
 ```
 
-BugBarn needs an admin account on first run. Pass the credentials as environment variables:
+### APT (Debian / Ubuntu)
+
+```sh
+curl -fsSL https://webwiebe.nl/apt/key.gpg \
+  | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/webwiebe.gpg
+echo "deb https://webwiebe.nl/apt/ stable main" \
+  | sudo tee /etc/apt/sources.list.d/webwiebe.list
+sudo apt-get update && sudo apt-get install bugbarn
+```
+
+### Docker Compose (pre-built images)
+
+Create a `docker-compose.yml`:
+
+```yaml
+name: bugbarn
+
+services:
+  service:
+    image: ghcr.io/webwiebe/bugbarn/service:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      BUGBARN_ADDR: :8080
+      BUGBARN_API_KEY: change-me
+      BUGBARN_ADMIN_USERNAME: admin
+      BUGBARN_ADMIN_PASSWORD: change-me
+      BUGBARN_SESSION_SECRET: change-me-generate-with-openssl-rand-hex-32
+      BUGBARN_PUBLIC_URL: http://localhost:8080
+      BUGBARN_SPOOL_DIR: /var/lib/bugbarn/spool
+      BUGBARN_DB_PATH: /var/lib/bugbarn/bugbarn.db
+    volumes:
+      - bugbarn-data:/var/lib/bugbarn
+
+  web:
+    image: ghcr.io/webwiebe/bugbarn/web:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      BUGBARN_API_URL: http://service:8080
+    depends_on:
+      - service
+
+volumes:
+  bugbarn-data:
+```
+
+Then:
+
+```sh
+docker compose up -d
+```
+
+The UI is at [http://localhost:3000](http://localhost:3000) and the API is at [http://localhost:8080](http://localhost:8080).
+
+> The `docker-compose.yml` in the repository root builds from local source and is intended for development. Use the config above to run pre-built release images.
+
+### Build from source
+
+Requires Go 1.22 or later.
+
+```sh
+git clone https://github.com/webwiebe/bugbarn
+cd bugbarn
+go build -o bugbarn ./cmd/bugbarn
+```
+
+Then run with your credentials set:
 
 ```sh
 BUGBARN_ADMIN_USERNAME=admin \
-BUGBARN_ADMIN_PASSWORD_BCRYPT='$2a$12$...' \
-BUGBARN_SESSION_SECRET=change-me-in-production \
-go run ./cmd/bugbarn serve
+BUGBARN_ADMIN_PASSWORD=yourpassword \
+BUGBARN_SESSION_SECRET=$(openssl rand -hex 32) \
+./bugbarn
 ```
-
-Generate a bcrypt hash for your chosen password:
-
-```sh
-bugbarn user create --username admin --password yourpassword
-```
-
-Or use `htpasswd` / any bcrypt tool and set the hash directly in `BUGBARN_ADMIN_PASSWORD_BCRYPT`.
-
-### Option B — Docker Compose
-
-```sh
-docker compose up
-```
-
-The included `docker-compose.yml` starts BugBarn with sane defaults. Edit the environment section to set your admin credentials and session secret before running in production.
-
-### Default bind address and data paths
-
-| Variable | Default |
-|---|---|
-| `BUGBARN_ADDR` | `:8080` |
-| `BUGBARN_DB_PATH` | `.data/bugbarn.db` |
-| `BUGBARN_SPOOL_DIR` | `.data/spool` |
 
 ---
 
@@ -66,7 +101,7 @@ Open [http://localhost:8080](http://localhost:8080) in your browser and sign in 
 
 ## 3. Create your first API key
 
-API keys are used by SDKs and the ingest endpoint. Keys can be scoped to `ingest` (write-only) or `full` (read + write).
+API keys authenticate SDK and ingest calls. Always use `ingest` scope for keys embedded in applications.
 
 ### Via the CLI
 
@@ -74,7 +109,7 @@ API keys are used by SDKs and the ingest endpoint. Keys can be scoped to `ingest
 bugbarn apikey create --project=default --name=my-app --scope=ingest
 ```
 
-The command prints the raw key. Store it — it is only shown once.
+The command prints the raw key once — copy it immediately.
 
 ### Via the UI
 
@@ -84,7 +119,7 @@ Go to **Settings → API Keys → Create key**. Select the project and scope, th
 
 ## 4. Send your first error
 
-The ingest endpoint is `POST /api/v1/events`. It returns `202 Accepted` immediately; processing is asynchronous.
+The ingest endpoint accepts events at `POST /api/v1/events` and returns `202 Accepted` immediately. Processing is asynchronous.
 
 ```sh
 curl -s -X POST http://localhost:8080/api/v1/events \
@@ -92,25 +127,22 @@ curl -s -X POST http://localhost:8080/api/v1/events \
   -H "X-BugBarn-Api-Key: <your-api-key>" \
   -H "X-BugBarn-Project: default" \
   -d '{
+    "severityText": "error",
+    "body": "something went wrong",
     "exception": {
       "type": "RuntimeError",
-      "value": "something went wrong",
-      "stacktrace": {
-        "frames": [
-          {
-            "filename": "main.go",
-            "function": "main.run",
-            "lineno": 42
-          }
-        ]
-      }
+      "message": "something went wrong",
+      "stacktrace": [
+        {"function": "main.run", "filename": "main.go", "lineno": 42}
+      ]
     },
-    "level": "error",
-    "platform": "go"
+    "attributes": {
+      "environment": "development"
+    }
   }'
 ```
 
-A `202` response means the event was accepted and queued. Refresh the issues list in the UI and the error will appear within seconds.
+Refresh the issues list in the UI — the error will appear within seconds.
 
 ---
 
@@ -118,35 +150,44 @@ A `202` response means the event was accepted and queued. Refresh the issues lis
 
 ### Go
 
+```sh
+go get github.com/wiebe-xyz/bugbarn-go
+```
+
 ```go
-import bugbarn "github.com/webwiebe/bugbarn-go"
+import bb "github.com/wiebe-xyz/bugbarn-go"
 
 func main() {
-    err := bugbarn.Init(bugbarn.Options{
-        DSN:     "http://localhost:8080",
-        APIKey:  "your-api-key",
-        Project: "default",
+    bb.Init(bb.Options{
+        APIKey:      "your-api-key",
+        Endpoint:    "http://localhost:8080",
+        ProjectSlug: "default",
+        Environment: "production",
     })
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer bugbarn.Shutdown()
+    defer bb.Shutdown(5 * time.Second)
 
     if err := doSomething(); err != nil {
-        bugbarn.CaptureError(err)
+        bb.CaptureError(err)
     }
 }
 ```
 
-### TypeScript
+For HTTP servers, wrap your handler to capture panics:
+
+```go
+http.ListenAndServe(":8080", bb.RecoverMiddleware(yourHandler))
+```
+
+### TypeScript / Node.js
 
 ```ts
-import { init, captureError, shutdown } from "@webwiebe/bugbarn";
+import { init, captureError, shutdown } from "@wiebe-xyz/bugbarn";
 
 init({
-  dsn: "http://localhost:8080",
   apiKey: "your-api-key",
-  project: "default",
+  endpoint: "http://localhost:8080",
+  projectSlug: "default",
+  environment: "production",
 });
 
 try {
@@ -158,15 +199,17 @@ try {
 await shutdown();
 ```
 
-All three SDKs (Go, TypeScript, Python) expose the same four functions: `Init`, `CaptureError`, `CaptureMessage`, `Shutdown`.
+All three SDKs (Go, TypeScript, Python) expose the same core API: `Init`, `CaptureError`, `CaptureMessage`, `Shutdown`.
+
+For the full API and options, see [sdks/go.md](sdks/go.md) or [sdks/http.md](sdks/http.md) for direct HTTP integration.
 
 ---
 
 ## 6. Projects
 
-Every event is scoped to a project. Pass the project slug in the `X-BugBarn-Project` HTTP header or configure it in your SDK options. If the project does not exist, BugBarn will create it automatically. The default slug is `default`.
+Every event is scoped to a project. Pass the slug in the `X-BugBarn-Project` header or configure it in your SDK options. Unknown slugs are auto-created. The default project is named `default`.
 
-To create a project explicitly via the CLI:
+To create a project explicitly:
 
 ```sh
 bugbarn project create --slug my-service --name "My Service"
@@ -176,16 +219,18 @@ bugbarn project create --slug my-service --name "My Service"
 
 ## 7. What you will see in the UI
 
-Once events are flowing you have access to:
+Once events are flowing:
 
-- **Issues list** — all errors grouped by fingerprint, with event count, first-seen and last-seen timestamps, and status badges (unresolved / resolved / muted / regressed).
-- **Event detail** — the full payload for any individual event: exception, stack trace, breadcrumbs, tags, and any extra context. Privacy scrubbing has already run by the time data reaches this view.
-- **All-projects view** — a unified feed across every project on the instance. Each item carries a `project_slug` tag so you know where it came from.
-- **Log stream** — real-time structured logs delivered over SSE, filterable by level and search string.
+- **Issues list** — errors grouped by fingerprint, with event count, first/last seen, and status (unresolved / resolved / muted / regressed).
+- **Event detail** — full payload: exception, stack trace, breadcrumbs, user context, attributes. Privacy scrubbing runs before storage.
+- **All-projects view** — unified feed across every project on the instance. Each item carries a `project_slug` badge.
+- **Log stream** — real-time structured logs over SSE, filterable by level and search string.
 
 ---
 
 ## Next steps
 
 - [Overview](overview.md) — capabilities, architecture, and what BugBarn is not
-- [Operations](operations.md) — Kubernetes, Litestream replication, SMTP for digest emails, production environment variables
+- [Deployment: configuration](deployment/configuration.md) — all environment variables
+- [Deployment: Kubernetes](deployment/kubernetes.md) — production Kubernetes setup
+- [API reference](api.md) — full REST API
