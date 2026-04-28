@@ -1,0 +1,75 @@
+---
+---
+<section id="install" style="border-top: 1px solid #21262d;">
+  <div class="max-w-5xl mx-auto px-6 py-24">
+    <h2 class="text-xl font-semibold mb-2 font-mono" style="color: #e6edf3;">
+      <span style="color: #b5843a;">#</span> Install
+    </h2>
+    <p class="text-sm mb-10" style="color: #8b949e;">Pick the method that fits your setup.</p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Homebrew -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b5843a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b949e;">Homebrew</span>
+        </div>
+        <pre class="rounded-lg overflow-x-auto text-xs leading-relaxed" style="background-color: #0d1117; border: 1px solid #21262d; padding: 1.25rem 1.5rem; color: #c9d1d9; white-space: pre;">brew tap webwiebe/bugbarn
+brew install bugbarn</pre>
+      </div>
+
+      <!-- APT -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b5843a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+          <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b949e;">APT (Debian/Ubuntu)</span>
+        </div>
+        <pre class="rounded-lg overflow-x-auto text-xs leading-relaxed" style="background-color: #0d1117; border: 1px solid #21262d; padding: 1.25rem 1.5rem; color: #c9d1d9; white-space: pre;">curl -fsSL https://webwiebe.nl/apt/key.gpg \
+  | sudo gpg --dearmor \
+    -o /etc/apt/trusted.gpg.d/webwiebe.gpg
+echo "deb https://webwiebe.nl/apt/ stable main" \
+  | sudo tee \
+    /etc/apt/sources.list.d/webwiebe.list
+sudo apt-get update \
+  &amp;&amp; sudo apt-get install bugbarn</pre>
+      </div>
+
+      <!-- Docker -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b5843a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+            <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+          </svg>
+          <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b949e;">Docker</span>
+        </div>
+        <pre class="rounded-lg overflow-x-auto text-xs leading-relaxed" style="background-color: #0d1117; border: 1px solid #21262d; padding: 1.25rem 1.5rem; color: #c9d1d9; white-space: pre;">docker run -d \
+  -e BUGBARN_API_KEY=your-key \
+  -e BUGBARN_ADMIN_USERNAME=admin \
+  -e BUGBARN_ADMIN_PASSWORD=your-password \
+  -p 8080:8080 \
+  -v bugbarn-data:/var/lib/bugbarn \
+  ghcr.io/webwiebe/bugbarn/service:latest</pre>
+      </div>
+
+    </div>
+
+    <p class="mt-8 text-sm" style="color: #8b949e;">
+      Then open <span class="font-mono" style="color: #c9d1d9;">http://localhost:8080</span> — or read the
+      <a href="https://github.com/webwiebe/bugbarn/blob/main/docs/getting-started.md"
+         class="underline hover:text-white transition-colors"
+         style="color: #b5843a;"
+         target="_blank" rel="noopener">full getting-started guide</a>
+      for Docker Compose, Kubernetes, and SDK setup.
+    </p>
+  </div>
+</section>
