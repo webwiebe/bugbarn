@@ -395,6 +395,46 @@ function route(): void {
   }
 
   setActiveNav();
+  // Render immediately with cached state so the view switches without waiting for the network.
+  renderCurrentRoute();
+}
+
+function renderCurrentRoute(): void {
+  if (state.currentRoute === "releases") {
+    renderReleasesView();
+    if (state.selectedReleaseId && state.releases.length) {
+      void loadReleaseDetail(state.selectedReleaseId);
+    }
+  } else if (state.currentRoute === "alerts") {
+    renderAlertsView();
+  } else if (state.currentRoute === "logs") {
+    renderLogsView();
+  } else if (state.currentRoute === "settings") {
+    renderSettingsView();
+  } else if (state.selectedEventId) {
+    setDetailLoading(`Event ${state.selectedEventId}`);
+  } else if (state.selectedIssueId) {
+    setDetailLoading(`Issue ${state.selectedIssueId}`);
+  } else {
+    renderIssuesView();
+  }
+}
+
+function setLoadingBar(active: boolean): void {
+  let bar = document.getElementById("loading-bar");
+  if (active) {
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "loading-bar";
+      bar.style.cssText = "position:fixed;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#d4a054 0%,#f0c070 50%,#d4a054 100%);background-size:200% 100%;animation:loadbar 1.2s linear infinite;z-index:9999;pointer-events:none";
+      const style = document.createElement("style");
+      style.textContent = "@keyframes loadbar{0%{background-position:0 0}100%{background-position:200% 0}}";
+      document.head.appendChild(style);
+      document.body.appendChild(bar);
+    }
+  } else {
+    bar?.remove();
+  }
 }
 
 async function refreshAll(): Promise<void> {
@@ -403,7 +443,12 @@ async function refreshAll(): Promise<void> {
     return;
   }
 
-  await Promise.all([loadIssues(), loadLiveEvents(), loadCurrentRouteData()]);
+  setLoadingBar(true);
+  try {
+    await Promise.all([loadIssues(), loadLiveEvents(), loadCurrentRouteData()]);
+  } finally {
+    setLoadingBar(false);
+  }
 }
 
 async function loadSession(): Promise<void> {
@@ -438,6 +483,7 @@ async function loadCurrentRouteData(): Promise<void> {
   if (state.currentRoute !== "logs") {
     disconnectLogSSE();
   }
+  setStatus("Refreshing…");
   if (state.currentRoute === "releases") {
     await loadReleases();
     if (state.selectedReleaseId) {
