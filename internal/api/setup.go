@@ -124,30 +124,20 @@ npm install %s/packages/typescript/latest
 
 Usage:
 ~~~typescript
-import { init, captureError, captureMessage } from "@bugbarn/typescript";
+import { init, captureException } from "@bugbarn/typescript";
 
 init({
   apiKey: "%s",
   endpoint: "%s",
-  projectSlug: "%s",
-  environment: process.env.NODE_ENV ?? "production",
+  project: "%s",
 });
 
 // Capture an error
 try {
   riskyOperation();
 } catch (err) {
-  captureError(err);
+  captureException(err);
 }
-
-// Capture a message
-captureMessage("User completed checkout", "info", { userId: "123" });
-~~~
-
-For Express/Node HTTP servers, wrap with the recovery middleware:
-~~~typescript
-import { recoverMiddleware } from "@bugbarn/typescript";
-app.use(recoverMiddleware());
 ~~~
 
 ## Go
@@ -184,21 +174,18 @@ pip install bugbarn
 ~~~
 
 ~~~python
-from bugbarn import init, capture_error, capture_message
-import os
+from bugbarn import init, capture_exception
 
 init(
     api_key="%s",
     endpoint="%s",
-    project_slug="%s",
-    environment=os.getenv("APP_ENV", "production"),
     install_excepthook=True,  # auto-capture unhandled exceptions
 )
 
 try:
     risky_operation()
 except Exception as e:
-    capture_error(e)
+    capture_exception(e)
 ~~~
 
 ## Release marker — send on every deploy
@@ -243,7 +230,7 @@ Generated %s
 		endpoint, endpoint,     // 11,12: npm install
 		rawKey, endpoint, slug, // 13,14,15: ts usage
 		rawKey, endpoint, slug, // 16,17,18: go
-		rawKey, endpoint, slug, // 19,20,21: python
+		rawKey, endpoint, // 19,20: python (no project_slug param — routed by API key)
 		endpoint, rawKey, slug, // 22,23,24: release curl
 		endpoint, rawKey, slug, // 25,26,27: logs curl
 		endpoint,               // 28: view link
