@@ -342,6 +342,12 @@ function setActiveNav(): void {
   });
 }
 
+function setPageTitle(title: string): void {
+  const h1 = document.getElementById("topbar-title");
+  if (h1) h1.textContent = title;
+  document.title = `${title} — BugBarn`;
+}
+
 function route(): void {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const [kind, id] = parts;
@@ -351,25 +357,32 @@ function route(): void {
   if (kind === "issues" && id) {
     state.currentRoute = "issues";
     state.selectedIssueId = decodeURIComponent(id);
+    setPageTitle("Issues");
     setRouteChip(`Issue ${state.selectedIssueId}`);
   } else if (kind === "events" && id) {
     state.currentRoute = "issues";
     state.selectedEventId = decodeURIComponent(id);
+    setPageTitle("Issues");
     setRouteChip(`Event ${state.selectedEventId}`);
   } else if (kind === "releases") {
     state.currentRoute = "releases";
+    setPageTitle("Releases");
     setRouteChip("Releases");
   } else if (kind === "alerts") {
     state.currentRoute = "alerts";
+    setPageTitle("Alerts");
     setRouteChip("Alerts");
   } else if (kind === "logs") {
     state.currentRoute = "logs";
+    setPageTitle("Logs");
     setRouteChip("Logs");
   } else if (kind === "settings") {
     state.currentRoute = "settings";
+    setPageTitle("Settings");
     setRouteChip("Settings");
   } else {
     state.currentRoute = "issues";
+    setPageTitle("Issues");
     setRouteChip("Issues");
   }
 
@@ -555,7 +568,7 @@ function renderProjectSwitcher(): void {
         return `<option value="${escapeHtml(slug)}"${selected}>${escapeHtml(name)}</option>`;
       })
       .join("");
-  projectSelect.hidden = state.projects.length === 0;
+  projectSelect.hidden = false;
 }
 
 async function loadEnvironments(): Promise<void> {
@@ -1388,6 +1401,11 @@ function connectLogSSE(): void {
   source.onmessage = (ev: MessageEvent) => {
     try {
       const entry = JSON.parse(ev.data as string) as ApiLogEntry;
+      // EventSource can't send headers, so the stream is always all-projects.
+      // Filter client-side when a specific project is selected.
+      if (state.currentProject !== "__all" && entry.project_slug && entry.project_slug !== state.currentProject) {
+        return;
+      }
       state.logs = [entry, ...state.logs].slice(0, 500);
       const list = document.getElementById("log-list");
       if (list) {
