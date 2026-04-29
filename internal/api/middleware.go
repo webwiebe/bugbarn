@@ -59,6 +59,18 @@ func sameOrigin(origin, host string) bool {
 
 // isCSRFProtected returns true for state-changing requests that are NOT the
 // ingest endpoint (which uses API key auth) and NOT login/logout.
+// isIssueAction returns true for issue mutation endpoints that operate by
+// numeric row ID (resolve/reopen/mute/unmute). These don't need project
+// scoping because the row ID is globally unique across all projects.
+func isIssueAction(r *http.Request) bool {
+	p := r.URL.Path
+	return strings.HasPrefix(p, "/api/v1/issues/") && (
+		strings.HasSuffix(p, "/resolve") ||
+		strings.HasSuffix(p, "/reopen") ||
+		strings.HasSuffix(p, "/mute") ||
+		strings.HasSuffix(p, "/unmute"))
+}
+
 func isCSRFProtected(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodPost, http.MethodPut, http.MethodDelete:

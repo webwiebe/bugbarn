@@ -166,10 +166,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else if usingAPIKey && apiKeyProjectID > 0 {
 			resolvedProjectID = apiKeyProjectID
 		} else if usingSession && r.Method != http.MethodGet {
-			// Non-GET writes without an explicit project header default to "default".
-			// GET requests leave resolvedProjectID = 0 = all-projects query mode.
-			if proj, err := s.store.ProjectBySlug(r.Context(), "default"); err == nil {
-				resolvedProjectID = proj.ID
+			// Issue mutations (resolve/reopen/mute/unmute) operate on a globally-unique
+			// numeric row ID, so project context is not needed — leave projectID = 0 so
+			// the storage layer skips the project_id WHERE filter.
+			// All other non-GET writes default to the "default" project so that UI
+			// operations like creating releases or alerts still land somewhere sensible.
+			if !isIssueAction(r) {
+				if proj, err := s.store.ProjectBySlug(r.Context(), "default"); err == nil {
+					resolvedProjectID = proj.ID
+				}
 			}
 		}
 		// Always store the resolved project in context so storage can distinguish
