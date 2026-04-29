@@ -116,10 +116,15 @@ curl -X POST %s/api/v1/events \
 
 ## TypeScript / Node.js
 
-Install:
+Install (the SDK is self-hosted — fetch the tarball URL from the package registry first):
 ~~~bash
-npm install %s/packages/typescript/latest
-# or: pnpm add %s/packages/typescript/latest
+# Step 1: get the tarball URL
+curl -s %s/packages/typescript/latest.json
+# → {"version":"...","url":"/packages/typescript/bugbarn-typescript-<hash>.tgz"}
+
+# Step 2: install using the full URL from the "url" field above
+npm install %s/packages/typescript/<tarball-filename>.tgz
+# or: pnpm add %s/packages/typescript/<tarball-filename>.tgz
 ~~~
 
 Usage:
@@ -169,8 +174,9 @@ http.ListenAndServe(":8080", bb.RecoverMiddleware(yourHandler))
 
 ## Python
 
+The Python SDK is not yet published to PyPI. Install from source:
 ~~~bash
-pip install bugbarn
+pip install "git+https://github.com/webwiebe/bugbarn.git#subdirectory=sdks/python"
 ~~~
 
 ~~~python
@@ -181,6 +187,9 @@ init(
     endpoint="%s",
     install_excepthook=True,  # auto-capture unhandled exceptions
 )
+
+# Note: project routing is by API key, not an SDK option.
+# Use X-BugBarn-Project header directly if you need multi-project routing.
 
 try:
     risky_operation()
@@ -212,7 +221,7 @@ curl -X POST %s/api/v1/logs \
   -H "Content-Type: application/json" \
   -H "X-BugBarn-Api-Key: %s" \
   -H "X-BugBarn-Project: %s" \
-  -d '{"level": "warn", "message": "cache miss", "data": {"key": "user:42", "ttl": 300}}'
+  -d '{"level": "warn", "message": "cache miss", "key": "user:42", "ttl": 300}'
 ~~~
 
 ## View your project
@@ -227,7 +236,7 @@ Generated %s
 		endpoint, slug, rawKey, status, // 3,4,5,6: table
 		pendingNote,            // 7: pending note block
 		endpoint, rawKey, slug, // 8,9,10: curl example
-		endpoint, endpoint,     // 11,12: npm install
+		endpoint, endpoint, endpoint, endpoint, // 11-14: ts install (curl + 2 install variants + tarball dir)
 		rawKey, endpoint, slug, // 13,14,15: ts usage
 		rawKey, endpoint, slug, // 16,17,18: go
 		rawKey, endpoint, // 19,20: python (no project_slug param — routed by API key)

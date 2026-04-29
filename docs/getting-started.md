@@ -181,25 +181,24 @@ http.ListenAndServe(":8080", bb.RecoverMiddleware(yourHandler))
 ### TypeScript / Node.js
 
 ```ts
-import { init, captureError, shutdown } from "@wiebe-xyz/bugbarn";
+import { init, captureException, shutdown } from "@bugbarn/typescript";
 
 init({
   apiKey: "your-api-key",
   endpoint: "http://localhost:8080",
-  projectSlug: "default",
-  environment: "production",
+  project: "default",
 });
 
 try {
   doSomething();
 } catch (err) {
-  captureError(err);
+  captureException(err);
 }
 
 await shutdown();
 ```
 
-All three SDKs (Go, TypeScript, Python) expose the same core API: `Init`, `CaptureError`, `CaptureMessage`, `Shutdown`.
+Each SDK exposes language-idiomatic wrappers around the same HTTP ingest endpoint.
 
 For the full API and options, see [sdks/go.md](sdks/go.md) or [sdks/http.md](sdks/http.md) for direct HTTP integration.
 

@@ -8,7 +8,7 @@ BugBarn can receive events from your applications through a native SDK or direct
 |---|---|---|
 | **Go SDK** | `go get github.com/wiebe-xyz/bugbarn-go` | Go services and HTTP servers |
 | **TypeScript SDK** | `@bugbarn/typescript` (npm) | Node.js backends, browser apps |
-| **Python SDK** | `bugbarn-python` (pip) | Python services and scripts |
+| **Python SDK** | source install (not on PyPI) | Python services and scripts |
 | **Direct HTTP** | Any HTTP client | Any language without an SDK, scripts, CI pipelines |
 
 ## Choosing an integration
@@ -51,7 +51,7 @@ bugbarn apikey create --scope ingest --name "my-service"
 
 Events are routed to a project in one of two ways:
 
-1. **SDK option** — pass `ProjectSlug` (Go), `project` (TypeScript / Python) when initialising the SDK. The SDK sends the `X-BugBarn-Project` header on every request.
+1. **SDK option** — pass `ProjectSlug` (Go) or `project` (TypeScript) when initialising the SDK. The SDK sends the `X-BugBarn-Project` header on every request. The Python SDK does not support a project option — use the header directly or rely on the API key being scoped to a project.
 2. **Header directly** — include `X-BugBarn-Project: <slug>` in your HTTP requests.
 
 If neither is provided, events land in the `default` project. BugBarn creates the project automatically on first use, so you do not need to create it in advance.

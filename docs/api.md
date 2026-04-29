@@ -405,7 +405,7 @@ Create a release.
   "name": "v1.2.3",
   "environment": "production",
   "version": "1.2.3",
-  "commit_sha": "abc123",
+  "commitSha": "abc123",
   "url": "https://github.com/org/repo/releases/tag/v1.2.3",
   "notes": "Bug fixes and performance improvements."
 }
