@@ -1530,9 +1530,12 @@ function connectLogSSE(): void {
   source.onmessage = (ev: MessageEvent) => {
     try {
       const entry = JSON.parse(ev.data as string) as ApiLogEntry;
-      // EventSource can't send headers, so the stream is always all-projects.
-      // Filter client-side when a specific project is selected.
+      // EventSource can't send headers — stream is always all-projects, all-levels.
+      // Apply the same filters the REST endpoint would apply.
       if (state.currentProject !== "__all" && entry.project_slug && entry.project_slug !== state.currentProject) {
+        return;
+      }
+      if (state.logLevel && entry.level_num < logLevelMinNum(state.logLevel)) {
         return;
       }
       state.logs = [entry, ...state.logs].slice(0, 500);
@@ -1624,6 +1627,12 @@ function wireLogsView(): void {
 function setActiveView(view: "overview" | "detail"): void {
   elements.overviewView.classList.toggle("hidden", view !== "overview");
   elements.detailView.classList.toggle("hidden", view !== "detail");
+}
+
+const logLevelNums: Record<string, number> = { trace: 10, debug: 20, info: 30, warn: 40, error: 50, fatal: 60 };
+
+function logLevelMinNum(levelName: string): number {
+  return logLevelNums[levelName] ?? 0;
 }
 
 function toTimestampMs(value: unknown): number {
