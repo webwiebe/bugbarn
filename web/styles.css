@@ -1191,6 +1191,12 @@ button:disabled {
     min-height: unset;
   }
 
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
   .mobile-tab-bar {
     display: flex;
     flex-shrink: 0;
