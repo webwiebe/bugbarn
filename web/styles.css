@@ -289,6 +289,13 @@ h2 {
   display: none;
 }
 
+/* Tab bar is a grid item inside app-frame on phones; hide on desktop */
+@media (min-width: 769px) {
+  .mobile-tab-bar {
+    display: none !important;
+  }
+}
+
 #project-select,
 #env-select {
   font-size: 13px;
@@ -1082,6 +1089,7 @@ button:disabled {
   letter-spacing: 0.04em;
 }
 
+/* ── Tablet / mid-size: hamburger + overlay sidebar ─────────────── */
 @media (max-width: 1120px) {
   .app-frame {
     grid-template-columns: 1fr;
@@ -1103,18 +1111,81 @@ button:disabled {
     display: none;
   }
 
+  .mobile-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .app-frame.mobile-nav-open .sidebar {
+    display: flex !important;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    padding: 20px 16px;
+    overflow: hidden auto;
+    flex-direction: column;
+    background: #1d1e16;
+  }
+
+  .app-frame.mobile-nav-open .nav-label {
+    display: inline;
+  }
+
+  .app-frame.mobile-nav-open .side-nav a {
+    padding: 14px 12px;
+    font-size: 15px;
+  }
+
+  .app-frame.mobile-nav-open .sidebar-toggle {
+    display: none;
+  }
+}
+
+/* ── Phone: bottom tab bar ───────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Switch app-frame to flex column so the tab bar sits natively at
+     the bottom and the workspace scrolls above it — no position:fixed
+     needed, no viewport-height bugs. */
+  .app-frame {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    height: 100vh; /* fallback for older browsers */
+    overflow: hidden;
+  }
+
   .workspace {
-    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Hide the hamburger — tab bar takes over */
+  .mobile-menu-btn {
+    display: none;
+  }
+
+  /* Prevent the sidebar overlay on phones (tap on tab bar instead) */
+  .app-frame.mobile-nav-open .sidebar {
+    display: none !important;
   }
 
   .mobile-tab-bar {
     display: flex;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    flex-shrink: 0;
     padding-bottom: env(safe-area-inset-bottom, 0px);
     background: #1d1e16;
     border-top: 1px solid var(--line);
@@ -1126,20 +1197,21 @@ button:disabled {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    padding: 6px 4px 2px;
+    gap: 3px;
+    padding: 8px 4px 6px;
+    min-height: 56px;
     color: var(--muted);
     text-decoration: none;
     font-size: 10px;
     font-weight: 500;
-    letter-spacing: 0.01em;
-    transition: color 0.15s;
+    letter-spacing: 0.02em;
     -webkit-tap-highlight-color: transparent;
     outline: none;
+    transition: color 0.12s;
   }
 
   .mobile-tab:active {
-    opacity: 0.7;
+    opacity: 0.6;
   }
 
   .mobile-tab.active {

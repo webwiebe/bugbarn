@@ -135,6 +135,37 @@ bbLogout?.addEventListener("click", () => {
   void logout();
 });
 
+const mobileMenuBtn = document.getElementById("mobile-menu-btn") as HTMLButtonElement | null;
+const mobileSidebar = document.getElementById("sidebar") as HTMLElement | null;
+
+function openMobileSidebar(): void {
+  if (!mobileSidebar) return;
+  appFrame?.classList.add("mobile-nav-open");
+  if (mobileMenuBtn) {
+    mobileMenuBtn.textContent = "✕";
+    mobileMenuBtn.setAttribute("aria-expanded", "true");
+    mobileMenuBtn.setAttribute("aria-label", "Close navigation");
+  }
+}
+
+function closeMobileNav(): void {
+  appFrame?.classList.remove("mobile-nav-open");
+  if (mobileMenuBtn) {
+    mobileMenuBtn.textContent = "☰";
+    mobileMenuBtn.setAttribute("aria-expanded", "false");
+    mobileMenuBtn.setAttribute("aria-label", "Open navigation");
+  }
+}
+
+mobileMenuBtn?.addEventListener("click", () => {
+  const isOpen = appFrame?.classList.contains("mobile-nav-open") ?? false;
+  if (isOpen) { closeMobileNav(); } else { openMobileSidebar(); }
+});
+
+document.querySelectorAll<HTMLAnchorElement>(".side-nav a").forEach((link) => {
+  link.addEventListener("click", closeMobileNav);
+});
+
 projectSelect?.addEventListener("change", () => {
   const slug = projectSelect.value;
   state.currentProject = slug;
