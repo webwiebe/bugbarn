@@ -145,6 +145,7 @@ jobs:
               \"name\": \"${{ github.event.inputs.production_version }}\",
               \"environment\": \"production\",
               \"version\": \"${{ github.event.inputs.production_version }}\",
+              \"commitSha\": \"${GITHUB_SHA}\",
               \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ github.event.inputs.production_version }}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"

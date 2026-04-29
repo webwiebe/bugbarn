@@ -47,6 +47,8 @@ export interface ApiIssue extends RawRecord {
   hourly_counts?: number[];
   mute_mode?: string;
   project_slug?: string;
+  last_regressed_at?: string | number;
+  LastRegressedAt?: string | number;
 }
 
 export interface ApiEvent extends RawRecord {
@@ -94,14 +96,22 @@ export interface ApiRelease extends RawRecord {
   Environment?: string;
   observedAt?: string | number;
   observed_at?: string | number;
+  ObservedAt?: string | number;
   version?: string;
   Version?: string;
   commitSha?: string;
   commit_sha?: string;
+  CommitSHA?: string;
   url?: string;
+  URL?: string;
   notes?: string;
+  Notes?: string;
   createdAt?: string | number;
   created_at?: string | number;
+  CreatedAt?: string | number;
+  createdBy?: string;
+  created_by?: string;
+  CreatedBy?: string;
 }
 
 export interface ApiAlert extends RawRecord {
@@ -186,6 +196,7 @@ export interface AppState {
   issueStatus: IssueStatus;
   selectedIssueId: string | null;
   selectedEventId: string | null;
+  selectedReleaseId: string | null;
   releases: ApiRelease[];
   alerts: ApiAlert[];
   settings: ApiSettings | null;

@@ -8,6 +8,7 @@ import {
   renderLiveListMarkup,
   renderLogRow,
   renderLogsViewMarkup,
+  renderReleaseDetailMarkup,
   renderReleasesViewMarkup,
   renderSettingsViewMarkup,
   renderSetupGuide,
@@ -39,6 +40,7 @@ const state: AppState = {
   issueStatus: "all",
   selectedIssueId: null,
   selectedEventId: null,
+  selectedReleaseId: null,
   releases: [],
   alerts: [],
   settings: null,
@@ -353,6 +355,7 @@ function route(): void {
   const [kind, id] = parts;
   state.selectedIssueId = null;
   state.selectedEventId = null;
+  state.selectedReleaseId = null;
 
   if (kind === "issues" && id) {
     state.currentRoute = "issues";
@@ -364,6 +367,11 @@ function route(): void {
     state.selectedEventId = decodeURIComponent(id);
     setPageTitle("Issues");
     setRouteChip(`Event ${state.selectedEventId}`);
+  } else if (kind === "releases" && id) {
+    state.currentRoute = "releases";
+    state.selectedReleaseId = decodeURIComponent(id);
+    setPageTitle("Releases");
+    setRouteChip("Release detail");
   } else if (kind === "releases") {
     state.currentRoute = "releases";
     setPageTitle("Releases");
@@ -432,6 +440,9 @@ async function loadCurrentRouteData(): Promise<void> {
   }
   if (state.currentRoute === "releases") {
     await loadReleases();
+    if (state.selectedReleaseId) {
+      await loadReleaseDetail(state.selectedReleaseId);
+    }
     return;
   }
   if (state.currentRoute === "alerts") {
@@ -499,6 +510,57 @@ async function loadReleases(): Promise<void> {
     state.releases = [];
     renderReleasesView(error);
   }
+}
+
+async function loadReleaseDetail(releaseId: string): Promise<void> {
+  const release = state.releases.find((r) => String(r.id ?? r.ID ?? "") === releaseId);
+  if (!release) {
+    setActiveView("detail");
+    elements.detailTitle.textContent = "Release not found";
+    elements.detailBody.innerHTML = `<div class="error">Release ${escapeHtml(releaseId)} not found. Try refreshing.</div>`;
+    return;
+  }
+
+  const idx = state.releases.indexOf(release);
+  // releases are newest-first; the next release chronologically is the one before this in the array
+  const nextRelease = idx > 0 ? state.releases[idx - 1] : null;
+
+  const releaseStart = toTimestampMs(release.ObservedAt ?? release.observedAt ?? release.observed_at ?? release.createdAt ?? release.created_at ?? release.CreatedAt);
+  const releaseEnd = nextRelease
+    ? toTimestampMs(nextRelease.ObservedAt ?? nextRelease.observedAt ?? nextRelease.observed_at ?? nextRelease.createdAt ?? nextRelease.created_at ?? nextRelease.CreatedAt)
+    : Date.now();
+
+  let allIssues = state.issues;
+  // If issues list is empty or wasn't loaded yet, fetch without project filter to get all
+  if (!allIssues.length) {
+    try {
+      const payload = await fetchJson("/api/v1/issues");
+      allIssues = normalizeList<ApiIssue>(payload, "issues");
+    } catch {
+      allIssues = [];
+    }
+  }
+
+  const newIssues = allIssues.filter((issue) => {
+    const fs = toTimestampMs(issue.FirstSeen ?? issue.firstSeen ?? issue.first_seen);
+    return fs >= releaseStart && (releaseEnd === 0 || fs < releaseEnd);
+  });
+
+  const regressions = allIssues.filter((issue) => {
+    const lr = toTimestampMs(issue.LastRegressedAt ?? (issue as Record<string, unknown>)["last_regressed_at"]);
+    return lr > 0 && lr >= releaseStart && (releaseEnd === 0 || lr < releaseEnd);
+  });
+
+  setActiveView("detail");
+  elements.detailTitle.textContent = String(release.Name ?? release.name ?? "Release");
+  elements.detailBody.innerHTML = renderReleaseDetailMarkup(release, newIssues, regressions, nextRelease);
+
+  elements.detailBody.querySelectorAll<HTMLElement>("[data-issue-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset["issueId"];
+      if (id) location.hash = `#/issues/${encodeURIComponent(id)}`;
+    });
+  });
 }
 
 async function loadAlerts(): Promise<void> {
@@ -896,11 +958,13 @@ function renderIssuesList(error: unknown = null): void {
 }
 
 function renderReleasesView(error: unknown = null): void {
-  setActiveView("overview");
-  elements.detailTitle.textContent = "Releases";
-  elements.detailBody.innerHTML = "";
   elements.overviewView.innerHTML = renderReleasesViewMarkup(state.releases, error);
   wireReleaseActions();
+  if (!state.selectedReleaseId) {
+    setActiveView("overview");
+    elements.detailTitle.textContent = "Releases";
+    elements.detailBody.innerHTML = "";
+  }
 }
 
 function renderAlertsView(error: unknown = null): void {
@@ -1183,6 +1247,20 @@ function wireReleaseActions(): void {
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
     void submitReleaseForm(form);
+  });
+
+  elements.overviewView.querySelectorAll<HTMLElement>("[data-release-id]").forEach((card) => {
+    const handleActivate = () => {
+      const id = card.dataset["releaseId"];
+      if (id) location.hash = `#/releases/${encodeURIComponent(id)}`;
+    };
+    card.addEventListener("click", handleActivate);
+    card.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        handleActivate();
+      }
+    });
   });
 }
 
