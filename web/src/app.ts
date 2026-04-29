@@ -1013,7 +1013,7 @@ function renderSettingsView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Settings";
   elements.detailBody.innerHTML = "";
-  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error);
+  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects);
   wireSettingsActions();
 }
 
@@ -1336,6 +1336,23 @@ function wireSettingsActions(): void {
     event.preventDefault();
     void submitSourceMapsForm(sourceMapForm);
   });
+
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-approve-project]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const slug = btn.dataset["approveProject"];
+      if (slug) void approveProject(slug);
+    });
+  });
+}
+
+async function approveProject(slug: string): Promise<void> {
+  try {
+    await postJson(`/api/v1/projects/${encodeURIComponent(slug)}/approve`, {});
+    setStatus(`Project ${slug} approved.`);
+    await loadSettings();
+  } catch (error) {
+    setStatus(`Approve failed: ${errorMessage(error)}`);
+  }
 }
 
 async function submitReleaseForm(form: HTMLFormElement): Promise<void> {

@@ -20,6 +20,8 @@ type Server struct {
 	sessions       *auth.SessionManager
 	allowedOrigins []string // parsed from BUGBARN_ALLOWED_ORIGINS
 	logHub         *logstream.Hub
+	sessionSecret  string
+	publicURL      string
 
 	loginLimiter sync.Map // map[string]*loginAttempt
 }
@@ -27,6 +29,12 @@ type Server struct {
 // SetLogHub wires the in-memory log streaming hub into the server.
 func (s *Server) SetLogHub(h *logstream.Hub) {
 	s.logHub = h
+}
+
+// SetSetupConfig wires the session secret and public URL for the setup page.
+func (s *Server) SetSetupConfig(sessionSecret, publicURL string) {
+	s.sessionSecret = sessionSecret
+	s.publicURL = publicURL
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
@@ -94,6 +102,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-project")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Setup endpoint — public, no auth required.
+	if strings.HasPrefix(r.URL.Path, "/setup/") && r.Method == http.MethodGet {
+		s.serveSetup(w, r)
 		return
 	}
 
@@ -214,6 +228,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.listRecentEvents(w, r)
 	case r.URL.Path == "/api/v1/projects" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
 		s.serveProjectsRoot(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && strings.HasSuffix(r.URL.Path, "/approve") && r.Method == http.MethodPost:
+		s.approveProject(w, r)
 	case r.URL.Path == "/api/v1/apikeys" && r.Method == http.MethodGet:
 		s.listAPIKeys(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/apikeys/") && r.Method == http.MethodDelete:

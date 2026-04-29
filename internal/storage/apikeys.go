@@ -80,6 +80,17 @@ UPDATE api_keys SET last_used_at = ? WHERE key_sha256 = ?`,
 	return err
 }
 
+// EnsureSetupAPIKey creates the API key if no key with the same sha256 exists yet (idempotent).
+func (s *Store) EnsureSetupAPIKey(ctx context.Context, name string, projectID int64, keySHA256 string) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO api_keys (name, project_id, key_sha256, scope, created_at)
+VALUES (?, ?, ?, 'ingest', ?)
+ON CONFLICT(key_sha256) DO NOTHING`,
+		name, projectID, keySHA256, formatTime(time.Now().UTC()),
+	)
+	return err
+}
+
 // ValidAPIKeySHA256 returns the project_id and scope for the API key matching the given SHA-256 hex digest.
 // Returns (0, "", false, nil) when no matching key exists.
 func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error) {

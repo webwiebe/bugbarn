@@ -5,6 +5,15 @@ import (
 	"strings"
 )
 
+func (s *Server) approveProject(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/approve")
+	if err := s.store.ApproveProject(r.Context(), slug); err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
 func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)

@@ -87,6 +87,7 @@ type Project struct {
 	ID        int64
 	Name      string
 	Slug      string
+	Status    string
 	CreatedAt time.Time
 }
 

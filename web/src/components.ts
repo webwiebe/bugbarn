@@ -26,7 +26,7 @@ import {
   issueTitle,
 } from "./domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "./format.js";
-import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
+import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
 
 const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
@@ -701,7 +701,7 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
   `;
 }
 
-export function renderSettingsViewMarkup(settings: ApiSettings | null, username: string, apiKeys: ApiApiKey[] = [], error: unknown = null): string {
+export function renderSettingsViewMarkup(settings: ApiSettings | null, username: string, apiKeys: ApiApiKey[] = [], error: unknown = null, projects: ApiProject[] = []): string {
   const displayName = settings?.displayName || settings?.display_name || username || "";
   const timezone = settings?.timezone || settings?.timezoneName || "";
   const defaultEnvironment = settings?.defaultEnvironment || settings?.default_environment || "";
@@ -762,6 +762,26 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
             <button type="submit">Upload source maps</button>
           </div>
         </form>
+      </div>
+      <div class="section">
+        <h3>Projects</h3>
+        ${projects.map(p => {
+          const slug = String(p.slug ?? p.Slug ?? '');
+          const name = String(p.name ?? p.Name ?? slug);
+          const status = String(p.status ?? p.Status ?? 'active');
+          const setupUrl = `/setup/${slug}`;
+          return `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+              <div style="flex:1;min-width:0">
+                <strong>${escapeHtml(name)}</strong>
+                <span style="margin-left:8px;font-size:11px;color:var(--muted)">${escapeHtml(slug)}</span>
+              </div>
+              <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
+              <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup page</a>
+              ${status === 'pending' ? `<button class="btn-sm" data-approve-project="${escapeAttr(slug)}">Approve</button>` : ''}
+            </div>
+          `;
+        }).join('')}
       </div>
       <div class="section">
         <h3>API keys</h3>

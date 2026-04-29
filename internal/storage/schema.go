@@ -240,6 +240,9 @@ func (s *Store) init(ctx context.Context) error {
 	if err := ensureColumn(ctx, tx, "events", "breadcrumbs_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := ensureColumn(ctx, tx, "projects", "status", "TEXT NOT NULL DEFAULT 'active'"); err != nil {
+		return err
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO projects (slug, name)

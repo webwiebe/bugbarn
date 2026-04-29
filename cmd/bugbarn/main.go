@@ -128,6 +128,7 @@ func run() error {
 	logHub := logstream.NewHub()
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins)
 	apiServer.SetLogHub(logHub)
+	apiServer.SetSetupConfig(cfg.sessionSecret, cfg.publicURL)
 	var httpHandler http.Handler = apiServer
 	if selfReporting {
 		httpHandler = bb.RecoverMiddleware(httpHandler)
