@@ -1538,6 +1538,9 @@ function connectLogSSE(): void {
       if (state.logLevel && entry.level_num < logLevelMinNum(state.logLevel)) {
         return;
       }
+      if (state.logSearch && !entry.message.toLowerCase().includes(state.logSearch.toLowerCase())) {
+        return;
+      }
       state.logs = [entry, ...state.logs].slice(0, 500);
       const list = document.getElementById("log-list");
       if (list) {
@@ -1592,6 +1595,8 @@ function wireLogsView(): void {
 
   levelFilter?.addEventListener("change", () => {
     state.logLevel = levelFilter.value;
+    state.logs = [];
+    connectLogSSE();
     void loadLogs();
   });
 
@@ -1603,6 +1608,8 @@ function wireLogsView(): void {
     debounceTimer = window.setTimeout(() => {
       debounceTimer = null;
       state.logSearch = searchInput.value.trim();
+      state.logs = [];
+      connectLogSSE();
       void loadLogs();
     }, 300);
   });
