@@ -105,53 +105,6 @@ sidebarToggle?.addEventListener("click", () => {
   }
 });
 
-const mobileMenuBtn = document.getElementById("mobile-menu-btn") as HTMLButtonElement | null;
-const mobileSidebar = document.getElementById("sidebar") as HTMLElement | null;
-
-function openMobileSidebar(): void {
-  if (!mobileSidebar) return;
-  Object.assign(mobileSidebar.style, {
-    display: "flex",
-    flexDirection: "column",
-    position: "fixed",
-    inset: "0",
-    zIndex: "200",
-    background: "#1d1e16",
-    padding: "20px 16px",
-    overflow: "hidden auto",
-  });
-  appFrame?.classList.add("mobile-nav-open");
-  if (mobileMenuBtn) {
-    mobileMenuBtn.textContent = "✕";
-    mobileMenuBtn.setAttribute("aria-expanded", "true");
-    mobileMenuBtn.setAttribute("aria-label", "Close navigation");
-  }
-}
-
-function closeMobileNav(): void {
-  if (mobileSidebar) {
-    mobileSidebar.style.cssText = "";
-  }
-  appFrame?.classList.remove("mobile-nav-open");
-  if (mobileMenuBtn) {
-    mobileMenuBtn.textContent = "☰";
-    mobileMenuBtn.setAttribute("aria-expanded", "false");
-    mobileMenuBtn.setAttribute("aria-label", "Open navigation");
-  }
-}
-
-mobileMenuBtn?.addEventListener("click", () => {
-  const isOpen = appFrame?.classList.contains("mobile-nav-open") ?? false;
-  if (isOpen) {
-    closeMobileNav();
-  } else {
-    openMobileSidebar();
-  }
-});
-
-document.querySelectorAll<HTMLAnchorElement>(".side-nav a").forEach((link) => {
-  link.addEventListener("click", closeMobileNav);
-});
 
 function closeBBMenu(): void {
   bbMenu?.setAttribute("hidden", "");
@@ -339,6 +292,10 @@ function setLiveStatus(message: string, tone = ""): void {
 function setActiveNav(): void {
   const routeGroup = state.currentRoute;
   elements.navLinks.forEach((link) => {
+    const target = link.getAttribute("data-route") || "";
+    link.classList.toggle("active", target === routeGroup);
+  });
+  document.querySelectorAll<HTMLAnchorElement>(".mobile-tab-bar a[data-route]").forEach((link) => {
     const target = link.getAttribute("data-route") || "";
     link.classList.toggle("active", target === routeGroup);
   });
