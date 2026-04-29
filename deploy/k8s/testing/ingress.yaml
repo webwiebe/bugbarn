@@ -12,6 +12,13 @@ spec:
     - host: bugbarn.test.wiebe.xyz
       http:
         paths:
+          - path: /setup
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
           - path: /api
             pathType: Prefix
             backend:
