@@ -1616,3 +1616,4 @@ function toTimestampMs(value: unknown): number {
   const date = new Date(value as string | number | Date);
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
+

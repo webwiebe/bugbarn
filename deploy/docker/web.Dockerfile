@@ -39,7 +39,7 @@ COPY web/icons/ /srv/icons/
 
 # Stamp the service worker with a hash of the compiled assets. Any change to
 # dist/ produces a new hash → browser detects a new SW → old caches purged.
-RUN BUILD_HASH=$(find /srv/dist -type f | sort | xargs sha256sum | sha256sum | cut -c1-12) && \
+RUN BUILD_HASH=$(find /srv/dist /srv/styles.css /srv/index.html -type f | sort | xargs sha256sum | sha256sum | cut -c1-12) && \
     sed -i "s/__BUILD_HASH__/${BUILD_HASH}/g" /srv/sw.js
 
 COPY deploy/docker/web-entrypoint.sh /usr/local/bin/entrypoint.sh
