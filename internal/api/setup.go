@@ -20,7 +20,7 @@ func (s *Server) setupKey(slug string) string {
 }
 
 func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimPrefix(r.URL.Path, "/setup/")
+	slug := strings.TrimPrefix(r.URL.Path, "/api/v1/setup/")
 	slug = strings.TrimSuffix(slug, "/")
 	if slug == "" || strings.Contains(slug, "/") {
 		http.Error(w, "invalid slug", http.StatusBadRequest)

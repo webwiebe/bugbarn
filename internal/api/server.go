@@ -106,7 +106,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Setup endpoint — public, no auth required.
-	if strings.HasPrefix(r.URL.Path, "/setup/") && r.Method == http.MethodGet {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/setup/") && r.Method == http.MethodGet {
 		s.serveSetup(w, r)
 		return
 	}
