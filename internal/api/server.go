@@ -111,6 +111,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Analytics JS snippet — public, no auth required.
+	if r.URL.Path == "/analytics.js" && r.Method == http.MethodGet {
+		s.serveAnalyticsSnippet(w, r)
+		return
+	}
+
+	// Analytics collection — public, wildcard CORS for sendBeacon from any origin.
+	if r.URL.Path == "/api/v1/analytics/collect" {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-project")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost {
+			s.collectPageView(w, r)
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	s.setCORSHeaders(w, r)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 	if r.Method == http.MethodOptions {
@@ -236,6 +259,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.deleteAPIKey(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/facets") && r.Method == http.MethodGet:
 		s.serveFacetsRoute(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/analytics/") && r.Method == http.MethodGet:
+		s.serveAnalyticsQuery(w, r)
 	default:
 		http.NotFound(w, r)
 	}
