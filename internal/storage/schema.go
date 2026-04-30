@@ -244,6 +244,41 @@ func (s *Store) init(ctx context.Context) error {
 		return err
 	}
 
+	// Analytics tables
+	analyticsSchema := []string{
+		`CREATE TABLE IF NOT EXISTS analytics_pageviews (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			ts           INTEGER NOT NULL,
+			pathname     TEXT    NOT NULL DEFAULT '',
+			hostname     TEXT    NOT NULL DEFAULT '',
+			referrer_host TEXT   NOT NULL DEFAULT '',
+			referrer_path TEXT   NOT NULL DEFAULT '',
+			session_id   TEXT    NOT NULL DEFAULT '',
+			duration_ms  INTEGER NOT NULL DEFAULT 0,
+			screen_width INTEGER NOT NULL DEFAULT 0,
+			props        TEXT    NOT NULL DEFAULT '{}'
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_analytics_pv_project_ts       ON analytics_pageviews(project_id, ts)`,
+		`CREATE INDEX IF NOT EXISTS idx_analytics_pv_project_pathname  ON analytics_pageviews(project_id, pathname, ts)`,
+		`CREATE TABLE IF NOT EXISTS analytics_daily (
+			project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			date        TEXT    NOT NULL,
+			pathname    TEXT    NOT NULL DEFAULT '',
+			dim_key     TEXT    NOT NULL DEFAULT '',
+			dim_value   TEXT    NOT NULL DEFAULT '',
+			pageviews   INTEGER NOT NULL DEFAULT 0,
+			sessions    INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (project_id, date, pathname, dim_key, dim_value)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_analytics_daily_project_date ON analytics_daily(project_id, date)`,
+	}
+	for _, stmt := range analyticsSchema {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO projects (slug, name)
 VALUES (?, ?)
