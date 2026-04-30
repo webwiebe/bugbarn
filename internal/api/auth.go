@@ -82,7 +82,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	secure := secureCookie(r)
 	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
-	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
+	http.SetCookie(w, s.sessions.CSRFCookie(token, expires, secure))
 	writeJSON(w, map[string]any{"authenticated": true, "authEnabled": true, "username": s.users.Username()})
 }
 

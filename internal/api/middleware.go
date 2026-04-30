@@ -3,8 +3,6 @@ package api
 import (
 	"net/http"
 	"strings"
-
-	"github.com/wiebe-xyz/bugbarn/internal/auth"
 )
 
 // setCORSHeaders applies CORS policy. We never use * because BugBarn uses
@@ -91,7 +89,7 @@ func (s *Server) validCSRF(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	expected := auth.CSRFToken(sessionCookie.Value)
+	expected := s.sessions.CSRFToken(sessionCookie.Value)
 	provided := r.Header.Get("X-BugBarn-CSRF")
 	return provided == expected
 }
