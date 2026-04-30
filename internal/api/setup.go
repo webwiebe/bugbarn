@@ -236,10 +236,10 @@ Generated %s
 		endpoint, slug, rawKey, status, // 3,4,5,6: table
 		pendingNote,            // 7: pending note block
 		endpoint, rawKey, slug, // 8,9,10: curl example
-		endpoint, endpoint, endpoint, endpoint, // 11-14: ts install (curl + 2 install variants + tarball dir)
-		rawKey, endpoint, slug, // 13,14,15: ts usage
-		rawKey, endpoint, slug, // 16,17,18: go
-		rawKey, endpoint, // 19,20: python (no project_slug param — routed by API key)
+		endpoint, endpoint, endpoint, // 11-13: ts install (curl + 2 install variants)
+		rawKey, endpoint, slug, // 14,15,16: ts usage
+		rawKey, endpoint, slug, // 17,18,19: go
+		rawKey, endpoint, // 20,21: python (no project_slug param — routed by API key)
 		endpoint, rawKey, slug, // 22,23,24: release curl
 		endpoint, rawKey, slug, // 25,26,27: logs curl
 		endpoint,               // 28: view link
