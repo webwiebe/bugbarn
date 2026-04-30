@@ -105,6 +105,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Analytics JS snippet — public, no auth required.
+	if r.URL.Path == "/analytics.js" && r.Method == http.MethodGet {
+		s.serveAnalyticsSnippet(w, r)
+		return
+	}
+
+	// Analytics collection endpoint — public, wildcard CORS so beacon requests from any origin work.
+	if r.URL.Path == "/api/v1/analytics/collect" {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-project")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost {
+			s.collectPageView(w, r)
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	// Setup endpoint — public, no auth required.
 	if strings.HasPrefix(r.URL.Path, "/api/v1/setup/") && r.Method == http.MethodGet {
 		s.serveSetup(w, r)
