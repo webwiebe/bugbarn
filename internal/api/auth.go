@@ -136,10 +136,11 @@ func (s *Server) clientIP(r *http.Request) string {
 }
 
 func remoteHost(addr string) string {
-	if idx := strings.LastIndex(addr, ":"); idx > 0 {
-		return addr[:idx]
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
 	}
-	return addr
+	return host
 }
 
 func isTrustedProxy(ip string, cidrs []*net.IPNet) bool {
