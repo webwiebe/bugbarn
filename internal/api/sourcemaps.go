@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
@@ -28,7 +29,17 @@ func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	limit := s.maxSourceMapBytes
+	if limit <= 0 {
+		limit = defaultMaxSourceMapBytes
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "source map too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid source map payload", http.StatusBadRequest)
 		return
 	}
@@ -39,9 +50,14 @@ func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	blob, err := io.ReadAll(file)
+	limited := io.LimitReader(file, limit+1)
+	blob, err := io.ReadAll(limited)
 	if err != nil {
 		http.Error(w, "unable to read source map", http.StatusBadRequest)
+		return
+	}
+	if int64(len(blob)) > limit {
+		http.Error(w, "source map too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
