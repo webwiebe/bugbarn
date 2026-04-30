@@ -177,20 +177,22 @@ func (s *Spool) Rotate() error {
 	if s == nil {
 		return errors.New("spool is nil")
 	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.rotateLocked()
+}
 
+// rotateLocked performs rotation; caller must hold s.mu.
+func (s *Spool) rotateLocked() error {
 	if err := s.file.Close(); err != nil {
 		return fmt.Errorf("spool rotate close: %w", err)
 	}
-
-	ts := time.Now().UTC().Format("20060102T150405Z")
+	// Use nanosecond precision so rapid successive rotations never collide.
+	ts := time.Now().UTC().Format("20060102T150405.000000000Z")
 	archived := filepath.Join(s.dir, fmt.Sprintf("ingest-%s.ndjson", ts))
 	if err := os.Rename(s.path, archived); err != nil {
 		return fmt.Errorf("spool rotate rename: %w", err)
 	}
-
 	file, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("spool rotate open: %w", err)
@@ -199,22 +201,23 @@ func (s *Spool) Rotate() error {
 	return nil
 }
 
-// RotateIfExceeds rotates the active segment when it exceeds the given byte threshold.
+// RotateIfExceeds rotates the active segment when it exceeds the given byte
+// threshold. The stat check and the rename+reopen are performed under a single
+// lock acquisition so no appends can land on the stale file handle.
 func (s *Spool) RotateIfExceeds(maxBytes int64) error {
 	if s == nil {
 		return errors.New("spool is nil")
 	}
-
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	info, err := s.file.Stat()
-	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	if info.Size() > maxBytes {
-		return s.Rotate()
+	if info.Size() <= maxBytes {
+		return nil
 	}
-	return nil
+	return s.rotateLocked()
 }
 
 // RotateIfExceedsPath checks the active spool file in dir and renames it when
@@ -236,7 +239,7 @@ func RotateIfExceedsPath(dir string, maxBytes int64) error {
 	if info.Size() <= maxBytes {
 		return nil
 	}
-	ts := time.Now().UTC().Format("20060102T150405Z")
+	ts := time.Now().UTC().Format("20060102T150405.000000000Z")
 	archived := filepath.Join(dir, fmt.Sprintf("ingest-%s.ndjson", ts))
 	return os.Rename(path, archived)
 }

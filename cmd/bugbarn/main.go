@@ -109,7 +109,7 @@ func run() error {
 		log.Printf("self-reporting enabled → %s", cfg.selfEndpoint)
 	}
 
-	go runBackgroundWorker(ctx, cfg.spoolDir, store, svc, selfReporting)
+	go runBackgroundWorker(ctx, eventSpool, cfg.spoolDir, store, svc, selfReporting)
 
 	digest.StartScheduler(ctx, cfg.digest, store)
 
@@ -462,7 +462,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.Store, svc *service.Service, selfReporting bool) {
+func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.Service, selfReporting bool) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -563,7 +563,7 @@ func runBackgroundWorker(ctx context.Context, spoolDir string, store *storage.St
 
 			// Rotate the active spool file once it exceeds the threshold, so old
 			// segments can eventually be archived or deleted.
-			if err := spool.RotateIfExceedsPath(spoolDir, workerRotateThreshold); err != nil {
+			if err := eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
 				log.Printf("worker rotate spool: %v", err)
 			}
 		}

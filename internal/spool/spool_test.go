@@ -3,8 +3,10 @@ package spool
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -265,5 +267,79 @@ func TestReadRecordsFromOffsets(t *testing.T) {
 	}
 	if len(tail) != 1 || tail[0].Record.IngestID != "c" {
 		t.Fatalf("expected [c], got %+v", tail)
+	}
+}
+
+// TestRotateIfExceedsConcurrentAppend verifies that every record appended
+// concurrently with RotateIfExceeds ends up in exactly one segment and is
+// not silently discarded.
+func TestRotateIfExceedsConcurrentAppend(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("new spool: %v", err)
+	}
+	defer s.Close()
+
+	const writers = 8
+	const recordsPerWriter = 20
+	total := writers * recordsPerWriter
+
+	var wg sync.WaitGroup
+
+	// Hammer RotateIfExceeds from one goroutine while writers append concurrently.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < total; i++ {
+			// Threshold of 1 byte forces rotation on almost every call.
+			if err := s.RotateIfExceeds(1); err != nil {
+				t.Errorf("RotateIfExceeds: %v", err)
+				return
+			}
+		}
+	}()
+
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < recordsPerWriter; i++ {
+				rec := Record{IngestID: fmt.Sprintf("w%d-r%d", w, i)}
+				if err := s.Append(rec); err != nil {
+					t.Errorf("append w%d r%d: %v", w, i, err)
+				}
+			}
+		}(w)
+	}
+
+	wg.Wait()
+
+	// Collect every record across all segments (active + archived).
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	seen := make(map[string]bool)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".ndjson" {
+			continue
+		}
+		if e.Name() == cursorFileName || e.Name() == deadLetterFileName {
+			continue
+		}
+		recs, err := ReadRecords(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", e.Name(), err)
+		}
+		for _, r := range recs {
+			if seen[r.IngestID] {
+				t.Errorf("duplicate record %q", r.IngestID)
+			}
+			seen[r.IngestID] = true
+		}
+	}
+	if len(seen) != total {
+		t.Errorf("expected %d records across all segments, got %d", total, len(seen))
 	}
 }
