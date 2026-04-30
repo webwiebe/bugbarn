@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -19,11 +20,17 @@ type Server struct {
 	users          *auth.UserAuthenticator
 	sessions       *auth.SessionManager
 	allowedOrigins []string // parsed from BUGBARN_ALLOWED_ORIGINS
+	trustedProxies []*net.IPNet
 	logHub         *logstream.Hub
 	sessionSecret  string
 	publicURL      string
 
 	loginLimiter sync.Map // map[string]*loginAttempt
+}
+
+// SetTrustedProxies sets the CIDRs from which X-Forwarded-For is trusted.
+func (s *Server) SetTrustedProxies(cidrs []*net.IPNet) {
+	s.trustedProxies = cidrs
 }
 
 // SetLogHub wires the in-memory log streaming hub into the server.
