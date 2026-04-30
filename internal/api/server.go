@@ -13,17 +13,20 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
+const defaultMaxSourceMapBytes = 32 << 20 // 32 MiB
+
 type Server struct {
-	ingestHandler  *ingest.Handler
-	store          *storage.Store
-	service        *service.Service
-	users          *auth.UserAuthenticator
-	sessions       *auth.SessionManager
-	allowedOrigins []string // parsed from BUGBARN_ALLOWED_ORIGINS
-	trustedProxies []*net.IPNet
-	logHub         *logstream.Hub
-	sessionSecret  string
-	publicURL      string
+	ingestHandler     *ingest.Handler
+	store             *storage.Store
+	service           *service.Service
+	users             *auth.UserAuthenticator
+	sessions          *auth.SessionManager
+	allowedOrigins    []string // parsed from BUGBARN_ALLOWED_ORIGINS
+	trustedProxies    []*net.IPNet
+	logHub            *logstream.Hub
+	sessionSecret     string
+	publicURL         string
+	maxSourceMapBytes int64
 
 	loginLimiter sync.Map // map[string]*loginAttempt
 }
@@ -31,6 +34,13 @@ type Server struct {
 // SetTrustedProxies sets the CIDRs from which X-Forwarded-For is trusted.
 func (s *Server) SetTrustedProxies(cidrs []*net.IPNet) {
 	s.trustedProxies = cidrs
+}
+
+// SetMaxSourceMapBytes sets the maximum source map upload size. Defaults to 32 MiB.
+func (s *Server) SetMaxSourceMapBytes(n int64) {
+	if n > 0 {
+		s.maxSourceMapBytes = n
+	}
 }
 
 // SetLogHub wires the in-memory log streaming hub into the server.
@@ -45,17 +55,18 @@ func (s *Server) SetSetupConfig(sessionSecret, publicURL string) {
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
-	return &Server{ingestHandler: ingestHandler, store: store, service: service.New(store)}
+	return &Server{ingestHandler: ingestHandler, store: store, service: service.New(store), maxSourceMapBytes: defaultMaxSourceMapBytes}
 }
 
 func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, users *auth.UserAuthenticator, sessions *auth.SessionManager, allowedOrigins []string) *Server {
 	s := &Server{
-		ingestHandler:  ingestHandler,
-		store:          store,
-		service:        service.New(store),
-		users:          users,
-		sessions:       sessions,
-		allowedOrigins: allowedOrigins,
+		ingestHandler:     ingestHandler,
+		store:             store,
+		service:           service.New(store),
+		users:             users,
+		sessions:          sessions,
+		allowedOrigins:    allowedOrigins,
+		maxSourceMapBytes: defaultMaxSourceMapBytes,
 	}
 	go s.cleanupLoginLimiter()
 	return s

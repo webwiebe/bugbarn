@@ -135,6 +135,9 @@ func run() error {
 	if len(cfg.trustedProxies) > 0 {
 		apiServer.SetTrustedProxies(cfg.trustedProxies)
 	}
+	if cfg.maxSourceMapBytes > 0 {
+		apiServer.SetMaxSourceMapBytes(cfg.maxSourceMapBytes)
+	}
 	var httpHandler http.Handler = apiServer
 	if selfReporting {
 		httpHandler = bb.RecoverMiddleware(httpHandler)
@@ -181,6 +184,7 @@ type config struct {
 	dbPath              string
 	maxBodyBytes        int64
 	maxSpoolBytes       int64
+	maxSourceMapBytes   int64
 	publicURL           string
 	selfEndpoint        string
 	selfAPIKey          string
@@ -237,6 +241,11 @@ func loadConfig() config {
 	if raw := os.Getenv("BUGBARN_MAX_SPOOL_BYTES"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
 			cfg.maxSpoolBytes = parsed
+		}
+	}
+	if raw := os.Getenv("BUGBARN_MAX_SOURCE_MAP_BYTES"); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
+			cfg.maxSourceMapBytes = parsed
 		}
 	}
 	if raw := os.Getenv("BUGBARN_SESSION_TTL_SECONDS"); raw != "" {
