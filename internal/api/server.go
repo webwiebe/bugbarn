@@ -15,16 +15,18 @@ import (
 const defaultMaxSourceMapBytes = 32 << 20 // 32 MiB
 
 type Server struct {
-	ingestHandler     *ingest.Handler
-	store             *storage.Store
-	service           *service.Service
-	users             *auth.UserAuthenticator
-	sessions          *auth.SessionManager
-	allowedOrigins    []string // parsed from BUGBARN_ALLOWED_ORIGINS
-	logHub            *logstream.Hub
-	sessionSecret     string
-	publicURL         string
-	maxSourceMapBytes int64
+	ingestHandler      *ingest.Handler
+	store              *storage.Store
+	service            *service.Service
+	users              *auth.UserAuthenticator
+	sessions           *auth.SessionManager
+	allowedOrigins     []string // parsed from BUGBARN_ALLOWED_ORIGINS
+	logHub             *logstream.Hub
+	sessionSecret      string
+	publicURL          string
+	maxSourceMapBytes  int64
+	funnelBarnEndpoint string
+	funnelBarnAPIKey   string
 
 	loginLimiter sync.Map // map[string]*loginAttempt
 }
@@ -45,6 +47,13 @@ func (s *Server) SetMaxSourceMapBytes(n int64) {
 func (s *Server) SetSetupConfig(sessionSecret, publicURL string) {
 	s.sessionSecret = sessionSecret
 	s.publicURL = publicURL
+}
+
+// SetFunnelBarnConfig wires optional FunnelBarn analytics tracking config.
+// If endpoint is empty, the runtime-config endpoint returns enabled=false.
+func (s *Server) SetFunnelBarnConfig(endpoint, apiKey string) {
+	s.funnelBarnEndpoint = endpoint
+	s.funnelBarnAPIKey = apiKey
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
@@ -133,6 +142,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:
 		writeJSON(w, map[string]any{"status": "ok"})
+		return
+	case r.URL.Path == "/api/v1/runtime-config" && r.Method == http.MethodGet:
+		s.serveRuntimeConfig(w, r)
 		return
 	case r.URL.Path == "/api/v1/login" && r.Method == http.MethodPost:
 		s.login(w, r)

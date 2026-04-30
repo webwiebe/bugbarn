@@ -218,6 +218,10 @@ window.addEventListener("beforeunload", stopLiveStream);
 void start();
 
 async function start(): Promise<void> {
+  // Kick off FunnelBarn analytics initialisation in parallel — it must not
+  // block the rest of the app startup.
+  void initFunnelBarn();
+
   await loadSession();
   updateBBMenuUser();
   route();
@@ -228,6 +232,76 @@ async function start(): Promise<void> {
   const envLoad = state.currentProject !== "__all" ? loadEnvironments() : (renderEnvSwitcher([]), Promise.resolve());
   await Promise.all([loadProjects(), envLoad, refreshAll()]);
   initInstallPrompt();
+}
+
+// ---------------------------------------------------------------------------
+// FunnelBarn analytics (opt-in)
+//
+// The Go server exposes GET /api/v1/runtime-config. When
+// BUGBARN_FUNNELBARN_ENDPOINT is set, it returns:
+//   { "funnelbarn": { "enabled": true, "endpoint": "...", "apiKey": "..." } }
+//
+// We dynamically inject the FunnelBarn JS SDK from:
+//   {endpoint}/sdk/funnelbarn.js
+// (FunnelBarn serves its pre-built IIFE bundle at that path via the web
+// container's nginx static file server — see web/public/ in the FunnelBarn
+// repo, or build sdks/js and place the output there.)
+//
+// After the script loads, window.funnelbarn is available and we call:
+//   window.funnelbarn.init({ apiKey, endpoint })
+//   window.funnelbarn.page()
+// ---------------------------------------------------------------------------
+
+// TypeScript type declaration for the globally-injected FunnelBarn SDK.
+declare global {
+  interface Window {
+    funnelbarn?: {
+      init(options: { apiKey: string; endpoint: string }): void;
+      page(): void;
+      track(name: string, properties?: Record<string, unknown>): void;
+    };
+  }
+}
+
+async function initFunnelBarn(): Promise<void> {
+  let cfg: { funnelbarn?: { enabled: boolean; endpoint?: string; apiKey?: string } };
+  try {
+    const res = await fetch("/api/v1/runtime-config");
+    if (!res.ok) return;
+    cfg = await res.json() as typeof cfg;
+  } catch {
+    // Non-critical — silently abort if the endpoint is unreachable.
+    return;
+  }
+
+  const fb = cfg?.funnelbarn;
+  if (!fb?.enabled || !fb.endpoint || !fb.apiKey) return;
+
+  const { endpoint, apiKey } = fb;
+
+  // Inject the SDK script tag. FunnelBarn serves the pre-built IIFE bundle at
+  // {endpoint}/sdk/funnelbarn.js from the web container's nginx static server.
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `${endpoint}/sdk/funnelbarn.js`;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`funnelbarn: failed to load SDK from ${script.src}`));
+    document.head.appendChild(script);
+  }).catch(() => {
+    // SDK load failed — abort silently. This is non-critical.
+    return;
+  });
+
+  if (typeof window.funnelbarn?.init !== "function") return;
+
+  window.funnelbarn.init({ apiKey, endpoint });
+  window.funnelbarn.page();
+
+  // Track subsequent hash-based route changes as additional page views.
+  window.addEventListener("hashchange", () => {
+    window.funnelbarn?.page();
+  });
 }
 
 // PWA install prompt — shown once until dismissed, never shown again after
