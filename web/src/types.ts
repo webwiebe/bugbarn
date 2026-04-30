@@ -180,6 +180,18 @@ export interface ApiSettings extends RawRecord {
   stacktrace_context_lines?: number;
 }
 
+export interface AnalyticsOverview {
+  pageviews: number;
+  sessions: number;
+  pages: number;
+  avgDurationMs: number;
+}
+
+export interface AnalyticsPage extends RawRecord { pathname: string; pageviews: number; sessions: number; }
+export interface AnalyticsBucket extends RawRecord { date: string; pageviews: number; sessions: number; }
+export interface AnalyticsReferrer extends RawRecord { host: string; pageviews: number; sessions: number; }
+export interface AnalyticsSegmentBucket extends RawRecord { value: string; pageviews: number; sessions: number; }
+
 export type IssueSort = "last_seen" | "first_seen" | "event_count";
 export type IssueStatus = "all" | "open" | "resolved" | "muted";
 
@@ -191,7 +203,7 @@ export interface AppState {
   projects: ApiProject[];
   currentProject: string;
   currentEnv: string;
-  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs";
+  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs" | "analytics";
   issues: ApiIssue[];
   issueQuery: string;
   issueSort: IssueSort;

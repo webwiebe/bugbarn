@@ -26,7 +26,7 @@ import {
   issueTitle,
 } from "./domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "./format.js";
-import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
+import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
 
 const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
@@ -1305,6 +1305,216 @@ export function renderLogsViewMarkup(logs: ApiLogEntry[], level: string, search:
     </div>
     <div id="log-list" class="log-list">
       ${listContent}
+    </div>
+  `;
+}
+
+export function renderAnalyticsViewMarkup(
+  overview: AnalyticsOverview | null,
+  pages: AnalyticsPage[],
+  timeline: AnalyticsBucket[],
+  referrers: AnalyticsReferrer[],
+  segments: AnalyticsSegmentBucket[],
+  rangeDays: number,
+  segmentDim: string,
+  error: unknown = null,
+): string {
+  return `
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">Analytics</p>
+        <h2>Web analytics</h2>
+      </div>
+      <div class="view-actions">
+        <div class="analytics-range-bar" role="group" aria-label="Date range">
+          <button class="tab${rangeDays === 7 ? " active" : ""}" data-analytics-range="7">7d</button>
+          <button class="tab${rangeDays === 30 ? " active" : ""}" data-analytics-range="30">30d</button>
+          <button class="tab${rangeDays === 90 ? " active" : ""}" data-analytics-range="90">90d</button>
+        </div>
+      </div>
+    </div>
+    ${error ? `<div class="error">Analytics unavailable. ${escapeHtml(errorMessage(error))}</div>` : ""}
+    ${renderAnalyticsOverviewCards(overview)}
+    ${renderAnalyticsTimeline(timeline)}
+    <div class="analytics-tables">
+      ${renderAnalyticsPagesTable(pages)}
+      ${renderAnalyticsReferrersTable(referrers)}
+    </div>
+    ${renderAnalyticsSegmentSection(segments, segmentDim)}
+  `;
+}
+
+function renderAnalyticsOverviewCards(overview: AnalyticsOverview | null): string {
+  const pv = overview?.pageviews ?? 0;
+  const sv = overview?.sessions ?? 0;
+  const pg = overview?.pages ?? 0;
+  return `
+    <div class="analytics-cards">
+      <div class="analytics-card">
+        <span class="analytics-card-label">Pageviews</span>
+        <strong class="analytics-card-value">${escapeHtml(String(pv))}</strong>
+      </div>
+      <div class="analytics-card">
+        <span class="analytics-card-label">Sessions</span>
+        <strong class="analytics-card-value">${escapeHtml(String(sv))}</strong>
+      </div>
+      <div class="analytics-card">
+        <span class="analytics-card-label">Pages</span>
+        <strong class="analytics-card-value">${escapeHtml(String(pg))}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderAnalyticsTimeline(buckets: AnalyticsBucket[]): string {
+  if (!buckets.length) {
+    return `<div class="section"><div class="empty">No timeline data available.</div></div>`;
+  }
+
+  const maxPv = buckets.reduce((m, b) => Math.max(m, b.pageviews), 1);
+  const w = 800;
+  const h = 120;
+  const padTop = 8;
+  const padBottom = 8;
+  const innerH = h - padTop - padBottom;
+  const step = w / Math.max(buckets.length - 1, 1);
+
+  const points = buckets.map((b, i) => {
+    const x = Math.round(i * step);
+    const y = Math.round(padTop + innerH - (b.pageviews / maxPv) * innerH);
+    return `${x},${y}`;
+  }).join(" ");
+
+  // Vertical grid lines at each bucket (only if few buckets, else every ~7)
+  const gridInterval = buckets.length > 14 ? 7 : 1;
+  const gridLines = buckets
+    .filter((_, i) => i % gridInterval === 0)
+    .map((_, idx) => {
+      const i = idx * gridInterval;
+      const x = Math.round(i * step);
+      return `<line x1="${x}" y1="${padTop}" x2="${x}" y2="${h - padBottom}" stroke="var(--line,#21262d)" stroke-width="1"/>`;
+    })
+    .join("");
+
+  // Date labels — first and last
+  const firstLabel = buckets[0]?.date ?? "";
+  const lastLabel = buckets[buckets.length - 1]?.date ?? "";
+  const lastX = Math.round((buckets.length - 1) * step);
+
+  return `
+    <div class="section analytics-timeline-section">
+      <h3>Pageviews over time</h3>
+      <div class="analytics-chart" style="position:relative">
+        <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" aria-label="Pageviews timeline" role="img" style="display:block;overflow:visible">
+          ${gridLines}
+          <polyline points="${escapeAttr(points)}" fill="none" stroke="#d4a054" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted,#8b949e);margin-top:2px">
+          <span>${escapeHtml(firstLabel)}</span>
+          <span>${escapeHtml(lastLabel)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAnalyticsPagesTable(pages: AnalyticsPage[]): string {
+  if (!pages.length) {
+    return `
+      <div class="section" style="flex:1;min-width:0">
+        <h3>Top pages</h3>
+        <div class="empty">
+          <p>No page data yet.</p>
+          <p class="muted">Install the BugBarn snippet on your site to track pageviews.</p>
+        </div>
+      </div>
+    `;
+  }
+  const rows = pages.map((p) => `
+    <tr>
+      <td class="url-truncate">${escapeHtml(p.pathname)}</td>
+      <td>${escapeHtml(String(p.pageviews))}</td>
+      <td>${escapeHtml(String(p.sessions))}</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="section" style="flex:1;min-width:0">
+      <h3>Top pages</h3>
+      <table class="data-table">
+        <thead><tr><th>Path</th><th>Views</th><th>Sessions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAnalyticsReferrersTable(referrers: AnalyticsReferrer[]): string {
+  if (!referrers.length) {
+    return `
+      <div class="section" style="flex:1;min-width:0">
+        <h3>Referrers</h3>
+        <div class="empty"><p>No referrer data yet.</p></div>
+      </div>
+    `;
+  }
+  const rows = referrers.map((r) => `
+    <tr>
+      <td class="url-truncate">${escapeHtml(r.host || "(direct)")}</td>
+      <td>${escapeHtml(String(r.pageviews))}</td>
+      <td>${escapeHtml(String(r.sessions))}</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="section" style="flex:1;min-width:0">
+      <h3>Referrers</h3>
+      <table class="data-table">
+        <thead><tr><th>Host</th><th>Views</th><th>Sessions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAnalyticsSegmentSection(segments: AnalyticsSegmentBucket[], dim: string): string {
+  const dimOptions = [
+    { value: "", label: "-- none --" },
+    { value: "referrer_host", label: "Referrer host" },
+    { value: "screen_width", label: "Screen width" },
+  ];
+  const selectHtml = `
+    <select id="analytics-segment-dim" aria-label="Breakdown dimension">
+      ${dimOptions.map((o) => `<option value="${escapeAttr(o.value)}"${o.value === dim ? " selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
+    </select>
+  `;
+  if (!dim) {
+    return `
+      <div class="section">
+        <h3>Breakdown</h3>
+        ${selectHtml}
+      </div>
+    `;
+  }
+  let tableHtml = `<div class="empty"><p>No segment data.</p></div>`;
+  if (segments.length) {
+    const rows = segments.map((s) => `
+      <tr>
+        <td>${escapeHtml(s.value || "(unknown)")}</td>
+        <td>${escapeHtml(String(s.pageviews))}</td>
+        <td>${escapeHtml(String(s.sessions))}</td>
+      </tr>
+    `).join("");
+    tableHtml = `
+      <table class="data-table">
+        <thead><tr><th>${escapeHtml(dim)}</th><th>Views</th><th>Sessions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+  return `
+    <div class="section">
+      <h3>Breakdown</h3>
+      ${selectHtml}
+      ${tableHtml}
     </div>
   `;
 }
