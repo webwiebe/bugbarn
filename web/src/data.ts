@@ -1,4 +1,4 @@
-import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, RawRecord } from "./types.js";
+import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, DropoutStat, PageFlowResult, ScrollDepthResult, RawRecord } from "./types.js";
 
 export function normalizeList<T extends RawRecord = RawRecord>(payload: unknown, key: string): T[] {
   if (!payload) {
@@ -129,4 +129,29 @@ export async function fetchAnalyticsSegments(project: string, start: string, end
   const qs = new URLSearchParams({ start, end, dim }).toString();
   const data = await apiFetchJson(`/api/v1/analytics/segments?${qs}`, project);
   return normalizeList<AnalyticsSegmentBucket>(data, "buckets");
+}
+
+export async function fetchAnalyticsFlow(project: string, start: string, end: string, pathname: string): Promise<PageFlowResult> {
+  const qs = new URLSearchParams({ start, end, pathname }).toString();
+  const raw = await apiFetchJson(`/api/v1/analytics/flow?${qs}`, project);
+  const data = isRecord(raw) ? raw : {};
+  const cameFrom = Array.isArray(data["cameFrom"]) ? (data["cameFrom"] as RawRecord[]).map((e) => ({ pathname: String(e["pathname"] ?? ""), count: Number(e["count"] ?? 0), pct: Number(e["pct"] ?? 0) })) : [];
+  const wentTo = Array.isArray(data["wentTo"]) ? (data["wentTo"] as RawRecord[]).map((e) => ({ pathname: String(e["pathname"] ?? ""), count: Number(e["count"] ?? 0), pct: Number(e["pct"] ?? 0) })) : [];
+  return { pathname: String(data["pathname"] ?? pathname), cameFrom, wentTo };
+}
+
+export async function fetchAnalyticsScroll(project: string, start: string, end: string, pathname: string): Promise<ScrollDepthResult> {
+  const qs = new URLSearchParams({ start, end, pathname }).toString();
+  const raw = await apiFetchJson(`/api/v1/analytics/scroll?${qs}`, project);
+  const data = isRecord(raw) ? raw : {};
+  const buckets = Array.isArray(data["buckets"]) ? (data["buckets"] as RawRecord[]).map((b) => ({ label: String(b["label"] ?? ""), count: Number(b["count"] ?? 0), pct: Number(b["pct"] ?? 0) })) : [];
+  return { pathname: String(data["pathname"] ?? pathname), buckets };
+}
+
+export async function fetchAnalyticsDropout(project: string, start: string, end: string): Promise<DropoutStat[]> {
+  const qs = new URLSearchParams({ start, end }).toString();
+  const raw = await apiFetchJson(`/api/v1/analytics/dropout?${qs}`, project);
+  const data = isRecord(raw) ? raw : {};
+  const pages = Array.isArray(data["pages"]) ? data["pages"] as RawRecord[] : [];
+  return pages.map((p) => ({ pathname: String(p["pathname"] ?? ""), pageviews: Number(p["pageviews"] ?? 0), bouncedSessions: Number(p["bouncedSessions"] ?? 0), bounceRate: Number(p["bounceRate"] ?? 0) }));
 }

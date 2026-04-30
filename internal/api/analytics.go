@@ -162,6 +162,76 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 			"buckets": segs,
 		})
 
+	case "flow":
+		pathname := r.URL.Query().Get("pathname")
+		result, err := s.store.QueryPageFlow(ctx, q, pathname)
+		if err != nil {
+			http.Error(w, "query error", http.StatusInternalServerError)
+			return
+		}
+		type flowEntry struct {
+			Pathname string  `json:"pathname"`
+			Count    int64   `json:"count"`
+			Pct      float64 `json:"pct"`
+		}
+		cameFrom := make([]flowEntry, 0, len(result.CameFrom))
+		for _, e := range result.CameFrom {
+			cameFrom = append(cameFrom, flowEntry{Pathname: e.Pathname, Count: e.Count, Pct: e.Pct})
+		}
+		wentTo := make([]flowEntry, 0, len(result.WentTo))
+		for _, e := range result.WentTo {
+			wentTo = append(wentTo, flowEntry{Pathname: e.Pathname, Count: e.Count, Pct: e.Pct})
+		}
+		writeJSON(w, map[string]any{
+			"pathname": result.Pathname,
+			"cameFrom": cameFrom,
+			"wentTo":   wentTo,
+		})
+
+	case "scroll":
+		pathname := r.URL.Query().Get("pathname")
+		result, err := s.store.QueryScrollDepth(ctx, q, pathname)
+		if err != nil {
+			http.Error(w, "query error", http.StatusInternalServerError)
+			return
+		}
+		type scrollBucket struct {
+			Label string  `json:"label"`
+			Count int64   `json:"count"`
+			Pct   float64 `json:"pct"`
+		}
+		buckets := make([]scrollBucket, 0, len(result.Buckets))
+		for _, b := range result.Buckets {
+			buckets = append(buckets, scrollBucket{Label: b.Label, Count: b.Count, Pct: b.Pct})
+		}
+		writeJSON(w, map[string]any{
+			"pathname": result.Pathname,
+			"buckets":  buckets,
+		})
+
+	case "dropout":
+		stats, err := s.store.QueryDropout(ctx, q)
+		if err != nil {
+			http.Error(w, "query error", http.StatusInternalServerError)
+			return
+		}
+		type dropoutPage struct {
+			Pathname        string  `json:"pathname"`
+			Pageviews       int64   `json:"pageviews"`
+			BouncedSessions int64   `json:"bouncedSessions"`
+			BounceRate      float64 `json:"bounceRate"`
+		}
+		pages := make([]dropoutPage, 0, len(stats))
+		for _, st := range stats {
+			pages = append(pages, dropoutPage{
+				Pathname:        st.Pathname,
+				Pageviews:       st.Pageviews,
+				BouncedSessions: st.BouncedSessions,
+				BounceRate:      st.BounceRate,
+			})
+		}
+		writeJSON(w, map[string]any{"pages": pages})
+
 	default:
 		http.NotFound(w, r)
 	}
@@ -246,13 +316,17 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		Pathname    string            `json:"pathname"`
-		Hostname    string            `json:"hostname"`
-		Referrer    string            `json:"referrer"`
-		SessionID   string            `json:"sessionId"`
-		ScreenWidth int               `json:"screenWidth"`
-		Duration    int64             `json:"duration"`
-		Props       map[string]string `json:"props"`
+		Pathname         string            `json:"pathname"`
+		Hostname         string            `json:"hostname"`
+		Referrer         string            `json:"referrer"`
+		VisitorID        string            `json:"visitorId"`
+		SessionID        string            `json:"sessionId"`
+		ScreenWidth      int               `json:"screenWidth"`
+		Duration         int64             `json:"duration"`
+		MaxScrollPct     int               `json:"maxScrollPct"`
+		InteractionCount int               `json:"interactionCount"`
+		ExitPathname     string            `json:"exitPathname"`
+		Props            map[string]string `json:"props"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -302,16 +376,20 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pv := analytics.PageView{
-		ProjectID:    projectID,
-		Ts:           time.Now().UTC(),
-		Pathname:     payload.Pathname,
-		Hostname:     payload.Hostname,
-		ReferrerHost: referrerHost,
-		ReferrerPath: referrerPath,
-		SessionID:    payload.SessionID,
-		DurationMs:   payload.Duration,
-		ScreenWidth:  payload.ScreenWidth,
-		Props:        props,
+		ProjectID:        projectID,
+		Ts:               time.Now().UTC(),
+		Pathname:         payload.Pathname,
+		Hostname:         payload.Hostname,
+		ReferrerHost:     referrerHost,
+		ReferrerPath:     referrerPath,
+		VisitorID:        payload.VisitorID,
+		SessionID:        payload.SessionID,
+		DurationMs:       payload.Duration,
+		ScreenWidth:      payload.ScreenWidth,
+		MaxScrollPct:     payload.MaxScrollPct,
+		InteractionCount: payload.InteractionCount,
+		ExitPathname:     payload.ExitPathname,
+		Props:            props,
 	}
 
 	if s.store != nil {
@@ -339,11 +417,16 @@ func (s *Server) serveAnalyticsSnippet(w http.ResponseWriter, r *http.Request) {
 
 	snippet := `(function(){
   var E="__ENDPOINT__",P="__PROJECT__";
+  var vid=localStorage.getItem('_bb_vid');
+  if(!vid){vid=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36));localStorage.setItem('_bb_vid',vid);}
   var sid=sessionStorage.getItem('_bb_sid');
   if(!sid){sid=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36));sessionStorage.setItem('_bb_sid',sid);}
-  var t0=Date.now();
+  var t0=Date.now(),scroll=0,clicks=0,exitPath='';
+  window.addEventListener('scroll',function(){var s=Math.round(window.scrollY/(document.documentElement.scrollHeight-window.innerHeight||1)*100);if(s>scroll)scroll=s<100?s:100;},{passive:true});
+  document.addEventListener('click',function(e){clicks++;var a=e.target.closest('a');if(a&&a.hostname===location.hostname)exitPath=a.pathname;});
+  document.addEventListener('keydown',function(){clicks++;});
   function send(dur){
-    var payload=JSON.stringify({pathname:location.pathname,hostname:location.hostname,referrer:document.referrer||'',sessionId:sid,screenWidth:screen.width,duration:dur,props:(window.__bb_analytics&&window.__bb_analytics.props)||{}});
+    var payload=JSON.stringify({pathname:location.pathname,hostname:location.hostname,referrer:document.referrer||'',visitorId:vid,sessionId:sid,screenWidth:screen.width,duration:dur,maxScrollPct:scroll,interactionCount:clicks,exitPathname:exitPath,props:(window.__bb_analytics&&window.__bb_analytics.props)||{}});
     navigator.sendBeacon?navigator.sendBeacon(E+'/api/v1/analytics/collect?project='+P,payload):fetch(E+'/api/v1/analytics/collect?project='+P,{method:'POST',body:payload,keepalive:true});
   }
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',function(){send(0);}):send(0);

@@ -261,6 +261,7 @@ func (s *Store) init(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_analytics_pv_project_ts       ON analytics_pageviews(project_id, ts)`,
 		`CREATE INDEX IF NOT EXISTS idx_analytics_pv_project_pathname  ON analytics_pageviews(project_id, pathname, ts)`,
+		`CREATE INDEX IF NOT EXISTS idx_analytics_pv_session           ON analytics_pageviews(project_id, session_id, ts)`,
 		`CREATE TABLE IF NOT EXISTS analytics_daily (
 			project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 			date        TEXT    NOT NULL,
@@ -278,6 +279,11 @@ func (s *Store) init(ctx context.Context) error {
 			return err
 		}
 	}
+
+	if err := ensureColumn(ctx, tx, "analytics_pageviews", "visitor_id",        "TEXT    NOT NULL DEFAULT ''"); err != nil { return err }
+	if err := ensureColumn(ctx, tx, "analytics_pageviews", "max_scroll_pct",    "INTEGER NOT NULL DEFAULT 0");  err != nil { return err }
+	if err := ensureColumn(ctx, tx, "analytics_pageviews", "interaction_count", "INTEGER NOT NULL DEFAULT 0");  err != nil { return err }
+	if err := ensureColumn(ctx, tx, "analytics_pageviews", "exit_pathname",     "TEXT    NOT NULL DEFAULT ''"); err != nil { return err }
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO projects (slug, name)
