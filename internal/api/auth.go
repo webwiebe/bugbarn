@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -43,7 +44,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Rate-limit by client IP.
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	now := time.Now()
 	val, _ := s.loginLimiter.LoadOrStore(ip, &loginAttempt{windowStart: now})
 	attempt := val.(*loginAttempt)
@@ -117,21 +118,42 @@ func (s *Server) sessionUser(r *http.Request) (string, bool) {
 	return s.sessions.Valid(cookie.Value)
 }
 
-// clientIP extracts the best-effort client IP from the request.
-func clientIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		// Take the first (leftmost) address — the original client.
-		if idx := strings.Index(forwarded, ","); idx > 0 {
-			return strings.TrimSpace(forwarded[:idx])
+// clientIP returns the real client IP. X-Forwarded-For is only trusted when
+// the direct connection comes from a configured trusted proxy CIDR; otherwise
+// RemoteAddr is used so callers cannot rotate their apparent IP to bypass
+// the login rate limiter.
+func (s *Server) clientIP(r *http.Request) string {
+	remoteIP := remoteHost(r.RemoteAddr)
+	if len(s.trustedProxies) > 0 && isTrustedProxy(remoteIP, s.trustedProxies) {
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			if idx := strings.Index(forwarded, ","); idx > 0 {
+				return strings.TrimSpace(forwarded[:idx])
+			}
+			return strings.TrimSpace(forwarded)
 		}
-		return strings.TrimSpace(forwarded)
 	}
-	// RemoteAddr is "ip:port".
-	addr := r.RemoteAddr
-	if idx := strings.LastIndex(addr, ":"); idx > 0 {
-		return addr[:idx]
+	return remoteIP
+}
+
+func remoteHost(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
 	}
-	return addr
+	return host
+}
+
+func isTrustedProxy(ip string, cidrs []*net.IPNet) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, cidr := range cidrs {
+		if cidr.Contains(parsed) {
+			return true
+		}
+	}
+	return false
 }
 
 func secureCookie(r *http.Request) bool {

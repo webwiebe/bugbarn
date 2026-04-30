@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -131,6 +132,9 @@ func run() error {
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins)
 	apiServer.SetLogHub(logHub)
 	apiServer.SetSetupConfig(cfg.sessionSecret, cfg.publicURL)
+	if len(cfg.trustedProxies) > 0 {
+		apiServer.SetTrustedProxies(cfg.trustedProxies)
+	}
 	var httpHandler http.Handler = apiServer
 	if selfReporting {
 		httpHandler = bb.RecoverMiddleware(httpHandler)
@@ -172,6 +176,7 @@ type config struct {
 	sessionSecret       string
 	sessionTTL          time.Duration
 	allowedOrigins      []string
+	trustedProxies      []*net.IPNet
 	spoolDir            string
 	dbPath              string
 	maxBodyBytes        int64
@@ -207,6 +212,20 @@ func loadConfig() config {
 		for _, o := range strings.Split(raw, ",") {
 			if trimmed := strings.TrimSpace(o); trimmed != "" {
 				cfg.allowedOrigins = append(cfg.allowedOrigins, trimmed)
+			}
+		}
+	}
+	if raw := os.Getenv("BUGBARN_TRUSTED_PROXIES"); raw != "" {
+		for _, cidr := range strings.Split(raw, ",") {
+			cidr = strings.TrimSpace(cidr)
+			if cidr == "" {
+				continue
+			}
+			if !strings.Contains(cidr, "/") {
+				cidr += "/32"
+			}
+			if _, network, err := net.ParseCIDR(cidr); err == nil {
+				cfg.trustedProxies = append(cfg.trustedProxies, network)
 			}
 		}
 	}
