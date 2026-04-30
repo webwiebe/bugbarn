@@ -25,6 +25,7 @@ import (
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/alert"
+	"github.com/wiebe-xyz/bugbarn/internal/analytics"
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
@@ -112,6 +113,7 @@ func run() error {
 	go runBackgroundWorker(ctx, cfg.spoolDir, store, svc, selfReporting)
 
 	digest.StartScheduler(ctx, cfg.digest, store)
+	analytics.StartWorker(ctx, store, cfg.analyticsRetentionDays)
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -177,7 +179,8 @@ type config struct {
 	publicURL           string
 	selfEndpoint        string
 	selfAPIKey          string
-	digest              digest.Config
+	digest                    digest.Config
+	analyticsRetentionDays   int
 }
 
 func loadConfig() config {
@@ -220,6 +223,12 @@ func loadConfig() config {
 	if raw := os.Getenv("BUGBARN_SESSION_TTL_SECONDS"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
 			cfg.sessionTTL = time.Duration(parsed) * time.Second
+		}
+	}
+	cfg.analyticsRetentionDays = 90
+	if raw := os.Getenv("BUGBARN_ANALYTICS_RETENTION_DAYS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			cfg.analyticsRetentionDays = parsed
 		}
 	}
 
