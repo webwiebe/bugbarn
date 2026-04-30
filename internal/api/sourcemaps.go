@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
@@ -34,7 +35,8 @@ func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	if err := r.ParseMultipartForm(4 << 20); err != nil {
-		if err.Error() == "http: request body too large" {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
 			http.Error(w, "source map too large", http.StatusRequestEntityTooLarge)
 			return
 		}
