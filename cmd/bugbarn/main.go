@@ -135,6 +135,7 @@ func run() error {
 	if len(cfg.trustedProxies) > 0 {
 		apiServer.SetTrustedProxies(cfg.trustedProxies)
 	}
+	apiServer.SetFunnelBarnConfig(cfg.funnelBarnEndpoint, cfg.funnelBarnAPIKey)
 	if cfg.maxSourceMapBytes > 0 {
 		apiServer.SetMaxSourceMapBytes(cfg.maxSourceMapBytes)
 	}
@@ -188,8 +189,10 @@ type config struct {
 	publicURL           string
 	selfEndpoint        string
 	selfAPIKey          string
-	digest                    digest.Config
-	analyticsRetentionDays   int
+	digest                  digest.Config
+	analyticsRetentionDays  int
+	funnelBarnEndpoint      string // BUGBARN_FUNNELBARN_ENDPOINT — e.g. https://funnelbarn.example.com
+	funnelBarnAPIKey        string // BUGBARN_FUNNELBARN_API_KEY
 }
 
 func loadConfig() config {
@@ -210,6 +213,8 @@ func loadConfig() config {
 		publicURL:           os.Getenv("BUGBARN_PUBLIC_URL"),
 		selfEndpoint:        os.Getenv("BUGBARN_SELF_ENDPOINT"),
 		selfAPIKey:          os.Getenv("BUGBARN_SELF_API_KEY"),
+		funnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
+		funnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
 	}
 
 	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {
