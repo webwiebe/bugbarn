@@ -1,4 +1,4 @@
-import type { RawRecord } from "./types.js";
+import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, RawRecord } from "./types.js";
 
 export function normalizeList<T extends RawRecord = RawRecord>(payload: unknown, key: string): T[] {
   if (!payload) {
@@ -80,4 +80,53 @@ export function collectKeyValues(source: RawRecord, omitKeys: string[] = []): Ra
     acc[key] = value;
     return acc;
   }, {});
+}
+
+async function apiFetchJson(url: string, project: string): Promise<unknown> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (project && project !== "default" && project !== "__all") {
+    headers["X-BugBarn-Project"] = project;
+  }
+  const response = await fetch(url, { credentials: "include", headers });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`.trim());
+  }
+  const text = await response.text();
+  return text ? JSON.parse(text) as unknown : null;
+}
+
+export async function fetchAnalyticsOverview(project: string, start: string, end: string): Promise<AnalyticsOverview> {
+  const qs = new URLSearchParams({ start, end }).toString();
+  const data = await apiFetchJson(`/api/v1/analytics/overview?${qs}`, project);
+  const r = isRecord(data) ? data : {};
+  return {
+    pageviews: typeof r["pageviews"] === "number" ? r["pageviews"] : 0,
+    sessions: typeof r["sessions"] === "number" ? r["sessions"] : 0,
+    pages: typeof r["pages"] === "number" ? r["pages"] : 0,
+    avgDurationMs: typeof r["avgDurationMs"] === "number" ? r["avgDurationMs"] : 0,
+  };
+}
+
+export async function fetchAnalyticsPages(project: string, start: string, end: string): Promise<AnalyticsPage[]> {
+  const qs = new URLSearchParams({ start, end }).toString();
+  const data = await apiFetchJson(`/api/v1/analytics/pages?${qs}`, project);
+  return normalizeList<AnalyticsPage>(data, "pages");
+}
+
+export async function fetchAnalyticsTimeline(project: string, start: string, end: string): Promise<AnalyticsBucket[]> {
+  const qs = new URLSearchParams({ start, end }).toString();
+  const data = await apiFetchJson(`/api/v1/analytics/timeline?${qs}`, project);
+  return normalizeList<AnalyticsBucket>(data, "buckets");
+}
+
+export async function fetchAnalyticsReferrers(project: string, start: string, end: string): Promise<AnalyticsReferrer[]> {
+  const qs = new URLSearchParams({ start, end }).toString();
+  const data = await apiFetchJson(`/api/v1/analytics/referrers?${qs}`, project);
+  return normalizeList<AnalyticsReferrer>(data, "referrers");
+}
+
+export async function fetchAnalyticsSegments(project: string, start: string, end: string, dim: string): Promise<AnalyticsSegmentBucket[]> {
+  const qs = new URLSearchParams({ start, end, dim }).toString();
+  const data = await apiFetchJson(`/api/v1/analytics/segments?${qs}`, project);
+  return normalizeList<AnalyticsSegmentBucket>(data, "buckets");
 }
