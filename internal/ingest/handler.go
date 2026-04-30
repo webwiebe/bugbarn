@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -16,15 +15,12 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 )
 
-const defaultQueueSize = 32768
-
 type Handler struct {
 	auth         *auth.Authorizer
 	spool        *spool.Spool
 	maxBodyBytes int64
 	now          func() time.Time
 	idFn         func() string
-	queue        chan spool.Record
 }
 
 func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyBytes int64) *Handler {
@@ -37,53 +33,14 @@ func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyByt
 		maxBodyBytes: maxBodyBytes,
 		now:          time.Now,
 		idFn:         generateIngestID,
-		queue:        make(chan spool.Record, defaultQueueSize),
 	}
 }
 
-// Start drains the in-memory queue and flushes batches to the spool file.
-// It returns when ctx is cancelled, flushing any remaining records first.
+// Start blocks until ctx is cancelled. It exists for backwards compatibility
+// with callers that run it as a goroutine; the actual spool write now happens
+// synchronously inside ServeHTTP.
 func (h *Handler) Start(ctx context.Context) {
-	const maxBatch = 64
-	batch := make([]spool.Record, 0, maxBatch)
-
-	flush := func() {
-		if len(batch) == 0 {
-			return
-		}
-		if err := h.spool.AppendBatch(batch); err != nil {
-			if !errors.Is(err, spool.ErrFull) {
-				log.Printf("ingest: spool batch write: %v", err)
-			}
-		}
-		batch = batch[:0]
-	}
-
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case r := <-h.queue:
-			batch = append(batch, r)
-			if len(batch) >= maxBatch {
-				flush()
-			}
-		case <-ticker.C:
-			flush()
-		case <-ctx.Done():
-			// Drain whatever is left before exiting.
-			for {
-				select {
-				case r := <-h.queue:
-					batch = append(batch, r)
-				default:
-					flush()
-					return
-				}
-			}
-		}
-	}
+	<-ctx.Done()
 }
 
 func (h *Handler) ValidAPIKey(r *http.Request) bool {
@@ -150,11 +107,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ProjectSlug:   r.Header.Get("x-bugbarn-project"),
 	}
 
-	select {
-	case h.queue <- record:
-	default:
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, "ingest spool full", http.StatusTooManyRequests)
+	if err := h.spool.Append(record); err != nil {
+		if errors.Is(err, spool.ErrFull) {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "ingest spool full", http.StatusTooManyRequests)
+			return
+		}
+		http.Error(w, "ingest unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
