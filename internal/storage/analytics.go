@@ -22,8 +22,9 @@ func (s *Store) InsertPageView(ctx context.Context, pv analytics.PageView) error
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO analytics_pageviews
 			(project_id, ts, pathname, hostname, referrer_host, referrer_path,
-			 session_id, duration_ms, screen_width, props)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 session_id, duration_ms, screen_width, props,
+			 visitor_id, max_scroll_pct, interaction_count, exit_pathname)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pv.ProjectID,
 		pv.Ts.Unix(),
 		pv.Pathname,
@@ -34,6 +35,10 @@ func (s *Store) InsertPageView(ctx context.Context, pv analytics.PageView) error
 		pv.DurationMs,
 		pv.ScreenWidth,
 		props,
+		pv.VisitorID,
+		pv.MaxScrollPct,
+		pv.InteractionCount,
+		pv.ExitPathname,
 	)
 	return err
 }
@@ -333,6 +338,170 @@ func (s *Store) QuerySegments(ctx context.Context, q analytics.Query, dimKey str
 			return nil, err
 		}
 		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// QueryPageFlow returns page-flow data for a given pathname.
+func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname string) (analytics.PageFlowResult, error) {
+	result := analytics.PageFlowResult{Pathname: pathname}
+
+	// WentTo — aggregate exit_pathname from raw pageviews
+	wentToRows, err := s.db.QueryContext(ctx, `
+		SELECT exit_pathname, COUNT(*) as cnt, COUNT(DISTINCT session_id) as sess
+		FROM analytics_pageviews
+		WHERE project_id = ? AND pathname = ? AND exit_pathname != ''
+		  AND ts BETWEEN ? AND ?
+		GROUP BY exit_pathname ORDER BY cnt DESC LIMIT 5`,
+		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
+	)
+	if err != nil {
+		return result, err
+	}
+	defer wentToRows.Close()
+
+	var wentToTotal int64
+	for wentToRows.Next() {
+		var e analytics.FlowEntry
+		var sess int64
+		if err := wentToRows.Scan(&e.Pathname, &e.Count, &sess); err != nil {
+			return result, err
+		}
+		wentToTotal += e.Count
+		result.WentTo = append(result.WentTo, e)
+	}
+	if err := wentToRows.Err(); err != nil {
+		return result, err
+	}
+	for i := range result.WentTo {
+		if wentToTotal > 0 {
+			result.WentTo[i].Pct = float64(result.WentTo[i].Count) / float64(wentToTotal) * 100
+		}
+	}
+
+	// CameFrom — find what page users were on just before visiting pathname in the same session
+	cameFromRows, err := s.db.QueryContext(ctx, `
+		SELECT prev.pathname, COUNT(*) as cnt
+		FROM analytics_pageviews cur
+		JOIN analytics_pageviews prev
+		  ON prev.project_id = cur.project_id
+		 AND prev.session_id = cur.session_id
+		 AND prev.ts < cur.ts
+		 AND prev.pathname != cur.pathname
+		WHERE cur.project_id = ? AND cur.pathname = ?
+		  AND cur.ts BETWEEN ? AND ?
+		  AND prev.ts = (
+		    SELECT MAX(p2.ts) FROM analytics_pageviews p2
+		    WHERE p2.project_id = cur.project_id
+		      AND p2.session_id = cur.session_id
+		      AND p2.ts < cur.ts
+		      AND p2.pathname != cur.pathname
+		  )
+		GROUP BY prev.pathname ORDER BY cnt DESC LIMIT 5`,
+		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
+	)
+	if err != nil {
+		return result, err
+	}
+	defer cameFromRows.Close()
+
+	var cameFromTotal int64
+	for cameFromRows.Next() {
+		var e analytics.FlowEntry
+		if err := cameFromRows.Scan(&e.Pathname, &e.Count); err != nil {
+			return result, err
+		}
+		cameFromTotal += e.Count
+		result.CameFrom = append(result.CameFrom, e)
+	}
+	if err := cameFromRows.Err(); err != nil {
+		return result, err
+	}
+	for i := range result.CameFrom {
+		if cameFromTotal > 0 {
+			result.CameFrom[i].Pct = float64(result.CameFrom[i].Count) / float64(cameFromTotal) * 100
+		}
+	}
+
+	return result, nil
+}
+
+// QueryScrollDepth returns scroll-depth bucket counts for a pathname.
+func (s *Store) QueryScrollDepth(ctx context.Context, q analytics.Query, pathname string) (analytics.ScrollDepthResult, error) {
+	result := analytics.ScrollDepthResult{Pathname: pathname}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+		  CASE
+		    WHEN max_scroll_pct < 25  THEN '0–24%'
+		    WHEN max_scroll_pct < 50  THEN '25–49%'
+		    WHEN max_scroll_pct < 75  THEN '50–74%'
+		    WHEN max_scroll_pct < 100 THEN '75–99%'
+		    ELSE '100%'
+		  END AS bucket,
+		  COUNT(*) AS cnt
+		FROM analytics_pageviews
+		WHERE project_id = ? AND pathname = ? AND ts BETWEEN ? AND ?
+		GROUP BY bucket ORDER BY MIN(max_scroll_pct)`,
+		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
+	)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+
+	var total int64
+	for rows.Next() {
+		var b analytics.ScrollBucket
+		if err := rows.Scan(&b.Label, &b.Count); err != nil {
+			return result, err
+		}
+		total += b.Count
+		result.Buckets = append(result.Buckets, b)
+	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
+	for i := range result.Buckets {
+		if total > 0 {
+			result.Buckets[i].Pct = float64(result.Buckets[i].Count) / float64(total) * 100
+		}
+	}
+
+	return result, nil
+}
+
+// QueryDropout returns pages ordered by bounce (zero-interaction) sessions.
+func (s *Store) QueryDropout(ctx context.Context, q analytics.Query) ([]analytics.DropoutStat, error) {
+	limit := queryLimit(q)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+		  pathname,
+		  COUNT(*) AS pageviews,
+		  SUM(CASE WHEN interaction_count = 0 THEN 1 ELSE 0 END) AS bounced
+		FROM analytics_pageviews
+		WHERE project_id = ? AND ts BETWEEN ? AND ? AND pathname != ''
+		GROUP BY pathname
+		ORDER BY bounced DESC
+		LIMIT ?`,
+		q.ProjectID, q.Start.Unix(), q.End.Unix(), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []analytics.DropoutStat
+	for rows.Next() {
+		var s analytics.DropoutStat
+		if err := rows.Scan(&s.Pathname, &s.Pageviews, &s.BouncedSessions); err != nil {
+			return nil, err
+		}
+		if s.Pageviews > 0 {
+			s.BounceRate = float64(s.BouncedSessions) / float64(s.Pageviews)
+		}
+		out = append(out, s)
 	}
 	return out, rows.Err()
 }

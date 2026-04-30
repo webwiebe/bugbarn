@@ -159,6 +159,137 @@ func TestQueryTimeline(t *testing.T) {
 	}
 }
 
+func TestQueryScrollDepth(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	pid := s.DefaultProjectID()
+
+	now := time.Now().UTC()
+	views := []analytics.PageView{
+		{ProjectID: pid, Ts: now, Pathname: "/home", SessionID: "s1", MaxScrollPct: 10},
+		{ProjectID: pid, Ts: now, Pathname: "/home", SessionID: "s2", MaxScrollPct: 40},
+		{ProjectID: pid, Ts: now, Pathname: "/home", SessionID: "s3", MaxScrollPct: 60},
+		{ProjectID: pid, Ts: now, Pathname: "/home", SessionID: "s4", MaxScrollPct: 80},
+		{ProjectID: pid, Ts: now, Pathname: "/home", SessionID: "s5", MaxScrollPct: 100},
+	}
+	for _, pv := range views {
+		if err := s.InsertPageView(ctx, pv); err != nil {
+			t.Fatalf("InsertPageView: %v", err)
+		}
+	}
+
+	q := analytics.Query{
+		ProjectID: pid,
+		Start:     now.Add(-time.Hour),
+		End:       now.Add(time.Hour),
+	}
+	result, err := s.QueryScrollDepth(ctx, q, "/home")
+	if err != nil {
+		t.Fatalf("QueryScrollDepth: %v", err)
+	}
+	if result.Pathname != "/home" {
+		t.Errorf("expected pathname /home, got %s", result.Pathname)
+	}
+	if len(result.Buckets) == 0 {
+		t.Fatal("expected scroll buckets, got none")
+	}
+	// Each of the 5 views lands in a different bucket.
+	total := int64(0)
+	for _, b := range result.Buckets {
+		total += b.Count
+	}
+	if total != 5 {
+		t.Errorf("expected 5 total scroll entries, got %d", total)
+	}
+}
+
+func TestQueryPageFlow(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	pid := s.DefaultProjectID()
+
+	now := time.Now().UTC()
+	// Session: /home -> /about -> /contact
+	views := []analytics.PageView{
+		{ProjectID: pid, Ts: now, Pathname: "/home", SessionID: "s1"},
+		{ProjectID: pid, Ts: now.Add(time.Second), Pathname: "/about", SessionID: "s1"},
+		{ProjectID: pid, Ts: now.Add(2 * time.Second), Pathname: "/contact", SessionID: "s1"},
+	}
+	for _, pv := range views {
+		if err := s.InsertPageView(ctx, pv); err != nil {
+			t.Fatalf("InsertPageView: %v", err)
+		}
+	}
+
+	q := analytics.Query{
+		ProjectID: pid,
+		Start:     now.Add(-time.Hour),
+		End:       now.Add(time.Hour),
+	}
+	flow, err := s.QueryPageFlow(ctx, q, "/about")
+	if err != nil {
+		t.Fatalf("QueryPageFlow: %v", err)
+	}
+	if len(flow.CameFrom) == 0 {
+		t.Fatal("expected at least one CameFrom entry")
+	}
+	if flow.CameFrom[0].Pathname != "/home" {
+		t.Errorf("expected CameFrom /home, got %s", flow.CameFrom[0].Pathname)
+	}
+}
+
+func TestQueryDropout(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	pid := s.DefaultProjectID()
+
+	now := time.Now().UTC()
+	views := []analytics.PageView{
+		// bounced (interaction_count=0)
+		{ProjectID: pid, Ts: now, Pathname: "/landing", SessionID: "s1", InteractionCount: 0},
+		{ProjectID: pid, Ts: now, Pathname: "/landing", SessionID: "s2", InteractionCount: 0},
+		// not bounced
+		{ProjectID: pid, Ts: now, Pathname: "/landing", SessionID: "s3", InteractionCount: 3},
+	}
+	for _, pv := range views {
+		if err := s.InsertPageView(ctx, pv); err != nil {
+			t.Fatalf("InsertPageView: %v", err)
+		}
+	}
+
+	q := analytics.Query{
+		ProjectID: pid,
+		Start:     now.Add(-time.Hour),
+		End:       now.Add(time.Hour),
+	}
+	stats, err := s.QueryDropout(ctx, q)
+	if err != nil {
+		t.Fatalf("QueryDropout: %v", err)
+	}
+	if len(stats) == 0 {
+		t.Fatal("expected dropout stats, got none")
+	}
+	found := false
+	for _, st := range stats {
+		if st.Pathname == "/landing" {
+			found = true
+			if st.Pageviews != 3 {
+				t.Errorf("expected 3 pageviews for /landing, got %d", st.Pageviews)
+			}
+			if st.BouncedSessions != 2 {
+				t.Errorf("expected 2 bounced sessions, got %d", st.BouncedSessions)
+			}
+			expectedRate := 2.0 / 3.0
+			if st.BounceRate < expectedRate-0.01 || st.BounceRate > expectedRate+0.01 {
+				t.Errorf("expected bounce rate ~%.3f, got %.3f", expectedRate, st.BounceRate)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected /landing in dropout stats")
+	}
+}
+
 func TestQuerySegments(t *testing.T) {
 	s := mustOpenStore(t)
 	ctx := context.Background()

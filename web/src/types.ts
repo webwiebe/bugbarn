@@ -243,3 +243,9 @@ export interface AppElements {
   routeChip: HTMLElement;
   statusText: HTMLElement;
 }
+
+export interface FlowEntry { pathname: string; count: number; pct: number; }
+export interface PageFlowResult { pathname: string; cameFrom: FlowEntry[]; wentTo: FlowEntry[]; }
+export interface ScrollBucket { label: string; count: number; pct: number; }
+export interface ScrollDepthResult { pathname: string; buckets: ScrollBucket[]; }
+export interface DropoutStat { pathname: string; pageviews: number; bouncedSessions: number; bounceRate: number; }

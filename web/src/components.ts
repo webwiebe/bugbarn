@@ -26,7 +26,7 @@ import {
   issueTitle,
 } from "./domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "./format.js";
-import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
+import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, DropoutStat, FlowEntry, PageFlowResult, ScrollDepthResult, ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, BreadcrumbEntry, RawRecord } from "./types.js";
 
 const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
@@ -1517,4 +1517,52 @@ function renderAnalyticsSegmentSection(segments: AnalyticsSegmentBucket[], dim: 
       ${tableHtml}
     </div>
   `;
+}
+
+export function renderAnalyticsPagesWithDropout(pages: AnalyticsPage[], dropoutMap: Map<string, DropoutStat>): string {
+  if (!pages.length) return `<div class="empty"><p>No page data yet.</p></div>`;
+  const rows = pages.map((p) => {
+    const d = dropoutMap.get(p.pathname);
+    const bouncePct = d ? (d.bounceRate * 100).toFixed(1) + "%" : "—";
+    return `<tr class="analytics-page-row" data-pathname="${escapeAttr(p.pathname)}" style="cursor:pointer">
+      <td>${escapeHtml(p.pathname)}</td>
+      <td style="text-align:right">${escapeHtml(String(p.pageviews))}</td>
+      <td style="text-align:right">${escapeHtml(String(p.sessions))}</td>
+      <td style="text-align:right">${escapeHtml(bouncePct)}</td>
+    </tr>`;
+  }).join("");
+  return `<table class="data-table" style="width:100%">
+    <thead><tr><th>Page</th><th style="text-align:right">Views</th><th style="text-align:right">Sessions</th><th style="text-align:right">Bounce %</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+export function renderPageDetail(flow: PageFlowResult, scroll: ScrollDepthResult): string {
+  const scrollBars = scroll.buckets.map((b) => {
+    const w = Math.max(2, Math.round(b.pct));
+    return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0">
+      <span style="min-width:60px;font-size:12px">${escapeHtml(b.label)}</span>
+      <div style="flex:1;background:var(--line,#21262d);border-radius:3px;height:12px;overflow:hidden">
+        <div style="width:${escapeAttr(String(w))}%;background:var(--accent,#d4a054);height:100%"></div>
+      </div>
+      <span style="min-width:36px;font-size:12px;text-align:right">${escapeHtml(b.pct.toFixed(1))}%</span>
+    </div>`;
+  }).join("");
+  const flowTable = (entries: FlowEntry[], empty: string) =>
+    entries.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr><th style="text-align:left">Page</th><th style="text-align:right">Count</th><th style="text-align:right">%</th></tr></thead>
+      <tbody>${entries.map((e) => `<tr>
+        <td>${escapeHtml(e.pathname)}</td>
+        <td style="text-align:right">${escapeHtml(String(e.count))}</td>
+        <td style="text-align:right">${escapeHtml(e.pct.toFixed(1))}%</td>
+      </tr>`).join("")}</tbody>
+    </table>` : `<p class="muted" style="font-size:12px">${escapeHtml(empty)}</p>`;
+  return `<div style="padding:12px 0">
+    <h4 style="margin:0 0 10px">${escapeHtml(flow.pathname)}</h4>
+    <div class="section"><h3>Scroll depth</h3>${scrollBars || `<p class="muted">No data yet.</p>`}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+      <div class="section"><h3>Came from</h3>${flowTable(flow.cameFrom, "No upstream pages.")}</div>
+      <div class="section"><h3>Went to</h3>${flowTable(flow.wentTo, "No downstream pages.")}</div>
+    </div>
+  </div>`;
 }

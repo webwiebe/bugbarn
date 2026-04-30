@@ -3,16 +3,20 @@ package analytics
 import "time"
 
 type PageView struct {
-	ProjectID    int64
-	Ts           time.Time
-	Pathname     string
-	Hostname     string
-	ReferrerHost string
-	ReferrerPath string
-	SessionID    string
-	DurationMs   int64
-	ScreenWidth  int
-	Props        map[string]string
+	ProjectID        int64
+	Ts               time.Time
+	Pathname         string
+	Hostname         string
+	ReferrerHost     string
+	ReferrerPath     string
+	SessionID        string
+	DurationMs       int64
+	ScreenWidth      int
+	Props            map[string]string
+	VisitorID        string
+	MaxScrollPct     int
+	InteractionCount int
+	ExitPathname     string
 }
 
 type OverviewResult struct {
@@ -52,4 +56,34 @@ type Query struct {
 	End       time.Time
 	Pathname  string // optional filter
 	Limit     int    // 0 = default 50
+}
+
+type PageFlowResult struct {
+	Pathname string
+	CameFrom []FlowEntry
+	WentTo   []FlowEntry
+}
+
+type FlowEntry struct {
+	Pathname string
+	Count    int64
+	Pct      float64
+}
+
+type ScrollDepthResult struct {
+	Pathname string
+	Buckets  []ScrollBucket
+}
+
+type ScrollBucket struct {
+	Label string // "0–24%", "25–49%", "50–74%", "75–99%", "100%"
+	Count int64
+	Pct   float64
+}
+
+type DropoutStat struct {
+	Pathname        string
+	Pageviews       int64
+	BouncedSessions int64
+	BounceRate      float64
 }
