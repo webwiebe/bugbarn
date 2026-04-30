@@ -236,6 +236,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.deleteAPIKey(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/facets") && r.Method == http.MethodGet:
 		s.serveFacetsRoute(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/analytics/") && r.Method == http.MethodGet:
+		s.serveAnalyticsQuery(w, r)
 	default:
 		http.NotFound(w, r)
 	}
