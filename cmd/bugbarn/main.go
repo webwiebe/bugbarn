@@ -112,7 +112,8 @@ func run() error {
 		log.Printf("self-reporting enabled → %s", cfg.selfEndpoint)
 	}
 
-	go runBackgroundWorker(ctx, eventSpool, cfg.spoolDir, store, svc, selfReporting)
+	workerStatus := &worker.Status{}
+	go runBackgroundWorker(ctx, eventSpool, cfg.spoolDir, store, svc, selfReporting, workerStatus)
 
 	digest.StartScheduler(ctx, cfg.digest, store)
 	analytics.StartWorker(ctx, store, cfg.analyticsRetentionDays)
@@ -136,6 +137,8 @@ func run() error {
 	if len(cfg.trustedProxies) > 0 {
 		apiServer.SetTrustedProxies(cfg.trustedProxies)
 	}
+	apiServer.SetWorkerStatus(workerStatus)
+	apiServer.SetAutoApproveProjects(cfg.autoApproveProjects)
 	apiServer.SetFunnelBarnConfig(cfg.funnelBarnEndpoint, cfg.funnelBarnAPIKey)
 	if selfReporting {
 		apiServer.SetSelfReportingConfig(cfg.selfAPIKey, cfg.selfProject)
@@ -198,6 +201,7 @@ type config struct {
 	analyticsRetentionDays  int
 	funnelBarnEndpoint      string // BUGBARN_FUNNELBARN_ENDPOINT — e.g. https://funnelbarn.example.com
 	funnelBarnAPIKey        string // BUGBARN_FUNNELBARN_API_KEY
+	autoApproveProjects     bool   // BUGBARN_AUTO_APPROVE_PROJECTS
 }
 
 func loadConfig() config {
@@ -221,6 +225,7 @@ func loadConfig() config {
 		selfProject:         os.Getenv("BUGBARN_SELF_PROJECT"),
 		funnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
 		funnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
+		autoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
 	}
 
 	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {
@@ -510,7 +515,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.Service, selfReporting bool) {
+func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.Service, selfReporting bool, ws *worker.Status) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -523,6 +528,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 
 	// retryCounts tracks per-ingest-ID failure counts within this process lifetime.
 	retryCounts := make(map[string]int)
+	var stallWarned bool
 
 	for {
 		select {
@@ -533,6 +539,20 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 			if err != nil {
 				log.Printf("worker read spool: %v", err)
 				continue
+			}
+
+			if ws != nil {
+				ws.SetPendingRecords(int64(len(entries)))
+				snap := ws.Snapshot()
+				if !snap.Healthy && !stallWarned {
+					log.Printf("worker: stall detected — %d pending records, last advance %v", snap.PendingRecords, snap.LastAdvance)
+					if selfReporting {
+						bb.CaptureMessage(fmt.Sprintf("worker stall: %d pending, level=%s", snap.PendingRecords, snap.Level))
+					}
+					stallWarned = true
+				} else if snap.Healthy {
+					stallWarned = false
+				}
 			}
 
 			for _, entry := range entries {
@@ -550,11 +570,17 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 						if selfReporting {
 							bb.CaptureMessage(fmt.Sprintf("dead-letter: ingest %s: %v", record.IngestID, err))
 						}
+						if ws != nil {
+							ws.RecordDeadLetter()
+						}
 						delete(retryCounts, record.IngestID)
 						// Advance cursor past this dead-lettered record.
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(spoolDir, offset); err != nil {
 							log.Printf("worker write cursor: %v", err)
+						}
+						if ws != nil {
+							ws.RecordAdvance()
 						}
 					}
 					// Stop processing this batch; retry remaining records next tick.
@@ -583,11 +609,17 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 						if selfReporting {
 							bb.CaptureMessage(fmt.Sprintf("dead-letter persist: ingest %s: %v", record.IngestID, persistErr))
 						}
+						if ws != nil {
+							ws.RecordDeadLetter()
+						}
 						delete(retryCounts, record.IngestID)
 						// Advance cursor past this dead-lettered record.
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(spoolDir, offset); err != nil {
 							log.Printf("worker write cursor: %v", err)
+						}
+						if ws != nil {
+							ws.RecordAdvance()
 						}
 					}
 					// Stop processing this batch; retry remaining records next tick.
@@ -606,6 +638,10 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 				offset = entry.EndOffset
 				if err := spool.WriteCursor(spoolDir, offset); err != nil {
 					log.Printf("worker write cursor: %v", err)
+				}
+				if ws != nil {
+					ws.RecordAdvance()
+					ws.RecordProcessed(1)
 				}
 			}
 

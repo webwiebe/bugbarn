@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,6 +28,7 @@ func writeStorageError(w http.ResponseWriter, err error) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	log.Printf("storage error: %v", err)
 	http.Error(w, "storage error", http.StatusInternalServerError)
 }
 

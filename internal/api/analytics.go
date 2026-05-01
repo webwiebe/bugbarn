@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -90,6 +91,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 	case "overview":
 		result, err := s.store.QueryOverview(ctx, q)
 		if err != nil {
+			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}
@@ -103,6 +105,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 	case "pages":
 		pages, err := s.store.QueryPages(ctx, q)
 		if err != nil {
+			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}
@@ -125,6 +128,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 
 		buckets, err := s.store.QueryTimeline(ctx, q, granularity)
 		if err != nil {
+			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}
@@ -139,6 +143,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 	case "referrers":
 		refs, err := s.store.QueryReferrers(ctx, q)
 		if err != nil {
+			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}
@@ -151,6 +156,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 		dim := r.URL.Query().Get("dim")
 		segs, err := s.store.QuerySegments(ctx, q, dim)
 		if err != nil {
+			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}
@@ -166,6 +172,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 		pathname := r.URL.Query().Get("pathname")
 		result, err := s.store.QueryPageFlow(ctx, q, pathname)
 		if err != nil {
+			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}
@@ -192,6 +199,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 		pathname := r.URL.Query().Get("pathname")
 		result, err := s.store.QueryScrollDepth(ctx, q, pathname)
 		if err != nil {
+			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}
@@ -212,6 +220,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 	case "dropout":
 		stats, err := s.store.QueryDropout(ctx, q)
 		if err != nil {
+			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}

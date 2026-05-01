@@ -14,6 +14,25 @@ func (s *Server) approveProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+func (s *Server) servePendingProjectCount(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	projects, err := s.store.ListProjects(r.Context())
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	var pending []string
+	for _, p := range projects {
+		if p.Status == "pending" {
+			pending = append(pending, p.Slug)
+		}
+	}
+	writeJSON(w, map[string]any{"count": len(pending), "slugs": pending})
+}
+
 func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)

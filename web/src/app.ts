@@ -241,6 +241,7 @@ async function start(): Promise<void> {
   const envLoad = state.currentProject !== "__all" ? loadEnvironments() : (renderEnvSwitcher([]), Promise.resolve());
   await Promise.all([loadProjects(), envLoad, refreshAll()]);
   initInstallPrompt();
+  void checkPendingProjects();
 }
 
 // ---------------------------------------------------------------------------
@@ -836,6 +837,48 @@ function renderProjectSwitcher(): void {
   projectSelect.hidden = false;
 }
 
+async function checkPendingProjects(): Promise<void> {
+  const banner = document.getElementById("pending-banner");
+  if (!banner) return;
+  try {
+    const res = await fetch(apiUrl("/api/v1/projects/pending-count"), {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { count: number; slugs: string[] };
+    if (data.count === 0) {
+      banner.hidden = true;
+      updatePendingBadge(0);
+      return;
+    }
+    const slugList = (data.slugs ?? []).map((s: string) => escapeHtml(s)).join(", ");
+    banner.innerHTML =
+      `<span>${data.count} project${data.count > 1 ? "s" : ""} awaiting approval: <strong>${slugList}</strong></span>` +
+      `<a href="#/settings" class="pending-banner-link">Review in Settings</a>`;
+    banner.hidden = false;
+    updatePendingBadge(data.count);
+  } catch {
+    // Silently ignore — non-critical.
+  }
+}
+
+function updatePendingBadge(count: number): void {
+  const settingsLink = document.querySelector<HTMLAnchorElement>('.side-nav a[data-route="settings"]');
+  if (!settingsLink) return;
+  let badge = settingsLink.querySelector<HTMLElement>(".nav-badge");
+  if (count === 0) {
+    badge?.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "nav-badge";
+    settingsLink.appendChild(badge);
+  }
+  badge.textContent = String(count);
+}
+
 async function loadEnvironments(): Promise<void> {
   try {
     const payload = await fetchJson("/api/v1/facets/attributes.environment", true);
@@ -1042,7 +1085,9 @@ async function postJson(path: string, body: unknown): Promise<unknown> {
     renderLogin();
   }
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`.trim());
+    const body = await response.text().catch(() => "");
+    const detail = body ? `: ${body.slice(0, 200).trim()}` : "";
+    throw new Error(`${response.status} ${response.statusText}${detail}`.trim());
   }
   const text = await response.text();
   return text ? JSON.parse(text) as unknown : null;
@@ -1053,7 +1098,11 @@ async function deleteJson(path: string): Promise<unknown> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (csrf) headers["X-BugBarn-CSRF"] = csrf;
   const response = await fetch(apiUrl(path), { method: "DELETE", credentials: "include", headers });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`.trim());
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    const detail = body ? `: ${body.slice(0, 200).trim()}` : "";
+    throw new Error(`${response.status} ${response.statusText}${detail}`.trim());
+  }
   const text = await response.text();
   return text ? JSON.parse(text) as unknown : null;
 }
@@ -1519,6 +1568,7 @@ async function approveProject(slug: string): Promise<void> {
     await postJson(`/api/v1/projects/${encodeURIComponent(slug)}/approve`, {});
     setStatus(`Project ${slug} approved.`);
     await loadSettings();
+    void checkPendingProjects();
   } catch (error) {
     setStatus(`Approve failed: ${errorMessage(error)}`);
   }

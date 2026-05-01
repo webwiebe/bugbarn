@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 const defaultMaxSourceMapBytes = 32 << 20 // 32 MiB
@@ -29,8 +31,10 @@ type Server struct {
 	maxSourceMapBytes  int64
 	funnelBarnEndpoint string
 	funnelBarnAPIKey   string
-	selfAPIKey         string
-	selfProject        string
+	selfAPIKey          string
+	selfProject         string
+	workerStatus        *worker.Status
+	autoApproveProjects bool
 
 	loginLimiter sync.Map // map[string]*loginAttempt
 }
@@ -70,6 +74,18 @@ func (s *Server) SetFunnelBarnConfig(endpoint, apiKey string) {
 func (s *Server) SetSelfReportingConfig(apiKey, project string) {
 	s.selfAPIKey = apiKey
 	s.selfProject = project
+}
+
+// SetWorkerStatus wires the background worker's health status into the server
+// so the health endpoint can report worker health.
+func (s *Server) SetWorkerStatus(ws *worker.Status) {
+	s.workerStatus = ws
+}
+
+// SetAutoApproveProjects controls whether the setup endpoint auto-approves
+// new projects instead of creating them with status=pending.
+func (s *Server) SetAutoApproveProjects(auto bool) {
+	s.autoApproveProjects = auto
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
@@ -180,7 +196,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Public endpoints — no authentication required.
 	switch {
 	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:
-		writeJSON(w, map[string]any{"status": "ok"})
+		s.serveHealth(w, r)
 		return
 	case r.URL.Path == "/api/v1/runtime-config" && r.Method == http.MethodGet:
 		s.serveRuntimeConfig(w, r)
@@ -209,7 +225,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			pid, scope, ok := s.ingestHandler.APIKeyProjectScope(r)
 			if ok {
 				if scope == storage.APIKeyScopeIngest {
-					// Ingest-only key attempted to access a protected endpoint.
+					log.Printf("auth: ingest-only key rejected for %s %s", r.Method, r.URL.Path)
 					http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
 					return
 				}
@@ -219,6 +235,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !usingSession && !usingAPIKey {
+			log.Printf("auth: rejected %s %s (no session, no API key)", r.Method, r.URL.Path)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -227,6 +244,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// API key requests are authenticated out-of-band, so CSRF doesn't apply.
 		if usingSession && !usingAPIKey && isCSRFProtected(r) {
 			if !s.validCSRF(r) {
+				log.Printf("csrf: rejected %s %s (header present: %v)", r.Method, r.URL.Path, r.Header.Get("X-BugBarn-CSRF") != "")
 				http.Error(w, "invalid or missing CSRF token", http.StatusForbidden)
 				return
 			}
@@ -290,6 +308,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.listRecentEvents(w, r)
 	case r.URL.Path == "/api/v1/projects" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
 		s.serveProjectsRoot(w, r)
+	case r.URL.Path == "/api/v1/projects/pending-count" && r.Method == http.MethodGet:
+		s.servePendingProjectCount(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && strings.HasSuffix(r.URL.Path, "/approve") && r.Method == http.MethodPost:
 		s.approveProject(w, r)
 	case r.URL.Path == "/api/v1/apikeys" && r.Method == http.MethodGet:
