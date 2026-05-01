@@ -1379,6 +1379,16 @@ button:disabled {
   white-space: nowrap;
 }
 
+.log-project-badge {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #1a2e3a;
+  color: #7eb8db;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .log-data {
   color: var(--muted);
   font-size: 11px;

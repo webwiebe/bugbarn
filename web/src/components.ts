@@ -1258,7 +1258,7 @@ export function renderLogRow(entry: ApiLogEntry): string {
   const dataExpanded = hasData
     ? `<div class="log-data-expanded"><pre>${escapeHtml(JSON.stringify(entry.data, null, 2))}</pre></div>`
     : "";
-  const projectBadge = entry.project_slug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7;margin-left:0.25rem">${escapeHtml(entry.project_slug)}</span>` : "";
+  const projectBadge = entry.project_slug ? `<span class="log-project-badge">${escapeHtml(entry.project_slug)}</span>` : "";
   return `
     <div class="log-row log-row-${escapeAttr(entry.level)}" data-log-id="${escapeAttr(String(entry.id))}">
       <span class="log-time">${escapeHtml(formatTime(entry.received_at))}</span>

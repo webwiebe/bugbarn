@@ -1638,6 +1638,8 @@ function connectLogSSE(): void {
       state.logs = [entry, ...state.logs].slice(0, 500);
       const list = document.getElementById("log-list");
       if (list) {
+        const empty = list.querySelector(".empty");
+        if (empty) empty.remove();
         const row = document.createElement("div");
         row.innerHTML = renderLogRow(entry);
         const newRow = row.firstElementChild as HTMLElement | null;
