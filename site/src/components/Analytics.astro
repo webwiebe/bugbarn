@@ -7,6 +7,11 @@
   defer
 ></script>
 <script>
+  declare global {
+    interface Window {
+      funnelbarn?: { track: (event: string) => void };
+    }
+  }
   document.addEventListener('click', (e) => {
     const el = (e.target as Element).closest('[data-track]') as HTMLElement | null;
     if (el) window.funnelbarn?.track(el.dataset.track!);

@@ -2,13 +2,22 @@
   "name": "bugbarn-web",
   "private": true,
   "version": "0.0.0",
+  "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "lint": "npm run lint:tsc && npm run lint:eslint",
+    "lint:tsc": "tsc --noEmit",
+    "lint:eslint": "eslint src/",
     "test": "tsc -p tsconfig.json --noEmit",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@eslint/js": "^9.27.0",
     "@playwright/test": "^1.59.1",
+    "@typescript-eslint/eslint-plugin": "^8.32.0",
+    "@typescript-eslint/parser": "^8.32.0",
+    "eslint": "^9.27.0",
+    "globals": "^16.1.0",
     "typescript": "^5.8.3"
   }
 }
