@@ -228,9 +228,8 @@ window.addEventListener("beforeunload", stopLiveStream);
 void start();
 
 async function start(): Promise<void> {
-  // Kick off FunnelBarn analytics initialisation in parallel — it must not
-  // block the rest of the app startup.
   void initFunnelBarn();
+  void initSelfReporting();
 
   await loadSession();
   updateBBMenuUser();
@@ -311,6 +310,82 @@ async function initFunnelBarn(): Promise<void> {
   // Track subsequent hash-based route changes as additional page views.
   window.addEventListener("hashchange", () => {
     window.funnelbarn?.page();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Self-reporting — dogfood BugBarn by capturing frontend errors into itself.
+// ---------------------------------------------------------------------------
+
+let selfReportApiKey = "";
+let selfReportProject = "";
+
+function sendErrorEnvelope(error: unknown): void {
+  if (!selfReportApiKey) return;
+  const err = error instanceof Error ? error : new Error(String(error));
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-bugbarn-api-key": selfReportApiKey,
+  };
+  if (selfReportProject) {
+    headers["x-bugbarn-project"] = selfReportProject;
+  }
+  const body = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    severityText: "ERROR",
+    body: err.message,
+    exception: {
+      type: err.name || "Error",
+      message: err.message,
+      stacktrace: parseStack(err.stack),
+    },
+    attributes: {
+      url: location.href,
+      userAgent: navigator.userAgent,
+    },
+    sender: { sdk: { name: "bugbarn.web", version: "0.1.0" } },
+  });
+  fetch(apiUrl("/api/v1/events"), { method: "POST", headers, body, keepalive: true }).catch(() => {});
+}
+
+function parseStack(stack?: string): Array<{ file: string; line: number; column: number; function?: string }> | undefined {
+  if (!stack) return undefined;
+  const frames: Array<{ file: string; line: number; column: number; function?: string }> = [];
+  for (const raw of stack.split("\n").map((l) => l.trim()).slice(1)) {
+    const m = /^at (?:(.+?) )?\(?(.+?):(\d+):(\d+)\)?$/.exec(raw);
+    if (!m) continue;
+    const f: { file: string; line: number; column: number; function?: string } = {
+      file: m[2],
+      line: Number(m[3]),
+      column: Number(m[4]),
+    };
+    if (m[1]) f.function = m[1];
+    frames.push(f);
+  }
+  return frames.length > 0 ? frames : undefined;
+}
+
+async function initSelfReporting(): Promise<void> {
+  let cfg: { bugbarn?: { enabled: boolean; apiKey?: string; project?: string } };
+  try {
+    const res = await fetch("/api/v1/runtime-config");
+    if (!res.ok) return;
+    cfg = await res.json() as typeof cfg;
+  } catch {
+    return;
+  }
+
+  const bb = cfg?.bugbarn;
+  if (!bb?.enabled || !bb.apiKey) return;
+
+  selfReportApiKey = bb.apiKey;
+  selfReportProject = bb.project ?? "";
+
+  window.addEventListener("error", (ev) => {
+    if (ev.error) sendErrorEnvelope(ev.error);
+  });
+  window.addEventListener("unhandledrejection", (ev) => {
+    sendErrorEnvelope(ev.reason);
   });
 }
 

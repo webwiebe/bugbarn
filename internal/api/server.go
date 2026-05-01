@@ -29,6 +29,8 @@ type Server struct {
 	maxSourceMapBytes  int64
 	funnelBarnEndpoint string
 	funnelBarnAPIKey   string
+	selfAPIKey         string
+	selfProject        string
 
 	loginLimiter sync.Map // map[string]*loginAttempt
 }
@@ -61,6 +63,13 @@ func (s *Server) SetSetupConfig(sessionSecret, publicURL string) {
 func (s *Server) SetFunnelBarnConfig(endpoint, apiKey string) {
 	s.funnelBarnEndpoint = endpoint
 	s.funnelBarnAPIKey = apiKey
+}
+
+// SetSelfReportingConfig exposes the ingest API key to the web frontend so it
+// can report its own errors back into BugBarn.
+func (s *Server) SetSelfReportingConfig(apiKey, project string) {
+	s.selfAPIKey = apiKey
+	s.selfProject = project
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
