@@ -188,7 +188,7 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
   const rawScrubbed = eventRawScrubbed(event);
   const context = eventContext(event);
   const stacktrace = eventStacktrace(event);
-  const spans = eventSpans(event);
+  const _spans = eventSpans(event);
   const fields = collectKeyValues(event, [
     "id",
     "ID",
@@ -1399,7 +1399,7 @@ function renderAnalyticsTimeline(buckets: AnalyticsBucket[]): string {
   // Date labels — first and last
   const firstLabel = buckets[0]?.date ?? "";
   const lastLabel = buckets[buckets.length - 1]?.date ?? "";
-  const lastX = Math.round((buckets.length - 1) * step);
+  const _lastX = Math.round((buckets.length - 1) * step);
 
   return `
     <div class="section analytics-timeline-section">

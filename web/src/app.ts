@@ -15,7 +15,7 @@ import {
   renderSetupGuide,
 } from "./components.js";
 import { fetchAnalyticsOverview, fetchAnalyticsPages, fetchAnalyticsReferrers, fetchAnalyticsSegments, fetchAnalyticsTimeline, normalizeList, normalizeObject, readString } from "./data.js";
-import { eventIssueId, eventTimestamp, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
+import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
 import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
 
@@ -807,7 +807,7 @@ function startLiveStream(): void {
   };
 }
 
-function stopLivePolling(): void {
+function _stopLivePolling(): void {
   stopLiveStream();
 }
 
@@ -1037,7 +1037,7 @@ function renderSettingsView(error: unknown = null): void {
   wireSettingsActions();
 }
 
-function renderDetail(): void {
+function _renderDetail(): void {
   if (state.authRequired && !state.authenticated) {
     renderLogin();
     return;
