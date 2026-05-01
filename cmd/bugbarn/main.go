@@ -105,8 +105,9 @@ func run() error {
 	selfReporting := cfg.selfEndpoint != "" && cfg.selfAPIKey != ""
 	if selfReporting {
 		bb.Init(bb.Options{
-			APIKey:   cfg.selfAPIKey,
-			Endpoint: cfg.selfEndpoint,
+			APIKey:      cfg.selfAPIKey,
+			Endpoint:    cfg.selfEndpoint,
+			ProjectSlug: cfg.selfProject,
 		})
 		log.Printf("self-reporting enabled → %s", cfg.selfEndpoint)
 	}
@@ -136,6 +137,9 @@ func run() error {
 		apiServer.SetTrustedProxies(cfg.trustedProxies)
 	}
 	apiServer.SetFunnelBarnConfig(cfg.funnelBarnEndpoint, cfg.funnelBarnAPIKey)
+	if selfReporting {
+		apiServer.SetSelfReportingConfig(cfg.selfAPIKey, cfg.selfProject)
+	}
 	if cfg.maxSourceMapBytes > 0 {
 		apiServer.SetMaxSourceMapBytes(cfg.maxSourceMapBytes)
 	}
@@ -189,6 +193,7 @@ type config struct {
 	publicURL           string
 	selfEndpoint        string
 	selfAPIKey          string
+	selfProject         string
 	digest                  digest.Config
 	analyticsRetentionDays  int
 	funnelBarnEndpoint      string // BUGBARN_FUNNELBARN_ENDPOINT — e.g. https://funnelbarn.example.com
@@ -213,6 +218,7 @@ func loadConfig() config {
 		publicURL:           os.Getenv("BUGBARN_PUBLIC_URL"),
 		selfEndpoint:        os.Getenv("BUGBARN_SELF_ENDPOINT"),
 		selfAPIKey:          os.Getenv("BUGBARN_SELF_API_KEY"),
+		selfProject:         os.Getenv("BUGBARN_SELF_PROJECT"),
 		funnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
 		funnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
 	}

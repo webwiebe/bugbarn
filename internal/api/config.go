@@ -15,8 +15,15 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 		APIKey   string `json:"apiKey,omitempty"`
 	}
 
+	type bugbarnSelfConfig struct {
+		Enabled bool   `json:"enabled"`
+		APIKey  string `json:"apiKey,omitempty"`
+		Project string `json:"project,omitempty"`
+	}
+
 	type runtimeConfig struct {
-		FunnelBarn funnelBarnConfig `json:"funnelbarn"`
+		FunnelBarn funnelBarnConfig  `json:"funnelbarn"`
+		BugBarn    bugbarnSelfConfig `json:"bugbarn"`
 	}
 
 	cfg := runtimeConfig{}
@@ -25,6 +32,13 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 			Enabled:  true,
 			Endpoint: s.funnelBarnEndpoint,
 			APIKey:   s.funnelBarnAPIKey,
+		}
+	}
+	if s.selfAPIKey != "" {
+		cfg.BugBarn = bugbarnSelfConfig{
+			Enabled: true,
+			APIKey:  s.selfAPIKey,
+			Project: s.selfProject,
 		}
 	}
 

@@ -39,7 +39,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: bugbarn-secrets
-                  key: BUGBARN_API_KEY
+                  key: BUGBARN_SELF_API_KEY
+            - name: BUGBARN_SELF_PROJECT
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_SELF_PROJECT
             - name: BUGBARN_SPOOL_DIR
               value: /var/lib/bugbarn/spool
             - name: BUGBARN_DB_PATH
