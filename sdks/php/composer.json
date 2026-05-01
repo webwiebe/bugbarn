@@ -1,6 +1,7 @@
 {
   "name": "bugbarn/bugbarn-php",
   "description": "BugBarn PHP SDK — lightweight error reporting for self-hosted BugBarn instances",
+  "version": "1.0.0",
   "type": "library",
   "license": "MIT",
   "require": {

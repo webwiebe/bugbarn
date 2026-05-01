@@ -363,3 +363,52 @@ jobs:
             git commit -m "Update formula to ${VERSION}"
             git push
           fi
+
+  # ---------------------------------------------------------------------------
+  # TypeScript SDK — publish to npm
+  # ---------------------------------------------------------------------------
+  publish-npm:
+    needs: [tag]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Python SDK — publish to PyPI
+  # ---------------------------------------------------------------------------
+  publish-pypi:
+    needs: [tag]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tools
+        run: pip install build twine
+      - name: Build
+        run: python -m build
+      - name: Test before publish
+        run: pip install -e ".[dev]" && python -m pytest tests/ -v
+      - name: Publish to PyPI
+        run: twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
