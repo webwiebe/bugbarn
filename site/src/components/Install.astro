@@ -63,6 +63,24 @@ sudo apt-get update \
 
     </div>
 
+    <h3 class="text-sm font-semibold mt-12 mb-4 font-mono" style="color: #e6edf3;">
+      <span style="color: #b5843a;">$</span> CLI client
+    </h3>
+    <p class="text-sm mb-4" style="color: #8b949e;">
+      <code class="font-mono" style="color: #c9d1d9;">bb</code> lets you query issues, live-tail logs, and manage projects from the terminal. JSON output for agents, interactive TUI for developers.
+    </p>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div>
+        <pre class="rounded-lg overflow-x-auto text-xs leading-relaxed" style="background-color: #0d1117; border: 1px solid #21262d; padding: 1.25rem 1.5rem; color: #c9d1d9; white-space: pre;">brew install webwiebe/bugbarn/bb
+bb login --url https://your-instance --api-key KEY</pre>
+      </div>
+      <div>
+        <pre class="rounded-lg overflow-x-auto text-xs leading-relaxed" style="background-color: #0d1117; border: 1px solid #21262d; padding: 1.25rem 1.5rem; color: #c9d1d9; white-space: pre;">bb issues                # list open issues (JSON)
+bb logs -f --level warn  # live-tail warnings
+bb tui                   # interactive browser</pre>
+      </div>
+    </div>
+
     <p class="mt-8 text-sm" style="color: #8b949e;">
       Then open <span class="font-mono" style="color: #c9d1d9;">http://localhost:8080</span> — or read the
       <a href="https://webwiebe.github.io/bugbarn/docs/getting-started"

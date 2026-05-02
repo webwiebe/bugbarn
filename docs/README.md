@@ -13,6 +13,7 @@ BugBarn is a lightweight, self-hosted error tracking system built in Go with SQL
 - [Overview](overview.md) — what BugBarn does, who it is for, and where it fits (and does not fit).
 
 **Developer — integrate or deploy**
+- [CLI (`bb`)](cli.md) — query issues, tail logs, and manage projects from the terminal. JSON output for agents, interactive TUI for developers.
 - [SDK overview](sdks/overview.md) — choose an SDK or use the HTTP API directly, understand API keys and event shape.
 - [REST API reference](api.md) — full endpoint reference including authentication and payloads.
 - [Deployment configuration](deployment/configuration.md) — all environment variables for production deployments.
@@ -36,6 +37,7 @@ BugBarn is a lightweight, self-hosted error tracking system built in Go with SQL
 | [deployment/kubernetes.md](deployment/kubernetes.md) | Operators | Kubernetes manifests, Litestream, and production deployment |
 | [deployment/performance.md](deployment/performance.md) | Operators | Throughput, hardware recommendations, and system limits |
 | [api.md](api.md) | Developers | Full REST API reference with request/response examples |
+| [cli.md](cli.md) | Developers | CLI client for querying issues, tailing logs, and managing projects |
 | [sdks/overview.md](sdks/overview.md) | Developers | Integration options, API key scopes, event shape, and privacy scrubbing |
 | [sdks/go.md](sdks/go.md) | Developers | Go SDK installation, initialisation, and usage |
 | [sdks/http.md](sdks/http.md) | Developers | Sending events directly over HTTP from any language |

@@ -93,7 +93,7 @@ jobs:
       - name: Install nfpm
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
-      - name: Build binary
+      - name: Build binaries
         env:
           GOOS: linux
           VERSION: ${{ needs.tag.outputs.version_num }}
@@ -104,8 +104,9 @@ jobs:
           LDFLAGS="-X main.Version=v${VERSION} -X main.BuildTime=${BUILD_TIME}"
           mkdir -p dist
           go build -ldflags "${LDFLAGS}" -o dist/bugbarn-linux-${GOARCH} ./cmd/bugbarn
+          go build -ldflags "${LDFLAGS}" -o dist/bb-linux-${GOARCH} ./cmd/bb
 
-      - name: Build .deb package
+      - name: Build .deb packages
         env:
           VERSION: ${{ needs.tag.outputs.version_num }}
           GOARCH: ${{ matrix.arch }}
@@ -114,6 +115,11 @@ jobs:
           envsubst < nfpm-bugbarn.yaml > nfpm-bugbarn-processed.yaml
           nfpm package \
             --config nfpm-bugbarn-processed.yaml \
+            --packager deb \
+            --target debs/
+          envsubst < nfpm-bb.yaml > nfpm-bb-processed.yaml
+          nfpm package \
+            --config nfpm-bb-processed.yaml \
             --packager deb \
             --target debs/
 
@@ -144,7 +150,7 @@ jobs:
           go-version: '1.26'
           cache: true
 
-      - name: Build macOS binary
+      - name: Build macOS binaries
         env:
           GOOS: darwin
           GOARCH: ${{ matrix.arch }}
@@ -154,9 +160,12 @@ jobs:
           LDFLAGS="-X main.Version=v${VERSION} -X main.BuildTime=${BUILD_TIME}"
           mkdir -p dist
           go build -ldflags "${LDFLAGS}" -o dist/bugbarn ./cmd/bugbarn
+          go build -ldflags "${LDFLAGS}" -o dist/bb ./cmd/bb
           TARBALL="bugbarn-darwin-${{ matrix.arch }}-${VERSION}.tar.gz"
           tar -czvf dist/${TARBALL} -C dist bugbarn
-          rm dist/bugbarn
+          BB_TARBALL="bb-darwin-${{ matrix.arch }}-${VERSION}.tar.gz"
+          tar -czvf dist/${BB_TARBALL} -C dist bb
+          rm dist/bugbarn dist/bb
 
       - name: Generate checksums
         run: |
@@ -257,6 +266,8 @@ jobs:
 
           AMD64_SHA=$(cat brew-repo/bugbarn-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
           ARM64_SHA=$(cat brew-repo/bugbarn-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          BB_AMD64_SHA=$(cat brew-repo/bb-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          BB_ARM64_SHA=$(cat brew-repo/bb-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
 
           cat > brew-repo/Formula/bugbarn.rb << EOF
           class Bugbarn < Formula
@@ -281,6 +292,33 @@ jobs:
 
             test do
               assert_match version.to_s, shell_output("#{bin}/bugbarn version")
+            end
+          end
+          EOF
+
+          cat > brew-repo/Formula/bb.rb << EOF
+          class Bb < Formula
+            desc "CLI client for BugBarn error tracking"
+            homepage "https://github.com/wiebe-xyz/bugbarn"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://webwiebe.nl/brew/bb-darwin-amd64-${VERSION}.tar.gz"
+                sha256 "${BB_AMD64_SHA}"
+              elsif Hardware::CPU.arm?
+                url "https://webwiebe.nl/brew/bb-darwin-arm64-${VERSION}.tar.gz"
+                sha256 "${BB_ARM64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "bb"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/bb version")
             end
           end
           EOF
@@ -322,6 +360,8 @@ jobs:
 
           AMD64_SHA=$(cat darwin-download/darwin-amd64/bugbarn-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
           ARM64_SHA=$(cat darwin-download/darwin-arm64/bugbarn-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          BB_AMD64_SHA=$(cat darwin-download/darwin-amd64/bb-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          BB_ARM64_SHA=$(cat darwin-download/darwin-arm64/bb-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
 
           git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/webwiebe/homebrew-bugbarn.git tap-repo
           cd tap-repo
@@ -354,9 +394,36 @@ jobs:
           end
           EOF
 
+          cat > Formula/bb.rb << EOF
+          class Bb < Formula
+            desc "CLI client for BugBarn error tracking"
+            homepage "https://github.com/wiebe-xyz/bugbarn"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://webwiebe.nl/brew/bb-darwin-amd64-${VERSION}.tar.gz"
+                sha256 "${BB_AMD64_SHA}"
+              elsif Hardware::CPU.arm?
+                url "https://webwiebe.nl/brew/bb-darwin-arm64-${VERSION}.tar.gz"
+                sha256 "${BB_ARM64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "bb"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/bb version")
+            end
+          end
+          EOF
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/bugbarn.rb
+          git add Formula/bugbarn.rb Formula/bb.rb
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else

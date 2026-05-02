@@ -237,8 +237,25 @@ Service worker updates are versioned by a hash of the compiled assets. New deplo
 
 ---
 
+## 9. CLI client (`bb`)
+
+`bb` is a standalone CLI for querying BugBarn from the terminal or from AI agents.
+
+```sh
+brew install webwiebe/bugbarn/bb   # or: sudo apt-get install bb
+bb login --url http://localhost:8080 --api-key <your-api-key>
+bb issues                          # list open issues (JSON)
+bb logs -f                         # live-tail logs
+bb tui                             # interactive issue browser
+```
+
+See the [full CLI reference](cli.md) for all commands and options.
+
+---
+
 ## Next steps
 
+- [CLI (`bb`)](cli.md) — query issues, tail logs, manage projects from the terminal
 - [Overview](overview.md) — capabilities, architecture, and what BugBarn is not
 - [Deployment: configuration](deployment/configuration.md) — all environment variables
 - [Deployment: Kubernetes](deployment/kubernetes.md) — production Kubernetes setup

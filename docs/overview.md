@@ -35,6 +35,7 @@ BugBarn stores everything locally in a SQLite file. Events are accepted asynchro
 - **Privacy scrubbing** — automatic redaction of sensitive keys (`password`, `token`, `secret`, `email`, `cookie`, `authorization`, `api_key`, `session`, `csrf`) and pattern-matched values (email addresses, IPs, UUIDs, bearer tokens) before storage.
 - **Self-reporting** — BugBarn can report its own errors to itself (dogfooding).
 - **SDKs** — official clients for Go (`bugbarn-go`), TypeScript, and Python. All support `Init`, `CaptureError`, `CaptureMessage`, and `Shutdown`.
+- **CLI (`bb`)** — query issues, live-tail logs, resolve/mute issues, and manage projects from the terminal. JSON output for AI agents and scripts, plus an interactive TUI for developers. Installable via Homebrew and APT.
 - **Authentication** — session cookies (HMAC-signed, bcrypt passwords) or API keys (SHA256-hashed, scoped to `full` or `ingest`, optionally per-project).
 
 ---
