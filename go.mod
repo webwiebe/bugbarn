@@ -6,6 +6,7 @@ require (
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible
 	github.com/wiebe-xyz/bugbarn-go v0.0.0-00010101000000-000000000000
 	golang.org/x/crypto v0.50.0
+	golang.org/x/term v0.42.0
 	modernc.org/sqlite v1.48.2
 )
 

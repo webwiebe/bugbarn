@@ -1,0 +1,20 @@
+name: bb
+arch: "${GOARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: "Wiebe Zweers <bugbarn@wiebe.xyz>"
+description: |
+  bb - BugBarn CLI client.
+  Query and manage BugBarn issues from the command line.
+vendor: "BugBarn"
+homepage: "https://github.com/wiebe-xyz/bugbarn"
+license: "MIT"
+
+contents:
+  - src: ./dist/bb-linux-${GOARCH}
+    dst: /usr/bin/bb
+    file_info:
+      mode: 0755
+
+deb:
+  compression: gzip
