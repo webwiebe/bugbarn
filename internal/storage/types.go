@@ -71,6 +71,10 @@ type IssueFilter struct {
 	// Facets is an optional map of facet key→value pairs to filter by.
 	// Issues must match ALL provided facet filters (AND semantics).
 	Facets map[string]string
+	// Limit caps the number of returned issues. 0 means no limit.
+	Limit int
+	// Offset skips the first N results (for pagination).
+	Offset int
 }
 
 // User represents an admin user stored in the database.

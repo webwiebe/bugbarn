@@ -294,6 +294,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveAlertRoute(w, r)
 	case r.URL.Path == "/api/v1/issues" && r.Method == http.MethodGet:
 		s.listIssues(w, r)
+	case r.URL.Path == "/api/v1/issues/sparklines" && r.Method == http.MethodGet:
+		s.issueSparklines(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/issues/"):
 		s.serveIssueRoute(w, r)
 	case r.URL.Path == "/api/v1/logs" && r.Method == http.MethodGet:

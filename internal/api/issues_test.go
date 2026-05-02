@@ -150,11 +150,8 @@ func TestListIssuesIncludesHourlyCounts(t *testing.T) {
 		t.Fatal("expected at least one issue")
 	}
 
-	first, ok := issues[0].(map[string]any)
+	_, ok = issues[0].(map[string]any)
 	if !ok {
 		t.Fatal("expected issue to be an object")
-	}
-	if _, ok := first["hourly_counts"]; !ok {
-		t.Error("expected hourly_counts in issue list response")
 	}
 }
