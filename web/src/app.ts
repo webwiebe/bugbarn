@@ -1110,7 +1110,11 @@ function getCSRFToken(): string {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-async function postJson(path: string, body: unknown): Promise<unknown> {
+async function refreshCSRFToken(): Promise<void> {
+  await fetch(apiUrl("/api/v1/me"), { credentials: "include", headers: { Accept: "application/json" } });
+}
+
+async function postJson(path: string, body: unknown, _retried = false): Promise<unknown> {
   const csrf = getCSRFToken();
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -1129,6 +1133,14 @@ async function postJson(path: string, body: unknown): Promise<unknown> {
     state.authRequired = true;
     state.authenticated = false;
     renderLogin();
+  }
+  if (response.status === 403 && !_retried) {
+    const text = await response.text().catch(() => "");
+    if (text.includes("CSRF")) {
+      await refreshCSRFToken();
+      return postJson(path, body, true);
+    }
+    throw new Error(`${response.status} ${response.statusText}: ${text.slice(0, 200).trim()}`.trim());
   }
   if (!response.ok) {
     const body = await response.text().catch(() => "");
@@ -1684,7 +1696,7 @@ async function submitSourceMapsForm(form: HTMLFormElement): Promise<void> {
   }
 }
 
-async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function apiFetch(path: string, init: RequestInit = {}, _retried = false): Promise<Response> {
   const csrf = getCSRFToken();
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -1697,7 +1709,15 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
   if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
     headers["X-BugBarn-Project"] = state.currentProject;
   }
-  return fetch(apiUrl(path), { credentials: "include", ...init, headers });
+  const res = await fetch(apiUrl(path), { credentials: "include", ...init, headers });
+  if (res.status === 403 && !_retried) {
+    const text = await res.clone().text().catch(() => "");
+    if (text.includes("CSRF")) {
+      await refreshCSRFToken();
+      return apiFetch(path, init, true);
+    }
+  }
+  return res;
 }
 
 async function muteIssue(id: string, muteMode: string): Promise<void> {

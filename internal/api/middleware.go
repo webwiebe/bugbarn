@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strings"
 )
@@ -86,9 +87,13 @@ func isCSRFProtected(r *http.Request) bool {
 func (s *Server) validCSRF(r *http.Request) bool {
 	sessionCookie, err := r.Cookie("bugbarn_session")
 	if err != nil {
+		log.Printf("csrf-debug: no session cookie")
 		return false
 	}
 	expected := s.sessions.CSRFToken(sessionCookie.Value)
 	provided := r.Header.Get("X-BugBarn-CSRF")
+	if provided != expected {
+		log.Printf("csrf-debug: mismatch expected=%s provided=%s session_len=%d", expected[:8], provided[:min(8, len(provided))], len(sessionCookie.Value))
+	}
 	return provided == expected
 }
