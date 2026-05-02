@@ -1425,6 +1425,10 @@ button:disabled {
 }
 
 /* Pending project notification banner */
+.pending-banner[hidden] {
+  display: none !important;
+}
+
 .pending-banner {
   display: flex;
   align-items: center;

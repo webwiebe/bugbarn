@@ -769,7 +769,7 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
           const slug = String(p.slug ?? p.Slug ?? '');
           const name = String(p.name ?? p.Name ?? slug);
           const status = String(p.status ?? p.Status ?? 'active');
-          const setupUrl = `/setup/${slug}`;
+          const setupUrl = `/api/v1/setup/${slug}`;
           return `
             <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
               <div style="flex:1;min-width:0">
