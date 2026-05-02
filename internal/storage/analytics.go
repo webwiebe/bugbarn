@@ -58,8 +58,8 @@ func (s *Store) RollupDailyAnalytics(ctx context.Context, projectID int64, date 
 		INSERT OR REPLACE INTO analytics_daily
 			(project_id, date, pathname, dim_key, dim_value, pageviews, sessions)
 		SELECT
-			project_id,
-			strftime('%Y-%m-%d', ts, 'unixepoch') AS date,
+			? AS project_id,
+			? AS date,
 			pathname,
 			'' AS dim_key,
 			'' AS dim_value,
@@ -69,7 +69,7 @@ func (s *Store) RollupDailyAnalytics(ctx context.Context, projectID int64, date 
 		WHERE project_id = ?
 		  AND strftime('%Y-%m-%d', ts, 'unixepoch') = ?
 		GROUP BY pathname`,
-		projectID, dateStr,
+		projectID, dateStr, projectID, dateStr,
 	); err != nil {
 		return fmt.Errorf("rollup per-pathname: %w", err)
 	}
@@ -79,7 +79,7 @@ func (s *Store) RollupDailyAnalytics(ctx context.Context, projectID int64, date 
 		INSERT OR REPLACE INTO analytics_daily
 			(project_id, date, pathname, dim_key, dim_value, pageviews, sessions)
 		SELECT
-			project_id,
+			? AS project_id,
 			? AS date,
 			'' AS pathname,
 			'' AS dim_key,
@@ -88,8 +88,9 @@ func (s *Store) RollupDailyAnalytics(ctx context.Context, projectID int64, date 
 			COUNT(DISTINCT session_id) AS sessions
 		FROM analytics_pageviews
 		WHERE project_id = ?
-		  AND strftime('%Y-%m-%d', ts, 'unixepoch') = ?`,
-		dateStr, projectID, dateStr,
+		  AND strftime('%Y-%m-%d', ts, 'unixepoch') = ?
+		HAVING COUNT(*) > 0`,
+		projectID, dateStr, projectID, dateStr,
 	); err != nil {
 		return fmt.Errorf("rollup total: %w", err)
 	}
@@ -99,7 +100,7 @@ func (s *Store) RollupDailyAnalytics(ctx context.Context, projectID int64, date 
 		INSERT OR REPLACE INTO analytics_daily
 			(project_id, date, pathname, dim_key, dim_value, pageviews, sessions)
 		SELECT
-			project_id,
+			? AS project_id,
 			? AS date,
 			'' AS pathname,
 			'referrer_host' AS dim_key,
@@ -110,7 +111,7 @@ func (s *Store) RollupDailyAnalytics(ctx context.Context, projectID int64, date 
 		WHERE project_id = ?
 		  AND strftime('%Y-%m-%d', ts, 'unixepoch') = ?
 		GROUP BY referrer_host`,
-		dateStr, projectID, dateStr,
+		projectID, dateStr, projectID, dateStr,
 	); err != nil {
 		return fmt.Errorf("rollup referrers: %w", err)
 	}
