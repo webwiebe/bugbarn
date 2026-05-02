@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,8 +38,21 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 		Status: q.Get("status"),
 		Query:  q.Get("q"),
 	}
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			filter.Limit = n
+		}
+	}
+	if v := q.Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			filter.Offset = n
+		}
+	}
+	if filter.Limit == 0 {
+		filter.Limit = 100
+	}
 	// Any query params not used for standard filtering are treated as facet filters.
-	knownParams := map[string]bool{"sort": true, "status": true, "q": true}
+	knownParams := map[string]bool{"sort": true, "status": true, "q": true, "limit": true, "offset": true}
 	for key, vals := range q {
 		if knownParams[key] || len(vals) == 0 || strings.TrimSpace(vals[0]) == "" {
 			continue
@@ -54,35 +68,38 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Collect numeric issue IDs for hourly count lookup.
-	issueIDs := make([]int64, 0, len(issues))
-	for _, iss := range issues {
-		if id, err := parseIssueRowID(iss.ID); err == nil {
+	writeJSON(w, map[string]any{"issues": issues})
+}
+
+func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil || s.service == nil {
+		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ids := r.URL.Query().Get("ids")
+	if ids == "" {
+		writeJSON(w, map[string]any{"sparklines": map[string][24]int{}})
+		return
+	}
+
+	parts := strings.Split(ids, ",")
+	issueIDs := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		if id, err := parseIssueRowID(strings.TrimSpace(p)); err == nil {
 			issueIDs = append(issueIDs, id)
 		}
 	}
 
 	hourlyCounts, err := s.service.HourlyEventCounts(r.Context(), issueIDs)
 	if err != nil {
-		// Non-fatal: log and continue without sparkline data.
 		hourlyCounts = map[int64][24]int{}
 	}
 
-	// Build enriched response items.
-	type issueWithCounts struct {
-		storage.Issue
-		HourlyCounts [24]int `json:"hourly_counts"`
+	result := make(map[string][24]int, len(hourlyCounts))
+	for id, counts := range hourlyCounts {
+		result[fmt.Sprintf("issue-%06d", id)] = counts
 	}
-	items := make([]issueWithCounts, len(issues))
-	for i, iss := range issues {
-		counts := [24]int{}
-		if id, err := parseIssueRowID(iss.ID); err == nil {
-			counts = hourlyCounts[id]
-		}
-		items[i] = issueWithCounts{Issue: iss, HourlyCounts: counts}
-	}
-
-	writeJSON(w, map[string]any{"issues": items})
+	writeJSON(w, map[string]any{"sparklines": result})
 }
 
 func (s *Server) getIssue(w http.ResponseWriter, r *http.Request) {

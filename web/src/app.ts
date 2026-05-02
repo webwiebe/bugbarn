@@ -696,12 +696,39 @@ async function loadIssues(): Promise<void> {
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       renderIssuesView();
     }
+    loadSparklines();
   } catch (error) {
     state.issues = [];
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       renderIssuesView(error);
     }
     setStatus(`Issues unavailable: ${errorMessage(error)}`);
+  }
+}
+
+async function loadSparklines(): Promise<void> {
+  if (state.issues.length === 0) return;
+  const ids = state.issues
+    .map((i) => String(i.ID ?? i.id ?? ""))
+    .filter(Boolean)
+    .join(",");
+  if (!ids) return;
+  try {
+    const payload = await fetchJson(`/api/v1/issues/sparklines?ids=${encodeURIComponent(ids)}`);
+    const sparklines = (payload as Record<string, unknown>)?.["sparklines"] as Record<string, number[]> | undefined;
+    if (sparklines) {
+      for (const issue of state.issues) {
+        const key = String(issue.ID ?? issue.id ?? "");
+        if (key && sparklines[key]) {
+          issue.hourly_counts = sparklines[key];
+        }
+      }
+      if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
+        renderIssuesView();
+      }
+    }
+  } catch {
+    // Sparklines are non-critical; silently ignore failures.
   }
 }
 

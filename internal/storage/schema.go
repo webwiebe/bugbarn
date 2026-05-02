@@ -140,10 +140,13 @@ func (s *Store) init(ctx context.Context) error {
 			last_used_at TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_issues_project_last_seen ON issues(project_id, last_seen DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_issues_project_status_last_seen ON issues(project_id, status, last_seen DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_events_issue_id ON events(project_id, issue_id, id ASC)`,
+		`CREATE INDEX IF NOT EXISTS idx_events_issue_observed ON events(project_id, issue_id, observed_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_events_project_received_at ON events(project_id, received_at DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_releases_project_observed_at ON releases(project_id, observed_at DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_facets_lookup ON event_facets(project_id, section, facet_key, facet_value)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_facets_issue ON event_facets(project_id, issue_id, facet_key, facet_value)`,
 		`CREATE TABLE IF NOT EXISTS alert_firings (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			alert_id INTEGER NOT NULL,

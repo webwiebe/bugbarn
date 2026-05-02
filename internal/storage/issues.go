@@ -122,6 +122,13 @@ WHERE ` + strings.Join(conditions, " AND ")
 	sqlQuery += `
 ORDER BY ` + orderBy
 
+	if filter.Limit > 0 {
+		sqlQuery += fmt.Sprintf(" LIMIT %d", filter.Limit)
+		if filter.Offset > 0 {
+			sqlQuery += fmt.Sprintf(" OFFSET %d", filter.Offset)
+		}
+	}
+
 	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, err
