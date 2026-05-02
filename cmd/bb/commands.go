@@ -267,11 +267,43 @@ func cmdUnmute(args []string) error {
 }
 
 func cmdProjects(args []string) error {
+	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
+	create := fs.String("create", "", "create a new project with this name")
+	slug := fs.String("slug", "", "project slug (defaults to slugified name)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
 	client, err := newClient()
 	if err != nil {
 		return err
 	}
+
+	if *create != "" {
+		body := map[string]string{"name": *create}
+		if *slug != "" {
+			body["slug"] = *slug
+		}
+		data, err := client.post("/api/v1/projects", body)
+		if err != nil {
+			return err
+		}
+		return writeRaw(data)
+	}
+
 	data, err := client.get("/api/v1/projects")
+	if err != nil {
+		return err
+	}
+	return writeRaw(data)
+}
+
+func cmdAPIKeys(args []string) error {
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	data, err := client.get("/api/v1/apikeys")
 	if err != nil {
 		return err
 	}

@@ -47,6 +47,8 @@ func main() {
 		err = cmdUnmute(os.Args[2:])
 	case "projects":
 		err = cmdProjects(os.Args[2:])
+	case "apikeys":
+		err = cmdAPIKeys(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Printf("bb %s (built %s)\n", Version, BuildTime)
 		return
@@ -85,7 +87,8 @@ Commands:
   reopen      Reopen a resolved issue
   mute        Mute an issue
   unmute      Unmute an issue
-  projects    List projects
+  projects    List or create projects
+  apikeys     List API keys
   version     Print version
 
 Authentication:
@@ -102,6 +105,8 @@ Examples:
   bb issue issue-000042              # get issue detail
   bb events issue-000042             # list events for issue
   bb resolve issue-000042            # resolve an issue
+  bb projects --create "My App"      # create a new project
+  bb apikeys                         # list API keys
 
 Config: ~/.config/bugbarn/cli.json (override with BB_CONFIG env var)
   Set "telemetry": false to disable error reporting to BugBarn.
