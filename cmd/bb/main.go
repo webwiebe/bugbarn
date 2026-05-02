@@ -31,6 +31,8 @@ func main() {
 		err = cmdIssues(os.Args[2:])
 	case "tui":
 		err = cmdTUI(os.Args[2:])
+	case "logs":
+		err = cmdLogs(os.Args[2:])
 	case "issue":
 		err = cmdIssue(os.Args[2:])
 	case "events":
@@ -76,6 +78,7 @@ Commands:
   login       Authenticate with a BugBarn instance
   issues      List issues (JSON output)
   tui         Interactive terminal UI for browsing issues
+  logs        Fetch or live-tail structured logs
   issue       Get issue detail
   events      List events for an issue
   resolve     Resolve an issue
@@ -92,6 +95,9 @@ Authentication:
 Examples:
   bb issues                          # list open issues (JSON)
   bb tui                             # interactive issue browser
+  bb logs -f                         # live-tail all logs (colored)
+  bb logs -f --level warn            # tail warnings and above
+  bb logs --project backend --limit 20
   bb issues --status all --query OOM # search all issues
   bb issue issue-000042              # get issue detail
   bb events issue-000042             # list events for issue
