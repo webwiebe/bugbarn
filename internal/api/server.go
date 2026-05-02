@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
@@ -247,6 +248,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("csrf: rejected %s %s (header present: %v)", r.Method, r.URL.Path, r.Header.Get("X-BugBarn-CSRF") != "")
 				http.Error(w, "invalid or missing CSRF token", http.StatusForbidden)
 				return
+			}
+		}
+
+		// Refresh the CSRF cookie on every session-authenticated response when
+		// the browser's copy is missing or stale, so the frontend always has a
+		// valid token available for state-changing requests.
+		if usingSession && s.sessions != nil {
+			if sessionCookie, err := r.Cookie("bugbarn_session"); err == nil {
+				if csrfCookie, err := r.Cookie("bugbarn_csrf"); err != nil || csrfCookie.Value != s.sessions.CSRFToken(sessionCookie.Value) {
+					secure := secureCookie(r)
+					expires := time.Now().Add(12 * time.Hour)
+					http.SetCookie(w, s.sessions.CSRFCookie(sessionCookie.Value, expires, secure))
+				}
 			}
 		}
 

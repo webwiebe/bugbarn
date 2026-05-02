@@ -470,6 +470,25 @@ function setStatus(message: string): void {
   elements.statusText.textContent = message;
 }
 
+function showFlash(message: string, tone: "error" | "success" | "info" = "info", durationMs = 5000): void {
+  const existing = document.getElementById("flash-banner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "flash-banner";
+  banner.setAttribute("role", "alert");
+  const bg = tone === "error" ? "#5c1a1a" : tone === "success" ? "#1a3d1a" : "#1a2a3d";
+  const border = tone === "error" ? "#a33" : tone === "success" ? "#3a3" : "#369";
+  banner.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:10000;padding:10px 16px;background:${bg};border-bottom:2px solid ${border};color:#eee;font-size:0.85rem;display:flex;align-items:center;justify-content:space-between;gap:8px;animation:flashIn 0.2s ease-out`;
+  banner.innerHTML = `<span>${escapeHtml(message)}</span><button style="background:none;border:none;color:#aaa;cursor:pointer;font-size:1.1rem;padding:0 4px" aria-label="Dismiss">&times;</button>`;
+  document.body.prepend(banner);
+
+  banner.querySelector("button")?.addEventListener("click", () => banner.remove());
+  if (durationMs > 0) {
+    setTimeout(() => banner.remove(), durationMs);
+  }
+}
+
 function setRouteChip(message: string, tone = ""): void {
   elements.routeChip.className = `chip${tone ? ` ${tone}` : ""}`;
   elements.routeChip.textContent = message;
@@ -1593,11 +1612,11 @@ function wireSettingsActions(): void {
 async function approveProject(slug: string): Promise<void> {
   try {
     await postJson(`/api/v1/projects/${encodeURIComponent(slug)}/approve`, {});
-    setStatus(`Project ${slug} approved.`);
+    showFlash(`Project "${slug}" approved.`, "success");
     await loadSettings();
     void checkPendingProjects();
   } catch (error) {
-    setStatus(`Approve failed: ${errorMessage(error)}`);
+    showFlash(`Approve failed: ${errorMessage(error)}`, "error", 8000);
   }
 }
 
@@ -1694,10 +1713,10 @@ async function muteIssue(id: string, muteMode: string): Promise<void> {
         await loadIssueDetail(id);
       }
     } else {
-      setStatus(`Mute failed: ${res.status} ${res.statusText}`.trim());
+      showFlash(`Mute failed: ${res.status} ${res.statusText}`.trim(), "error");
     }
   } catch (error) {
-    setStatus(`Mute unavailable: ${errorMessage(error)}`);
+    showFlash(`Mute failed: ${errorMessage(error)}`, "error");
   }
 }
 
@@ -1711,21 +1730,21 @@ async function unmuteIssue(id: string): Promise<void> {
         await loadIssueDetail(id);
       }
     } else {
-      setStatus(`Unmute failed: ${res.status} ${res.statusText}`.trim());
+      showFlash(`Unmute failed: ${res.status} ${res.statusText}`.trim(), "error");
     }
   } catch (error) {
-    setStatus(`Unmute unavailable: ${errorMessage(error)}`);
+    showFlash(`Unmute failed: ${errorMessage(error)}`, "error");
   }
 }
 
 async function toggleIssueStatus(issueId: string, status: "resolved" | "unresolved"): Promise<void> {
   try {
     await postJson(`/api/v1/issues/${encodeURIComponent(issueId)}/${status === "resolved" ? "resolve" : "reopen"}`, {});
-    setStatus(`Issue ${issueId} marked ${status}.`);
+    showFlash(`Issue ${issueId} marked ${status}.`, "success");
     await loadIssueDetail(issueId);
     await loadIssues();
   } catch (error) {
-    setStatus(`Issue status unavailable: ${errorMessage(error)}`);
+    showFlash(`Issue status change failed: ${errorMessage(error)}`, "error");
   }
 }
 

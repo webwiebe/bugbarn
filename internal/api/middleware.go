@@ -71,8 +71,7 @@ func isIssueAction(r *http.Request) bool {
 
 func isCSRFProtected(r *http.Request) bool {
 	switch r.Method {
-	case http.MethodPost, http.MethodPut, http.MethodDelete:
-		// Ingest and login/logout are excluded.
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 		switch r.URL.Path {
 		case "/api/v1/events", "/api/v1/login", "/api/v1/logout":
 			return false
