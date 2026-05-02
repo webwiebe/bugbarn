@@ -22,6 +22,7 @@ func cmdLogin(args []string) error {
 	username := fs.String("username", os.Getenv("BUGBARN_USERNAME"), "username")
 	password := fs.String("password", "", "password (omit to prompt)")
 	project := fs.String("project", "", "default project slug")
+	noTelemetry := fs.Bool("no-telemetry", false, "disable error reporting to BugBarn")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -34,6 +35,10 @@ func cmdLogin(args []string) error {
 	cfg := Config{
 		URL:     *urlFlag,
 		Project: *project,
+	}
+	if *noTelemetry {
+		f := false
+		cfg.Telemetry = &f
 	}
 
 	if *apiKey != "" {
@@ -103,6 +108,20 @@ func loginWithPassword(baseURL, username, password string) (session, csrf string
 		return "", "", fmt.Errorf("no session cookie in response")
 	}
 	return session, csrf, nil
+}
+
+func cmdTUI(args []string) error {
+	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
+	status := fs.String("status", "open", "open|resolved|muted|all")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	return runTUI(client, *status)
 }
 
 func cmdIssues(args []string) error {

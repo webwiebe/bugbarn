@@ -8,9 +8,10 @@ import (
 )
 
 type Config struct {
-	URL     string     `json:"url"`
-	Auth    AuthConfig `json:"auth"`
-	Project string     `json:"project,omitempty"`
+	URL       string     `json:"url"`
+	Auth      AuthConfig `json:"auth"`
+	Project   string     `json:"project,omitempty"`
+	Telemetry *bool      `json:"telemetry,omitempty"`
 }
 
 type AuthConfig struct {

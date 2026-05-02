@@ -17,12 +17,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Init telemetry early (no-ops if config missing or opted out).
+	if cfg, err := loadConfig(); err == nil {
+		initTelemetry(cfg)
+		defer shutdownTelemetry()
+	}
+
 	var err error
 	switch os.Args[1] {
 	case "login":
 		err = cmdLogin(os.Args[2:])
 	case "issues":
 		err = cmdIssues(os.Args[2:])
+	case "tui":
+		err = cmdTUI(os.Args[2:])
 	case "issue":
 		err = cmdIssue(os.Args[2:])
 	case "events":
@@ -53,6 +61,7 @@ func main() {
 		if err == flag.ErrHelp {
 			return
 		}
+		reportError(err)
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -65,7 +74,8 @@ Usage: bb <command> [flags]
 
 Commands:
   login       Authenticate with a BugBarn instance
-  issues      List issues (with filters)
+  issues      List issues (JSON output)
+  tui         Interactive terminal UI for browsing issues
   issue       Get issue detail
   events      List events for an issue
   resolve     Resolve an issue
@@ -81,12 +91,13 @@ Authentication:
 
 Examples:
   bb issues                          # list open issues (JSON)
+  bb tui                             # interactive issue browser
   bb issues --status all --query OOM # search all issues
   bb issue issue-000042              # get issue detail
   bb events issue-000042             # list events for issue
   bb resolve issue-000042            # resolve an issue
-  bb issues --project my-app         # filter by project
 
-All output is JSON for easy parsing by agents and scripts.
+Config: ~/.config/bugbarn/cli.json (override with BB_CONFIG env var)
+  Set "telemetry": false to disable error reporting to BugBarn.
 `)
 }
