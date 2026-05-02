@@ -107,16 +107,11 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	// Refresh the CSRF cookie on every /me call so the frontend always has a
-	// valid token, even if the cookie was cleared or the user logged in before
-	// CSRF was deployed.
+	// Refresh the CSRF cookie so the frontend always has a valid token.
 	if sessionCookie, err := r.Cookie("bugbarn_session"); err == nil && s.sessions != nil {
-		_, claims := s.sessions.Valid(sessionCookie.Value)
-		if claims {
-			secure := secureCookie(r)
-			expires := time.Now().Add(12 * time.Hour)
-			http.SetCookie(w, s.sessions.CSRFCookie(sessionCookie.Value, expires, secure))
-		}
+		secure := secureCookie(r)
+		expires := time.Now().Add(12 * time.Hour)
+		http.SetCookie(w, s.sessions.CSRFCookie(sessionCookie.Value, expires, secure))
 	}
 	writeJSON(w, map[string]any{"authenticated": true, "authEnabled": true, "username": username})
 }
