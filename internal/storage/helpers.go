@@ -24,7 +24,7 @@ func parseTime(value string) (time.Time, error) {
 }
 
 func formatID(prefix string, value int64) string {
-	return fmt.Sprintf("%s%06d", prefix, value)
+	return fmt.Sprintf("%s%d", prefix, value)
 }
 
 func parseID(prefix, value string) (int64, error) {
