@@ -540,9 +540,28 @@ button:disabled {
   background: var(--muted);
 }
 
+.status-dot.regressed {
+  background: var(--accent-warm);
+}
+
 .issue-row.resolved,
 .issue-row.muted {
-  opacity: 0.55;
+  opacity: 0.5;
+}
+
+.issue-status-chip.resolved {
+  background: #1a3d1a;
+  color: var(--accent);
+}
+
+.issue-status-chip.muted {
+  background: #2a2a2a;
+  color: var(--muted);
+}
+
+.issue-status-chip.regressed {
+  background: #442d13;
+  color: var(--accent-warm);
 }
 
 .item-meta,

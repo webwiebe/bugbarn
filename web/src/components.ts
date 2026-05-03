@@ -65,7 +65,8 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
         const severityClass = severity === "error" || severity === "fatal" ? "bad" : severity === "warning" ? "warn" : "";
         const projectSlug = issue.project_slug ? String(issue.project_slug) : "";
         const status = issueStatus(issue);
-        const statusClass = status === "resolved" ? "resolved" : status === "muted" ? "muted" : "";
+        const statusClass = status === "resolved" ? "resolved" : status === "muted" ? "muted" : status === "regressed" ? "regressed" : "";
+        const statusLabel = status === "resolved" ? "Resolved" : status === "muted" ? "Muted" : status === "regressed" ? "Regressed" : "";
         return `
           <button class="item issue-row ${active} ${statusClass}" type="button" data-issue-id="${escapeAttr(id)}">
             <div class="item-title"><span class="status-dot ${statusClass}"></span>${escapeHtml(title)}</div>
@@ -77,6 +78,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
             <span class="issue-cell">${renderSparkline(issue.hourly_counts)}</span>
             <div class="item-meta">
               <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
+              ${statusLabel ? `<span class="chip issue-status-chip ${statusClass}" style="font-size:0.65rem">${escapeHtml(statusLabel)}</span>` : ""}
               ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
               <span>${escapeHtml(id)}</span>
             </div>
