@@ -755,10 +755,10 @@ async function loadReleases(): Promise<void> {
   try {
     const payload = await fetchJson("/api/v1/releases", true);
     state.releases = payload ? normalizeList<ApiRelease>(payload, "releases") : [];
-    renderReleasesView();
+    if (state.currentRoute === "releases") renderReleasesView();
   } catch (error) {
     state.releases = [];
-    renderReleasesView(error);
+    if (state.currentRoute === "releases") renderReleasesView(error);
   }
 }
 
@@ -817,10 +817,10 @@ async function loadAlerts(): Promise<void> {
   try {
     const payload = await fetchJson("/api/v1/alerts", true);
     state.alerts = payload ? normalizeList<ApiAlert>(payload, "alerts") : [];
-    renderAlertsView();
+    if (state.currentRoute === "alerts") renderAlertsView();
   } catch (error) {
     state.alerts = [];
-    renderAlertsView(error);
+    if (state.currentRoute === "alerts") renderAlertsView(error);
   }
 }
 
@@ -832,10 +832,10 @@ async function loadSettings(): Promise<void> {
     ]);
     state.settings = settingsPayload ? normalizeObject<ApiSettings>(settingsPayload, "settings") : null;
     state.apiKeys = keysPayload ? normalizeList<ApiApiKey>(keysPayload as Record<string, unknown>, "apiKeys") : [];
-    renderSettingsView();
+    if (state.currentRoute === "settings") renderSettingsView();
   } catch (error) {
     state.settings = null;
-    renderSettingsView(error);
+    if (state.currentRoute === "settings") renderSettingsView(error);
   }
 }
 
@@ -1794,10 +1794,10 @@ async function loadLogs(): Promise<void> {
     const payload = await fetchJson(`/api/v1/logs${qs ? `?${qs}` : ""}`, true);
     const raw = payload as Record<string, unknown> | null;
     state.logs = Array.isArray(raw?.["logs"]) ? (raw["logs"] as ApiLogEntry[]) : [];
-    renderLogsView();
+    if (state.currentRoute === "logs") renderLogsView();
   } catch {
     state.logs = [];
-    renderLogsView();
+    if (state.currentRoute === "logs") renderLogsView();
   }
 }
 
