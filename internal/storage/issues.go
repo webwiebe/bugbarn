@@ -113,7 +113,9 @@ SELECT
 	i.last_seen,
 	i.event_count,
 	i.representative_event_json,
-	COALESCE(p.slug, '') AS project_slug
+	COALESCE(p.slug, '') AS project_slug,
+	i.issue_number,
+	COALESCE(p.issue_prefix, '') AS issue_prefix
 FROM ` + fromClause
 	if len(conditions) > 0 {
 		sqlQuery += `
@@ -150,7 +152,7 @@ ORDER BY ` + orderBy
 }
 
 func (s *Store) GetIssue(ctx context.Context, issueID string) (Issue, error) {
-	rowID, err := parseID(issueIDPrefix, issueID)
+	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return Issue{}, err
 	}
@@ -179,7 +181,9 @@ SELECT
 	i.last_seen,
 	i.event_count,
 	i.representative_event_json,
-	COALESCE(p.slug, '') AS project_slug
+	COALESCE(p.slug, '') AS project_slug,
+	i.issue_number,
+	COALESCE(p.issue_prefix, '') AS issue_prefix
 FROM issues i
 LEFT JOIN projects p ON p.id = i.project_id`
 
@@ -241,6 +245,7 @@ func (s *Store) upsertIssue(ctx context.Context, projectID int64, processed work
 		storedRepresentative []byte
 	)
 
+	var existingIssueNumber int
 	err = tx.QueryRowContext(ctx, `
 SELECT
 	id,
@@ -259,7 +264,8 @@ SELECT
 	first_seen,
 	last_seen,
 	event_count,
-	representative_event_json
+	representative_event_json,
+	issue_number
 FROM issues
 WHERE project_id = ? AND fingerprint = ?`,
 		projectID,
@@ -282,6 +288,7 @@ WHERE project_id = ? AND fingerprint = ?`,
 		&lastSeen,
 		&eventCount,
 		&storedRepresentative,
+		&existingIssueNumber,
 	)
 	switch {
 	case err == nil:
@@ -301,7 +308,7 @@ WHERE project_id = ? AND fingerprint = ?`,
 		if err != nil {
 			return Issue{}, 0, false, err
 		}
-		issue.ID = formatID(issueIDPrefix, id)
+		issue.IssueNumber = existingIssueNumber
 		issue.FirstSeen = parsedFirstSeen
 		issue.LastSeen = parsedLastSeen
 		issue.EventCount = eventCount + 1
@@ -385,7 +392,27 @@ WHERE id = ? AND project_id = ?`,
 		}
 		issue.Fingerprint = fingerprintValue
 		issue.RepresentativeEvent = evt
+		// Set display ID for existing issue.
+		var existingPrefix string
+		_ = s.db.QueryRowContext(ctx, `SELECT issue_prefix FROM projects WHERE id = ?`, projectID).Scan(&existingPrefix)
+		if existingPrefix != "" && existingIssueNumber > 0 {
+			issue.ID = formatIssueID(existingPrefix, existingIssueNumber)
+		} else {
+			issue.ID = formatID(issueIDPrefix, id)
+		}
 		return issue, id, regressed, nil
+	}
+
+	// Atomically increment the project's issue counter.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ?`, projectID); err != nil {
+		return Issue{}, 0, false, err
+	}
+	var issueNumber int
+	var issuePrefix string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT issue_counter, issue_prefix FROM projects WHERE id = ?`, projectID).Scan(&issueNumber, &issuePrefix); err != nil {
+		return Issue{}, 0, false, err
 	}
 
 	issue = Issue{
@@ -400,6 +427,7 @@ WHERE id = ? AND project_id = ?`,
 		LastSeen:               seenAt,
 		EventCount:             1,
 		RepresentativeEvent:    evt,
+		IssueNumber:            issueNumber,
 	}
 
 	res, err := tx.ExecContext(ctx, `
@@ -415,8 +443,9 @@ INSERT INTO issues (
 	first_seen,
 	last_seen,
 	event_count,
-	representative_event_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	representative_event_json,
+	issue_number
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		projectID,
 		fingerprintValue,
 		material,
@@ -429,6 +458,7 @@ INSERT INTO issues (
 		formatTime(seenAt),
 		1,
 		representative,
+		issueNumber,
 	)
 	if err != nil {
 		return Issue{}, 0, false, err
@@ -438,7 +468,11 @@ INSERT INTO issues (
 	if err != nil {
 		return Issue{}, 0, false, err
 	}
-	issue.ID = formatID(issueIDPrefix, id)
+	if issuePrefix != "" {
+		issue.ID = formatIssueID(issuePrefix, issueNumber)
+	} else {
+		issue.ID = formatID(issueIDPrefix, id)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return Issue{}, 0, false, err
@@ -460,6 +494,8 @@ func scanIssue(scanner interface {
 		resolvedAt        string
 		reopenedAt        string
 		lastRegressedAt   string
+		issueNumber       int
+		issuePrefix       string
 	)
 	if err := scanner.Scan(
 		&id,
@@ -480,6 +516,8 @@ func scanIssue(scanner interface {
 		&issue.EventCount,
 		&representativeRaw,
 		&issue.ProjectSlug,
+		&issueNumber,
+		&issuePrefix,
 	); err != nil {
 		return Issue{}, err
 	}
@@ -502,7 +540,12 @@ func scanIssue(scanner interface {
 	issue.ResolvedAt, _ = parseTime(resolvedAt)
 	issue.ReopenedAt, _ = parseTime(reopenedAt)
 	issue.LastRegressedAt, _ = parseTime(lastRegressedAt)
-	issue.ID = formatID(issueIDPrefix, id)
+	issue.IssueNumber = issueNumber
+	if issuePrefix != "" && issueNumber > 0 {
+		issue.ID = formatIssueID(issuePrefix, issueNumber)
+	} else {
+		issue.ID = formatID(issueIDPrefix, id)
+	}
 	return issue, nil
 }
 
@@ -512,7 +555,7 @@ func (s *Store) MuteIssue(ctx context.Context, issueID string, muteMode string) 
 	if muteMode != "until_regression" && muteMode != "forever" {
 		return Issue{}, fmt.Errorf("invalid mute_mode %q: must be 'until_regression' or 'forever'", muteMode)
 	}
-	rowID, err := parseID(issueIDPrefix, issueID)
+	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return Issue{}, err
 	}
@@ -537,7 +580,7 @@ UPDATE issues SET status = 'muted', mute_mode = ?, updated_at = CURRENT_TIMESTAM
 
 // UnmuteIssue clears mute status and sets the issue back to unresolved.
 func (s *Store) UnmuteIssue(ctx context.Context, issueID string) (Issue, error) {
-	rowID, err := parseID(issueIDPrefix, issueID)
+	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return Issue{}, err
 	}

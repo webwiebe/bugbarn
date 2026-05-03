@@ -35,6 +35,62 @@ func parseID(prefix, value string) (int64, error) {
 	return strconv.ParseInt(strings.TrimPrefix(value, prefix), 10, 64)
 }
 
+func formatIssueID(prefix string, number int) string {
+	return fmt.Sprintf("%s-%d", prefix, number)
+}
+
+// parseIssueID splits a Jira-style issue ID like "BW-42" into prefix and number.
+// Also handles legacy "issue-000042" format for backward compatibility.
+func parseIssueID(value string) (prefix string, number int, err error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", 0, fmt.Errorf("empty issue id")
+	}
+	// Legacy format: issue-NNNNNN
+	if strings.HasPrefix(value, issueIDPrefix) {
+		n, err := strconv.ParseInt(strings.TrimPrefix(value, issueIDPrefix), 10, 64)
+		if err != nil {
+			return "", 0, fmt.Errorf("invalid legacy issue id %q: %w", value, err)
+		}
+		return "", int(n), nil
+	}
+	idx := strings.LastIndex(value, "-")
+	if idx <= 0 {
+		return "", 0, fmt.Errorf("invalid issue id %q", value)
+	}
+	n, err := strconv.Atoi(value[idx+1:])
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid issue id %q: %w", value, err)
+	}
+	return value[:idx], n, nil
+}
+
+// deriveIssuePrefix generates a short uppercase prefix from a project slug.
+// e.g. "bugbarn-web" → "BW", "my-service" → "MS", "frontend" → "FRO"
+func deriveIssuePrefix(slug string) string {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return "DEF"
+	}
+	parts := strings.FieldsFunc(slug, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' ' || r == '.'
+	})
+	if len(parts) == 1 {
+		upper := strings.ToUpper(parts[0])
+		if len(upper) <= 3 {
+			return upper
+		}
+		return upper[:3]
+	}
+	var b strings.Builder
+	for _, p := range parts {
+		if len(p) > 0 {
+			b.WriteByte(p[0])
+		}
+	}
+	return strings.ToUpper(b.String())
+}
+
 func sqliteDSN(path string) string {
 	u := url.URL{
 		Scheme: "file",

@@ -212,7 +212,7 @@ func TestPersistFacetsCardinalityGuards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	issueRowID, err := parseID(issueIDPrefix, ev.IssueID)
+	issueRowID, err := store.IssueRowIDByDisplayID(ctx, ev.IssueID)
 	if err != nil {
 		t.Fatal(err)
 	}

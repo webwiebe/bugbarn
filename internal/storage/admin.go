@@ -44,7 +44,7 @@ func (s *Store) ReopenIssue(ctx context.Context, issueID string) (Issue, error) 
 }
 
 func (s *Store) setIssueStatus(ctx context.Context, issueID, status string) (Issue, error) {
-	rowID, err := parseID(issueIDPrefix, issueID)
+	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return Issue{}, err
 	}

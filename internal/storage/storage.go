@@ -110,7 +110,7 @@ func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.Proc
 	// isNew is true when the issue was just created (EventCount == 1 and no regression).
 	isNew := issue.EventCount == 1 && !regressed
 
-	eventRow, eventRowID, err := s.insertEvent(ctx, projectID, issueID, regressed, processed)
+	eventRow, eventRowID, err := s.insertEvent(ctx, projectID, issueID, issue.ID, regressed, processed)
 	if err != nil {
 		return Issue{}, Event{}, false, false, err
 	}

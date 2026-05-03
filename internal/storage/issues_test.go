@@ -246,9 +246,9 @@ func TestHourlyEventCounts(t *testing.T) {
 		t.Fatalf("persist pe2: %v", err)
 	}
 
-	rowID, err := parseID(issueIDPrefix, issue.ID)
+	rowID, err := store.IssueRowIDByDisplayID(ctx, issue.ID)
 	if err != nil {
-		t.Fatalf("parseID: %v", err)
+		t.Fatalf("IssueRowIDByDisplayID: %v", err)
 	}
 
 	counts, err := store.HourlyEventCounts(ctx, []int64{rowID})
