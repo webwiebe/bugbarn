@@ -693,7 +693,10 @@ async function loadCurrentRouteData(): Promise<void> {
   renderIssuesView();
 }
 
+let issueLoadGeneration = 0;
+
 async function loadIssues(): Promise<void> {
+  const generation = ++issueLoadGeneration;
   try {
     const params = new URLSearchParams();
     if (state.issueSort && state.issueSort !== "last_seen") {
@@ -710,6 +713,7 @@ async function loadIssues(): Promise<void> {
     }
     const qs = params.toString();
     const payload = await fetchJson(`/api/v1/issues${qs ? `?${qs}` : ""}`);
+    if (generation !== issueLoadGeneration) return;
     state.issues = normalizeList<ApiIssue>(payload, "issues");
     setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
@@ -717,6 +721,7 @@ async function loadIssues(): Promise<void> {
     }
     loadSparklines();
   } catch (error) {
+    if (generation !== issueLoadGeneration) return;
     state.issues = [];
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       renderIssuesView(error);
@@ -726,6 +731,7 @@ async function loadIssues(): Promise<void> {
 }
 
 async function loadSparklines(): Promise<void> {
+  const generation = issueLoadGeneration;
   if (state.issues.length === 0) return;
   const ids = state.issues
     .map((i) => String(i.ID ?? i.id ?? ""))
@@ -734,6 +740,7 @@ async function loadSparklines(): Promise<void> {
   if (!ids) return;
   try {
     const payload = await fetchJson(`/api/v1/issues/sparklines?ids=${encodeURIComponent(ids)}`);
+    if (generation !== issueLoadGeneration) return;
     const sparklines = (payload as Record<string, unknown>)?.["sparklines"] as Record<string, number[]> | undefined;
     if (sparklines) {
       for (const issue of state.issues) {
