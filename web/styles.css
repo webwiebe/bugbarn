@@ -532,6 +532,19 @@ button:disabled {
   background: #ae81ff;
 }
 
+.status-dot.resolved {
+  background: var(--accent);
+}
+
+.status-dot.muted {
+  background: var(--muted);
+}
+
+.issue-row.resolved,
+.issue-row.muted {
+  opacity: 0.55;
+}
+
 .item-meta,
 .muted {
   color: var(--muted);
@@ -911,6 +924,14 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
+}
+
+.route-item-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .route-item-meta {
