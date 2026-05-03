@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -84,10 +83,15 @@ func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
 
 	parts := strings.Split(ids, ",")
 	issueIDs := make([]int64, 0, len(parts))
+	displayByRowID := make(map[int64]string, len(parts))
 	for _, p := range parts {
-		if id, err := parseIssueRowID(strings.TrimSpace(p)); err == nil {
-			issueIDs = append(issueIDs, id)
+		displayID := strings.TrimSpace(p)
+		rowID, err := s.store.IssueRowIDByDisplayID(r.Context(), displayID)
+		if err != nil {
+			continue
 		}
+		issueIDs = append(issueIDs, rowID)
+		displayByRowID[rowID] = displayID
 	}
 
 	hourlyCounts, err := s.service.HourlyEventCounts(r.Context(), issueIDs)
@@ -97,7 +101,9 @@ func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
 
 	result := make(map[string][24]int, len(hourlyCounts))
 	for id, counts := range hourlyCounts {
-		result[fmt.Sprintf("issue-%06d", id)] = counts
+		if displayID, ok := displayByRowID[id]; ok {
+			result[displayID] = counts
+		}
 	}
 	writeJSON(w, map[string]any{"sparklines": result})
 }
@@ -180,10 +186,4 @@ func (s *Server) unmuteIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"issue": item})
-}
-
-// parseIssueRowID extracts the numeric row ID from an issue ID like "issue-000001".
-func parseIssueRowID(id string) (int64, error) {
-	trimmed := strings.TrimPrefix(id, "issue-")
-	return strconv.ParseInt(strings.TrimLeft(trimmed, "0"), 10, 64)
 }

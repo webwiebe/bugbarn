@@ -16,6 +16,7 @@ type Store struct {
 // Issue represents a grouped error occurrence.
 type Issue struct {
 	ID                     string
+	IssueNumber            int
 	Fingerprint            string
 	FingerprintMaterial    string
 	FingerprintExplanation []string
@@ -88,11 +89,13 @@ type User struct {
 
 // Project represents a project row.
 type Project struct {
-	ID        int64
-	Name      string
-	Slug      string
-	Status    string
-	CreatedAt time.Time
+	ID           int64
+	Name         string
+	Slug         string
+	Status       string
+	IssuePrefix  string
+	IssueCounter int
+	CreatedAt    time.Time
 }
 
 // Scope constants for API keys.

@@ -14,7 +14,7 @@ import (
 )
 
 func (s *Store) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]Event, bool, error) {
-	rowID, err := parseID(issueIDPrefix, issueID)
+	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -31,41 +31,36 @@ func (s *Store) ListIssueEvents(ctx context.Context, issueID string, limit int, 
 	// Fetch one extra row to know whether there are more pages.
 	fetch := limit + 1
 
+	const eventCols = `e.id, e.issue_id, e.fingerprint, e.fingerprint_material, e.fingerprint_explanation_json,
+       e.received_at, e.observed_at, e.severity, e.message, e.regressed, e.event_json,
+       i.issue_number, COALESCE(p.issue_prefix, '')`
+	const eventJoin = ` FROM events e
+JOIN issues i ON i.id = e.issue_id
+JOIN projects p ON p.id = i.project_id`
+
 	var rows *sql.Rows
 	if projectID != 0 {
 		if beforeID > 0 {
-			rows, err = s.db.QueryContext(ctx, `
-SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
-       received_at, observed_at, severity, message, regressed, event_json
-FROM events
-WHERE project_id = ? AND issue_id = ? AND id < ?
-ORDER BY id DESC LIMIT ?`,
+			rows, err = s.db.QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
+WHERE e.project_id = ? AND e.issue_id = ? AND e.id < ?
+ORDER BY e.id DESC LIMIT ?`,
 				projectID, rowID, beforeID, fetch)
 		} else {
-			rows, err = s.db.QueryContext(ctx, `
-SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
-       received_at, observed_at, severity, message, regressed, event_json
-FROM events
-WHERE project_id = ? AND issue_id = ?
-ORDER BY id DESC LIMIT ?`,
+			rows, err = s.db.QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
+WHERE e.project_id = ? AND e.issue_id = ?
+ORDER BY e.id DESC LIMIT ?`,
 				projectID, rowID, fetch)
 		}
 	} else {
 		if beforeID > 0 {
-			rows, err = s.db.QueryContext(ctx, `
-SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
-       received_at, observed_at, severity, message, regressed, event_json
-FROM events
-WHERE issue_id = ? AND id < ?
-ORDER BY id DESC LIMIT ?`,
+			rows, err = s.db.QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
+WHERE e.issue_id = ? AND e.id < ?
+ORDER BY e.id DESC LIMIT ?`,
 				rowID, beforeID, fetch)
 		} else {
-			rows, err = s.db.QueryContext(ctx, `
-SELECT id, issue_id, fingerprint, fingerprint_material, fingerprint_explanation_json,
-       received_at, observed_at, severity, message, regressed, event_json
-FROM events
-WHERE issue_id = ?
-ORDER BY id DESC LIMIT ?`,
+			rows, err = s.db.QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
+WHERE e.issue_id = ?
+ORDER BY e.id DESC LIMIT ?`,
 				rowID, fetch)
 		}
 	}
@@ -112,26 +107,30 @@ func (s *Store) GetEvent(ctx context.Context, eventID string) (Event, error) {
 
 	const sel = `
 SELECT
-	id,
-	issue_id,
-	fingerprint,
-	fingerprint_material,
-	fingerprint_explanation_json,
-	received_at,
-	observed_at,
-	severity,
-	message,
-	regressed,
-	event_json
-FROM events`
+	e.id,
+	e.issue_id,
+	e.fingerprint,
+	e.fingerprint_material,
+	e.fingerprint_explanation_json,
+	e.received_at,
+	e.observed_at,
+	e.severity,
+	e.message,
+	e.regressed,
+	e.event_json,
+	i.issue_number,
+	COALESCE(p.issue_prefix, '')
+FROM events e
+JOIN issues i ON i.id = e.issue_id
+JOIN projects p ON p.id = i.project_id`
 
 	var row *sql.Row
 	if projectID != 0 {
 		row = s.db.QueryRowContext(ctx, sel+`
-WHERE project_id = ? AND id = ?`, projectID, rowID)
+WHERE e.project_id = ? AND e.id = ?`, projectID, rowID)
 	} else {
 		row = s.db.QueryRowContext(ctx, sel+`
-WHERE id = ?`, rowID)
+WHERE e.id = ?`, rowID)
 	}
 
 	return scanEvent(row)
@@ -156,28 +155,32 @@ func (s *Store) ListRecentEvents(ctx context.Context, limit int, since time.Time
 	)
 	const recentSel = `
 SELECT
-	id,
-	issue_id,
-	fingerprint,
-	fingerprint_material,
-	fingerprint_explanation_json,
-	received_at,
-	observed_at,
-	severity,
-	message,
-	regressed,
-	event_json
-FROM events`
+	e.id,
+	e.issue_id,
+	e.fingerprint,
+	e.fingerprint_material,
+	e.fingerprint_explanation_json,
+	e.received_at,
+	e.observed_at,
+	e.severity,
+	e.message,
+	e.regressed,
+	e.event_json,
+	i.issue_number,
+	COALESCE(p.issue_prefix, '')
+FROM events e
+JOIN issues i ON i.id = e.issue_id
+JOIN projects p ON p.id = i.project_id`
 	sinceStr := formatTime(since.UTC())
 	if projectID != 0 {
 		rows, err = s.db.QueryContext(ctx, recentSel+`
-WHERE project_id = ? AND max(received_at, observed_at) >= ?
-ORDER BY max(received_at, observed_at) DESC, id DESC
+WHERE e.project_id = ? AND max(e.received_at, e.observed_at) >= ?
+ORDER BY max(e.received_at, e.observed_at) DESC, e.id DESC
 LIMIT ?`, projectID, sinceStr, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, recentSel+`
-WHERE max(received_at, observed_at) >= ?
-ORDER BY max(received_at, observed_at) DESC, id DESC
+WHERE max(e.received_at, e.observed_at) >= ?
+ORDER BY max(e.received_at, e.observed_at) DESC, e.id DESC
 LIMIT ?`, sinceStr, limit)
 	}
 	if err != nil {
@@ -199,7 +202,7 @@ LIMIT ?`, sinceStr, limit)
 	return events, nil
 }
 
-func (s *Store) insertEvent(ctx context.Context, projectID int64, issueID int64, regressed bool, processed worker.ProcessedEvent) (Event, int64, error) {
+func (s *Store) insertEvent(ctx context.Context, projectID int64, issueID int64, issueDisplayID string, regressed bool, processed worker.ProcessedEvent) (Event, int64, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {
 		return Event{}, 0, err
@@ -254,7 +257,7 @@ INSERT INTO events (
 
 	return Event{
 		ID:                     formatID(eventIDPrefix, eventRowID),
-		IssueID:                formatID(issueIDPrefix, issueID),
+		IssueID:                issueDisplayID,
 		Fingerprint:            processed.Fingerprint,
 		FingerprintMaterial:    processed.FingerprintMaterial,
 		FingerprintExplanation: processed.FingerprintExplanation,
@@ -388,6 +391,8 @@ func scanEvent(scanner interface {
 		receivedAt     string
 		observedAt     string
 		regressed      int
+		issueNumber    int
+		issuePrefix    string
 	)
 	if err := scanner.Scan(
 		&id,
@@ -401,6 +406,8 @@ func scanEvent(scanner interface {
 		&entry.Message,
 		&regressed,
 		&payload,
+		&issueNumber,
+		&issuePrefix,
 	); err != nil {
 		return Event{}, err
 	}
@@ -422,7 +429,11 @@ func scanEvent(scanner interface {
 	entry.ObservedAt = parsedObservedAt
 	entry.Regressed = regressed != 0
 	entry.ID = formatID(eventIDPrefix, id)
-	entry.IssueID = formatID(issueIDPrefix, issueID)
+	if issuePrefix != "" && issueNumber > 0 {
+		entry.IssueID = formatIssueID(issuePrefix, issueNumber)
+	} else {
+		entry.IssueID = formatID(issueIDPrefix, issueID)
+	}
 	return entry, nil
 }
 
