@@ -60,7 +60,12 @@ func Open(path string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 
 	store := &Store{db: db}
-	if err := store.init(context.Background()); err != nil {
+	ctx := context.Background()
+	if err := store.init(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := store.migrateFingerprints(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}

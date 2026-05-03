@@ -105,9 +105,9 @@ export function renderEmptyIssues(setupGuide: string): string {
 
 export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], releases: ApiRelease[] = [], hasMore = false): string {
   const id = firstIdentifier(issue);
-  const title = issueTitle(issue);
-  const normalizedTitle = issueNormalizedTitle(issue);
+  const rawTitle = issueTitle(issue);
   const exceptionType = issueExceptionType(issue);
+  const title = exceptionType && rawTitle.startsWith(exceptionType + ": ") ? rawTitle.slice(exceptionType.length + 2) : rawTitle;
   const fingerprint = issueFingerprint(issue);
   const firstSeen = formatTime(issueFirstSeen(issue));
   const lastSeen = formatTime(issueLastSeen(issue));
@@ -149,7 +149,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       <div>
         <p class="eyebrow">${escapeHtml(exceptionType || "Error")}</p>
         <h3>${escapeHtml(title)}</h3>
-        <p class="muted">${escapeHtml(normalizedTitle || fingerprint || id || "No fingerprint")}</p>
+        <p class="muted">${escapeHtml(fingerprint || id || "No fingerprint")}</p>
       </div>
       <div class="link-row">
         <button type="button" data-copy-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>Copy issue id</button>

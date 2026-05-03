@@ -33,6 +33,25 @@ func TestFingerprintIgnoresVolatileIdentifiers(t *testing.T) {
 	}
 }
 
+func TestFingerprintIgnoresSourceLocations(t *testing.T) {
+	base := event.Event{
+		Exception: event.Exception{
+			Type:    "RuntimeError",
+			Message: "[Frontend] SyntaxError: Uncaught SyntaxError: Unexpected identifier 'approve' at https://example.com/recommendations:761:1",
+		},
+	}
+	other := event.Event{
+		Exception: event.Exception{
+			Type:    "RuntimeError",
+			Message: "[Frontend] SyntaxError: Uncaught SyntaxError: Unexpected identifier 'approve' at https://example.com/recommendations:800:15",
+		},
+	}
+
+	if Fingerprint(base) != Fingerprint(other) {
+		t.Fatalf("expected matching fingerprints for different source locations:\n%s\n%s", Material(base), Material(other))
+	}
+}
+
 func TestFingerprintChangesForDifferentExceptionType(t *testing.T) {
 	first := event.Event{Exception: event.Exception{Type: "TypeError", Message: "boom"}}
 	second := event.Event{Exception: event.Exception{Type: "ValueError", Message: "boom"}}

@@ -18,6 +18,7 @@ var (
 	longNumber        = regexp.MustCompile(`\b\d{4,}\b`)
 	hexAddress        = regexp.MustCompile(`(?i)\b0x[0-9a-f]{6,}\b`)
 	redactedID        = regexp.MustCompile(`(?i)\[redacted-(?:id|ip|email|secret)\]`)
+	sourceLocation    = regexp.MustCompile(`:\d+(?::\d+)+`)
 	whitespace        = regexp.MustCompile(`\s+`)
 	pathNumberSegment = regexp.MustCompile(`/\d+`)
 )
@@ -225,6 +226,7 @@ func normalize(value string) string {
 	value = ipv4Pattern.ReplaceAllString(value, "<ip>")
 	value = hexAddress.ReplaceAllString(value, "<hex>")
 	value = longNumber.ReplaceAllString(value, "<num>")
+	value = sourceLocation.ReplaceAllString(value, ":<loc>")
 	value = redactedID.ReplaceAllString(value, "<redacted>")
 	value = whitespace.ReplaceAllString(value, " ")
 	return value
