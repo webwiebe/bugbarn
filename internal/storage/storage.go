@@ -59,13 +59,22 @@ func Open(path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 
-	store := &Store{db: db}
+	roDB, err := sql.Open(driverName, sqliteReadOnlyDSN(absPath))
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	roDB.SetMaxOpenConns(4)
+
+	store := &Store{db: db, roDB: roDB}
 	ctx := context.Background()
 	if err := store.init(ctx); err != nil {
+		roDB.Close()
 		db.Close()
 		return nil, err
 	}
 	if err := store.migrateFingerprints(ctx); err != nil {
+		roDB.Close()
 		db.Close()
 		return nil, err
 	}
@@ -73,10 +82,28 @@ func Open(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error {
-	if s == nil || s.db == nil {
+	if s == nil {
 		return nil
 	}
-	return s.db.Close()
+	var firstErr error
+	if s.roDB != nil {
+		if err := s.roDB.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if s.db != nil {
+		if err := s.db.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func (s *Store) readDB() *sql.DB {
+	if s.roDB != nil {
+		return s.roDB
+	}
+	return s.db
 }
 
 // DefaultProjectID returns the numeric ID of the default project.

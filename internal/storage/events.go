@@ -41,24 +41,24 @@ JOIN projects p ON p.id = i.project_id`
 	var rows *sql.Rows
 	if projectID != 0 {
 		if beforeID > 0 {
-			rows, err = s.db.QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
+			rows, err = s.readDB().QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
 WHERE e.project_id = ? AND e.issue_id = ? AND e.id < ?
 ORDER BY e.id DESC LIMIT ?`,
 				projectID, rowID, beforeID, fetch)
 		} else {
-			rows, err = s.db.QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
+			rows, err = s.readDB().QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
 WHERE e.project_id = ? AND e.issue_id = ?
 ORDER BY e.id DESC LIMIT ?`,
 				projectID, rowID, fetch)
 		}
 	} else {
 		if beforeID > 0 {
-			rows, err = s.db.QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
+			rows, err = s.readDB().QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
 WHERE e.issue_id = ? AND e.id < ?
 ORDER BY e.id DESC LIMIT ?`,
 				rowID, beforeID, fetch)
 		} else {
-			rows, err = s.db.QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
+			rows, err = s.readDB().QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
 WHERE e.issue_id = ?
 ORDER BY e.id DESC LIMIT ?`,
 				rowID, fetch)
@@ -126,10 +126,10 @@ JOIN projects p ON p.id = i.project_id`
 
 	var row *sql.Row
 	if projectID != 0 {
-		row = s.db.QueryRowContext(ctx, sel+`
+		row = s.readDB().QueryRowContext(ctx, sel+`
 WHERE e.project_id = ? AND e.id = ?`, projectID, rowID)
 	} else {
-		row = s.db.QueryRowContext(ctx, sel+`
+		row = s.readDB().QueryRowContext(ctx, sel+`
 WHERE e.id = ?`, rowID)
 	}
 
@@ -173,14 +173,14 @@ JOIN issues i ON i.id = e.issue_id
 JOIN projects p ON p.id = i.project_id`
 	sinceStr := formatTime(since.UTC())
 	if projectID != 0 {
-		rows, err = s.db.QueryContext(ctx, recentSel+`
-WHERE e.project_id = ? AND max(e.received_at, e.observed_at) >= ?
-ORDER BY max(e.received_at, e.observed_at) DESC, e.id DESC
+		rows, err = s.readDB().QueryContext(ctx, recentSel+`
+WHERE e.project_id = ? AND e.received_at >= ?
+ORDER BY e.received_at DESC, e.id DESC
 LIMIT ?`, projectID, sinceStr, limit)
 	} else {
-		rows, err = s.db.QueryContext(ctx, recentSel+`
-WHERE max(e.received_at, e.observed_at) >= ?
-ORDER BY max(e.received_at, e.observed_at) DESC, e.id DESC
+		rows, err = s.readDB().QueryContext(ctx, recentSel+`
+WHERE e.received_at >= ?
+ORDER BY e.received_at DESC, e.id DESC
 LIMIT ?`, sinceStr, limit)
 	}
 	if err != nil {

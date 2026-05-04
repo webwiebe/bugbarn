@@ -95,7 +95,7 @@ func (s *Store) ListReleases(ctx context.Context) ([]Release, error) {
 		projectID = s.defaultProjectID
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 SELECT
 	id,
 	name,
@@ -139,7 +139,7 @@ func (s *Store) GetRelease(ctx context.Context, releaseID string) (Release, erro
 		projectID = s.defaultProjectID
 	}
 
-	row := s.db.QueryRowContext(ctx, `
+	row := s.readDB().QueryRowContext(ctx, `
 SELECT
 	id,
 	name,
@@ -307,7 +307,7 @@ LEFT JOIN projects p ON p.id = a.project_id
 ORDER BY a.id DESC`
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.readDB().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -354,10 +354,10 @@ LEFT JOIN projects p ON p.id = a.project_id`
 
 	var row *sql.Row
 	if projectID != 0 {
-		row = s.db.QueryRowContext(ctx, sel+`
+		row = s.readDB().QueryRowContext(ctx, sel+`
 WHERE a.project_id = ? AND a.id = ?`, projectID, rowID)
 	} else {
-		row = s.db.QueryRowContext(ctx, sel+`
+		row = s.readDB().QueryRowContext(ctx, sel+`
 WHERE a.id = ?`, rowID)
 	}
 	return scanAlertWithProject(row)
@@ -466,7 +466,7 @@ func (s *Store) GetSettings(ctx context.Context) (map[string]string, error) {
 		projectID = s.defaultProjectID
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 SELECT key, value
 FROM settings
 WHERE project_id = ?`,
@@ -578,7 +578,7 @@ func (s *Store) FindSourceMap(ctx context.Context, release, dist, bundleURL stri
 		projectID = s.defaultProjectID
 	}
 	var blob []byte
-	err := s.db.QueryRowContext(ctx, `
+	err := s.readDB().QueryRowContext(ctx, `
 SELECT source_map_blob
 FROM source_maps
 WHERE project_id = ? AND release = ? AND dist = ? AND bundle_url = ?
@@ -615,7 +615,7 @@ func (s *Store) ListSourceMaps(ctx context.Context) ([]SourceMapMeta, error) {
 	if !ok {
 		projectID = s.defaultProjectID
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 SELECT id, release, dist, bundle_url, name, size_bytes, created_at
 FROM source_maps
 WHERE project_id = ?

@@ -30,7 +30,7 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 
 // ListProjects returns all projects ordered by id.
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, created_at FROM projects ORDER BY id ASC`)
+	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, created_at FROM projects ORDER BY id ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
 	var p Project
 	var createdAt string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, created_at FROM projects WHERE slug = ?`, slug).
+	err := s.readDB().QueryRowContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, created_at FROM projects WHERE slug = ?`, slug).
 		Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter, &createdAt)
 	if err != nil {
 		return Project{}, err
@@ -122,7 +122,7 @@ func (s *Store) uniqueIssuePrefix(ctx context.Context, slug string) (string, err
 	base := prefix
 	for i := 2; ; i++ {
 		var count int
-		err := s.db.QueryRowContext(ctx,
+		err := s.readDB().QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM projects WHERE issue_prefix = ?`, prefix).Scan(&count)
 		if err != nil {
 			return "", err
@@ -146,7 +146,7 @@ func (s *Store) IssueRowIDByDisplayID(ctx context.Context, displayID string) (in
 		return int64(number), nil
 	}
 	var rowID int64
-	err = s.db.QueryRowContext(ctx, `
+	err = s.readDB().QueryRowContext(ctx, `
 SELECT i.id FROM issues i
 JOIN projects p ON p.id = i.project_id
 WHERE p.issue_prefix = ? AND i.issue_number = ?`, prefix, number).Scan(&rowID)

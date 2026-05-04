@@ -146,7 +146,7 @@ func (s *Store) QueryOverview(ctx context.Context, q analytics.Query) (analytics
 	endStr := q.End.UTC().Format("2006-01-02")
 
 	// From daily rollups (excludes today which may not be rolled up yet)
-	row := s.db.QueryRowContext(ctx, `
+	row := s.readDB().QueryRowContext(ctx, `
 		SELECT
 			COALESCE(SUM(d.pageviews), 0)    AS pageviews,
 			COALESCE(SUM(d.sessions), 0)     AS sessions,
@@ -165,7 +165,7 @@ func (s *Store) QueryOverview(ctx context.Context, q analytics.Query) (analytics
 
 	// Add today's un-rolled-up raw rows
 	today := time.Now().UTC().Format("2006-01-02")
-	raw := s.db.QueryRowContext(ctx, `
+	raw := s.readDB().QueryRowContext(ctx, `
 		SELECT
 			COALESCE(COUNT(*), 0)                AS pageviews,
 			COALESCE(COUNT(DISTINCT session_id), 0) AS sessions,
@@ -197,7 +197,7 @@ func (s *Store) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.
 	endStr := q.End.UTC().Format("2006-01-02")
 	limit := queryLimit(q)
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT pathname, SUM(pageviews) AS pv, SUM(sessions) AS sess
 		FROM analytics_daily
 		WHERE project_id = ?
@@ -251,7 +251,7 @@ func (s *Store) QueryTimeline(ctx context.Context, q analytics.Query, granularit
 		ORDER BY bucket ASC`,
 		groupExpr,
 	)
-	rows, err := s.db.QueryContext(ctx, query, q.ProjectID, startStr, endStr)
+	rows, err := s.readDB().QueryContext(ctx, query, q.ProjectID, startStr, endStr)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func (s *Store) QueryReferrers(ctx context.Context, q analytics.Query) ([]analyt
 	endStr := q.End.UTC().Format("2006-01-02")
 	limit := queryLimit(q)
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT dim_value, SUM(pageviews), SUM(sessions)
 		FROM analytics_daily
 		WHERE project_id = ?
@@ -309,7 +309,7 @@ func (s *Store) QuerySegments(ctx context.Context, q analytics.Query, dimKey str
 	}
 	limit := queryLimit(q)
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT
 			json_extract(props, '$.' || ?) AS val,
 			COUNT(*)                        AS pageviews,
@@ -348,7 +348,7 @@ func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname s
 	result := analytics.PageFlowResult{Pathname: pathname}
 
 	// WentTo — aggregate exit_pathname from raw pageviews
-	wentToRows, err := s.db.QueryContext(ctx, `
+	wentToRows, err := s.readDB().QueryContext(ctx, `
 		SELECT exit_pathname, COUNT(*) as cnt, COUNT(DISTINCT session_id) as sess
 		FROM analytics_pageviews
 		WHERE project_id = ? AND pathname = ? AND exit_pathname != ''
@@ -381,7 +381,7 @@ func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname s
 	}
 
 	// CameFrom — find what page users were on just before visiting pathname in the same session
-	cameFromRows, err := s.db.QueryContext(ctx, `
+	cameFromRows, err := s.readDB().QueryContext(ctx, `
 		SELECT prev.pathname, COUNT(*) as cnt
 		FROM analytics_pageviews cur
 		JOIN analytics_pageviews prev
@@ -431,7 +431,7 @@ func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname s
 func (s *Store) QueryScrollDepth(ctx context.Context, q analytics.Query, pathname string) (analytics.ScrollDepthResult, error) {
 	result := analytics.ScrollDepthResult{Pathname: pathname}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT
 		  CASE
 		    WHEN max_scroll_pct < 25  THEN '0–24%'
@@ -476,7 +476,7 @@ func (s *Store) QueryScrollDepth(ctx context.Context, q analytics.Query, pathnam
 func (s *Store) QueryDropout(ctx context.Context, q analytics.Query) ([]analytics.DropoutStat, error) {
 	limit := queryLimit(q)
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT
 		  pathname,
 		  COUNT(*) AS pageviews,
@@ -509,7 +509,7 @@ func (s *Store) QueryDropout(ctx context.Context, q analytics.Query) ([]analytic
 
 // ListProjectIDs returns all project IDs (used by the rollup worker).
 func (s *Store) ListProjectIDs(ctx context.Context) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM projects`)
+	rows, err := s.readDB().QueryContext(ctx, `SELECT id FROM projects`)
 	if err != nil {
 		return nil, err
 	}

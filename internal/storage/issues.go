@@ -27,6 +27,9 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]I
 	default:
 		orderBy = "i.last_seen DESC, i.id DESC"
 	}
+	if filter.Status == "open" {
+		orderBy = "(CASE WHEN i.status = 'regressed' THEN 0 ELSE 1 END), " + orderBy
+	}
 
 	// Collect non-empty facet filters.
 	type kv struct{ k, v string }
@@ -131,7 +134,7 @@ ORDER BY ` + orderBy
 		}
 	}
 
-	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
+	rows, err := s.readDB().QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -189,10 +192,10 @@ LEFT JOIN projects p ON p.id = i.project_id`
 
 	var row *sql.Row
 	if projectID != 0 {
-		row = s.db.QueryRowContext(ctx, sel+`
+		row = s.readDB().QueryRowContext(ctx, sel+`
 WHERE i.project_id = ? AND i.id = ?`, projectID, rowID)
 	} else {
-		row = s.db.QueryRowContext(ctx, sel+`
+		row = s.readDB().QueryRowContext(ctx, sel+`
 WHERE i.id = ?`, rowID)
 	}
 
@@ -394,7 +397,7 @@ WHERE id = ? AND project_id = ?`,
 		issue.RepresentativeEvent = evt
 		// Set display ID for existing issue.
 		var existingPrefix string
-		_ = s.db.QueryRowContext(ctx, `SELECT issue_prefix FROM projects WHERE id = ?`, projectID).Scan(&existingPrefix)
+		_ = s.readDB().QueryRowContext(ctx, `SELECT issue_prefix FROM projects WHERE id = ?`, projectID).Scan(&existingPrefix)
 		if existingPrefix != "" && existingIssueNumber > 0 {
 			issue.ID = formatIssueID(existingPrefix, existingIssueNumber)
 		} else {
@@ -642,7 +645,7 @@ WHERE ` + projectFilter + `issue_id IN (` + strings.Join(placeholders, ",") + `)
   AND observed_at >= datetime('now', '-24 hours')
 GROUP BY issue_id, hour_bucket`
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.readDB().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

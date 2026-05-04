@@ -30,7 +30,7 @@ func (s *Store) WeeklyDigest(ctx context.Context, projectID int64, since time.Ti
 
 	var d DigestData
 
-	row := s.db.QueryRowContext(ctx, `
+	row := s.readDB().QueryRowContext(ctx, `
 		SELECT
 			COUNT(*)                                                                          AS total_events,
 			COUNT(*) FILTER (WHERE i.first_seen >= ?)                                         AS new_issues,
@@ -46,7 +46,7 @@ func (s *Store) WeeklyDigest(ctx context.Context, projectID int64, since time.Ti
 		return d, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT i.id, i.title, COUNT(e.id) AS event_count, i.status
 		FROM events e
 		JOIN issues i ON i.id = e.issue_id

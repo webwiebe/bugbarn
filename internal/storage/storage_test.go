@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -239,4 +240,90 @@ func processedEventForIssue(observed time.Time, message string) worker.Processed
 		},
 	}
 	return processedEventFrom(evt)
+}
+
+func TestConcurrentReads(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	for i := 0; i < 5; i++ {
+		pe := processedEventForIssue(
+			time.Now().UTC().Add(time.Duration(-i)*time.Minute),
+			fmt.Sprintf("concurrent test error %d", i),
+		)
+		pe.Fingerprint = fmt.Sprintf("concurrent-fp-%d", i)
+		if _, _, _, _, err := store.PersistProcessedEvent(ctx, pe); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	errs := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			_, err := store.ListIssuesFiltered(ctx, IssueFilter{Status: "open", Limit: 10})
+			errs <- err
+		}()
+	}
+	for i := 0; i < 10; i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("concurrent read failed: %v", err)
+		}
+	}
+}
+
+func TestRegressedFirstOrdering(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Create two issues.
+	peA := processedEventForIssue(time.Now().UTC(), "normal issue")
+	peA.Fingerprint = "regressed-order-a"
+	if _, _, _, _, err := store.PersistProcessedEvent(ctx, peA); err != nil {
+		t.Fatal(err)
+	}
+
+	peB := processedEventForIssue(time.Now().UTC().Add(-time.Minute), "will regress")
+	peB.Fingerprint = "regressed-order-b"
+	issueB, _, _, _, err := store.PersistProcessedEvent(ctx, peB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mute B with until_regression, then trigger regression.
+	if _, err := store.MuteIssue(ctx, issueB.ID, "until_regression"); err != nil {
+		t.Fatal(err)
+	}
+	peB2 := processedEventForIssue(time.Now().UTC(), "will regress again")
+	peB2.Fingerprint = "regressed-order-b"
+	_, _, _, regressed, err := store.PersistProcessedEvent(ctx, peB2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regressed {
+		t.Fatal("expected regression")
+	}
+
+	issues, err := store.ListIssuesFiltered(ctx, IssueFilter{Status: "open", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) < 2 {
+		t.Fatalf("expected at least 2 issues, got %d", len(issues))
+	}
+	if issues[0].Status != "regressed" {
+		t.Errorf("expected first issue to be regressed, got %q", issues[0].Status)
+	}
 }

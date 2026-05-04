@@ -154,4 +154,137 @@ func TestListIssuesIncludesHourlyCounts(t *testing.T) {
 	if !ok {
 		t.Fatal("expected issue to be an object")
 	}
+
+	if _, ok := resp["hasMore"]; !ok {
+		t.Fatal("expected hasMore field in response")
+	}
+}
+
+func persistTestIssueWithFingerprint(t *testing.T, store *storage.Store, fp, message string) storage.Issue {
+	t.Helper()
+	pe := worker.ProcessedEvent{
+		Event: event.Event{
+			ObservedAt: time.Now().UTC(),
+			ReceivedAt: time.Now().UTC().Add(time.Second),
+			Severity:   "ERROR",
+			Message:    message,
+			Exception:  event.Exception{Type: "TestError", Message: message},
+		},
+		Fingerprint:         fp,
+		FingerprintMaterial: "TestError: " + message,
+	}
+	issue, _, _, _, err := store.PersistProcessedEvent(context.Background(), pe)
+	if err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	return issue
+}
+
+func TestListIssuesPagination(t *testing.T) {
+	t.Parallel()
+
+	srv, store := setupTestServer(t)
+	for i := 0; i < 5; i++ {
+		persistTestIssueWithFingerprint(t, store, "fp-paginate-"+string(rune('a'+i)), "error "+string(rune('a'+i)))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/issues?limit=3", nil)
+	rr := httptest.NewRecorder()
+	srv.listIssues(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rr.Code)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	issues := resp["issues"].([]any)
+	if len(issues) != 3 {
+		t.Fatalf("expected 3 issues, got %d", len(issues))
+	}
+	if resp["hasMore"] != true {
+		t.Fatal("expected hasMore=true")
+	}
+
+	// Second page
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/issues?limit=3&offset=3", nil)
+	rr = httptest.NewRecorder()
+	srv.listIssues(rr, req)
+
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	issues = resp["issues"].([]any)
+	if len(issues) != 2 {
+		t.Fatalf("expected 2 issues on second page, got %d", len(issues))
+	}
+	if resp["hasMore"] != false {
+		t.Fatal("expected hasMore=false on last page")
+	}
+}
+
+func TestListIssuesRegressedFirst(t *testing.T) {
+	t.Parallel()
+
+	srv, store := setupTestServer(t)
+	ctx := context.Background()
+
+	// Create two issues with distinct fingerprints.
+	issueA := persistTestIssueWithFingerprint(t, store, "fp-regress-a", "normal error")
+	issueB := persistTestIssueWithFingerprint(t, store, "fp-regress-b", "will regress error")
+
+	// Mute issueB with until_regression, then trigger a regression.
+	if _, err := store.MuteIssue(ctx, issueB.ID, "until_regression"); err != nil {
+		t.Fatalf("mute: %v", err)
+	}
+	pe := worker.ProcessedEvent{
+		Event: event.Event{
+			ObservedAt: time.Now().UTC(),
+			ReceivedAt: time.Now().UTC().Add(time.Second),
+			Severity:   "ERROR",
+			Message:    "will regress error",
+			Exception:  event.Exception{Type: "TestError", Message: "will regress error"},
+		},
+		Fingerprint:         "fp-regress-b",
+		FingerprintMaterial: "TestError: will regress error",
+	}
+	regressedIssue, _, _, regressed, err := store.PersistProcessedEvent(ctx, pe)
+	if err != nil {
+		t.Fatalf("persist regression: %v", err)
+	}
+	if !regressed {
+		t.Fatal("expected regression")
+	}
+
+	// Query with status=open — regressed should come first.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/issues?status=open", nil)
+	rr := httptest.NewRecorder()
+	srv.listIssues(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rr.Code)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	issues := resp["issues"].([]any)
+	if len(issues) < 2 {
+		t.Fatalf("expected at least 2 issues, got %d", len(issues))
+	}
+
+	firstIssue := issues[0].(map[string]any)
+	firstStatus, _ := firstIssue["Status"].(string)
+	if firstStatus != "regressed" {
+		t.Errorf("expected first issue to be regressed, got %q", firstStatus)
+	}
+
+	_ = issueA
+	_ = regressedIssue
 }

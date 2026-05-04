@@ -110,7 +110,7 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	ctx := r.Context()
-	pollTicker := time.NewTicker(time.Second)
+	pollTicker := time.NewTicker(3 * time.Second)
 	keepaliveTicker := time.NewTicker(15 * time.Second)
 	defer pollTicker.Stop()
 	defer keepaliveTicker.Stop()
