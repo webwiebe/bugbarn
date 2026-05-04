@@ -11,7 +11,7 @@ import (
 func (s *Server) listSourceMaps(w http.ResponseWriter, r *http.Request) {
 	items, err := s.releases.ListSourceMaps(r.Context())
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	if items == nil {
@@ -63,7 +63,7 @@ func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := s.releases.UploadSourceMap(r.Context(), upload)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSONStatus(w, http.StatusAccepted, map[string]any{

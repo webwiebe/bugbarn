@@ -14,7 +14,7 @@ func (s *Server) serveAlertsRoot(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		alerts, err := s.alerts.List(r.Context())
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"alerts": alerts})
@@ -26,7 +26,7 @@ func (s *Server) serveAlertsRoot(w http.ResponseWriter, r *http.Request) {
 		}
 		item, err := s.alerts.Create(r.Context(), alertFromRequest(request))
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"alert": item})
@@ -45,7 +45,7 @@ func (s *Server) serveAlertRoute(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		item, err := s.alerts.Get(r.Context(), alertID)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"alert": item})
@@ -57,13 +57,13 @@ func (s *Server) serveAlertRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		item, err := s.alerts.Update(r.Context(), alertID, alertFromRequest(request))
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"alert": item})
 	case http.MethodDelete:
 		if err := s.alerts.Delete(r.Context(), alertID); err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"deleted": true})

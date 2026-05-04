@@ -2,6 +2,7 @@ package api
 
 import (
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -32,6 +33,7 @@ type Server struct {
 	alerts        *alertsvc.Service
 	logs          *logsvc.Service
 	analytics     *analyticssvc.Service
+	logger        *slog.Logger
 
 	users              *auth.UserAuthenticator
 	sessions           *auth.SessionManager
@@ -100,28 +102,36 @@ func (s *Server) SetAutoApproveProjects(auto bool) {
 	s.autoApproveProjects = auto
 }
 
-func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
+func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog.Logger) *Server {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Server{
 		ingestHandler:     ingestHandler,
-		issues:            issuesvc.New(store),
-		projects:          projectsvc.New(store),
-		releases:          releasesvc.New(store),
-		alerts:            alertsvc.New(store),
-		logs:              logsvc.New(store),
-		analytics:         analyticssvc.New(store),
+		issues:            issuesvc.New(store, logger),
+		projects:          projectsvc.New(store, logger),
+		releases:          releasesvc.New(store, logger),
+		alerts:            alertsvc.New(store, logger),
+		logs:              logsvc.New(store, logger),
+		analytics:         analyticssvc.New(store, logger),
+		logger:            logger.With("component", "api"),
 		maxSourceMapBytes: defaultMaxSourceMapBytes,
 	}
 }
 
-func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, users *auth.UserAuthenticator, sessions *auth.SessionManager, allowedOrigins []string) *Server {
+func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, users *auth.UserAuthenticator, sessions *auth.SessionManager, allowedOrigins []string, logger *slog.Logger) *Server {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	s := &Server{
 		ingestHandler:     ingestHandler,
-		issues:            issuesvc.New(store),
-		projects:          projectsvc.New(store),
-		releases:          releasesvc.New(store),
-		alerts:            alertsvc.New(store),
-		logs:              logsvc.New(store),
-		analytics:         analyticssvc.New(store),
+		issues:            issuesvc.New(store, logger),
+		projects:          projectsvc.New(store, logger),
+		releases:          releasesvc.New(store, logger),
+		alerts:            alertsvc.New(store, logger),
+		logs:              logsvc.New(store, logger),
+		analytics:         analyticssvc.New(store, logger),
+		logger:            logger.With("component", "api"),
 		users:             users,
 		sessions:          sessions,
 		allowedOrigins:    allowedOrigins,

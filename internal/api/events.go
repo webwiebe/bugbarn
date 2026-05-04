@@ -27,7 +27,7 @@ func (s *Server) listIssueEvents(w http.ResponseWriter, r *http.Request) {
 
 	events, hasMore, err := s.issues.ListEvents(r.Context(), issueID, limit, beforeID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
@@ -37,7 +37,7 @@ func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) {
 	eventID := strings.TrimPrefix(r.URL.Path, "/api/v1/events/")
 	event, err := s.issues.GetEvent(r.Context(), eventID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"event": event})
@@ -63,7 +63,7 @@ func (s *Server) listRecentEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	events, err := s.issues.ListLiveEvents(r.Context(), limit, since)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"events": events})

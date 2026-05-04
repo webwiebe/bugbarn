@@ -2,11 +2,11 @@ package analytics
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
 )
 
-// Repository defines the data access contract for analytics operations.
 type Repository interface {
 	InsertPageView(context.Context, analytics.PageView) error
 	QueryOverview(context.Context, analytics.Query) (analytics.OverviewResult, error)
@@ -20,11 +20,15 @@ type Repository interface {
 }
 
 type Service struct {
-	repo Repository
+	repo   Repository
+	logger *slog.Logger
 }
 
-func New(repo Repository) *Service {
-	return &Service{repo: repo}
+func New(repo Repository, logger *slog.Logger) *Service {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Service{repo: repo, logger: logger.With("service", "analytics")}
 }
 
 func (s *Service) InsertPageView(ctx context.Context, pv analytics.PageView) error {
@@ -32,7 +36,12 @@ func (s *Service) InsertPageView(ctx context.Context, pv analytics.PageView) err
 }
 
 func (s *Service) QueryOverview(ctx context.Context, q analytics.Query) (analytics.OverviewResult, error) {
-	return s.repo.QueryOverview(ctx, q)
+	result, err := s.repo.QueryOverview(ctx, q)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "query overview", "error", err)
+		return analytics.OverviewResult{}, err
+	}
+	return result, nil
 }
 
 func (s *Service) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.PageStat, error) {

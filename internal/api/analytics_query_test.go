@@ -15,7 +15,7 @@ func TestAnalyticsOverviewEmptyProject(t *testing.T) {
 	store := mustOpenStore(t)
 	defer store.Close()
 
-	server := NewServer(nil, store)
+	server := NewServer(nil, store, nil)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/analytics/overview", nil)
@@ -53,7 +53,7 @@ func TestAnalyticsTimelineDayGranularityZeroFills(t *testing.T) {
 	store := mustOpenStore(t)
 	defer store.Close()
 
-	server := NewServer(nil, store)
+	server := NewServer(nil, store, nil)
 
 	// Request exactly 3 days: 2026-04-01 to 2026-04-03.
 	rr := httptest.NewRecorder()
@@ -102,7 +102,7 @@ func TestAnalyticsSegmentsUnknownDimReturnsEmpty(t *testing.T) {
 	store := mustOpenStore(t)
 	defer store.Close()
 
-	server := NewServer(nil, store)
+	server := NewServer(nil, store, nil)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/analytics/segments?dim=nonexistent_dimension", nil)
@@ -137,7 +137,7 @@ func TestAnalyticsUnauthenticatedReturns401(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessions := auth.NewSessionManager("test-secret", time.Hour)
-	server := NewServerWithAuth(nil, store, userAuth, sessions, nil)
+	server := NewServerWithAuth(nil, store, userAuth, sessions, nil, nil)
 
 	endpoints := []string{
 		"/api/v1/analytics/overview",
@@ -164,7 +164,7 @@ func TestAnalyticsStartAfterEndReturns400(t *testing.T) {
 	store := mustOpenStore(t)
 	defer store.Close()
 
-	server := NewServer(nil, store)
+	server := NewServer(nil, store, nil)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/analytics/overview?start=2026-04-10&end=2026-04-01", nil)

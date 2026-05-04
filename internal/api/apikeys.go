@@ -12,7 +12,7 @@ import (
 func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 	keys, err := s.projects.ListAPIKeys(r.Context())
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	type safeKey struct {
@@ -49,7 +49,7 @@ func (s *Server) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.projects.DeleteAPIKey(r.Context(), id); err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"deleted": true})

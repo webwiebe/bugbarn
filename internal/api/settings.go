@@ -7,7 +7,7 @@ func (s *Server) serveSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		settings, err := s.projects.GetSettings(r.Context())
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"settings": settings})
@@ -18,12 +18,12 @@ func (s *Server) serveSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.projects.UpdateSettings(r.Context(), values); err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		settings, err := s.projects.GetSettings(r.Context())
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"settings": settings})

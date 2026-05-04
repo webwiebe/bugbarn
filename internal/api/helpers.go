@@ -1,15 +1,14 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
@@ -23,13 +22,22 @@ func writeJSONStatus(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func writeStorageError(w http.ResponseWriter, err error) {
-	if errors.Is(err, sql.ErrNoRows) {
-		http.Error(w, "not found", http.StatusNotFound)
+func writeServiceError(w http.ResponseWriter, err error) {
+	var appErr *apperr.Error
+	if errors.As(err, &appErr) {
+		switch appErr.Code {
+		case "not_found":
+			http.Error(w, "not found", http.StatusNotFound)
+		case "conflict":
+			http.Error(w, "conflict", http.StatusConflict)
+		case "invalid_input":
+			http.Error(w, appErr.Message, http.StatusBadRequest)
+		default:
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
 		return
 	}
-	log.Printf("storage error: %v", err)
-	http.Error(w, "storage error", http.StatusInternalServerError)
+	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dest any) error {

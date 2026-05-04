@@ -34,10 +34,6 @@ var (
 	trimPunctuation = regexp.MustCompile(`^[\s:;,_\-]+|[\s:;,_\-]+$`)
 )
 
-var (
-	errNotFound = sql.ErrNoRows
-	errConflict = errors.New("conflict")
-)
 
 func Open(path string) (*Store, error) {
 	if strings.TrimSpace(path) == "" {

@@ -8,7 +8,7 @@ import (
 func (s *Server) approveProject(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/approve")
 	if err := s.projects.Approve(r.Context(), slug); err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
@@ -17,7 +17,7 @@ func (s *Server) approveProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) servePendingProjectCount(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.projects.List(r.Context())
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	var pending []string
@@ -34,7 +34,7 @@ func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		projects, err := s.projects.List(r.Context())
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"projects": projects})
@@ -57,7 +57,7 @@ func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 		}
 		p, err := s.projects.Create(r.Context(), req.Name, req.Slug)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSONStatus(w, http.StatusCreated, map[string]any{"project": p})

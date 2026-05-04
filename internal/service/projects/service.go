@@ -2,11 +2,11 @@ package projects
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
-// Repository defines the data access contract for project and API key operations.
 type Repository interface {
 	ListProjects(context.Context) ([]domain.Project, error)
 	CreateProject(ctx context.Context, name, slug string) (domain.Project, error)
@@ -28,11 +28,15 @@ type Repository interface {
 }
 
 type Service struct {
-	repo Repository
+	repo   Repository
+	logger *slog.Logger
 }
 
-func New(repo Repository) *Service {
-	return &Service{repo: repo}
+func New(repo Repository, logger *slog.Logger) *Service {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Service{repo: repo, logger: logger.With("service", "projects")}
 }
 
 func (s *Service) List(ctx context.Context) ([]domain.Project, error) {
@@ -40,7 +44,13 @@ func (s *Service) List(ctx context.Context) ([]domain.Project, error) {
 }
 
 func (s *Service) Create(ctx context.Context, name, slug string) (domain.Project, error) {
-	return s.repo.CreateProject(ctx, name, slug)
+	proj, err := s.repo.CreateProject(ctx, name, slug)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "create project", "slug", slug, "error", err)
+		return domain.Project{}, err
+	}
+	s.logger.InfoContext(ctx, "project created", "slug", slug, "id", proj.ID)
+	return proj, nil
 }
 
 func (s *Service) Ensure(ctx context.Context, slug string) (domain.Project, error) {
@@ -52,11 +62,21 @@ func (s *Service) EnsurePending(ctx context.Context, slug string) (domain.Projec
 }
 
 func (s *Service) Approve(ctx context.Context, slug string) error {
-	return s.repo.ApproveProject(ctx, slug)
+	if err := s.repo.ApproveProject(ctx, slug); err != nil {
+		s.logger.ErrorContext(ctx, "approve project", "slug", slug, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "project approved", "slug", slug)
+	return nil
 }
 
 func (s *Service) BySlug(ctx context.Context, slug string) (domain.Project, error) {
-	return s.repo.ProjectBySlug(ctx, slug)
+	proj, err := s.repo.ProjectBySlug(ctx, slug)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "project by slug", "slug", slug, "error", err)
+		return domain.Project{}, err
+	}
+	return proj, nil
 }
 
 func (s *Service) DefaultProjectID() int64 {
@@ -68,11 +88,21 @@ func (s *Service) ListAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
 }
 
 func (s *Service) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (domain.APIKey, error) {
-	return s.repo.CreateAPIKey(ctx, name, projectID, keySHA256, scope)
+	key, err := s.repo.CreateAPIKey(ctx, name, projectID, keySHA256, scope)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "create api key", "name", name, "error", err)
+		return domain.APIKey{}, err
+	}
+	s.logger.InfoContext(ctx, "api key created", "name", name, "project_id", projectID)
+	return key, nil
 }
 
 func (s *Service) DeleteAPIKey(ctx context.Context, id int64) error {
-	return s.repo.DeleteAPIKey(ctx, id)
+	if err := s.repo.DeleteAPIKey(ctx, id); err != nil {
+		s.logger.ErrorContext(ctx, "delete api key", "id", id, "error", err)
+		return err
+	}
+	return nil
 }
 
 func (s *Service) EnsureSetupAPIKey(ctx context.Context, name string, projectID int64, keySHA256 string) error {
@@ -92,5 +122,9 @@ func (s *Service) GetSettings(ctx context.Context) (map[string]string, error) {
 }
 
 func (s *Service) UpdateSettings(ctx context.Context, values map[string]string) error {
-	return s.repo.UpdateSettings(ctx, values)
+	if err := s.repo.UpdateSettings(ctx, values); err != nil {
+		s.logger.ErrorContext(ctx, "update settings", "error", err)
+		return err
+	}
+	return nil
 }

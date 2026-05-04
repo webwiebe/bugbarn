@@ -150,7 +150,7 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.logs.Insert(r.Context(), entries); err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 
@@ -192,7 +192,7 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.logs.List(r.Context(), projectID, levelMin, q, limit, beforeID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 

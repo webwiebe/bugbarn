@@ -60,7 +60,7 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	issues, err := s.issues.ListFiltered(r.Context(), filter)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (s *Server) getIssue(w http.ResponseWriter, r *http.Request) {
 	issueID := strings.TrimPrefix(r.URL.Path, "/api/v1/issues/")
 	issue, err := s.issues.Get(r.Context(), issueID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"issue": issue})
@@ -119,7 +119,7 @@ func (s *Server) resolveIssue(w http.ResponseWriter, r *http.Request) {
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/resolve")
 	item, err := s.issues.Resolve(r.Context(), issueID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"issue": item})
@@ -129,7 +129,7 @@ func (s *Server) reopenIssue(w http.ResponseWriter, r *http.Request) {
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/reopen")
 	item, err := s.issues.Reopen(r.Context(), issueID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"issue": item})
@@ -146,7 +146,7 @@ func (s *Server) muteIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := s.issues.Mute(r.Context(), issueID, body.MuteMode)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"issue": item})
@@ -156,7 +156,7 @@ func (s *Server) unmuteIssue(w http.ResponseWriter, r *http.Request) {
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/unmute")
 	item, err := s.issues.Unmute(r.Context(), issueID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"issue": item})

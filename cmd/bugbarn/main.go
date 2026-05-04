@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -27,13 +28,14 @@ import (
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/alert"
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
+	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -57,6 +59,12 @@ func main() {
 // run owns process wiring: it opens storage, starts the worker, and serves the API.
 func run() error {
 	cfg := loadConfig()
+
+	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})
+	logger := slog.New(logHandler)
+	slog.SetDefault(logger)
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -109,7 +117,9 @@ func run() error {
 			Endpoint:    cfg.selfEndpoint,
 			ProjectSlug: cfg.selfProject,
 		})
-		log.Printf("self-reporting enabled → %s", cfg.selfEndpoint)
+		logger = slog.New(selflog.NewHandler(logHandler))
+		slog.SetDefault(logger)
+		logger.Info("self-reporting enabled", "endpoint", cfg.selfEndpoint)
 	}
 
 	workerStatus := &worker.Status{}
@@ -131,7 +141,7 @@ func run() error {
 	go handler.Start(ctx)
 
 	logHub := logstream.NewHub()
-	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins)
+	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
 	apiServer.SetSetupConfig(cfg.sessionSecret, cfg.publicURL)
 	if len(cfg.trustedProxies) > 0 {

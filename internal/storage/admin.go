@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
 
 const (
@@ -112,7 +114,7 @@ ORDER BY observed_at DESC, id DESC`,
 func (s *Store) GetRelease(ctx context.Context, releaseID string) (Release, error) {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
-		return Release{}, err
+		return Release{}, apperr.InvalidInput("invalid release ID", err)
 	}
 
 	projectID, ok := ProjectIDFromContext(ctx)
@@ -137,12 +139,16 @@ WHERE project_id = ? AND id = ?`,
 		projectID,
 		rowID,
 	)
-	return scanRelease(row)
+	release, err := scanRelease(row)
+	if err != nil {
+		return Release{}, wrapNotFound(err, "release not found")
+	}
+	return release, nil
 }
 
 func (s *Store) CreateRelease(ctx context.Context, release Release) (Release, error) {
 	if strings.TrimSpace(release.Name) == "" {
-		return Release{}, errors.New("release name is required")
+		return Release{}, apperr.InvalidInput("release name is required", nil)
 	}
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
@@ -190,10 +196,10 @@ INSERT INTO releases (
 func (s *Store) UpdateRelease(ctx context.Context, releaseID string, release Release) (Release, error) {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
-		return Release{}, err
+		return Release{}, apperr.InvalidInput("invalid release ID", err)
 	}
 	if strings.TrimSpace(release.Name) == "" {
-		return Release{}, errors.New("release name is required")
+		return Release{}, apperr.InvalidInput("release name is required", nil)
 	}
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
@@ -341,12 +347,16 @@ WHERE a.project_id = ? AND a.id = ?`, projectID, rowID)
 		row = s.readDB().QueryRowContext(ctx, sel+`
 WHERE a.id = ?`, rowID)
 	}
-	return scanAlertWithProject(row)
+	alert, err := scanAlertWithProject(row)
+	if err != nil {
+		return Alert{}, wrapNotFound(err, "alert not found")
+	}
+	return alert, nil
 }
 
 func (s *Store) CreateAlert(ctx context.Context, alert Alert) (Alert, error) {
 	if strings.TrimSpace(alert.Name) == "" {
-		return Alert{}, errors.New("alert name is required")
+		return Alert{}, apperr.InvalidInput("alert name is required", nil)
 	}
 	if alert.Rule == nil {
 		alert.Rule = map[string]any{}
@@ -394,10 +404,10 @@ INSERT INTO alerts (
 func (s *Store) UpdateAlert(ctx context.Context, alertID string, alert Alert) (Alert, error) {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
-		return Alert{}, err
+		return Alert{}, apperr.InvalidInput("invalid alert ID", err)
 	}
 	if strings.TrimSpace(alert.Name) == "" {
-		return Alert{}, errors.New("alert name is required")
+		return Alert{}, apperr.InvalidInput("alert name is required", nil)
 	}
 	if alert.Rule == nil {
 		alert.Rule = map[string]any{}
@@ -502,10 +512,10 @@ ON CONFLICT(project_id, key) DO UPDATE SET value = excluded.value, updated_at = 
 
 func (s *Store) UploadSourceMap(ctx context.Context, upload SourceMapUpload) (SourceMap, error) {
 	if strings.TrimSpace(upload.Release) == "" {
-		return SourceMap{}, errors.New("source map release is required")
+		return SourceMap{}, apperr.InvalidInput("source map release is required", nil)
 	}
 	if strings.TrimSpace(upload.BundleURL) == "" {
-		return SourceMap{}, errors.New("source map bundle URL is required")
+		return SourceMap{}, apperr.InvalidInput("source map bundle URL is required", nil)
 	}
 	now := time.Now().UTC()
 	projectID, ok := ProjectIDFromContext(ctx)

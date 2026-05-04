@@ -29,12 +29,12 @@ func setupTestServer(t *testing.T) (*Server, *storage.Store) {
 	}
 	t.Cleanup(func() { store.Close() })
 	return &Server{
-		issues:    issuesvc.New(store),
-		projects:  projectsvc.New(store),
-		releases:  releasesvc.New(store),
-		alerts:    alertsvc.New(store),
-		logs:      logsvc.New(store),
-		analytics: analyticssvc.New(store),
+		issues:    issuesvc.New(store, nil),
+		projects:  projectsvc.New(store, nil),
+		releases:  releasesvc.New(store, nil),
+		alerts:    alertsvc.New(store, nil),
+		logs:      logsvc.New(store, nil),
+		analytics: analyticssvc.New(store, nil),
 	}, store
 }
 
@@ -71,7 +71,7 @@ func TestMuteIssueEndpoint(t *testing.T) {
 	}{
 		{"until_regression", "until_regression", http.StatusOK},
 		{"forever", "forever", http.StatusOK},
-		{"invalid_mode", "never", http.StatusInternalServerError},
+		{"invalid_mode", "never", http.StatusBadRequest},
 	}
 
 	for _, tc := range cases {

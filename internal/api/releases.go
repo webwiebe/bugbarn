@@ -13,7 +13,7 @@ func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		releases, err := s.releases.List(r.Context())
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"releases": releases})
@@ -46,7 +46,7 @@ func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 		}
 		item, err := s.releases.Create(r.Context(), release)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"release": item})
@@ -61,7 +61,7 @@ func (s *Server) serveReleaseRoute(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		item, err := s.releases.Get(r.Context(), releaseID)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"release": item})
@@ -94,13 +94,13 @@ func (s *Server) serveReleaseRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		item, err := s.releases.Update(r.Context(), releaseID, release)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"release": item})
 	case http.MethodDelete:
 		if err := s.releases.Delete(r.Context(), releaseID); err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"deleted": true})

@@ -18,7 +18,7 @@ func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		keys, err := s.issues.ListFacetKeys(r.Context(), projectID)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		if keys == nil {
@@ -34,7 +34,7 @@ func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	values, err := s.issues.ListFacetValues(r.Context(), projectID, suffix)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	if values == nil {

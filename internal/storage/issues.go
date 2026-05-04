@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
@@ -199,7 +200,11 @@ WHERE i.project_id = ? AND i.id = ?`, projectID, rowID)
 WHERE i.id = ?`, rowID)
 	}
 
-	return scanIssue(row)
+	issue, err := scanIssue(row)
+	if err != nil {
+		return Issue{}, wrapNotFound(err, "issue not found")
+	}
+	return issue, nil
 }
 
 func (s *Store) upsertIssue(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
@@ -556,7 +561,7 @@ func scanIssue(scanner interface {
 // muteMode must be one of "until_regression" or "forever".
 func (s *Store) MuteIssue(ctx context.Context, issueID string, muteMode string) (Issue, error) {
 	if muteMode != "until_regression" && muteMode != "forever" {
-		return Issue{}, fmt.Errorf("invalid mute_mode %q: must be 'until_regression' or 'forever'", muteMode)
+		return Issue{}, apperr.InvalidInput(fmt.Sprintf("invalid mute_mode %q: must be 'until_regression' or 'forever'", muteMode), nil)
 	}
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {

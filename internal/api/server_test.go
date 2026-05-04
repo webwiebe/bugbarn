@@ -81,7 +81,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 		},
 	})
 
-	server := NewServer(nil, store)
+	server := NewServer(nil, store, nil)
 
 	t.Run("list issues", func(t *testing.T) {
 		rr := httptest.NewRecorder()
@@ -232,7 +232,7 @@ func TestServeHTTPStatefulEndpoints(t *testing.T) {
 		},
 	})
 
-	server := NewServer(nil, store)
+	server := NewServer(nil, store, nil)
 
 	t.Run("resolve and reopen issue", func(t *testing.T) {
 		rr := httptest.NewRecorder()
@@ -332,7 +332,7 @@ func TestServeHTTPUserAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessions := auth.NewSessionManager("test-secret", time.Hour)
-	server := NewServerWithAuth(nil, store, userAuth, sessions, nil)
+	server := NewServerWithAuth(nil, store, userAuth, sessions, nil, nil)
 
 	t.Run("query endpoints require session", func(t *testing.T) {
 		rr := httptest.NewRecorder()
@@ -418,7 +418,7 @@ func TestIngestOnlyKeyScope(t *testing.T) {
 	ingestHandler := ingest.NewHandler(authorizer, nil, 1<<20)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")
 	sessions := auth.NewSessionManager("secret", time.Hour)
-	server := NewServerWithAuth(ingestHandler, store, userAuth, sessions, nil)
+	server := NewServerWithAuth(ingestHandler, store, userAuth, sessions, nil, nil)
 
 	t.Run("ingest-only key is blocked from protected endpoints", func(t *testing.T) {
 		for _, path := range []string{"/api/v1/issues", "/api/v1/releases", "/api/v1/settings", "/api/v1/apikeys"} {
@@ -457,7 +457,7 @@ func TestIngestCORSHeaders(t *testing.T) {
 
 	store := mustOpenStore(t)
 	defer store.Close()
-	server := NewServer(nil, store)
+	server := NewServer(nil, store, nil)
 
 	t.Run("OPTIONS preflight returns wildcard ACAO", func(t *testing.T) {
 		rr := httptest.NewRecorder()
