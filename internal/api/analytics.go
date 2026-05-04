@@ -106,9 +106,6 @@ func (s *Server) analyticsPages(w http.ResponseWriter, r *http.Request, q analyt
 		writeServiceError(w, err)
 		return
 	}
-	if pages == nil {
-		pages = []analytics.PageStat{}
-	}
 	writeJSON(w, map[string]any{"pages": pages})
 }
 
@@ -138,9 +135,6 @@ func (s *Server) analyticsReferrers(w http.ResponseWriter, r *http.Request, q an
 		writeServiceError(w, err)
 		return
 	}
-	if refs == nil {
-		refs = []analytics.ReferrerStat{}
-	}
 	writeJSON(w, map[string]any{"referrers": refs})
 }
 
@@ -151,40 +145,25 @@ func (s *Server) analyticsSegments(w http.ResponseWriter, r *http.Request, q ana
 		writeServiceError(w, err)
 		return
 	}
-	if segs == nil {
-		segs = []analytics.SegmentBucket{}
-	}
-	writeJSON(w, map[string]any{
-		"dim":     dim,
-		"buckets": segs,
-	})
+	writeJSON(w, map[string]any{"dim": dim, "buckets": segs})
 }
 
 func (s *Server) analyticsFlow(w http.ResponseWriter, r *http.Request, q analytics.Query) {
-	pathname := r.URL.Query().Get("pathname")
-	result, err := s.analytics.QueryPageFlow(r.Context(), q, pathname)
+	result, err := s.analytics.QueryPageFlow(r.Context(), q, r.URL.Query().Get("pathname"))
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"pathname": result.Pathname,
-		"cameFrom": result.CameFrom,
-		"wentTo":   result.WentTo,
-	})
+	writeJSON(w, result)
 }
 
 func (s *Server) analyticsScroll(w http.ResponseWriter, r *http.Request, q analytics.Query) {
-	pathname := r.URL.Query().Get("pathname")
-	result, err := s.analytics.QueryScrollDepth(r.Context(), q, pathname)
+	result, err := s.analytics.QueryScrollDepth(r.Context(), q, r.URL.Query().Get("pathname"))
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"pathname": result.Pathname,
-		"buckets":  result.Buckets,
-	})
+	writeJSON(w, result)
 }
 
 func (s *Server) analyticsDropout(w http.ResponseWriter, r *http.Request, q analytics.Query) {

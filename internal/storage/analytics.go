@@ -214,7 +214,7 @@ func (s *Store) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.
 	}
 	defer rows.Close()
 
-	var out []analytics.PageStat
+	out := []analytics.PageStat{}
 	for rows.Next() {
 		var p analytics.PageStat
 		if err := rows.Scan(&p.Pathname, &p.Pageviews, &p.Sessions); err != nil {
@@ -257,7 +257,7 @@ func (s *Store) QueryTimeline(ctx context.Context, q analytics.Query, granularit
 	}
 	defer rows.Close()
 
-	var out []analytics.TimelineBucket
+	out := []analytics.TimelineBucket{}
 	for rows.Next() {
 		var b analytics.TimelineBucket
 		if err := rows.Scan(&b.Date, &b.Pageviews, &b.Sessions); err != nil {
@@ -290,7 +290,7 @@ func (s *Store) QueryReferrers(ctx context.Context, q analytics.Query) ([]analyt
 	}
 	defer rows.Close()
 
-	var out []analytics.ReferrerStat
+	out := []analytics.ReferrerStat{}
 	for rows.Next() {
 		var r analytics.ReferrerStat
 		if err := rows.Scan(&r.Host, &r.Pageviews, &r.Sessions); err != nil {
@@ -305,7 +305,7 @@ func (s *Store) QueryReferrers(ctx context.Context, q analytics.Query) ([]analyt
 // We use the raw table because props are not pre-aggregated beyond referrer_host.
 func (s *Store) QuerySegments(ctx context.Context, q analytics.Query, dimKey string) ([]analytics.SegmentBucket, error) {
 	if strings.TrimSpace(dimKey) == "" {
-		return nil, nil
+		return []analytics.SegmentBucket{}, nil
 	}
 	limit := queryLimit(q)
 
@@ -332,7 +332,7 @@ func (s *Store) QuerySegments(ctx context.Context, q analytics.Query, dimKey str
 	}
 	defer rows.Close()
 
-	var out []analytics.SegmentBucket
+	out := []analytics.SegmentBucket{}
 	for rows.Next() {
 		var b analytics.SegmentBucket
 		if err := rows.Scan(&b.Value, &b.Pageviews, &b.Sessions); err != nil {
@@ -345,7 +345,11 @@ func (s *Store) QuerySegments(ctx context.Context, q analytics.Query, dimKey str
 
 // QueryPageFlow returns page-flow data for a given pathname.
 func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname string) (analytics.PageFlowResult, error) {
-	result := analytics.PageFlowResult{Pathname: pathname}
+	result := analytics.PageFlowResult{
+		Pathname: pathname,
+		CameFrom: []analytics.FlowEntry{},
+		WentTo:   []analytics.FlowEntry{},
+	}
 
 	// WentTo — aggregate exit_pathname from raw pageviews
 	wentToRows, err := s.readDB().QueryContext(ctx, `
@@ -429,7 +433,10 @@ func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname s
 
 // QueryScrollDepth returns scroll-depth bucket counts for a pathname.
 func (s *Store) QueryScrollDepth(ctx context.Context, q analytics.Query, pathname string) (analytics.ScrollDepthResult, error) {
-	result := analytics.ScrollDepthResult{Pathname: pathname}
+	result := analytics.ScrollDepthResult{
+		Pathname: pathname,
+		Buckets:  []analytics.ScrollBucket{},
+	}
 
 	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT
@@ -493,7 +500,7 @@ func (s *Store) QueryDropout(ctx context.Context, q analytics.Query) ([]analytic
 	}
 	defer rows.Close()
 
-	var out []analytics.DropoutStat
+	out := []analytics.DropoutStat{}
 	for rows.Next() {
 		var s analytics.DropoutStat
 		if err := rows.Scan(&s.Pathname, &s.Pageviews, &s.BouncedSessions); err != nil {
