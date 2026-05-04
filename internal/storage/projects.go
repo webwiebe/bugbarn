@@ -29,9 +29,9 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 	return Project{ID: id, Name: name, Slug: slug, Status: "active", IssuePrefix: prefix, CreatedAt: time.Now().UTC()}, nil
 }
 
-// ListProjects returns all projects ordered by id.
+// ListProjects returns all projects ordered alphabetically by name.
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, created_at FROM projects ORDER BY id ASC`)
+	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, created_at FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
