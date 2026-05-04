@@ -3,15 +3,11 @@ package api
 import "net/http"
 
 func (s *Server) serveSettingsRoute(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
-		settings, err := s.service.GetSettings(r.Context())
+		settings, err := s.projects.GetSettings(r.Context())
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"settings": settings})
@@ -21,13 +17,13 @@ func (s *Server) serveSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid settings payload", http.StatusBadRequest)
 			return
 		}
-		if err := s.service.UpdateSettings(r.Context(), values); err != nil {
-			writeStorageError(w, err)
+		if err := s.projects.UpdateSettings(r.Context(), values); err != nil {
+			writeServiceError(w, err)
 			return
 		}
-		settings, err := s.service.GetSettings(r.Context())
+		settings, err := s.projects.GetSettings(r.Context())
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"settings": settings})

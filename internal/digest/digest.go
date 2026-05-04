@@ -10,36 +10,26 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // Config controls when and how the digest is delivered.
-// Toggle email via Mail.Enabled; toggle webhook by setting/clearing WebhookURL.
-// Neither channel starting means no scheduler goroutine is launched.
 type Config struct {
-	// Scheduling (UTC)
-	Day  int // 0=Sunday … 6=Saturday
-	Hour int // 0–23
-
-	// Webhook delivery — set to "" to disable
+	Day        int // 0=Sunday … 6=Saturday
+	Hour       int // 0–23
 	WebhookURL string
-
-	// Email delivery — set Mail.Enabled=false to disable without losing credentials
-	Mail MailConfig
-
-	// Display
-	PublicURL string
+	Mail       MailConfig
+	PublicURL  string
 }
 
-// Enabled reports whether at least one delivery channel is active.
 func (c Config) Enabled() bool {
 	return c.WebhookURL != "" || c.Mail.active()
 }
 
-// Store is the subset of storage.Store used by the digest.
+// Store is the subset of storage needed by the digest.
 type Store interface {
-	WeeklyDigest(ctx context.Context, projectID int64, since time.Time) (storage.DigestData, error)
-	ListProjects(ctx context.Context) ([]storage.Project, error)
+	WeeklyDigest(ctx context.Context, projectID int64, since time.Time) (domain.DigestData, error)
+	ListProjects(ctx context.Context) ([]domain.Project, error)
 }
 
 // payload is the JSON shape POSTed to the webhook.
@@ -72,7 +62,7 @@ type issueBlock struct {
 	URL        string `json:"url,omitempty"`
 }
 
-func buildSection(cfg Config, slug string, data storage.DigestData) projectSection {
+func buildSection(cfg Config, slug string, data domain.DigestData) projectSection {
 	sec := projectSection{
 		Project: slug,
 		Stats: statsBlock{

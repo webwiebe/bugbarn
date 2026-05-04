@@ -3,26 +3,26 @@ package logstream
 import (
 	"sync"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // Hub fans published log entries out to registered SSE subscribers.
 type Hub struct {
 	mu   sync.RWMutex
-	subs map[int64][]chan storage.LogEntry // projectID → channels
+	subs map[int64][]chan domain.LogEntry // projectID → channels
 }
 
 // NewHub creates a new Hub ready for use.
 func NewHub() *Hub {
 	return &Hub{
-		subs: make(map[int64][]chan storage.LogEntry),
+		subs: make(map[int64][]chan domain.LogEntry),
 	}
 }
 
 // Subscribe returns a channel that receives entries for projectID, and a cancel func.
 // Buffer size 64; slow consumers miss entries (non-blocking send).
-func (h *Hub) Subscribe(projectID int64) (<-chan storage.LogEntry, func()) {
-	ch := make(chan storage.LogEntry, 64)
+func (h *Hub) Subscribe(projectID int64) (<-chan domain.LogEntry, func()) {
+	ch := make(chan domain.LogEntry, 64)
 
 	h.mu.Lock()
 	h.subs[projectID] = append(h.subs[projectID], ch)
@@ -50,10 +50,10 @@ func (h *Hub) Subscribe(projectID int64) (<-chan storage.LogEntry, func()) {
 // Publish sends an entry to all current subscribers for that project,
 // and also to all-projects subscribers (those subscribed with projectID=0).
 // Uses non-blocking sends so slow consumers do not block the publisher.
-func (h *Hub) Publish(projectID int64, entry storage.LogEntry) {
+func (h *Hub) Publish(projectID int64, entry domain.LogEntry) {
 	h.mu.RLock()
 	chans := h.subs[projectID]
-	var allChans []chan storage.LogEntry
+	var allChans []chan domain.LogEntry
 	if projectID != 0 {
 		allChans = h.subs[0]
 	}

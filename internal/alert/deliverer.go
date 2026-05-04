@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // Deliverer sends alert webhook payloads with retry logic.
@@ -26,7 +26,7 @@ func NewDeliverer() *Deliverer {
 
 // Fire sends an alert webhook for the given rule and issue. It retries up to 3 times
 // with exponential backoff (1s, 2s, 4s). Returns nil on first success, or the last error.
-func (d *Deliverer) Fire(ctx context.Context, rule Rule, issue storage.Issue, publicURL string) error {
+func (d *Deliverer) Fire(ctx context.Context, rule Rule, issue domain.Issue, publicURL string) error {
 	payload, err := d.buildPayload(rule, issue, publicURL)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
@@ -64,7 +64,7 @@ func (d *Deliverer) Fire(ctx context.Context, rule Rule, issue storage.Issue, pu
 	return lastErr
 }
 
-func (d *Deliverer) buildPayload(rule Rule, issue storage.Issue, publicURL string) ([]byte, error) {
+func (d *Deliverer) buildPayload(rule Rule, issue domain.Issue, publicURL string) ([]byte, error) {
 	issueURL := strings.TrimRight(publicURL, "/") + "/issues/" + issue.ID
 
 	switch {
@@ -77,7 +77,7 @@ func (d *Deliverer) buildPayload(rule Rule, issue storage.Issue, publicURL strin
 	}
 }
 
-func (d *Deliverer) genericPayload(rule Rule, issue storage.Issue, issueURL string) ([]byte, error) {
+func (d *Deliverer) genericPayload(rule Rule, issue domain.Issue, issueURL string) ([]byte, error) {
 	payload := map[string]any{
 		"alert":     rule.Name,
 		"condition": rule.Condition,
@@ -94,7 +94,7 @@ func (d *Deliverer) genericPayload(rule Rule, issue storage.Issue, issueURL stri
 	return json.Marshal(payload)
 }
 
-func (d *Deliverer) slackPayload(rule Rule, issue storage.Issue, issueURL string) ([]byte, error) {
+func (d *Deliverer) slackPayload(rule Rule, issue domain.Issue, issueURL string) ([]byte, error) {
 	severity := severityFromIssue(issue)
 	text := fmt.Sprintf("[BugBarn] %s: %s", rule.Name, issue.Title)
 	payload := map[string]any{
@@ -138,7 +138,7 @@ func (d *Deliverer) slackPayload(rule Rule, issue storage.Issue, issueURL string
 	return json.Marshal(payload)
 }
 
-func (d *Deliverer) discordPayload(rule Rule, issue storage.Issue, issueURL string) ([]byte, error) {
+func (d *Deliverer) discordPayload(rule Rule, issue domain.Issue, issueURL string) ([]byte, error) {
 	severity := severityFromIssue(issue)
 	payload := map[string]any{
 		"content": "[BugBarn] New issue",
@@ -161,7 +161,7 @@ func (d *Deliverer) discordPayload(rule Rule, issue storage.Issue, issueURL stri
 	return json.Marshal(payload)
 }
 
-func severityFromIssue(issue storage.Issue) string {
+func severityFromIssue(issue domain.Issue) string {
 	if issue.RepresentativeEvent.Severity != "" {
 		return strings.ToLower(issue.RepresentativeEvent.Severity)
 	}

@@ -20,70 +20,70 @@ type PageView struct {
 }
 
 type OverviewResult struct {
-	Pageviews     int64
-	Sessions      int64
-	PagesCount    int64
-	AvgDurationMs int64
+	Pageviews     int64 `json:"pageviews"`
+	Sessions      int64 `json:"sessions"`
+	PagesCount    int64 `json:"pages"`
+	AvgDurationMs int64 `json:"avgDurationMs"`
 }
 
 type PageStat struct {
-	Pathname  string
-	Pageviews int64
-	Sessions  int64
+	Pathname  string `json:"pathname"`
+	Pageviews int64  `json:"pageviews"`
+	Sessions  int64  `json:"sessions"`
 }
 
 type TimelineBucket struct {
-	Date      string // YYYY-MM-DD (day), YYYY-WXX (ISO week), YYYY-MM (month)
-	Pageviews int64
-	Sessions  int64
+	Date      string `json:"date"`
+	Pageviews int64  `json:"pageviews"`
+	Sessions  int64  `json:"sessions"`
 }
 
 type ReferrerStat struct {
-	Host      string
-	Pageviews int64
-	Sessions  int64
+	Host      string `json:"host"`
+	Pageviews int64  `json:"pageviews"`
+	Sessions  int64  `json:"sessions"`
 }
 
 type SegmentBucket struct {
-	Value     string
-	Pageviews int64
-	Sessions  int64
+	Value     string `json:"value"`
+	Pageviews int64  `json:"pageviews"`
+	Sessions  int64  `json:"sessions"`
 }
 
 type Query struct {
 	ProjectID int64
 	Start     time.Time
 	End       time.Time
-	Pathname  string // optional filter
-	Limit     int    // 0 = default 50
+	Pathname  string
+	Limit     int
 }
 
 type PageFlowResult struct {
-	Pathname string
-	CameFrom []FlowEntry
-	WentTo   []FlowEntry
+	Pathname string      `json:"pathname"`
+	CameFrom []FlowEntry `json:"cameFrom"`
+	WentTo   []FlowEntry `json:"wentTo"`
 }
 
 type FlowEntry struct {
-	Pathname string
-	Count    int64
-	Pct      float64
+	Pathname string  `json:"pathname"`
+	Count    int64   `json:"count"`
+	Pct      float64 `json:"pct"`
 }
 
 type ScrollDepthResult struct {
-	Pathname string
-	Buckets  []ScrollBucket
+	Pathname string         `json:"pathname"`
+	Buckets  []ScrollBucket `json:"buckets"`
 }
 
 type ScrollBucket struct {
-	Label string // "0–24%", "25–49%", "50–74%", "75–99%", "100%"
-	Count int64
-	Pct   float64
+	Label string  `json:"label"`
+	Count int64   `json:"count"`
+	Pct   float64 `json:"pct"`
 }
 
 type DropoutStat struct {
-	Pathname        string
-	Pageviews       int64
-	BouncedSessions int64
-	BounceRate      float64
+	Pathname        string  `json:"pathname"`
+	Pageviews       int64   `json:"pageviews"`
+	BouncedSessions int64   `json:"bouncedSessions"`
+	BounceRate      float64 `json:"bounceRate"`
 }

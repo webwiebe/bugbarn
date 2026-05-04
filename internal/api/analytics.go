@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,8 +15,6 @@ import (
 
 const analyticsMaxDays = 366
 
-// parseAnalyticsQuery parses common analytics query parameters from the request.
-// Defaults to the last 30 days. Clamps to max 366 days. Returns 400 if start > end.
 func parseAnalyticsQuery(r *http.Request, projectID int64) (analytics.Query, error) {
 	now := time.Now().UTC()
 	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -42,7 +39,6 @@ func parseAnalyticsQuery(r *http.Request, projectID int64) (analytics.Query, err
 		return analytics.Query{}, fmt.Errorf("start must not be after end")
 	}
 
-	// Clamp to max 366 days.
 	if end.Sub(start) > analyticsMaxDays*24*time.Hour {
 		start = end.AddDate(0, 0, -analyticsMaxDays)
 	}
@@ -54,27 +50,30 @@ func parseAnalyticsQuery(r *http.Request, projectID int64) (analytics.Query, err
 	}, nil
 }
 
-// resolveAnalyticsProjectID resolves the project ID for analytics requests using
-// the same logic as other protected routes.
 func (s *Server) resolveAnalyticsProjectID(r *http.Request) int64 {
-	if slug := r.Header.Get("X-BugBarn-Project"); slug != "" && s.store != nil {
-		if proj, err := s.store.EnsureProject(r.Context(), slug); err == nil {
+	if slug := r.Header.Get("X-BugBarn-Project"); slug != "" {
+		if proj, err := s.projects.Ensure(r.Context(), slug); err == nil {
 			return proj.ID
 		}
 	}
 	if id, ok := storage.ProjectIDFromContext(r.Context()); ok && id > 0 {
 		return id
 	}
-	return s.store.DefaultProjectID()
+	return s.projects.DefaultProjectID()
 }
 
-// serveAnalyticsQuery handles all GET /api/v1/analytics/* endpoints.
-func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
+var analyticsRoutes = map[string]func(*Server, http.ResponseWriter, *http.Request, analytics.Query){
+	"overview":  (*Server).analyticsOverview,
+	"pages":     (*Server).analyticsPages,
+	"timeline":  (*Server).analyticsTimeline,
+	"referrers": (*Server).analyticsReferrers,
+	"segments":  (*Server).analyticsSegments,
+	"flow":      (*Server).analyticsFlow,
+	"scroll":    (*Server).analyticsScroll,
+	"dropout":   (*Server).analyticsDropout,
+}
 
+func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 	projectID := s.resolveAnalyticsProjectID(r)
 
 	q, err := parseAnalyticsQuery(r, projectID)
@@ -84,172 +83,99 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tail := strings.TrimPrefix(r.URL.Path, "/api/v1/analytics/")
-
-	ctx := r.Context()
-
-	switch tail {
-	case "overview":
-		result, err := s.store.QueryOverview(ctx, q)
-		if err != nil {
-			log.Printf("analytics: query error: %v", err)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, map[string]any{
-			"pageviews":     result.Pageviews,
-			"sessions":      result.Sessions,
-			"pages":         result.PagesCount,
-			"avgDurationMs": result.AvgDurationMs,
-		})
-
-	case "pages":
-		pages, err := s.store.QueryPages(ctx, q)
-		if err != nil {
-			log.Printf("analytics: query error: %v", err)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-		if pages == nil {
-			pages = []analytics.PageStat{}
-		}
-		writeJSON(w, map[string]any{"pages": pages})
-
-	case "timeline":
-		granularity := r.URL.Query().Get("granularity")
-		if granularity == "" {
-			granularity = "day"
-		}
-		switch granularity {
-		case "day", "week", "month":
-			// valid
-		default:
-			granularity = "day"
-		}
-
-		buckets, err := s.store.QueryTimeline(ctx, q, granularity)
-		if err != nil {
-			log.Printf("analytics: query error: %v", err)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-
-		buckets = zeroFillTimeline(buckets, q.Start, q.End, granularity)
-
-		writeJSON(w, map[string]any{
-			"granularity": granularity,
-			"buckets":     buckets,
-		})
-
-	case "referrers":
-		refs, err := s.store.QueryReferrers(ctx, q)
-		if err != nil {
-			log.Printf("analytics: query error: %v", err)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-		if refs == nil {
-			refs = []analytics.ReferrerStat{}
-		}
-		writeJSON(w, map[string]any{"referrers": refs})
-
-	case "segments":
-		dim := r.URL.Query().Get("dim")
-		segs, err := s.store.QuerySegments(ctx, q, dim)
-		if err != nil {
-			log.Printf("analytics: query error: %v", err)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-		if segs == nil {
-			segs = []analytics.SegmentBucket{}
-		}
-		writeJSON(w, map[string]any{
-			"dim":     dim,
-			"buckets": segs,
-		})
-
-	case "flow":
-		pathname := r.URL.Query().Get("pathname")
-		result, err := s.store.QueryPageFlow(ctx, q, pathname)
-		if err != nil {
-			log.Printf("analytics: query error: %v", err)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-		type flowEntry struct {
-			Pathname string  `json:"pathname"`
-			Count    int64   `json:"count"`
-			Pct      float64 `json:"pct"`
-		}
-		cameFrom := make([]flowEntry, 0, len(result.CameFrom))
-		for _, e := range result.CameFrom {
-			cameFrom = append(cameFrom, flowEntry{Pathname: e.Pathname, Count: e.Count, Pct: e.Pct})
-		}
-		wentTo := make([]flowEntry, 0, len(result.WentTo))
-		for _, e := range result.WentTo {
-			wentTo = append(wentTo, flowEntry{Pathname: e.Pathname, Count: e.Count, Pct: e.Pct})
-		}
-		writeJSON(w, map[string]any{
-			"pathname": result.Pathname,
-			"cameFrom": cameFrom,
-			"wentTo":   wentTo,
-		})
-
-	case "scroll":
-		pathname := r.URL.Query().Get("pathname")
-		result, err := s.store.QueryScrollDepth(ctx, q, pathname)
-		if err != nil {
-			log.Printf("analytics: query error: %v", err)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-		type scrollBucket struct {
-			Label string  `json:"label"`
-			Count int64   `json:"count"`
-			Pct   float64 `json:"pct"`
-		}
-		buckets := make([]scrollBucket, 0, len(result.Buckets))
-		for _, b := range result.Buckets {
-			buckets = append(buckets, scrollBucket{Label: b.Label, Count: b.Count, Pct: b.Pct})
-		}
-		writeJSON(w, map[string]any{
-			"pathname": result.Pathname,
-			"buckets":  buckets,
-		})
-
-	case "dropout":
-		stats, err := s.store.QueryDropout(ctx, q)
-		if err != nil {
-			log.Printf("analytics: query error: %v", err)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-		type dropoutPage struct {
-			Pathname        string  `json:"pathname"`
-			Pageviews       int64   `json:"pageviews"`
-			BouncedSessions int64   `json:"bouncedSessions"`
-			BounceRate      float64 `json:"bounceRate"`
-		}
-		pages := make([]dropoutPage, 0, len(stats))
-		for _, st := range stats {
-			pages = append(pages, dropoutPage{
-				Pathname:        st.Pathname,
-				Pageviews:       st.Pageviews,
-				BouncedSessions: st.BouncedSessions,
-				BounceRate:      st.BounceRate,
-			})
-		}
-		writeJSON(w, map[string]any{"pages": pages})
-
-	default:
+	handler, ok := analyticsRoutes[tail]
+	if !ok {
 		http.NotFound(w, r)
+		return
 	}
+	handler(s, w, r, q)
 }
 
-// zeroFillTimeline inserts zero-value buckets for any dates missing from the
-// DB results so the client always gets a contiguous series.
+func (s *Server) analyticsOverview(w http.ResponseWriter, r *http.Request, q analytics.Query) {
+	result, err := s.analytics.QueryOverview(r.Context(), q)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, result)
+}
+
+func (s *Server) analyticsPages(w http.ResponseWriter, r *http.Request, q analytics.Query) {
+	pages, err := s.analytics.QueryPages(r.Context(), q)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"pages": pages})
+}
+
+func (s *Server) analyticsTimeline(w http.ResponseWriter, r *http.Request, q analytics.Query) {
+	granularity := r.URL.Query().Get("granularity")
+	switch granularity {
+	case "day", "week", "month":
+	default:
+		granularity = "day"
+	}
+
+	buckets, err := s.analytics.QueryTimeline(r.Context(), q, granularity)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"granularity": granularity,
+		"buckets":     zeroFillTimeline(buckets, q.Start, q.End, granularity),
+	})
+}
+
+func (s *Server) analyticsReferrers(w http.ResponseWriter, r *http.Request, q analytics.Query) {
+	refs, err := s.analytics.QueryReferrers(r.Context(), q)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"referrers": refs})
+}
+
+func (s *Server) analyticsSegments(w http.ResponseWriter, r *http.Request, q analytics.Query) {
+	dim := r.URL.Query().Get("dim")
+	segs, err := s.analytics.QuerySegments(r.Context(), q, dim)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"dim": dim, "buckets": segs})
+}
+
+func (s *Server) analyticsFlow(w http.ResponseWriter, r *http.Request, q analytics.Query) {
+	result, err := s.analytics.QueryPageFlow(r.Context(), q, r.URL.Query().Get("pathname"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, result)
+}
+
+func (s *Server) analyticsScroll(w http.ResponseWriter, r *http.Request, q analytics.Query) {
+	result, err := s.analytics.QueryScrollDepth(r.Context(), q, r.URL.Query().Get("pathname"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, result)
+}
+
+func (s *Server) analyticsDropout(w http.ResponseWriter, r *http.Request, q analytics.Query) {
+	stats, err := s.analytics.QueryDropout(r.Context(), q)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"pages": stats})
+}
+
 func zeroFillTimeline(buckets []analytics.TimelineBucket, start, end time.Time, granularity string) []analytics.TimelineBucket {
-	// Build a lookup from the DB results.
 	have := make(map[string]analytics.TimelineBucket, len(buckets))
 	for _, b := range buckets {
 		have[b.Date] = b
@@ -258,7 +184,6 @@ func zeroFillTimeline(buckets []analytics.TimelineBucket, start, end time.Time, 
 	var keys []string
 	switch granularity {
 	case "week":
-		// Iterate by week from start to end.
 		cur := weekStart(start)
 		for !cur.After(end) {
 			key := cur.UTC().Format("2006-W") + fmt.Sprintf("%02d", isoWeekNumber(cur))
@@ -272,7 +197,7 @@ func zeroFillTimeline(buckets []analytics.TimelineBucket, start, end time.Time, 
 			keys = append(keys, cur.Format("2006-01"))
 			cur = cur.AddDate(0, 1, 0)
 		}
-	default: // day
+	default:
 		cur := start
 		for !cur.After(end) {
 			keys = append(keys, cur.Format("2006-01-02"))
@@ -291,32 +216,18 @@ func zeroFillTimeline(buckets []analytics.TimelineBucket, start, end time.Time, 
 	return out
 }
 
-// weekStart returns the Monday of the week containing t (matching strftime %W
-// which counts weeks starting on Sunday, but we align on Monday for ISO feel).
-// We use Go's time.Weekday with Sunday=0, Monday=1, …
-// strftime('%Y-W%W', date) in SQLite uses Sunday as the first day of the week.
-// So we align our iteration to match SQLite's Sunday-based week numbers.
 func weekStart(t time.Time) time.Time {
-	// Go's time.Sunday == 0, time.Monday == 1, …
-	offset := int(t.Weekday()) // 0 for Sunday
+	offset := int(t.Weekday())
 	return time.Date(t.Year(), t.Month(), t.Day()-offset, 0, 0, 0, 0, time.UTC)
 }
 
-// isoWeekNumber returns the SQLite strftime('%W', …) week number (0-53),
-// where weeks start on Sunday.
 func isoWeekNumber(t time.Time) int {
-	// Jan 1 of the year
 	jan1 := time.Date(t.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
-	// Day-of-year (0-based)
 	dayOfYear := t.YearDay() - 1
-	// Day of week of Jan 1 (Sunday=0)
 	jan1DOW := int(jan1.Weekday())
-	// SQLite %W: number of Sundays before this date / week of year
 	return (dayOfYear + jan1DOW) / 7
 }
 
-// collectPageView handles POST /api/v1/analytics/collect.
-// It is public and unauthenticated; CORS headers are set by the caller in ServeHTTP.
 func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
 	if err != nil {
@@ -354,13 +265,13 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	if slug == "" {
 		slug = r.URL.Query().Get("project")
 	}
-	if slug != "" && s.store != nil {
-		if proj, err := s.store.EnsureProject(ctx, slug); err == nil {
+	if slug != "" {
+		if proj, err := s.projects.Ensure(ctx, slug); err == nil {
 			projectID = proj.ID
 		}
 	}
-	if projectID == 0 && s.store != nil {
-		projectID = s.store.DefaultProjectID()
+	if projectID == 0 {
+		projectID = s.projects.DefaultProjectID()
 	}
 
 	var referrerHost, referrerPath string
@@ -401,17 +312,14 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 		Props:            props,
 	}
 
-	if s.store != nil {
-		if err := s.store.InsertPageView(ctx, pv); err != nil {
-			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-			return
-		}
+	if err := s.analytics.InsertPageView(ctx, pv); err != nil {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
 	}
 
 	writeJSONStatus(w, http.StatusAccepted, map[string]any{})
 }
 
-// serveAnalyticsSnippet handles GET /analytics.js.
 func (s *Server) serveAnalyticsSnippet(w http.ResponseWriter, r *http.Request) {
 	origin := s.publicURL
 	if origin == "" {

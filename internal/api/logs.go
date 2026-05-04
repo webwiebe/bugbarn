@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
-// pinoLevelNames maps Pino numeric levels to level name strings.
 var pinoLevelNames = map[int]string{
 	10: "trace",
 	20: "debug",
@@ -23,7 +23,6 @@ var pinoLevelNames = map[int]string{
 	60: "fatal",
 }
 
-// pinoLevelNums maps level name strings to Pino numeric levels.
 var pinoLevelNums = map[string]int{
 	"trace": 10,
 	"debug": 20,
@@ -33,7 +32,6 @@ var pinoLevelNums = map[string]int{
 	"fatal": 60,
 }
 
-// skipFields are fields stripped from the Data map during ingest.
 var skipFields = map[string]bool{
 	"v":        true,
 	"pid":      true,
@@ -44,10 +42,8 @@ var skipFields = map[string]bool{
 	"time":     true,
 }
 
-// parsePinoObject converts a raw JSON object from a Pino-style log payload
-// into a LogEntry. projectID must be set by the caller.
-func parsePinoObject(obj map[string]any, projectID int64) storage.LogEntry {
-	entry := storage.LogEntry{
+func parsePinoObject(obj map[string]any, projectID int64) domain.LogEntry {
+	entry := domain.LogEntry{
 		ProjectID:  projectID,
 		ReceivedAt: time.Now().UTC(),
 		LevelNum:   30,
@@ -55,14 +51,12 @@ func parsePinoObject(obj map[string]any, projectID int64) storage.LogEntry {
 		Data:       make(map[string]any),
 	}
 
-	// Extract message from "msg" or "message".
 	if msg, ok := obj["msg"].(string); ok {
 		entry.Message = msg
 	} else if msg, ok := obj["message"].(string); ok {
 		entry.Message = msg
 	}
 
-	// Extract level — may be a number or string.
 	if lvl, ok := obj["level"]; ok {
 		switch v := lvl.(type) {
 		case float64:
@@ -80,13 +74,11 @@ func parsePinoObject(obj map[string]any, projectID int64) storage.LogEntry {
 		}
 	}
 
-	// Extract timestamp from "time" field (epoch ms).
 	if t, ok := obj["time"].(float64); ok {
 		ms := int64(t)
 		entry.ReceivedAt = time.UnixMilli(ms).UTC()
 	}
 
-	// Collect remaining fields into Data, excluding reserved keys.
 	for k, v := range obj {
 		if !skipFields[k] {
 			entry.Data[k] = v
@@ -99,7 +91,6 @@ func parsePinoObject(obj map[string]any, projectID int64) storage.LogEntry {
 	return entry
 }
 
-// levelMinFromName converts a level name to the minimum numeric level for filtering.
 func levelMinFromName(name string) int {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if num, ok := pinoLevelNums[name]; ok {
@@ -108,13 +99,7 @@ func levelMinFromName(name string) int {
 	return 0
 }
 
-// serveLogsIngest handles POST /api/v1/logs
 func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
 	projectID, ok := storage.ProjectIDFromContext(r.Context())
 	if !ok || projectID == 0 {
 		http.Error(w, "project required: provide X-BugBarn-Project header or use a project-scoped API key", http.StatusBadRequest)
@@ -122,7 +107,6 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ct := r.Header.Get("Content-Type")
-	// Strip params like "; charset=utf-8"
 	if idx := strings.Index(ct, ";"); idx != -1 {
 		ct = strings.TrimSpace(ct[:idx])
 	}
@@ -139,12 +123,11 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 			}
 			var obj map[string]any
 			if err := json.Unmarshal([]byte(line), &obj); err != nil {
-				continue // skip malformed lines
+				continue
 			}
 			rawEntries = append(rawEntries, obj)
 		}
 	default:
-		// Default: application/json with {"logs":[...]}
 		var payload struct {
 			Logs []map[string]any `json:"logs"`
 		}
@@ -161,13 +144,13 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries := make([]storage.LogEntry, 0, len(rawEntries))
+	entries := make([]domain.LogEntry, 0, len(rawEntries))
 	for _, obj := range rawEntries {
 		entries = append(entries, parsePinoObject(obj, projectID))
 	}
 
-	if err := s.store.InsertLogEntries(r.Context(), entries); err != nil {
-		writeStorageError(w, err)
+	if err := s.logs.Insert(r.Context(), entries); err != nil {
+		writeServiceError(w, err)
 		return
 	}
 
@@ -180,15 +163,8 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// serveLogs handles GET /api/v1/logs
 func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
 	projectID, _ := storage.ProjectIDFromContext(r.Context())
-	// projectID == 0 means all projects — handled by ListLogEntries
 
 	limit := 200
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -214,9 +190,9 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries, err := s.store.ListLogEntries(r.Context(), projectID, levelMin, q, limit, beforeID)
+	entries, err := s.logs.List(r.Context(), projectID, levelMin, q, limit, beforeID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 
@@ -231,7 +207,6 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// serveLogsStream handles GET /api/v1/logs/stream (SSE)
 func (s *Server) serveLogsStream(w http.ResponseWriter, r *http.Request) {
 	if s.logHub == nil {
 		http.Error(w, "log streaming unavailable", http.StatusServiceUnavailable)
@@ -239,7 +214,6 @@ func (s *Server) serveLogsStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectID, _ := storage.ProjectIDFromContext(r.Context())
-	// projectID == 0 means all projects — hub.Subscribe(0) receives from all projects
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

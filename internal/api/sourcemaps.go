@@ -5,30 +5,22 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) listSourceMaps(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	items, err := s.service.ListSourceMaps(r.Context())
+	items, err := s.releases.ListSourceMaps(r.Context())
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	if items == nil {
-		items = []storage.SourceMapMeta{}
+		items = []domain.SourceMapMeta{}
 	}
 	writeJSON(w, map[string]any{"sourceMaps": items})
 }
 
 func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	limit := s.maxSourceMapBytes
 	if limit <= 0 {
 		limit = defaultMaxSourceMapBytes
@@ -61,7 +53,7 @@ func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upload := storage.SourceMapUpload{
+	upload := domain.SourceMapUpload{
 		Release:     r.FormValue("release"),
 		Dist:        r.FormValue("dist"),
 		BundleURL:   r.FormValue("bundle_url"),
@@ -69,9 +61,9 @@ func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
 		ContentType: header.Header.Get("Content-Type"),
 		Blob:        blob,
 	}
-	item, err := s.service.UploadSourceMap(r.Context(), upload)
+	item, err := s.releases.UploadSourceMap(r.Context(), upload)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSONStatus(w, http.StatusAccepted, map[string]any{

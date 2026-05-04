@@ -6,22 +6,6 @@ import (
 	"time"
 )
 
-// DigestIssue is a summary of a single issue for the weekly digest.
-type DigestIssue struct {
-	ID         string
-	Title      string
-	EventCount int
-	Status     string
-}
-
-// DigestData holds aggregate stats for the weekly digest.
-type DigestData struct {
-	TotalEvents    int
-	NewIssues      int
-	ResolvedIssues int
-	Regressions    int
-	TopIssues      []DigestIssue
-}
 
 // WeeklyDigest returns aggregate error stats for the given project since the
 // given time. All queries run under the provided context deadline.

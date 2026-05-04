@@ -10,10 +10,6 @@ import (
 )
 
 func (s *Server) listIssueEvents(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/events")
 
 	limit := 25
@@ -29,33 +25,25 @@ func (s *Server) listIssueEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	events, hasMore, err := s.service.ListIssueEvents(r.Context(), issueID, limit, beforeID)
+	events, hasMore, err := s.issues.ListEvents(r.Context(), issueID, limit, beforeID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
 }
 
 func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	eventID := strings.TrimPrefix(r.URL.Path, "/api/v1/events/")
-	event, err := s.service.GetEvent(r.Context(), eventID)
+	event, err := s.issues.GetEvent(r.Context(), eventID)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"event": event})
 }
 
 func (s *Server) listRecentEvents(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	limit := 50
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
@@ -73,21 +61,15 @@ func (s *Server) listRecentEvents(w http.ResponseWriter, r *http.Request) {
 			since = time.Now().UTC().Add(-parsed)
 		}
 	}
-	events, err := s.service.ListLiveEvents(r.Context(), limit, since)
+	events, err := s.issues.ListLiveEvents(r.Context(), limit, since)
 	if err != nil {
-		writeStorageError(w, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"events": events})
 }
 
 func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Parse optional ?since= parameter to resume from a specific timestamp.
 	since := time.Now().UTC().Add(-15 * time.Minute)
 	if raw := r.URL.Query().Get("since"); raw != "" {
 		if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
@@ -115,7 +97,6 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 	defer pollTicker.Stop()
 	defer keepaliveTicker.Stop()
 
-	// Track the latest timestamp seen so we only emit new events.
 	cursor := since
 
 	for {
@@ -128,7 +109,7 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 		case <-pollTicker.C:
-			events, err := s.service.ListLiveEvents(ctx, 100, cursor)
+			events, err := s.issues.ListLiveEvents(ctx, 100, cursor)
 			if err != nil {
 				return
 			}

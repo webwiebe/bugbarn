@@ -5,19 +5,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
-		releases, err := s.service.ListReleases(r.Context())
+		releases, err := s.releases.List(r.Context())
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"releases": releases})
@@ -36,7 +32,7 @@ func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid release payload", http.StatusBadRequest)
 			return
 		}
-		release := storage.Release{
+		release := domain.Release{
 			Name:        request.Name,
 			Environment: request.Environment,
 			Version:     request.Version,
@@ -48,9 +44,9 @@ func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 		if parsed, err := time.Parse(time.RFC3339Nano, request.ObservedAt); err == nil {
 			release.ObservedAt = parsed
 		}
-		item, err := s.service.CreateRelease(r.Context(), release)
+		item, err := s.releases.Create(r.Context(), release)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"release": item})
@@ -60,16 +56,12 @@ func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveReleaseRoute(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	releaseID := strings.TrimPrefix(r.URL.Path, "/api/v1/releases/")
 	switch r.Method {
 	case http.MethodGet:
-		item, err := s.service.GetRelease(r.Context(), releaseID)
+		item, err := s.releases.Get(r.Context(), releaseID)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"release": item})
@@ -88,7 +80,7 @@ func (s *Server) serveReleaseRoute(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid release payload", http.StatusBadRequest)
 			return
 		}
-		release := storage.Release{
+		release := domain.Release{
 			Name:        request.Name,
 			Environment: request.Environment,
 			Version:     request.Version,
@@ -100,15 +92,15 @@ func (s *Server) serveReleaseRoute(w http.ResponseWriter, r *http.Request) {
 		if parsed, err := time.Parse(time.RFC3339Nano, request.ObservedAt); err == nil {
 			release.ObservedAt = parsed
 		}
-		item, err := s.service.UpdateRelease(r.Context(), releaseID, release)
+		item, err := s.releases.Update(r.Context(), releaseID, release)
 		if err != nil {
-			writeStorageError(w, err)
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"release": item})
 	case http.MethodDelete:
-		if err := s.service.DeleteRelease(r.Context(), releaseID); err != nil {
-			writeStorageError(w, err)
+		if err := s.releases.Delete(r.Context(), releaseID); err != nil {
+			writeServiceError(w, err)
 			return
 		}
 		writeJSON(w, map[string]any{"deleted": true})

@@ -1226,8 +1226,9 @@ button:disabled {
   .app-frame {
     display: flex;
     flex-direction: column;
+    min-height: 0;
+    height: 100vh;
     height: 100dvh;
-    height: 100vh; /* fallback for older browsers */
     overflow: hidden;
   }
 

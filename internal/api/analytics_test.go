@@ -26,7 +26,7 @@ func TestCollectPageView(t *testing.T) {
 	t.Run("POST valid JSON returns 202 and inserts row", func(t *testing.T) {
 		store := mustOpenAnalyticsStore(t)
 		defer store.Close()
-		server := NewServer(nil, store)
+		server := NewServer(nil, store, nil)
 
 		body := `{"pathname":"/hello","hostname":"example.com","referrer":"https://google.com/search?q=test","sessionId":"abc123","screenWidth":1440,"duration":5000}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/analytics/collect", strings.NewReader(body))
@@ -47,7 +47,7 @@ func TestCollectPageView(t *testing.T) {
 	t.Run("POST with text/plain content-type returns 202", func(t *testing.T) {
 		store := mustOpenAnalyticsStore(t)
 		defer store.Close()
-		server := NewServer(nil, store)
+		server := NewServer(nil, store, nil)
 
 		body := `{"pathname":"/beacon","hostname":"example.com","sessionId":"sid-plain"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/analytics/collect", strings.NewReader(body))
@@ -64,7 +64,7 @@ func TestCollectPageView(t *testing.T) {
 	t.Run("POST missing pathname returns 400", func(t *testing.T) {
 		store := mustOpenAnalyticsStore(t)
 		defer store.Close()
-		server := NewServer(nil, store)
+		server := NewServer(nil, store, nil)
 
 		body := `{"hostname":"example.com","sessionId":"abc"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/analytics/collect", strings.NewReader(body))
@@ -81,7 +81,7 @@ func TestCollectPageView(t *testing.T) {
 	t.Run("OPTIONS preflight returns 204 with correct CORS headers", func(t *testing.T) {
 		store := mustOpenAnalyticsStore(t)
 		defer store.Close()
-		server := NewServer(nil, store)
+		server := NewServer(nil, store, nil)
 
 		req := httptest.NewRequest(http.MethodOptions, "/api/v1/analytics/collect", nil)
 		rr := httptest.NewRecorder()
@@ -102,7 +102,7 @@ func TestCollectPageView(t *testing.T) {
 	t.Run("project resolved from query param when header absent", func(t *testing.T) {
 		store := mustOpenAnalyticsStore(t)
 		defer store.Close()
-		server := NewServer(nil, store)
+		server := NewServer(nil, store, nil)
 
 		body := `{"pathname":"/page","hostname":"example.com","sessionId":"sess-qp"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/analytics/collect?project=mysite", strings.NewReader(body))
@@ -132,7 +132,7 @@ func TestServeAnalyticsSnippet(t *testing.T) {
 	t.Run("GET /analytics.js?project=mysite returns 200 with JS containing project slug", func(t *testing.T) {
 		store := mustOpenAnalyticsStore(t)
 		defer store.Close()
-		server := NewServer(nil, store)
+		server := NewServer(nil, store, nil)
 		server.SetSetupConfig("secret", "https://bugs.example.com")
 
 		req := httptest.NewRequest(http.MethodGet, "/analytics.js?project=mysite", nil)

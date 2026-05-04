@@ -133,7 +133,11 @@ WHERE e.project_id = ? AND e.id = ?`, projectID, rowID)
 WHERE e.id = ?`, rowID)
 	}
 
-	return scanEvent(row)
+	evt, err := scanEvent(row)
+	if err != nil {
+		return Event{}, wrapNotFound(err, "event not found")
+	}
+	return evt, nil
 }
 
 func (s *Store) ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {

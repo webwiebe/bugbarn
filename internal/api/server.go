@@ -2,6 +2,7 @@ package api
 
 import (
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -9,9 +10,15 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
-	"github.com/wiebe-xyz/bugbarn/internal/service"
+	alertsvc "github.com/wiebe-xyz/bugbarn/internal/service/alerts"
+	analyticssvc "github.com/wiebe-xyz/bugbarn/internal/service/analytics"
+	issuesvc "github.com/wiebe-xyz/bugbarn/internal/service/issues"
+	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
+	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
+	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
@@ -19,9 +26,15 @@ import (
 const defaultMaxSourceMapBytes = 32 << 20 // 32 MiB
 
 type Server struct {
-	ingestHandler      *ingest.Handler
-	store              *storage.Store
-	service            *service.Service
+	ingestHandler *ingest.Handler
+	issues        *issuesvc.Service
+	projects      *projectsvc.Service
+	releases      *releasesvc.Service
+	alerts        *alertsvc.Service
+	logs          *logsvc.Service
+	analytics     *analyticssvc.Service
+	logger        *slog.Logger
+
 	users              *auth.UserAuthenticator
 	sessions           *auth.SessionManager
 	allowedOrigins     []string // parsed from BUGBARN_ALLOWED_ORIGINS
@@ -32,9 +45,9 @@ type Server struct {
 	maxSourceMapBytes  int64
 	funnelBarnEndpoint string
 	funnelBarnAPIKey   string
-	selfAPIKey          string
-	selfProject         string
-	workerStatus        *worker.Status
+	selfAPIKey         string
+	selfProject        string
+	workerStatus       *worker.Status
 	autoApproveProjects bool
 
 	loginLimiter sync.Map // map[string]*loginAttempt
@@ -89,15 +102,36 @@ func (s *Server) SetAutoApproveProjects(auto bool) {
 	s.autoApproveProjects = auto
 }
 
-func NewServer(ingestHandler *ingest.Handler, store *storage.Store) *Server {
-	return &Server{ingestHandler: ingestHandler, store: store, service: service.New(store), maxSourceMapBytes: defaultMaxSourceMapBytes}
+func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog.Logger) *Server {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Server{
+		ingestHandler:     ingestHandler,
+		issues:            issuesvc.New(store, logger),
+		projects:          projectsvc.New(store, logger),
+		releases:          releasesvc.New(store, logger),
+		alerts:            alertsvc.New(store, logger),
+		logs:              logsvc.New(store, logger),
+		analytics:         analyticssvc.New(store, logger),
+		logger:            logger.With("component", "api"),
+		maxSourceMapBytes: defaultMaxSourceMapBytes,
+	}
 }
 
-func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, users *auth.UserAuthenticator, sessions *auth.SessionManager, allowedOrigins []string) *Server {
+func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, users *auth.UserAuthenticator, sessions *auth.SessionManager, allowedOrigins []string, logger *slog.Logger) *Server {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	s := &Server{
 		ingestHandler:     ingestHandler,
-		store:             store,
-		service:           service.New(store),
+		issues:            issuesvc.New(store, logger),
+		projects:          projectsvc.New(store, logger),
+		releases:          releasesvc.New(store, logger),
+		alerts:            alertsvc.New(store, logger),
+		logs:              logsvc.New(store, logger),
+		analytics:         analyticssvc.New(store, logger),
+		logger:            logger.With("component", "api"),
 		users:             users,
 		sessions:          sessions,
 		allowedOrigins:    allowedOrigins,
@@ -139,8 +173,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				logProjectID = pid
 			}
 		}
-		if slug := r.Header.Get("X-BugBarn-Project"); slug != "" && s.store != nil {
-			if proj, err := s.store.EnsureProject(r.Context(), slug); err == nil {
+		if slug := r.Header.Get("X-BugBarn-Project"); slug != "" && s.projects != nil {
+			if proj, err := s.projects.Ensure(r.Context(), slug); err == nil {
 				logProjectID = proj.ID
 			}
 		}
@@ -225,7 +259,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.ingestHandler != nil {
 			pid, scope, ok := s.ingestHandler.APIKeyProjectScope(r)
 			if ok {
-				if scope == storage.APIKeyScopeIngest {
+				if scope == domain.APIKeyScopeIngest {
 					log.Printf("auth: ingest-only key rejected for %s %s", r.Method, r.URL.Path)
 					http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
 					return
@@ -268,19 +302,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// API key and session requests — it auto-creates the project if unknown,
 		// so a single shared API key can route events to any project via the header.
 		if slug := r.Header.Get("X-BugBarn-Project"); slug != "" {
-			if proj, err := s.store.EnsureProject(r.Context(), slug); err == nil {
+			if proj, err := s.projects.Ensure(r.Context(), slug); err == nil {
 				resolvedProjectID = proj.ID
 			}
 		} else if usingAPIKey && apiKeyProjectID > 0 {
 			resolvedProjectID = apiKeyProjectID
 		} else if usingSession && r.Method != http.MethodGet {
-			// Issue mutations (resolve/reopen/mute/unmute) operate on a globally-unique
-			// numeric row ID, so project context is not needed — leave projectID = 0 so
-			// the storage layer skips the project_id WHERE filter.
-			// All other non-GET writes default to the "default" project so that UI
-			// operations like creating releases or alerts still land somewhere sensible.
 			if !isIssueAction(r) {
-				if proj, err := s.store.ProjectBySlug(r.Context(), "default"); err == nil {
+				if proj, err := s.projects.BySlug(r.Context(), "default"); err == nil {
 					resolvedProjectID = proj.ID
 				}
 			}

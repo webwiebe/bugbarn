@@ -11,7 +11,12 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/service"
+	alertsvc "github.com/wiebe-xyz/bugbarn/internal/service/alerts"
+	analyticssvc "github.com/wiebe-xyz/bugbarn/internal/service/analytics"
+	issuesvc "github.com/wiebe-xyz/bugbarn/internal/service/issues"
+	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
+	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
+	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
@@ -23,8 +28,14 @@ func setupTestServer(t *testing.T) (*Server, *storage.Store) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	svc := service.New(store)
-	return &Server{store: store, service: svc}, store
+	return &Server{
+		issues:    issuesvc.New(store, nil),
+		projects:  projectsvc.New(store, nil),
+		releases:  releasesvc.New(store, nil),
+		alerts:    alertsvc.New(store, nil),
+		logs:      logsvc.New(store, nil),
+		analytics: analyticssvc.New(store, nil),
+	}, store
 }
 
 func persistTestIssue(t *testing.T, store *storage.Store) storage.Issue {
@@ -60,7 +71,7 @@ func TestMuteIssueEndpoint(t *testing.T) {
 	}{
 		{"until_regression", "until_regression", http.StatusOK},
 		{"forever", "forever", http.StatusOK},
-		{"invalid_mode", "never", http.StatusInternalServerError},
+		{"invalid_mode", "never", http.StatusBadRequest},
 	}
 
 	for _, tc := range cases {

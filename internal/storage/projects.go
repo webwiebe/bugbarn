@@ -2,9 +2,10 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
 
 // CreateProject inserts a new project row; returns an error if the slug already exists.
@@ -19,7 +20,7 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 		name, slug, prefix, now,
 	)
 	if err != nil {
-		return Project{}, err
+		return Project{}, wrapErr(err, "create project")
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
@@ -56,7 +57,7 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error)
 	err := s.readDB().QueryRowContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, created_at FROM projects WHERE slug = ?`, slug).
 		Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter, &createdAt)
 	if err != nil {
-		return Project{}, err
+		return Project{}, wrapNotFound(err, "project not found")
 	}
 	p.CreatedAt, _ = parseTime(createdAt)
 	return p, nil
@@ -110,7 +111,7 @@ func (s *Store) ApproveProject(ctx context.Context, slug string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return sql.ErrNoRows
+		return apperr.NotFound("project not found", nil)
 	}
 	return nil
 }
@@ -151,7 +152,7 @@ SELECT i.id FROM issues i
 JOIN projects p ON p.id = i.project_id
 WHERE p.issue_prefix = ? AND i.issue_number = ?`, prefix, number).Scan(&rowID)
 	if err != nil {
-		return 0, err
+		return 0, wrapNotFound(err, "issue not found")
 	}
 	return rowID, nil
 }

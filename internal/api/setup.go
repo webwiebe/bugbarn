@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) setupKey(slug string) string {
@@ -30,23 +30,18 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
 	rawKey := s.setupKey(slug)
 	if rawKey == "" {
 		http.Error(w, "setup not configured (BUGBARN_SESSION_SECRET required)", http.StatusServiceUnavailable)
 		return
 	}
 
-	var proj storage.Project
+	var proj domain.Project
 	var err error
 	if s.autoApproveProjects {
-		proj, err = s.store.EnsureProject(r.Context(), slug)
+		proj, err = s.projects.Ensure(r.Context(), slug)
 	} else {
-		proj, err = s.store.EnsureProjectPending(r.Context(), slug)
+		proj, err = s.projects.EnsurePending(r.Context(), slug)
 	}
 	if err != nil {
 		log.Printf("setup: failed to ensure project %q: %v", slug, err)
@@ -54,9 +49,8 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure the setup API key exists (idempotent via UNIQUE key_sha256)
 	keySHA := hex.EncodeToString(sha256Sum(rawKey))
-	_ = s.store.EnsureSetupAPIKey(r.Context(), slug+"-setup", proj.ID, keySHA)
+	_ = s.projects.EnsureSetupAPIKey(r.Context(), slug+"-setup", proj.ID, keySHA)
 
 	endpoint := s.publicURL
 	if endpoint == "" {
