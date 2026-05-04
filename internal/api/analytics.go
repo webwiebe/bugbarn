@@ -14,6 +14,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
+
 const analyticsMaxDays = 366
 
 // parseAnalyticsQuery parses common analytics query parameters from the request.
@@ -57,24 +58,19 @@ func parseAnalyticsQuery(r *http.Request, projectID int64) (analytics.Query, err
 // resolveAnalyticsProjectID resolves the project ID for analytics requests using
 // the same logic as other protected routes.
 func (s *Server) resolveAnalyticsProjectID(r *http.Request) int64 {
-	if slug := r.Header.Get("X-BugBarn-Project"); slug != "" && s.store != nil {
-		if proj, err := s.store.EnsureProject(r.Context(), slug); err == nil {
+	if slug := r.Header.Get("X-BugBarn-Project"); slug != "" {
+		if proj, err := s.projects.Ensure(r.Context(), slug); err == nil {
 			return proj.ID
 		}
 	}
 	if id, ok := storage.ProjectIDFromContext(r.Context()); ok && id > 0 {
 		return id
 	}
-	return s.store.DefaultProjectID()
+	return s.projects.DefaultProjectID()
 }
 
 // serveAnalyticsQuery handles all GET /api/v1/analytics/* endpoints.
 func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
 	projectID := s.resolveAnalyticsProjectID(r)
 
 	q, err := parseAnalyticsQuery(r, projectID)
@@ -89,7 +85,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 
 	switch tail {
 	case "overview":
-		result, err := s.store.QueryOverview(ctx, q)
+		result, err := s.analytics.QueryOverview(ctx, q)
 		if err != nil {
 			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
@@ -103,7 +99,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case "pages":
-		pages, err := s.store.QueryPages(ctx, q)
+		pages, err := s.analytics.QueryPages(ctx, q)
 		if err != nil {
 			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
@@ -126,7 +122,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 			granularity = "day"
 		}
 
-		buckets, err := s.store.QueryTimeline(ctx, q, granularity)
+		buckets, err := s.analytics.QueryTimeline(ctx, q, granularity)
 		if err != nil {
 			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
@@ -141,7 +137,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case "referrers":
-		refs, err := s.store.QueryReferrers(ctx, q)
+		refs, err := s.analytics.QueryReferrers(ctx, q)
 		if err != nil {
 			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
@@ -154,7 +150,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 
 	case "segments":
 		dim := r.URL.Query().Get("dim")
-		segs, err := s.store.QuerySegments(ctx, q, dim)
+		segs, err := s.analytics.QuerySegments(ctx, q, dim)
 		if err != nil {
 			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
@@ -170,7 +166,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 
 	case "flow":
 		pathname := r.URL.Query().Get("pathname")
-		result, err := s.store.QueryPageFlow(ctx, q, pathname)
+		result, err := s.analytics.QueryPageFlow(ctx, q, pathname)
 		if err != nil {
 			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
@@ -197,7 +193,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 
 	case "scroll":
 		pathname := r.URL.Query().Get("pathname")
-		result, err := s.store.QueryScrollDepth(ctx, q, pathname)
+		result, err := s.analytics.QueryScrollDepth(ctx, q, pathname)
 		if err != nil {
 			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
@@ -218,7 +214,7 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case "dropout":
-		stats, err := s.store.QueryDropout(ctx, q)
+		stats, err := s.analytics.QueryDropout(ctx, q)
 		if err != nil {
 			log.Printf("analytics: query error: %v", err)
 			http.Error(w, "query error", http.StatusInternalServerError)
@@ -354,13 +350,13 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	if slug == "" {
 		slug = r.URL.Query().Get("project")
 	}
-	if slug != "" && s.store != nil {
-		if proj, err := s.store.EnsureProject(ctx, slug); err == nil {
+	if slug != "" {
+		if proj, err := s.projects.Ensure(ctx, slug); err == nil {
 			projectID = proj.ID
 		}
 	}
-	if projectID == 0 && s.store != nil {
-		projectID = s.store.DefaultProjectID()
+	if projectID == 0 {
+		projectID = s.projects.DefaultProjectID()
 	}
 
 	var referrerHost, referrerPath string
@@ -401,11 +397,9 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 		Props:            props,
 	}
 
-	if s.store != nil {
-		if err := s.store.InsertPageView(ctx, pv); err != nil {
-			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-			return
-		}
+	if err := s.analytics.InsertPageView(ctx, pv); err != nil {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
 	}
 
 	writeJSONStatus(w, http.StatusAccepted, map[string]any{})

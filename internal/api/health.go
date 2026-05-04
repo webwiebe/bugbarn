@@ -59,8 +59,8 @@ func (s *Server) serveHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if s.store != nil {
-		projects, err := s.store.ListProjects(r.Context())
+	if s.projects != nil {
+		projects, err := s.projects.List(r.Context())
 		if err == nil {
 			for _, p := range projects {
 				if p.Status == "pending" {

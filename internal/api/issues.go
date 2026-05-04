@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // serveIssueRoute handles /api/v1/issues/{id} and sub-paths.
@@ -27,12 +27,8 @@ func (s *Server) serveIssueRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	q := r.URL.Query()
-	filter := storage.IssueFilter{
+	filter := domain.IssueFilter{
 		Sort:   q.Get("sort"),
 		Status: q.Get("status"),
 		Query:  q.Get("q"),
@@ -52,7 +48,6 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	requestedLimit := filter.Limit
 	filter.Limit = requestedLimit + 1
-	// Any query params not used for standard filtering are treated as facet filters.
 	knownParams := map[string]bool{"sort": true, "status": true, "q": true, "limit": true, "offset": true}
 	for key, vals := range q {
 		if knownParams[key] || len(vals) == 0 || strings.TrimSpace(vals[0]) == "" {
@@ -63,7 +58,7 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		filter.Facets[key] = vals[0]
 	}
-	issues, err := s.service.ListIssuesFiltered(r.Context(), filter)
+	issues, err := s.issues.ListFiltered(r.Context(), filter)
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -77,10 +72,6 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	ids := r.URL.Query().Get("ids")
 	if ids == "" {
 		writeJSON(w, map[string]any{"sparklines": map[string][24]int{}})
@@ -92,7 +83,7 @@ func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
 	displayByRowID := make(map[int64]string, len(parts))
 	for _, p := range parts {
 		displayID := strings.TrimSpace(p)
-		rowID, err := s.store.IssueRowIDByDisplayID(r.Context(), displayID)
+		rowID, err := s.issues.RowIDByDisplayID(r.Context(), displayID)
 		if err != nil {
 			continue
 		}
@@ -100,7 +91,7 @@ func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
 		displayByRowID[rowID] = displayID
 	}
 
-	hourlyCounts, err := s.service.HourlyEventCounts(r.Context(), issueIDs)
+	hourlyCounts, err := s.issues.HourlyEventCounts(r.Context(), issueIDs)
 	if err != nil {
 		hourlyCounts = map[int64][24]int{}
 	}
@@ -115,12 +106,8 @@ func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getIssue(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	issueID := strings.TrimPrefix(r.URL.Path, "/api/v1/issues/")
-	issue, err := s.service.GetIssue(r.Context(), issueID)
+	issue, err := s.issues.Get(r.Context(), issueID)
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -129,12 +116,8 @@ func (s *Server) getIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveIssue(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/resolve")
-	item, err := s.service.ResolveIssue(r.Context(), issueID)
+	item, err := s.issues.Resolve(r.Context(), issueID)
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -143,12 +126,8 @@ func (s *Server) resolveIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) reopenIssue(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/reopen")
-	item, err := s.service.ReopenIssue(r.Context(), issueID)
+	item, err := s.issues.Reopen(r.Context(), issueID)
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -156,13 +135,7 @@ func (s *Server) reopenIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"issue": item})
 }
 
-// muteIssue handles PATCH /api/v1/issues/:id/mute
-// Body: {"mute_mode":"until_regression"|"forever"}
 func (s *Server) muteIssue(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/mute")
 	var body struct {
 		MuteMode string `json:"mute_mode"`
@@ -171,7 +144,7 @@ func (s *Server) muteIssue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid mute payload", http.StatusBadRequest)
 		return
 	}
-	item, err := s.service.MuteIssue(r.Context(), issueID, body.MuteMode)
+	item, err := s.issues.Mute(r.Context(), issueID, body.MuteMode)
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -179,14 +152,9 @@ func (s *Server) muteIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"issue": item})
 }
 
-// unmuteIssue handles PATCH /api/v1/issues/:id/unmute
 func (s *Server) unmuteIssue(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil || s.service == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/unmute")
-	item, err := s.service.UnmuteIssue(r.Context(), issueID)
+	item, err := s.issues.Unmute(r.Context(), issueID)
 	if err != nil {
 		writeStorageError(w, err)
 		return

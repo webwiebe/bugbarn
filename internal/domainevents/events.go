@@ -1,16 +1,16 @@
 package domainevents
 
-import "github.com/wiebe-xyz/bugbarn/internal/storage"
+import "github.com/wiebe-xyz/bugbarn/internal/domain"
 
 // IssueCreated is published when a brand-new issue is persisted.
 type IssueCreated struct {
-	Issue     storage.Issue
+	Issue     domain.Issue
 	ProjectID int64
 }
 
 // IssueRegressed is published when a previously-resolved issue receives a new event.
 type IssueRegressed struct {
-	Issue     storage.Issue
+	Issue     domain.Issue
 	ProjectID int64
 }
 
@@ -18,7 +18,7 @@ type IssueRegressed struct {
 // regardless of whether the issue is new or regressed. Used to evaluate
 // event_count_exceeds alert conditions.
 type IssueEventRecorded struct {
-	Issue     storage.Issue
+	Issue     domain.Issue
 	ProjectID int64
 }
 

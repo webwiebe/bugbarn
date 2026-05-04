@@ -100,7 +100,7 @@ func run() error {
 	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.publicURL)
 	bus.Subscribe(evaluator.HandleEvent)
 
-	svc := service.NewWithBus(store, bus)
+	eventPub := service.NewEventPublisher(bus)
 
 	selfReporting := cfg.selfEndpoint != "" && cfg.selfAPIKey != ""
 	if selfReporting {
@@ -113,7 +113,7 @@ func run() error {
 	}
 
 	workerStatus := &worker.Status{}
-	go runBackgroundWorker(ctx, eventSpool, cfg.spoolDir, store, svc, selfReporting, workerStatus)
+	go runBackgroundWorker(ctx, eventSpool, cfg.spoolDir, store, eventPub, selfReporting, workerStatus)
 
 	digest.StartScheduler(ctx, cfg.digest, store)
 	analytics.StartWorker(ctx, store, cfg.analyticsRetentionDays)
@@ -515,7 +515,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.Service, selfReporting bool, ws *worker.Status) {
+func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.EventPublisher, selfReporting bool, ws *worker.Status) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 

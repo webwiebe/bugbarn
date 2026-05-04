@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // Evaluator subscribes to the domain event bus and fires alert webhooks when
@@ -36,7 +36,7 @@ func (e *Evaluator) HandleEvent(evt any) {
 	}
 }
 
-func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue storage.Issue, conditionType string) {
+func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.Issue, conditionType string) {
 	rules, err := e.repo.ListForProject(ctx, projectID)
 	if err != nil {
 		log.Printf("alert evaluator: list rules for project %d: %v", projectID, err)

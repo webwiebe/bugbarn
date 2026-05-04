@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func writeJSON(w http.ResponseWriter, value any) {
@@ -72,8 +72,8 @@ func decodeStringMap(w http.ResponseWriter, r *http.Request) (map[string]string,
 	return out, nil
 }
 
-func alertFromRequest(payload map[string]any) storage.Alert {
-	alert := storage.Alert{
+func alertFromRequest(payload map[string]any) domain.Alert {
+	alert := domain.Alert{
 		Name:       stringValue(payload["name"]),
 		Severity:   stringValue(payload["severity"]),
 		WebhookURL: stringValue(payload["webhook_url"]),

@@ -6,15 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	keys, err := s.store.ListAPIKeys(r.Context())
+	keys, err := s.projects.ListAPIKeys(r.Context())
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -31,7 +27,7 @@ func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 	for _, k := range keys {
 		scope := k.Scope
 		if scope == "" {
-			scope = storage.APIKeyScopeFull
+			scope = domain.APIKeyScopeFull
 		}
 		out = append(out, safeKey{
 			ID:         k.ID,
@@ -46,17 +42,13 @@ func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/apikeys/")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
 		http.Error(w, "invalid api key id", http.StatusBadRequest)
 		return
 	}
-	if err := s.store.DeleteAPIKey(r.Context(), id); err != nil {
+	if err := s.projects.DeleteAPIKey(r.Context(), id); err != nil {
 		writeStorageError(w, err)
 		return
 	}

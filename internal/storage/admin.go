@@ -15,25 +15,6 @@ const (
 	sourceMapPrefix = "sourcemap-"
 )
 
-type SourceMap struct {
-	ID          string
-	Release     string
-	Dist        string
-	BundleURL   string
-	Name        string
-	ContentType string
-	SizeBytes   int64
-	UploadedAt  time.Time
-}
-
-type SourceMapUpload struct {
-	Release     string
-	Dist        string
-	BundleURL   string
-	Name        string
-	ContentType string
-	Blob        []byte
-}
 
 func (s *Store) ResolveIssue(ctx context.Context, issueID string) (Issue, error) {
 	return s.setIssueStatus(ctx, issueID, "resolved")
@@ -598,16 +579,6 @@ LIMIT 1`,
 	return blob, nil
 }
 
-// SourceMapMeta holds the metadata columns for a source map row (no blob).
-type SourceMapMeta struct {
-	ID        string    `json:"id"`
-	Release   string    `json:"release"`
-	Dist      string    `json:"dist"`
-	BundleURL string    `json:"bundleUrl"`
-	Name      string    `json:"name"`
-	SizeBytes int64     `json:"size"`
-	CreatedAt time.Time `json:"createdAt"`
-}
 
 // ListSourceMaps returns metadata for all source maps in the project (no blob).
 func (s *Store) ListSourceMaps(ctx context.Context) ([]SourceMapMeta, error) {

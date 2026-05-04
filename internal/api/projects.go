@@ -7,7 +7,7 @@ import (
 
 func (s *Server) approveProject(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/approve")
-	if err := s.store.ApproveProject(r.Context(), slug); err != nil {
+	if err := s.projects.Approve(r.Context(), slug); err != nil {
 		writeStorageError(w, err)
 		return
 	}
@@ -15,11 +15,7 @@ func (s *Server) approveProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) servePendingProjectCount(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	projects, err := s.store.ListProjects(r.Context())
+	projects, err := s.projects.List(r.Context())
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -34,13 +30,9 @@ func (s *Server) servePendingProjectCount(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
-		projects, err := s.store.ListProjects(r.Context())
+		projects, err := s.projects.List(r.Context())
 		if err != nil {
 			writeStorageError(w, err)
 			return
@@ -63,7 +55,7 @@ func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 		if req.Slug == "" {
 			req.Slug = slugify(req.Name)
 		}
-		p, err := s.store.CreateProject(r.Context(), req.Name, req.Slug)
+		p, err := s.projects.Create(r.Context(), req.Name, req.Slug)
 		if err != nil {
 			writeStorageError(w, err)
 			return
