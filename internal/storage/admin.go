@@ -33,7 +33,7 @@ func (s *Store) setIssueStatus(ctx context.Context, issueID, status string) (Iss
 	}
 
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -74,7 +74,7 @@ WHERE id = ?`, status, status, now, status, now, rowID)
 
 func (s *Store) ListReleases(ctx context.Context) ([]Release, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -118,7 +118,7 @@ func (s *Store) GetRelease(ctx context.Context, releaseID string) (Release, erro
 	}
 
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -155,7 +155,7 @@ func (s *Store) CreateRelease(ctx context.Context, release Release) (Release, er
 	}
 
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -206,7 +206,7 @@ func (s *Store) UpdateRelease(ctx context.Context, releaseID string, release Rel
 	}
 
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -237,7 +237,7 @@ func (s *Store) DeleteRelease(ctx context.Context, releaseID string) error {
 		return err
 	}
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 	_, err = s.db.ExecContext(ctx, `DELETE FROM releases WHERE project_id = ? AND id = ?`, projectID, rowID)
@@ -246,7 +246,7 @@ func (s *Store) DeleteRelease(ctx context.Context, releaseID string) error {
 
 func (s *Store) ListAlerts(ctx context.Context) ([]Alert, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -317,7 +317,7 @@ func (s *Store) GetAlert(ctx context.Context, alertID string) (Alert, error) {
 		return Alert{}, err
 	}
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -363,7 +363,7 @@ func (s *Store) CreateAlert(ctx context.Context, alert Alert) (Alert, error) {
 	}
 	now := time.Now().UTC()
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 	res, err := s.db.ExecContext(ctx, `
@@ -413,7 +413,7 @@ func (s *Store) UpdateAlert(ctx context.Context, alertID string, alert Alert) (A
 		alert.Rule = map[string]any{}
 	}
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 	if _, err := s.db.ExecContext(ctx, `
@@ -444,7 +444,7 @@ func (s *Store) DeleteAlert(ctx context.Context, alertID string) error {
 		return err
 	}
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 	_, err = s.db.ExecContext(ctx, `DELETE FROM alerts WHERE project_id = ? AND id = ?`, projectID, rowID)
@@ -453,7 +453,7 @@ func (s *Store) DeleteAlert(ctx context.Context, alertID string) error {
 
 func (s *Store) GetSettings(ctx context.Context) (map[string]string, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -481,7 +481,7 @@ WHERE project_id = ?`,
 
 func (s *Store) UpdateSettings(ctx context.Context, values map[string]string) error {
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
@@ -519,7 +519,7 @@ func (s *Store) UploadSourceMap(ctx context.Context, upload SourceMapUpload) (So
 	}
 	now := time.Now().UTC()
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 	res, err := s.db.ExecContext(ctx, `
@@ -565,7 +565,7 @@ INSERT INTO source_maps (
 // Returns nil, nil if no matching row is found.
 func (s *Store) FindSourceMap(ctx context.Context, release, dist, bundleURL string) ([]byte, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 	var blob []byte
@@ -593,7 +593,7 @@ LIMIT 1`,
 // ListSourceMaps returns metadata for all source maps in the project (no blob).
 func (s *Store) ListSourceMaps(ctx context.Context) ([]SourceMapMeta, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
+	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 	rows, err := s.readDB().QueryContext(ctx, `

@@ -1222,6 +1222,9 @@ async function postJson(path: string, body: unknown, _retried = false): Promise<
   if (csrf) {
     headers["X-BugBarn-CSRF"] = csrf;
   }
+  if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
+    headers["X-BugBarn-Project"] = state.currentProject;
+  }
   const response = await fetch(apiUrl(path), {
     method: "POST",
     credentials: "include",

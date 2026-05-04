@@ -21,7 +21,14 @@ func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	if r.Level >= slog.LevelError {
-		bb.CaptureMessage(r.Message)
+		msg := r.Message
+		r.Attrs(func(a slog.Attr) bool {
+			if a.Key == "error" {
+				msg += ": " + a.Value.String()
+			}
+			return true
+		})
+		bb.CaptureMessage(msg)
 	}
 	return h.inner.Handle(ctx, r)
 }

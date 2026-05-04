@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -260,7 +259,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			pid, scope, ok := s.ingestHandler.APIKeyProjectScope(r)
 			if ok {
 				if scope == domain.APIKeyScopeIngest {
-					log.Printf("auth: ingest-only key rejected for %s %s", r.Method, r.URL.Path)
+					s.logger.Warn("auth: ingest-only key rejected", "method", r.Method, "path", r.URL.Path)
 					http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
 					return
 				}
@@ -270,7 +269,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !usingSession && !usingAPIKey {
-			log.Printf("auth: rejected %s %s (no session, no API key)", r.Method, r.URL.Path)
+			s.logger.Warn("auth: rejected request", "method", r.Method, "path", r.URL.Path, "reason", "no session or API key")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -279,7 +278,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// API key requests are authenticated out-of-band, so CSRF doesn't apply.
 		if usingSession && !usingAPIKey && isCSRFProtected(r) {
 			if !s.validCSRF(r) {
-				log.Printf("csrf: rejected %s %s (header present: %v)", r.Method, r.URL.Path, r.Header.Get("X-BugBarn-CSRF") != "")
+				s.logger.Warn("csrf: rejected request", "method", r.Method, "path", r.URL.Path, "header_present", r.Header.Get("X-BugBarn-CSRF") != "")
 				http.Error(w, "invalid or missing CSRF token", http.StatusForbidden)
 				return
 			}
@@ -314,8 +313,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		// Always store the resolved project in context so storage can distinguish
-		// "all projects" (0) from "no context set at all" (absent key).
+		if resolvedProjectID == 0 {
+			resolvedProjectID = s.projects.DefaultProjectID()
+		}
 		r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
 	}
 
