@@ -174,13 +174,13 @@ JOIN projects p ON p.id = i.project_id`
 	sinceStr := formatTime(since.UTC())
 	if projectID != 0 {
 		rows, err = s.db.QueryContext(ctx, recentSel+`
-WHERE e.project_id = ? AND max(e.received_at, e.observed_at) >= ?
-ORDER BY max(e.received_at, e.observed_at) DESC, e.id DESC
+WHERE e.project_id = ? AND e.received_at >= ?
+ORDER BY e.received_at DESC, e.id DESC
 LIMIT ?`, projectID, sinceStr, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, recentSel+`
-WHERE max(e.received_at, e.observed_at) >= ?
-ORDER BY max(e.received_at, e.observed_at) DESC, e.id DESC
+WHERE e.received_at >= ?
+ORDER BY e.received_at DESC, e.id DESC
 LIMIT ?`, sinceStr, limit)
 	}
 	if err != nil {

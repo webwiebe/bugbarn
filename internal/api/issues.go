@@ -50,6 +50,8 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	if filter.Limit == 0 {
 		filter.Limit = 100
 	}
+	requestedLimit := filter.Limit
+	filter.Limit = requestedLimit + 1
 	// Any query params not used for standard filtering are treated as facet filters.
 	knownParams := map[string]bool{"sort": true, "status": true, "q": true, "limit": true, "offset": true}
 	for key, vals := range q {
@@ -67,7 +69,11 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]any{"issues": issues})
+	hasMore := len(issues) > requestedLimit
+	if hasMore {
+		issues = issues[:requestedLimit]
+	}
+	writeJSON(w, map[string]any{"issues": issues, "hasMore": hasMore})
 }
 
 func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {

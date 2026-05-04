@@ -27,6 +27,9 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]I
 	default:
 		orderBy = "i.last_seen DESC, i.id DESC"
 	}
+	if filter.Status == "open" {
+		orderBy = "(CASE WHEN i.status = 'regressed' THEN 0 ELSE 1 END), " + orderBy
+	}
 
 	// Collect non-empty facet filters.
 	type kv struct{ k, v string }

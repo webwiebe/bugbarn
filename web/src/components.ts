@@ -43,6 +43,9 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
   }
   const maxEvents = filtered.reduce((max, issue) => Math.max(max, issueEventCount(issue)), 1);
 
+  const hasRegressed = filtered.some((i) => issueStatus(i) === "regressed");
+  let passedRegressed = false;
+
   return `
     <div class="issue-table-head">
       <span>Issue</span>
@@ -55,6 +58,12 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
     </div>
     ${filtered
       .map((issue) => {
+        let sectionHeader = "";
+        const st = issueStatus(issue);
+        if (hasRegressed && !passedRegressed && st !== "regressed") {
+          passedRegressed = true;
+          sectionHeader = `<div class="issue-section-divider"></div>`;
+        }
         const id = firstIdentifier(issue);
         const title = issueTitle(issue);
         const count = issueEventCount(issue);
@@ -67,7 +76,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
         const status = issueStatus(issue);
         const statusClass = status === "resolved" ? "resolved" : status === "muted" ? "muted" : status === "regressed" ? "regressed" : "";
         const statusLabel = status === "resolved" ? "Resolved" : status === "muted" ? "Muted" : status === "regressed" ? "Regressed" : "";
-        return `
+        return `${sectionHeader}
           <button class="item issue-row ${active} ${statusClass}" type="button" data-issue-id="${escapeAttr(id)}">
             <div class="item-title"><span class="status-dot ${statusClass}"></span>${escapeHtml(title)}</div>
             <span class="issue-cell"><span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity || "n/a")}</span></span>

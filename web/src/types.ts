@@ -208,6 +208,7 @@ export interface AppState {
   issueQuery: string;
   issueSort: IssueSort;
   issueStatus: IssueStatus;
+  issueHasMore: boolean;
   selectedIssueId: string | null;
   selectedEventId: string | null;
   selectedReleaseId: string | null;

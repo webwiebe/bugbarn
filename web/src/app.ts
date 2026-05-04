@@ -38,7 +38,8 @@ const state: AppState = {
   issues: [],
   issueQuery: "",
   issueSort: "last_seen",
-  issueStatus: "all",
+  issueStatus: "open",
+  issueHasMore: false,
   selectedIssueId: null,
   selectedEventId: null,
   selectedReleaseId: null,
@@ -242,6 +243,7 @@ async function start(): Promise<void> {
   await Promise.all([loadProjects(), envLoad, refreshAll()]);
   initInstallPrompt();
   void checkPendingProjects();
+  requestNotificationPermission();
 }
 
 // ---------------------------------------------------------------------------
@@ -618,7 +620,11 @@ async function refreshAll(): Promise<void> {
 
   setLoadingBar(true);
   try {
-    await Promise.all([loadIssues(), loadLiveEvents(), loadCurrentRouteData()]);
+    const tasks: Promise<void>[] = [loadIssues(), loadCurrentRouteData()];
+    if (!state.selectedIssueId && !state.selectedEventId) {
+      tasks.push(loadLiveEvents());
+    }
+    await Promise.all(tasks);
   } finally {
     setLoadingBar(false);
   }
@@ -695,10 +701,13 @@ async function loadCurrentRouteData(): Promise<void> {
 
 let issueLoadGeneration = 0;
 
+const ISSUE_PAGE_SIZE = 50;
+
 async function loadIssues(): Promise<void> {
   const generation = ++issueLoadGeneration;
   try {
     const params = new URLSearchParams();
+    params.set("limit", String(ISSUE_PAGE_SIZE));
     if (state.issueSort && state.issueSort !== "last_seen") {
       params.set("sort", state.issueSort);
     }
@@ -714,7 +723,9 @@ async function loadIssues(): Promise<void> {
     const qs = params.toString();
     const payload = await fetchJson(`/api/v1/issues${qs ? `?${qs}` : ""}`);
     if (generation !== issueLoadGeneration) return;
-    state.issues = normalizeList<ApiIssue>(payload, "issues");
+    const raw = payload as Record<string, unknown>;
+    state.issues = normalizeList<ApiIssue>(raw, "issues");
+    state.issueHasMore = Boolean(raw?.["hasMore"]);
     setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       renderIssuesView();
@@ -723,10 +734,48 @@ async function loadIssues(): Promise<void> {
   } catch (error) {
     if (generation !== issueLoadGeneration) return;
     state.issues = [];
+    state.issueHasMore = false;
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       renderIssuesView(error);
     }
     setStatus(`Issues unavailable: ${errorMessage(error)}`);
+  }
+}
+
+async function loadMoreIssues(): Promise<void> {
+  if (!state.issueHasMore) return;
+  const generation = issueLoadGeneration;
+  try {
+    const params = new URLSearchParams();
+    params.set("limit", String(ISSUE_PAGE_SIZE));
+    params.set("offset", String(state.issues.length));
+    if (state.issueSort && state.issueSort !== "last_seen") {
+      params.set("sort", state.issueSort);
+    }
+    if (state.issueStatus && state.issueStatus !== "all") {
+      params.set("status", state.issueStatus);
+    }
+    if (state.issueQuery) {
+      params.set("q", state.issueQuery);
+    }
+    if (state.currentEnv) {
+      params.set("attributes.environment", state.currentEnv);
+    }
+    const qs = params.toString();
+    const payload = await fetchJson(`/api/v1/issues?${qs}`);
+    if (generation !== issueLoadGeneration) return;
+    const raw = payload as Record<string, unknown>;
+    const more = normalizeList<ApiIssue>(raw, "issues");
+    state.issues = state.issues.concat(more);
+    state.issueHasMore = Boolean(raw?.["hasMore"]);
+    setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
+    if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
+      renderIssuesView();
+    }
+    loadSparklines();
+  } catch (error) {
+    if (generation !== issueLoadGeneration) return;
+    setStatus(`Failed to load more issues: ${errorMessage(error)}`);
   }
 }
 
@@ -1032,6 +1081,7 @@ function startLiveStream(): void {
       state.liveError = null;
       renderLiveList();
       setLiveStatus(`Live ${state.liveEvents.length}`, "warn");
+      notifyRegression(event);
     } catch {
       // malformed event data — skip
     }
@@ -1066,6 +1116,48 @@ function stopLiveStream(): void {
     state.liveTimer = null;
   }
   state.liveConnected = false;
+}
+
+const notifiedRegressionKey = "bugbarn_notified_regressions";
+
+function notifyRegression(event: ApiEvent): void {
+  const regressed = (event as Record<string, unknown>)["Regressed"] ?? (event as Record<string, unknown>)["regressed"];
+  if (!regressed) return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+  const issueId = String(event.IssueID ?? event.issueId ?? event.issue_id ?? "");
+  if (!issueId) return;
+
+  const notified: string[] = JSON.parse(localStorage.getItem(notifiedRegressionKey) || "[]");
+  if (notified.includes(issueId)) return;
+
+  notified.push(issueId);
+  if (notified.length > 200) notified.splice(0, notified.length - 200);
+  localStorage.setItem(notifiedRegressionKey, JSON.stringify(notified));
+
+  const title = String(event.Message ?? event.message ?? event.Title ?? event.title ?? "Issue regressed");
+  if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.ready.then((reg) => {
+      reg.showNotification("BugBarn: Issue Regressed", {
+        body: title,
+        icon: "/icons/icon-192.png",
+        tag: `regressed-${issueId}`,
+        data: { url: `${location.origin}/#/issues/${encodeURIComponent(issueId)}` },
+      });
+    });
+  } else {
+    new Notification("BugBarn: Issue Regressed", {
+      body: title,
+      icon: "/icons/icon-192.png",
+      tag: `regressed-${issueId}`,
+    });
+  }
+}
+
+function requestNotificationPermission(): void {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "default") return;
+  Notification.requestPermission();
 }
 
 async function fetchJson(path: string, allowMissing = false): Promise<unknown> {
@@ -1263,7 +1355,11 @@ function renderIssuesList(error: unknown = null): void {
     return;
   }
 
-  elements.issueList.innerHTML = renderIssueListMarkup(state.issues, "", state.selectedIssueId);
+  let html = renderIssueListMarkup(state.issues, "", state.selectedIssueId);
+  if (state.issueHasMore) {
+    html += `<button class="load-more-btn" id="load-more-issues" type="button">Load more issues</button>`;
+  }
+  elements.issueList.innerHTML = html;
   elements.issueList.querySelectorAll("[data-issue-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const issueId = button.getAttribute("data-issue-id");
@@ -1272,6 +1368,10 @@ function renderIssuesList(error: unknown = null): void {
       }
     });
   });
+  const loadMoreBtn = document.getElementById("load-more-issues");
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener("click", () => void loadMoreIssues());
+  }
 }
 
 function renderReleasesView(error: unknown = null): void {
