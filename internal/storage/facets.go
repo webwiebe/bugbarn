@@ -203,12 +203,12 @@ func (s *Store) ListFacetKeys(ctx context.Context, projectID int64) ([]string, e
 		err  error
 	)
 	if projectID != 0 {
-		rows, err = s.db.QueryContext(ctx,
+		rows, err = s.readDB().QueryContext(ctx,
 			`SELECT DISTINCT facet_key FROM event_facets WHERE project_id = ? ORDER BY facet_key ASC`,
 			projectID,
 		)
 	} else {
-		rows, err = s.db.QueryContext(ctx,
+		rows, err = s.readDB().QueryContext(ctx,
 			`SELECT DISTINCT facet_key FROM event_facets ORDER BY facet_key ASC`,
 		)
 	}
@@ -236,12 +236,12 @@ func (s *Store) ListFacetValues(ctx context.Context, projectID int64, key string
 		err  error
 	)
 	if projectID != 0 {
-		rows, err = s.db.QueryContext(ctx,
+		rows, err = s.readDB().QueryContext(ctx,
 			`SELECT DISTINCT facet_value FROM event_facets WHERE project_id = ? AND facet_key = ? ORDER BY facet_value ASC`,
 			projectID, key,
 		)
 	} else {
-		rows, err = s.db.QueryContext(ctx,
+		rows, err = s.readDB().QueryContext(ctx,
 			`SELECT DISTINCT facet_value FROM event_facets WHERE facet_key = ? ORDER BY facet_value ASC`,
 			key,
 		)

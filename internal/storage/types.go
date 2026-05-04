@@ -7,9 +7,12 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
-// Store is the primary database access object.
+// Store is the primary database access object. It holds a single-connection
+// read-write handle (db) for mutations and a multi-connection read-only handle
+// (roDB) for queries. Both point at the same WAL-mode SQLite file.
 type Store struct {
 	db               *sql.DB
+	roDB             *sql.DB
 	defaultProjectID int64
 }
 

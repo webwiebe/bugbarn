@@ -99,6 +99,14 @@ func sqliteDSN(path string) string {
 	return u.String() + "?cache=shared&mode=rwc&_busy_timeout=5000"
 }
 
+func sqliteReadOnlyDSN(path string) string {
+	u := url.URL{
+		Scheme: "file",
+		Path:   filepath.ToSlash(path),
+	}
+	return u.String() + "?cache=shared&mode=ro&_busy_timeout=5000"
+}
+
 func marshalEvent(evt event.Event) ([]byte, error) {
 	return json.Marshal(evt)
 }

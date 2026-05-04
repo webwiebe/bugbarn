@@ -108,7 +108,7 @@ func (s *Store) ListLogEntries(ctx context.Context, projectID int64, levelMin in
 	`, whereClause)
 	args = append(args, limit)
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.readDB().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
