@@ -62,7 +62,16 @@ type Project struct {
 	Status       string
 	IssuePrefix  string
 	IssueCounter int
+	GroupID      *int64
 	CreatedAt    time.Time
+}
+
+// ProjectGroup represents a named collection of related projects.
+type ProjectGroup struct {
+	ID        int64
+	Name      string
+	Slug      string
+	CreatedAt time.Time
 }
 
 // Scope constants for API keys.

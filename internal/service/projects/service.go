@@ -13,8 +13,26 @@ type Repository interface {
 	EnsureProject(ctx context.Context, slug string) (domain.Project, error)
 	EnsureProjectPending(ctx context.Context, slug string) (domain.Project, error)
 	ApproveProject(ctx context.Context, slug string) error
+	DeleteProject(ctx context.Context, slug string) error
 	ProjectBySlug(ctx context.Context, slug string) (domain.Project, error)
 	DefaultProjectID() int64
+
+	// Alias operations
+	CreateAlias(ctx context.Context, aliasSlug string, projectID int64) error
+	DeleteAlias(ctx context.Context, aliasSlug string) error
+	ResolveAlias(ctx context.Context, slug string) (int64, error)
+
+	// Rename and merge
+	RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error
+	MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error
+
+	// Group operations
+	CreateGroup(ctx context.Context, name, slug string) (domain.ProjectGroup, error)
+	ListGroups(context.Context) ([]domain.ProjectGroup, error)
+	DeleteGroup(ctx context.Context, slug string) error
+	AssignProjectToGroup(ctx context.Context, projectSlug, groupSlug string) error
+	RemoveProjectFromGroup(ctx context.Context, projectSlug string) error
+	ListGroupProjects(ctx context.Context, groupSlug string) ([]domain.Project, error)
 
 	ListAPIKeys(context.Context) ([]domain.APIKey, error)
 	CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (domain.APIKey, error)
@@ -59,6 +77,15 @@ func (s *Service) Ensure(ctx context.Context, slug string) (domain.Project, erro
 
 func (s *Service) EnsurePending(ctx context.Context, slug string) (domain.Project, error) {
 	return s.repo.EnsureProjectPending(ctx, slug)
+}
+
+func (s *Service) Delete(ctx context.Context, slug string) error {
+	if err := s.repo.DeleteProject(ctx, slug); err != nil {
+		s.logger.ErrorContext(ctx, "delete project", "slug", slug, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "project deleted", "slug", slug)
+	return nil
 }
 
 func (s *Service) Approve(ctx context.Context, slug string) error {
@@ -127,4 +154,95 @@ func (s *Service) UpdateSettings(ctx context.Context, values map[string]string) 
 		return err
 	}
 	return nil
+}
+
+// --- Alias operations ---
+
+func (s *Service) CreateAlias(ctx context.Context, aliasSlug string, projectID int64) error {
+	if err := s.repo.CreateAlias(ctx, aliasSlug, projectID); err != nil {
+		s.logger.ErrorContext(ctx, "create alias", "alias", aliasSlug, "project_id", projectID, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "alias created", "alias", aliasSlug, "project_id", projectID)
+	return nil
+}
+
+func (s *Service) DeleteAlias(ctx context.Context, aliasSlug string) error {
+	if err := s.repo.DeleteAlias(ctx, aliasSlug); err != nil {
+		s.logger.ErrorContext(ctx, "delete alias", "alias", aliasSlug, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "alias deleted", "alias", aliasSlug)
+	return nil
+}
+
+func (s *Service) ResolveAlias(ctx context.Context, slug string) (int64, error) {
+	return s.repo.ResolveAlias(ctx, slug)
+}
+
+// --- Rename and Merge ---
+
+func (s *Service) Rename(ctx context.Context, oldSlug, newSlug, newName string) error {
+	if err := s.repo.RenameProject(ctx, oldSlug, newSlug, newName); err != nil {
+		s.logger.ErrorContext(ctx, "rename project", "old_slug", oldSlug, "new_slug", newSlug, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "project renamed", "old_slug", oldSlug, "new_slug", newSlug, "new_name", newName)
+	return nil
+}
+
+func (s *Service) Merge(ctx context.Context, sourceSlug, targetSlug string) error {
+	if err := s.repo.MergeProjects(ctx, sourceSlug, targetSlug); err != nil {
+		s.logger.ErrorContext(ctx, "merge projects", "source", sourceSlug, "target", targetSlug, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "projects merged", "source", sourceSlug, "target", targetSlug)
+	return nil
+}
+
+// --- Group operations ---
+
+func (s *Service) CreateGroup(ctx context.Context, name, slug string) (domain.ProjectGroup, error) {
+	g, err := s.repo.CreateGroup(ctx, name, slug)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "create group", "slug", slug, "error", err)
+		return domain.ProjectGroup{}, err
+	}
+	s.logger.InfoContext(ctx, "group created", "slug", slug, "id", g.ID)
+	return g, nil
+}
+
+func (s *Service) ListGroups(ctx context.Context) ([]domain.ProjectGroup, error) {
+	return s.repo.ListGroups(ctx)
+}
+
+func (s *Service) DeleteGroup(ctx context.Context, slug string) error {
+	if err := s.repo.DeleteGroup(ctx, slug); err != nil {
+		s.logger.ErrorContext(ctx, "delete group", "slug", slug, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "group deleted", "slug", slug)
+	return nil
+}
+
+func (s *Service) AssignProjectToGroup(ctx context.Context, projectSlug, groupSlug string) error {
+	if err := s.repo.AssignProjectToGroup(ctx, projectSlug, groupSlug); err != nil {
+		s.logger.ErrorContext(ctx, "assign project to group", "project", projectSlug, "group", groupSlug, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "project assigned to group", "project", projectSlug, "group", groupSlug)
+	return nil
+}
+
+func (s *Service) RemoveProjectFromGroup(ctx context.Context, projectSlug string) error {
+	if err := s.repo.RemoveProjectFromGroup(ctx, projectSlug); err != nil {
+		s.logger.ErrorContext(ctx, "remove project from group", "project", projectSlug, "error", err)
+		return err
+	}
+	s.logger.InfoContext(ctx, "project removed from group", "project", projectSlug)
+	return nil
+}
+
+func (s *Service) ListGroupProjects(ctx context.Context, groupSlug string) ([]domain.Project, error) {
+	return s.repo.ListGroupProjects(ctx, groupSlug)
 }

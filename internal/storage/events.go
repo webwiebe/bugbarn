@@ -69,7 +69,7 @@ ORDER BY e.id DESC LIMIT ?`,
 	}
 	defer rows.Close()
 
-	var events []Event
+	events := []Event{}
 	for rows.Next() {
 		entry, err := scanEvent(rows)
 		if err != nil {
@@ -192,7 +192,7 @@ LIMIT ?`, sinceStr, limit)
 	}
 	defer rows.Close()
 
-	var events []Event
+	events := []Event{}
 	for rows.Next() {
 		entry, err := scanEvent(rows)
 		if err != nil {

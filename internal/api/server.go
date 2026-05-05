@@ -313,7 +313,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		if resolvedProjectID == 0 {
+		if resolvedProjectID == 0 && !(usingSession && r.Method == http.MethodGet) {
 			resolvedProjectID = s.projects.DefaultProjectID()
 		}
 		r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
@@ -357,6 +357,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.servePendingProjectCount(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && strings.HasSuffix(r.URL.Path, "/approve") && r.Method == http.MethodPost:
 		s.approveProject(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && strings.HasSuffix(r.URL.Path, "/merge") && r.Method == http.MethodPost:
+		s.mergeProject(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && r.Method == http.MethodPut:
+		s.renameProject(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && r.Method == http.MethodDelete:
+		s.deleteProject(w, r)
+	case r.URL.Path == "/api/v1/groups" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		s.serveGroupsRoot(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/groups/"):
+		s.serveGroupRoute(w, r)
 	case r.URL.Path == "/api/v1/apikeys" && r.Method == http.MethodGet:
 		s.listAPIKeys(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/apikeys/") && r.Method == http.MethodDelete:

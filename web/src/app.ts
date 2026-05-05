@@ -1729,6 +1729,13 @@ function wireSettingsActions(): void {
       if (slug) void approveProject(slug);
     });
   });
+
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-delete-project]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const slug = btn.dataset["deleteProject"];
+      if (slug) void deleteProject(slug);
+    });
+  });
 }
 
 async function approveProject(slug: string): Promise<void> {
@@ -1739,6 +1746,22 @@ async function approveProject(slug: string): Promise<void> {
     void checkPendingProjects();
   } catch (error) {
     showFlash(`Approve failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+async function deleteProject(slug: string): Promise<void> {
+  if (!confirm(`Delete project "${slug}"? This will remove all its issues and events.`)) return;
+  try {
+    const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(slug)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as Record<string, string>).error || res.statusText);
+    }
+    showFlash(`Project "${slug}" deleted.`, "success");
+    await loadSettings();
+    void checkPendingProjects();
+  } catch (error) {
+    showFlash(`Delete failed: ${errorMessage(error)}`, "error", 8000);
   }
 }
 

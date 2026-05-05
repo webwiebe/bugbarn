@@ -46,15 +46,19 @@ As an admin, I want to delete or reject pending projects (e.g. created by SDK ty
 
 As a user with multiple projects representing the same application (e.g. `funnelbarn` + `funnelbarn-site`, or `bugbarn-service` + `bugbarn-site` + `bugbarn-web`), I want to group them so I can see a combined view.
 
-**Design options** (to be decided):
-1. **Merge**: combine all data into one project, delete the others, set up slug aliases for SDK routing
-2. **Project groups**: parent entity that aggregates child projects in the UI while keeping them separate for ingestion
-3. **Aliases**: multiple slugs route to the same project_id
+**Decision**: Aliases + groups. No client-side config changes needed when renaming or merging.
+
+- **Aliases**: When a project is renamed or merged, the old slug becomes an alias. SDKs sending to the old slug are transparently routed to the target project. Stored in a `project_aliases` table.
+- **Merge**: Moves all issues, events, analytics, and alerts from source project to target. Source slug becomes an alias. Source project is deleted.
+- **Groups**: A parent entity (`project_groups`) that provides combined views across member projects. Example: a "bugbarn" group containing `bugbarn-service`, `bugbarn-web`, `bugbarn-site` — view all errors at a glance.
 
 **Acceptance Scenarios**:
 
-1. **Given** two active projects, **When** the admin merges them, **Then** issues and events from the source project are moved to the target, and the source slug becomes an alias.
-2. **Given** a merged project, **When** an SDK sends events to the old slug, **Then** they are ingested into the target project.
+1. **Given** two active projects, **When** the admin merges them, **Then** issues and events from the source project are moved to the target, the source slug becomes an alias, and the source project is deleted.
+2. **Given** a merged project, **When** an SDK sends events to the old slug, **Then** they are ingested into the target project transparently.
+3. **Given** a project is renamed, **When** an SDK sends events to the old slug, **Then** they are routed to the renamed project via the alias.
+4. **Given** a group containing three projects, **When** the admin views the group, **Then** issues from all member projects are shown in a combined list.
+5. **Given** a group, **When** selected in the project dropdown, **Then** analytics, issues, and alerts aggregate across all member projects.
 
 ### User Story 5 — Issue Detail Page Content Cut Off Below 600px (Priority: P1)
 

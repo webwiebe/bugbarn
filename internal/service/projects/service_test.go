@@ -58,6 +58,17 @@ func (f *fakeRepo) ProjectBySlug(_ context.Context, slug string) (domain.Project
 
 func (f *fakeRepo) DefaultProjectID() int64 { return 1 }
 
+func (f *fakeRepo) DeleteProject(_ context.Context, slug string) error {
+	if f.err != nil {
+		return f.err
+	}
+	if _, ok := f.projects[slug]; !ok {
+		return apperr.NotFound("project not found", nil)
+	}
+	delete(f.projects, slug)
+	return nil
+}
+
 func (f *fakeRepo) ListAPIKeys(context.Context) ([]domain.APIKey, error) {
 	return nil, f.err
 }
@@ -88,6 +99,50 @@ func (f *fakeRepo) GetSettings(context.Context) (map[string]string, error) {
 
 func (f *fakeRepo) UpdateSettings(context.Context, map[string]string) error {
 	return f.err
+}
+
+func (f *fakeRepo) CreateAlias(_ context.Context, _ string, _ int64) error {
+	return f.err
+}
+
+func (f *fakeRepo) DeleteAlias(_ context.Context, _ string) error {
+	return f.err
+}
+
+func (f *fakeRepo) ResolveAlias(_ context.Context, _ string) (int64, error) {
+	return 0, apperr.NotFound("not found", nil)
+}
+
+func (f *fakeRepo) RenameProject(_ context.Context, _, _, _ string) error {
+	return f.err
+}
+
+func (f *fakeRepo) MergeProjects(_ context.Context, _, _ string) error {
+	return f.err
+}
+
+func (f *fakeRepo) CreateGroup(_ context.Context, name, slug string) (domain.ProjectGroup, error) {
+	return domain.ProjectGroup{}, f.err
+}
+
+func (f *fakeRepo) ListGroups(context.Context) ([]domain.ProjectGroup, error) {
+	return nil, f.err
+}
+
+func (f *fakeRepo) DeleteGroup(_ context.Context, _ string) error {
+	return f.err
+}
+
+func (f *fakeRepo) AssignProjectToGroup(_ context.Context, _, _ string) error {
+	return f.err
+}
+
+func (f *fakeRepo) RemoveProjectFromGroup(_ context.Context, _ string) error {
+	return f.err
+}
+
+func (f *fakeRepo) ListGroupProjects(_ context.Context, _ string) ([]domain.Project, error) {
+	return nil, f.err
 }
 
 func TestCreate_Happy(t *testing.T) {

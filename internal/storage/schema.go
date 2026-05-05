@@ -164,6 +164,16 @@ func (s *Store) init(ctx context.Context) error {
 			data_json   TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_log_entries_project_id ON log_entries(project_id, id DESC)`,
+		`CREATE TABLE IF NOT EXISTS project_aliases (
+			alias_slug TEXT PRIMARY KEY,
+			project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS project_groups (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			slug TEXT NOT NULL UNIQUE,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 	for _, stmt := range schema {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
@@ -253,6 +263,9 @@ func (s *Store) init(ctx context.Context) error {
 		return err
 	}
 	if err := ensureColumn(ctx, tx, "issues", "issue_number", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, tx, "projects", "group_id", "INTEGER REFERENCES project_groups(id) ON DELETE SET NULL"); err != nil {
 		return err
 	}
 

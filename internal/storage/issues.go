@@ -141,7 +141,7 @@ ORDER BY ` + orderBy
 	}
 	defer rows.Close()
 
-	var issues []Issue
+	issues := []Issue{}
 	for rows.Next() {
 		issue, err := scanIssue(rows)
 		if err != nil {

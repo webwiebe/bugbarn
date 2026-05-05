@@ -791,7 +791,7 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
               </div>
               <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
               <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup page</a>
-              ${status === 'pending' ? `<button class="btn-sm" data-approve-project="${escapeAttr(slug)}">Approve</button>` : ''}
+              ${status === 'pending' ? `<button class="btn-sm" data-approve-project="${escapeAttr(slug)}">Approve</button><button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Reject</button>` : `<button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Delete</button>`}
             </div>
           `;
         }).join('')}

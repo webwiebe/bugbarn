@@ -22,11 +22,17 @@
 - [ ] T010 Add "Delete" button to active project rows (with confirmation dialog for projects with data).
 - [ ] T011 Add service and storage tests for project deletion cascade.
 
-## Phase 4: Project Merging/Linking (P3)
+## Phase 4: Project Aliases, Merging & Groups (P3)
 
-- [ ] T012 Design and decide on merge vs. groups vs. aliases approach.
-- [ ] T013 Implement chosen approach (spec TBD after decision).
-- [ ] T014 Add UI for managing project relationships.
+**Decision**: Aliases + groups. Renaming/merging a project creates an alias so SDKs don't need config changes. Groups provide combined views across related projects.
+
+- [ ] T012 Add `project_aliases` table: `alias_slug TEXT UNIQUE → project_id`. When an event arrives for an alias slug, route to the target project.
+- [ ] T013 Add merge endpoint `POST /api/v1/projects/:slug/merge` — moves all issues/events/analytics from source to target, converts source slug to alias, deletes source project.
+- [ ] T014 Add rename endpoint `PUT /api/v1/projects/:slug` — updates name/slug, creates alias from old slug to new project.
+- [ ] T015 Update `EnsureProject`/`EnsureProjectPending` to check aliases before creating new projects.
+- [ ] T016 Add `project_groups` table: `id, name, slug`. Add `group_id` column to `projects`. Groups aggregate data from member projects.
+- [ ] T017 Add group CRUD endpoints and UI — create group, assign projects to group, view group-level issues/analytics.
+- [ ] T018 Add tests for alias routing, merge data integrity, and group aggregation.
 
 ## Verification
 

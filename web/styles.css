@@ -1160,6 +1160,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .app-frame > * {
+    min-width: 0;
+  }
+
   .sidebar {
     display: none;
   }
@@ -1170,6 +1174,7 @@ button:disabled {
 
   .panel {
     min-height: auto;
+    min-width: 0;
   }
 
   .panel-live {
@@ -1351,6 +1356,62 @@ button:disabled {
   .form-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Narrow screens: prevent overflow of long strings & buttons ──── */
+@media (max-width: 600px) {
+  .issue-hero {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .issue-hero .view-actions,
+  .section-head .view-actions,
+  .link-row {
+    flex-wrap: wrap;
+  }
+
+  .issue-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .issue-stats strong {
+    overflow-wrap: break-word;
+    word-break: break-all;
+    white-space: normal;
+  }
+
+  .detail-main {
+    padding: 10px 10px;
+  }
+
+  .section {
+    padding: 10px;
+  }
+
+  .breadcrumb-row {
+    grid-template-columns: 1.2rem 4rem 3.5rem 1fr;
+  }
+}
+
+/* Global overflow safety for long hashes, URLs, pre/code blocks */
+.detail-main .kv,
+.detail-main .kv-table td,
+.detail-main .section {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
+.detail-main .pre,
+.detail-main pre,
+.detail-main code {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.view-actions {
+  flex-wrap: wrap;
 }
 
 /* ── Logs view ──────────────────────────────────────────── */
