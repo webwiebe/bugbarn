@@ -263,6 +263,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
 					return
 				}
+				if scope == domain.APIKeyScopeRead {
+					if r.Method != http.MethodGet {
+						s.logger.Warn("auth: read-only key rejected non-GET", "method", r.Method, "path", r.URL.Path)
+						http.Error(w, "forbidden: read-only key cannot modify data", http.StatusForbidden)
+						return
+					}
+					if strings.HasPrefix(r.URL.Path, "/api/v1/settings") || strings.HasPrefix(r.URL.Path, "/api/v1/apikeys") {
+						s.logger.Warn("auth: read-only key rejected settings/apikeys", "method", r.Method, "path", r.URL.Path)
+						http.Error(w, "forbidden: read-only key cannot access this endpoint", http.StatusForbidden)
+						return
+					}
+				}
 				usingAPIKey = true
 				apiKeyProjectID = pid
 			}
