@@ -60,3 +60,80 @@ func TestFingerprintChangesForDifferentExceptionType(t *testing.T) {
 		t.Fatal("expected different fingerprints")
 	}
 }
+
+func TestFingerprintFallsBackToRawScrubbed(t *testing.T) {
+	// Events with empty exception but different rawScrubbed messages should
+	// produce different fingerprints.
+	first := event.Event{
+		RawScrubbed: map[string]any{
+			"exception": map[string]any{},
+			"name":      "error",
+			"properties": map[string]any{
+				"message": "Failed to register a ServiceWorker",
+				"source":  "window.onunhandledrejection",
+			},
+		},
+	}
+	second := event.Event{
+		RawScrubbed: map[string]any{
+			"exception": map[string]any{},
+			"name":      "error",
+			"properties": map[string]any{
+				"message": "Network request failed",
+				"source":  "window.onerror",
+			},
+		},
+	}
+
+	fp1 := Fingerprint(first)
+	fp2 := Fingerprint(second)
+	if fp1 == fp2 {
+		t.Fatalf("expected different fingerprints for different rawScrubbed messages:\n%s\n%s", Material(first), Material(second))
+	}
+}
+
+func TestFingerprintRawScrubbedSameMessageProducesSameFingerprint(t *testing.T) {
+	// Same error from same source should be deterministic.
+	first := event.Event{
+		RawScrubbed: map[string]any{
+			"name": "error",
+			"properties": map[string]any{
+				"message": "Failed to register a ServiceWorker",
+				"source":  "window.onunhandledrejection",
+			},
+		},
+	}
+	second := event.Event{
+		RawScrubbed: map[string]any{
+			"name": "error",
+			"properties": map[string]any{
+				"message": "Failed to register a ServiceWorker",
+				"source":  "window.onunhandledrejection",
+			},
+		},
+	}
+
+	if Fingerprint(first) != Fingerprint(second) {
+		t.Fatalf("expected same fingerprint for identical rawScrubbed:\n%s\n%s", Material(first), Material(second))
+	}
+}
+
+func TestFingerprintRawScrubbedNotUsedWhenExceptionPresent(t *testing.T) {
+	// When exception has data, rawScrubbed should be ignored for fingerprinting.
+	withException := event.Event{
+		Exception: event.Exception{Type: "TypeError", Message: "boom"},
+		RawScrubbed: map[string]any{
+			"name": "error",
+			"properties": map[string]any{
+				"message": "different message",
+			},
+		},
+	}
+	withoutRawScrubbed := event.Event{
+		Exception: event.Exception{Type: "TypeError", Message: "boom"},
+	}
+
+	if Fingerprint(withException) != Fingerprint(withoutRawScrubbed) {
+		t.Fatal("rawScrubbed should not affect fingerprint when exception is present")
+	}
+}

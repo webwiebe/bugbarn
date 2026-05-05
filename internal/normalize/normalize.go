@@ -50,6 +50,14 @@ func Normalize(raw []byte, ingestID string, receivedAt time.Time) (event.Event, 
 	if evt.Message == "" {
 		evt.Message = evt.Exception.Message
 	}
+	// When exception is empty, fall back to rawScrubbed.properties.message.
+	// Browser errors (promise rejections, cross-origin) often arrive with
+	// exception: {} but carry actual details in rawScrubbed.
+	if evt.Message == "" {
+		if props := objectValue(scrubbed["properties"]); props != nil {
+			evt.Message = stringValue(props["message"])
+		}
+	}
 	if evt.Severity == "" {
 		evt.Severity = "ERROR"
 	}

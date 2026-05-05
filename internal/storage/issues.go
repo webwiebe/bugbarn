@@ -705,6 +705,16 @@ func issueDetails(evt event.Event) (title, normalizedTitle, exceptionType string
 		message = strings.TrimSpace(evt.Message)
 	}
 
+	// When exception is empty, fall back to rawScrubbed data. This handles
+	// browser errors (promise rejections, cross-origin) that arrive with
+	// exception: {} but have details in rawScrubbed.
+	if exceptionType == "" && message == "" {
+		if raw := rawScrubbedFallback(evt.RawScrubbed); raw.name != "" || raw.message != "" {
+			exceptionType = strings.TrimSpace(raw.name)
+			message = strings.TrimSpace(raw.message)
+		}
+	}
+
 	switch {
 	case exceptionType != "" && message != "":
 		title = exceptionType + ": " + message

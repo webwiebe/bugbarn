@@ -160,3 +160,29 @@ func boolToInt(value bool) int {
 	}
 	return 0
 }
+
+type rawScrubbedData struct {
+	name    string
+	message string
+	source  string
+}
+
+// rawScrubbedFallback extracts error details from the rawScrubbed payload.
+// Browser errors (promise rejections, cross-origin errors) often arrive with
+// exception: {} but carry actual details in rawScrubbed.
+func rawScrubbedFallback(rawScrubbed map[string]any) rawScrubbedData {
+	if rawScrubbed == nil {
+		return rawScrubbedData{}
+	}
+	name, _ := rawScrubbed["name"].(string)
+	props, _ := rawScrubbed["properties"].(map[string]any)
+	if props == nil {
+		return rawScrubbedData{name: name}
+	}
+	message, _ := props["message"].(string)
+	source, _ := props["source"].(string)
+	if source == "" {
+		source, _ = props["url"].(string)
+	}
+	return rawScrubbedData{name: name, message: message, source: source}
+}
