@@ -143,7 +143,7 @@ func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, user
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Ingest endpoint uses wildcard CORS so browser SDKs can POST from any origin
 	// without credentials. The ingest-only key scope ensures read access is impossible.
-	if r.URL.Path == "/api/v1/events" || r.URL.Path == "/api/v1/ingest" {
+	if r.URL.Path == "/api/v1/events" {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-project")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")

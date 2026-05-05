@@ -5,6 +5,9 @@ const DEFAULT_FLUSH_TIMEOUT_MS = 2000;
 
 function resolveUrl(endpoint: string): string {
   if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
+    if (!endpoint.includes("/api/")) {
+      return endpoint.replace(/\/+$/, "") + DEFAULT_ENDPOINT;
+    }
     return endpoint;
   }
 

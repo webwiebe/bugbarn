@@ -53,6 +53,30 @@ func TestCaptureMessageAfterInit(t *testing.T) {
 	}
 }
 
+func TestEndpointResolution(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"", "/api/v1/events"},
+		{"https://bugbarn.example.com", "https://bugbarn.example.com/api/v1/events"},
+		{"https://bugbarn.example.com/", "https://bugbarn.example.com/api/v1/events"},
+		{"https://bugbarn.example.com/api/v1/events", "https://bugbarn.example.com/api/v1/events"},
+		{"http://localhost:8080/api/v1/events", "http://localhost:8080/api/v1/events"},
+	}
+	for _, tt := range tests {
+		resetGlobal()
+		Init(Options{APIKey: "k", Endpoint: tt.input})
+		mu.Lock()
+		got := opts.Endpoint
+		mu.Unlock()
+		if got != tt.want {
+			t.Errorf("Init(Endpoint=%q): got %q, want %q", tt.input, got, tt.want)
+		}
+	}
+	resetGlobal()
+}
+
 func TestFlushNoopWhenNotInited(t *testing.T) {
 	resetGlobal()
 	// Should return true (nothing to drain) and not panic.
