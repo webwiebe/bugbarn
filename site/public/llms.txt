@@ -1,0 +1,237 @@
+# BugBarn
+
+> Self-hosted error tracking and analytics platform. Ingests errors from client SDKs, groups them by fingerprint, and provides a web dashboard for triaging issues. Built with Go, vanilla TypeScript SPA, and SQLite.
+
+## Architecture
+
+- **Backend**: Go HTTP server (`cmd/bugbarn/`) with no framework dependencies
+- **Frontend**: Vanilla TypeScript single-page application (`web/`)
+- **Storage**: SQLite with a single `storage.Store` struct
+- **Durability**: On-disk spool queue (`internal/spool/`) buffers ingested events before a background worker persists them to SQLite
+- **Background worker**: Reads from the spool, deduplicates via fingerprinting, persists events, and publishes domain events for alerting
+
+## SDKs
+
+Four official SDKs are available:
+
+| Language | Package | Install |
+|---|---|---|
+| Go | `github.com/wiebe-xyz/bugbarn-go` | `go get github.com/wiebe-xyz/bugbarn-go` |
+| TypeScript | `@bugbarn/typescript` | `npm install @bugbarn/typescript` |
+| Python | `bugbarn-python` | `pip install bugbarn-python` |
+| PHP | `bugbarn/bugbarn-php` | `composer require bugbarn/bugbarn-php` |
+
+### Go SDK
+
+```go
+import bb "github.com/wiebe-xyz/bugbarn-go"
+
+bb.Init(bb.Options{
+    APIKey:   "your-api-key",
+    Endpoint: "https://bugbarn.example.com/api/v1/events",
+})
+defer bb.Shutdown(2 * time.Second)
+
+bb.CaptureError(err)
+bb.CaptureMessage("something happened")
+```
+
+HTTP middleware for panic recovery: `bb.RecoverMiddleware(handler)`
+
+### TypeScript SDK
+
+```typescript
+import { init, captureException, shutdown } from "@bugbarn/typescript";
+
+init({
+  apiKey: "your-api-key",
+  endpoint: "https://bugbarn.example.com/api/v1/events",
+  project: "my-app",           // optional project slug
+  release: "1.0.0",            // optional release version
+  installDefaultHandlers: true, // catches uncaughtException and unhandledRejection
+  autoBreadcrumbs: true,        // auto-captures console, http, and fetch breadcrumbs
+});
+
+await captureException(new Error("something broke"));
+await shutdown();
+```
+
+### Python SDK
+
+```python
+import bugbarn
+
+bugbarn.init(
+    api_key="your-api-key",
+    endpoint="https://bugbarn.example.com/api/v1/events",
+    install_excepthook=True,  # optional: auto-capture unhandled exceptions
+)
+
+bugbarn.capture_exception(exception)
+bugbarn.shutdown(timeout=2.0)
+```
+
+### PHP SDK
+
+```php
+use BugBarn\Client;
+
+Client::init(
+    apiKey: 'your-api-key',
+    endpoint: 'https://bugbarn.example.com/api/v1/events',
+    installHandlers: true,  // captures uncaught exceptions and fatal errors
+    projectSlug: 'my-app',
+);
+
+Client::captureThrowable($exception);
+Client::captureMessage('something happened');
+Client::flush();
+```
+
+## HTTP API
+
+Base URL: `https://your-bugbarn-instance.example.com`
+
+### Authentication
+
+- **API key**: Pass via `X-BugBarn-API-Key` header. Keys have either `ingest` scope (can only POST events/logs) or `full` scope (all endpoints).
+- **Session cookie**: Web UI uses `bugbarn_session` cookie with CSRF protection via `X-BugBarn-CSRF` header.
+- **Project routing**: Set `X-BugBarn-Project` header to route events to a specific project by slug.
+
+### Ingest (public, wildcard CORS)
+
+- `POST /api/v1/events` -- Ingest an error event (also available as `/api/v1/ingest`)
+- `POST /api/v1/logs` -- Ingest structured log entries
+- `POST /api/v1/analytics/collect` -- Collect page view analytics
+
+### Issues
+
+- `GET /api/v1/issues` -- List issues (supports `?status=`, `?query=`, `?project=` filters)
+- `GET /api/v1/issues/sparklines` -- Get sparkline data for issues
+- `GET /api/v1/issues/{id}` -- Get issue detail
+- `PATCH /api/v1/issues/{id}` -- Update issue (resolve, ignore, etc.)
+- `GET /api/v1/issues/{id}/events` -- List events for an issue
+
+### Events
+
+- `GET /api/v1/events/{id}` -- Get a single event
+- `GET /api/v1/events/stream` -- SSE stream of new events
+- `GET /api/v1/live/events` -- List recent events
+
+### Projects
+
+- `GET /api/v1/projects` -- List projects
+- `POST /api/v1/projects` -- Create a project
+- `PUT /api/v1/projects/{id}` -- Rename a project
+- `DELETE /api/v1/projects/{id}` -- Delete a project
+- `POST /api/v1/projects/{id}/merge` -- Merge project into another
+- `POST /api/v1/projects/{id}/approve` -- Approve a pending project
+
+### Releases
+
+- `GET /api/v1/releases` -- List releases
+- `POST /api/v1/releases` -- Create a release
+
+### Alerts
+
+- `GET /api/v1/alerts` -- List alert rules
+- `POST /api/v1/alerts` -- Create an alert rule
+- `PUT /api/v1/alerts/{id}` -- Update an alert rule
+- `DELETE /api/v1/alerts/{id}` -- Delete an alert rule
+
+### Source Maps
+
+- `GET /api/v1/source-maps` -- List uploaded source maps
+- `POST /api/v1/source-maps` -- Upload a source map (multipart, max 32 MiB)
+
+### Logs
+
+- `GET /api/v1/logs` -- Query structured logs
+- `GET /api/v1/logs/stream` -- SSE stream of live logs
+
+### Analytics
+
+- `GET /api/v1/analytics/{query}` -- Run an analytics query
+
+### Other
+
+- `GET /api/v1/health` -- Health check (no auth required)
+- `GET /api/v1/apikeys` -- List API keys
+- `DELETE /api/v1/apikeys/{id}` -- Delete an API key
+- `GET /api/v1/groups` -- List issue groups
+- `GET /api/v1/facets/{field}` -- Get facet values for filtering
+
+## Event Envelope Format
+
+POST a JSON body to `/api/v1/events`:
+
+```json
+{
+  "timestamp": "2025-01-15T10:30:00Z",
+  "severityText": "ERROR",
+  "body": "null pointer dereference",
+  "exception": {
+    "type": "NullPointerError",
+    "message": "null pointer dereference",
+    "stacktrace": [
+      { "function": "main.handler", "file": "main.go", "line": 42 }
+    ]
+  },
+  "attributes": { "key": "value" },
+  "tags": { "environment": "production" },
+  "user": { "id": "123", "email": "user@example.com" },
+  "breadcrumbs": [
+    { "timestamp": "2025-01-15T10:29:59Z", "category": "http", "message": "GET /api/users" }
+  ],
+  "release": "1.0.0",
+  "sender": { "sdk": { "name": "bugbarn.go", "version": "0.1.0" } }
+}
+```
+
+## Configuration
+
+Environment variables for the server:
+
+| Variable | Default | Description |
+|---|---|---|
+| `BUGBARN_ADDR` | `:8080` | Listen address |
+| `BUGBARN_DB_PATH` | `.data/bugbarn.db` | SQLite database path |
+| `BUGBARN_SPOOL_DIR` | `.data/spool` | On-disk event spool directory |
+| `BUGBARN_API_KEY` | (none) | Shared API key for ingest authentication |
+| `BUGBARN_API_KEY_SHA256` | (none) | SHA-256 hash of API key (preferred over plaintext) |
+| `BUGBARN_ADMIN_USERNAME` | (none) | Web UI admin username |
+| `BUGBARN_ADMIN_PASSWORD` | (none) | Web UI admin password (plaintext) |
+| `BUGBARN_ADMIN_PASSWORD_BCRYPT` | (none) | Web UI admin password (bcrypt hash, preferred) |
+| `BUGBARN_SESSION_SECRET` | (none) | Secret for session cookie signing |
+| `BUGBARN_SESSION_TTL_SECONDS` | `43200` | Session lifetime in seconds (default 12h) |
+| `BUGBARN_ALLOWED_ORIGINS` | (none) | Comma-separated allowed CORS origins for dashboard |
+| `BUGBARN_TRUSTED_PROXIES` | (none) | Comma-separated CIDRs for trusting X-Forwarded-For |
+| `BUGBARN_PUBLIC_URL` | (none) | Public-facing URL (used in alerts and digests) |
+| `BUGBARN_MAX_BODY_BYTES` | `1048576` | Max ingest request body size (1 MiB) |
+| `BUGBARN_MAX_SPOOL_BYTES` | (none) | Max spool file size before rotation |
+| `BUGBARN_MAX_SOURCE_MAP_BYTES` | `33554432` | Max source map upload size (32 MiB) |
+| `BUGBARN_SELF_ENDPOINT` | (none) | Endpoint for self-reporting errors (dogfooding) |
+| `BUGBARN_SELF_API_KEY` | (none) | API key for self-reporting |
+| `BUGBARN_SELF_PROJECT` | (none) | Project slug for self-reporting |
+| `BUGBARN_AUTO_APPROVE_PROJECTS` | `false` | Auto-approve new projects from SDK headers |
+| `BUGBARN_ANALYTICS_RETENTION_DAYS` | `90` | Days to retain analytics data |
+
+Config files are also supported at `/etc/bugbarn/bugbarn.conf` and `~/.config/bugbarn/bugbarn.conf` (KEY=VALUE format).
+
+## CLI Management
+
+The `bugbarn` binary includes management subcommands:
+
+```bash
+bugbarn user create --username=admin --password=secret
+bugbarn project create --name="My App" --slug=my-app
+bugbarn apikey create --project=my-app --name=production --scope=ingest
+```
+
+## Self-Hosting Quick Start
+
+1. Build: `go build -o bugbarn ./cmd/bugbarn/`
+2. Set required env vars: `BUGBARN_API_KEY`, `BUGBARN_ADMIN_USERNAME`, `BUGBARN_ADMIN_PASSWORD`
+3. Run: `./bugbarn`
+4. Dashboard available at `http://localhost:8080`
+5. Point your SDK to `http://localhost:8080/api/v1/events`
