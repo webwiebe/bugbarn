@@ -72,6 +72,19 @@ func SnapshotFor(evt event.Event) Snapshot {
 		normalizedMessage = normalize(evt.Message)
 	}
 
+	// When exception is empty but rawScrubbed has data, use it as fallback
+	// for fingerprinting. This handles browser errors like promise rejections
+	// and cross-origin errors that arrive with exception: {}.
+	if normalizedExceptionType == "" && normalizedMessage == "" && len(evt.Exception.Stacktrace) == 0 {
+		if raw := rawScrubbedFallback(evt.RawScrubbed); raw.name != "" || raw.message != "" {
+			normalizedExceptionType = normalize(raw.name)
+			normalizedMessage = normalize(raw.message)
+			if normalizedMessage == "" {
+				normalizedMessage = normalize(raw.source)
+			}
+		}
+	}
+
 	frameParts := make([]string, 0, len(evt.Exception.Stacktrace))
 	explanation := make([]string, 0, 8+len(evt.Exception.Stacktrace))
 
@@ -218,6 +231,29 @@ func normalizePath(value string) string {
 	value = strings.ReplaceAll(value, "\\", "/")
 	value = pathNumberSegment.ReplaceAllString(value, "/:num")
 	return normalize(value)
+}
+
+type rawScrubbedData struct {
+	name    string
+	message string
+	source  string
+}
+
+func rawScrubbedFallback(rawScrubbed map[string]any) rawScrubbedData {
+	if rawScrubbed == nil {
+		return rawScrubbedData{}
+	}
+	name, _ := rawScrubbed["name"].(string)
+	props, _ := rawScrubbed["properties"].(map[string]any)
+	if props == nil {
+		return rawScrubbedData{name: name}
+	}
+	message, _ := props["message"].(string)
+	source, _ := props["source"].(string)
+	if source == "" {
+		source, _ = props["url"].(string)
+	}
+	return rawScrubbedData{name: name, message: message, source: source}
 }
 
 func normalize(value string) string {
