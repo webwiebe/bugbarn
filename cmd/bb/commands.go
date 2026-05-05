@@ -139,16 +139,44 @@ func cmdIssues(args []string) error {
 		return err
 	}
 
+	// Resolve project slug from flag or config default.
+	projectSlug := *project
+	if projectSlug == "" {
+		projectSlug = client.config.Project
+	}
+
+	// If a project is specified, validate it exists before querying issues.
+	if projectSlug != "" {
+		data, err := client.get("/api/v1/projects")
+		if err != nil {
+			return err
+		}
+		var resp struct {
+			Projects []struct {
+				Slug string `json:"slug"`
+			} `json:"projects"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return fmt.Errorf("parse projects response: %w", err)
+		}
+		found := false
+		for _, p := range resp.Projects {
+			if p.Slug == projectSlug {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("project %q not found — run 'bb projects' to see available projects", projectSlug)
+		}
+		client.project = projectSlug
+	}
+
 	params := url.Values{}
 	params.Set("status", *status)
 	params.Set("sort", *sort)
 	if *query != "" {
 		params.Set("q", *query)
-	}
-	if *project != "" {
-		params.Set("project_slug", *project)
-	} else if client.config.Project != "" {
-		params.Set("project_slug", client.config.Project)
 	}
 
 	data, err := client.get("/api/v1/issues?" + params.Encode())

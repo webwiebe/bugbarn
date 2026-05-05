@@ -11,9 +11,10 @@ import (
 )
 
 type Client struct {
-	base   string
-	http   *http.Client
-	config Config
+	base    string
+	http    *http.Client
+	config  Config
+	project string // project slug to send as X-BugBarn-Project header
 }
 
 func newClient() (*Client, error) {
@@ -56,6 +57,9 @@ func (c *Client) do(method, path string, body any) (json.RawMessage, error) {
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.project != "" {
+		req.Header.Set("X-BugBarn-Project", c.project)
 	}
 
 	switch c.config.Auth.Type {

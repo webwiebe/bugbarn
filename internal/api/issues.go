@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // serveIssueRoute handles /api/v1/issues/{id} and sub-paths.
@@ -28,6 +29,15 @@ func (s *Server) serveIssueRoute(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+
+	// Accept project_slug query param as a fallback for the X-BugBarn-Project header.
+	// This lets the CLI and other clients filter by project without needing to set the header.
+	if slug := q.Get("project_slug"); slug != "" && r.Header.Get("X-BugBarn-Project") == "" {
+		if proj, err := s.projects.Ensure(r.Context(), slug); err == nil {
+			r = r.WithContext(storage.WithProjectID(r.Context(), proj.ID))
+		}
+	}
+
 	filter := domain.IssueFilter{
 		Sort:   q.Get("sort"),
 		Status: q.Get("status"),
@@ -48,7 +58,7 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	requestedLimit := filter.Limit
 	filter.Limit = requestedLimit + 1
-	knownParams := map[string]bool{"sort": true, "status": true, "q": true, "limit": true, "offset": true}
+	knownParams := map[string]bool{"sort": true, "status": true, "q": true, "limit": true, "offset": true, "project_slug": true}
 	for key, vals := range q {
 		if knownParams[key] || len(vals) == 0 || strings.TrimSpace(vals[0]) == "" {
 			continue
@@ -62,6 +72,10 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeServiceError(w, err)
 		return
+	}
+	// Ensure non-nil slice so JSON serializes as [] instead of null.
+	if issues == nil {
+		issues = []domain.Issue{}
 	}
 
 	hasMore := len(issues) > requestedLimit
