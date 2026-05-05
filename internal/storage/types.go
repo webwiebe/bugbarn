@@ -38,6 +38,7 @@ type ProjectGroup = domain.ProjectGroup
 const (
 	APIKeyScopeFull   = domain.APIKeyScopeFull
 	APIKeyScopeIngest = domain.APIKeyScopeIngest
+	APIKeyScopeRead   = domain.APIKeyScopeRead
 )
 
 // IssueHourlyCounts holds per-issue 24-hour event frequency data.

@@ -432,7 +432,7 @@ func runAPIKeyCmd(cfg config, args []string) error {
 		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
 		projectSlug := fs.String("project", "default", "project slug")
 		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", storage.APIKeyScopeFull, "key scope: full or ingest")
+		scope := fs.String("scope", storage.APIKeyScopeFull, "key scope: full, ingest, or read")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -440,8 +440,8 @@ func runAPIKeyCmd(cfg config, args []string) error {
 		if *name == "" {
 			return fmt.Errorf("--name is required")
 		}
-		if *scope != storage.APIKeyScopeFull && *scope != storage.APIKeyScopeIngest {
-			return fmt.Errorf("--scope must be %q or %q", storage.APIKeyScopeFull, storage.APIKeyScopeIngest)
+		if *scope != storage.APIKeyScopeFull && *scope != storage.APIKeyScopeIngest && *scope != storage.APIKeyScopeRead {
+			return fmt.Errorf("--scope must be %q, %q, or %q", storage.APIKeyScopeFull, storage.APIKeyScopeIngest, storage.APIKeyScopeRead)
 		}
 		store, err := storage.Open(cfg.dbPath)
 		if err != nil {

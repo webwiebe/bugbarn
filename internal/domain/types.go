@@ -78,6 +78,7 @@ type ProjectGroup struct {
 const (
 	APIKeyScopeFull   = "full"
 	APIKeyScopeIngest = "ingest"
+	APIKeyScopeRead   = "read"
 )
 
 // APIKey represents an API key row (the plaintext key is never stored).

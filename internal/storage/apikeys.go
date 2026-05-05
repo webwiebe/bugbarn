@@ -10,7 +10,7 @@ import (
 // CreateAPIKey stores an API key's SHA-256 hash and returns the resulting row.
 // scope must be APIKeyScopeFull or APIKeyScopeIngest.
 func (s *Store) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (APIKey, error) {
-	if scope != APIKeyScopeFull && scope != APIKeyScopeIngest {
+	if scope != APIKeyScopeFull && scope != APIKeyScopeIngest && scope != APIKeyScopeRead {
 		scope = APIKeyScopeFull
 	}
 	now := formatTime(time.Now().UTC())
