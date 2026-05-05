@@ -72,7 +72,10 @@ class Envelope:
 class Transport:
     def __init__(self, api_key: str, endpoint: str = DEFAULT_ENDPOINT, maxsize: int = 256) -> None:
         self.api_key = api_key
-        self.endpoint = endpoint
+        if endpoint and "/api/" not in endpoint:
+            self.endpoint = endpoint.rstrip("/") + DEFAULT_ENDPOINT
+        else:
+            self.endpoint = endpoint
         self.queue: "queue.Queue[Envelope]" = queue.Queue(maxsize=maxsize)
         self._closed = threading.Event()
         self._worker = threading.Thread(target=self._run, name="bugbarn-transport", daemon=True)

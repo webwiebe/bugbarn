@@ -6,21 +6,28 @@ namespace BugBarn;
 
 final class Client
 {
+    public const DEFAULT_ENDPOINT = '/api/v1/events';
+
     private static ?Transport $transport    = null;
     private static bool       $handlersInstalled = false;
 
     /**
      * Initialise the SDK.
      *
+     * @param string $endpoint Full URL or base URL (path appended automatically if missing)
      * @param bool $installHandlers  When true, installs set_exception_handler and a
      *                               register_shutdown_function to capture fatal errors.
      */
     public static function init(
         string $apiKey,
-        string $endpoint,
+        string $endpoint = self::DEFAULT_ENDPOINT,
         bool   $installHandlers = false,
         string $projectSlug     = '',
     ): void {
+        if (!str_contains($endpoint, '/api/')) {
+            $endpoint = rtrim($endpoint, '/') . self::DEFAULT_ENDPOINT;
+        }
+
         self::$transport = new Transport(
             apiKey:      $apiKey,
             endpoint:    $endpoint,

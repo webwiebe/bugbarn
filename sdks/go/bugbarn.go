@@ -1,14 +1,17 @@
 package bugbarn
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
 
+const DefaultEndpoint = "/api/v1/events"
+
 // Options configures the SDK.
 type Options struct {
 	APIKey      string
-	Endpoint    string
+	Endpoint    string // Full URL or base URL (DefaultEndpoint path is appended if no path present)
 	ProjectSlug string
 	Release     string
 	Environment string
@@ -52,6 +55,11 @@ func Init(o Options) {
 	}
 	if o.QueueSize <= 0 {
 		o.QueueSize = 256
+	}
+	if o.Endpoint == "" {
+		o.Endpoint = DefaultEndpoint
+	} else if !strings.Contains(o.Endpoint, "/api/") {
+		o.Endpoint = strings.TrimRight(o.Endpoint, "/") + DefaultEndpoint
 	}
 	opts = o
 	tp = newTransport(o.APIKey, o.Endpoint, o.ProjectSlug, o.QueueSize)
