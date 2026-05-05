@@ -1,0 +1,6 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bb issues 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); issues=d.get('issues') or []; print(f'🐛 {len(issues)} open')\""
+  }
+}
