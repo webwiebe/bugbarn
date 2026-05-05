@@ -227,6 +227,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// OpenAPI spec and docs — public, no auth required.
+	if r.URL.Path == "/api/v1/openapi.yaml" && r.Method == http.MethodGet {
+		s.serveOpenAPISpec(w, r)
+		return
+	}
+	if r.URL.Path == "/api/docs" && r.Method == http.MethodGet {
+		s.serveAPIDocs(w, r)
+		return
+	}
+
 	// Public endpoints — no authentication required.
 	switch {
 	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:

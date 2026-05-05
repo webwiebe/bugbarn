@@ -1,35 +1,25 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"log"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"regexp"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/alert"
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/cli"
+	"github.com/wiebe-xyz/bugbarn/internal/config"
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
@@ -48,8 +38,6 @@ var (
 	BuildTime = "unknown"
 )
 
-var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
@@ -58,7 +46,7 @@ func main() {
 
 // run owns process wiring: it opens storage, starts the worker, and serves the API.
 func run() error {
-	cfg := loadConfig()
+	cfg := config.Load()
 
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -74,25 +62,25 @@ func run() error {
 		case "worker-once":
 			return runWorkerOnce(cfg)
 		case "user":
-			return runUserCmd(cfg, os.Args[2:])
+			return cli.RunUser(cfg, os.Args[2:])
 		case "project":
-			return runProjectCmd(cfg, os.Args[2:])
+			return cli.RunProject(cfg, os.Args[2:])
 		case "apikey":
-			return runAPIKeyCmd(cfg, os.Args[2:])
+			return cli.RunAPIKey(cfg, os.Args[2:])
 		}
 	}
 
-	if cfg.sessionSecret == "" {
+	if cfg.SessionSecret == "" {
 		log.Println("warning: BUGBARN_SESSION_SECRET is not set; sessions will not persist across restarts")
 	}
 
-	store, err := storage.Open(cfg.dbPath)
+	store, err := storage.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
 
-	eventSpool, err := spool.NewWithLimit(cfg.spoolDir, cfg.maxSpoolBytes)
+	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
 	if err != nil {
 		return err
 	}
@@ -105,56 +93,56 @@ func run() error {
 	bus := &domainevents.Bus{}
 	alertRepo := alert.NewSQLiteRepository(store.DB())
 	deliverer := alert.NewDeliverer()
-	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.publicURL)
+	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL)
 	bus.Subscribe(evaluator.HandleEvent)
 
 	eventPub := service.NewEventPublisher(bus)
 
-	selfReporting := cfg.selfEndpoint != "" && cfg.selfAPIKey != ""
+	selfReporting := cfg.SelfEndpoint != "" && cfg.SelfAPIKey != ""
 	if selfReporting {
 		bb.Init(bb.Options{
-			APIKey:      cfg.selfAPIKey,
-			Endpoint:    cfg.selfEndpoint,
-			ProjectSlug: cfg.selfProject,
+			APIKey:      cfg.SelfAPIKey,
+			Endpoint:    cfg.SelfEndpoint,
+			ProjectSlug: cfg.SelfProject,
 		})
 		logger = slog.New(selflog.NewHandler(logHandler))
 		slog.SetDefault(logger)
-		logger.Info("self-reporting enabled", "endpoint", cfg.selfEndpoint)
+		logger.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 	}
 
 	workerStatus := &worker.Status{}
-	go runBackgroundWorker(ctx, eventSpool, cfg.spoolDir, store, eventPub, selfReporting, workerStatus)
+	go runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus)
 
-	digest.StartScheduler(ctx, cfg.digest, store)
-	analytics.StartWorker(ctx, store, cfg.analyticsRetentionDays)
+	digest.StartScheduler(ctx, cfg.Digest, store)
+	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays)
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
 		return err
 	}
-	userAuth, err := auth.NewUserAuthenticator(cfg.adminUsername, cfg.adminPassword, cfg.adminPasswordBcrypt)
+	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
 	if err != nil {
 		return err
 	}
-	sessionManager := auth.NewSessionManager(cfg.sessionSecret, cfg.sessionTTL)
-	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.maxBodyBytes)
+	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
+	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	go handler.Start(ctx)
 
 	logHub := logstream.NewHub()
-	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.allowedOrigins, logger)
+	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
-	apiServer.SetSetupConfig(cfg.sessionSecret, cfg.publicURL)
-	if len(cfg.trustedProxies) > 0 {
-		apiServer.SetTrustedProxies(cfg.trustedProxies)
+	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
+	if len(cfg.TrustedProxies) > 0 {
+		apiServer.SetTrustedProxies(cfg.TrustedProxies)
 	}
 	apiServer.SetWorkerStatus(workerStatus)
-	apiServer.SetAutoApproveProjects(cfg.autoApproveProjects)
-	apiServer.SetFunnelBarnConfig(cfg.funnelBarnEndpoint, cfg.funnelBarnAPIKey)
+	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
+	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
 	if selfReporting {
-		apiServer.SetSelfReportingConfig(cfg.selfAPIKey, cfg.selfProject)
+		apiServer.SetSelfReportingConfig(cfg.SelfAPIKey, cfg.SelfProject)
 	}
-	if cfg.maxSourceMapBytes > 0 {
-		apiServer.SetMaxSourceMapBytes(cfg.maxSourceMapBytes)
+	if cfg.MaxSourceMapBytes > 0 {
+		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
 	var httpHandler http.Handler = apiServer
 	if selfReporting {
@@ -162,7 +150,7 @@ func run() error {
 	}
 
 	server := &http.Server{
-		Addr:    cfg.addr,
+		Addr:    cfg.Addr,
 		Handler: httpHandler,
 	}
 
@@ -187,315 +175,30 @@ func run() error {
 	}
 }
 
-type config struct {
-	addr                string
-	apiKey              string
-	apiKeySHA256        string
-	adminUsername       string
-	adminPassword       string
-	adminPasswordBcrypt string
-	sessionSecret       string
-	sessionTTL          time.Duration
-	allowedOrigins      []string
-	trustedProxies      []*net.IPNet
-	spoolDir            string
-	dbPath              string
-	maxBodyBytes        int64
-	maxSpoolBytes       int64
-	maxSourceMapBytes   int64
-	publicURL           string
-	selfEndpoint        string
-	selfAPIKey          string
-	selfProject         string
-	digest                  digest.Config
-	analyticsRetentionDays  int
-	funnelBarnEndpoint      string // BUGBARN_FUNNELBARN_ENDPOINT — e.g. https://funnelbarn.example.com
-	funnelBarnAPIKey        string // BUGBARN_FUNNELBARN_API_KEY
-	autoApproveProjects     bool   // BUGBARN_AUTO_APPROVE_PROJECTS
-}
-
-func loadConfig() config {
-	loadConfigFiles()
-
-	cfg := config{
-		addr:                getenv("BUGBARN_ADDR", ":8080"),
-		apiKey:              os.Getenv("BUGBARN_API_KEY"),
-		apiKeySHA256:        os.Getenv("BUGBARN_API_KEY_SHA256"),
-		adminUsername:       os.Getenv("BUGBARN_ADMIN_USERNAME"),
-		adminPassword:       os.Getenv("BUGBARN_ADMIN_PASSWORD"),
-		adminPasswordBcrypt: os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT"),
-		sessionSecret:       os.Getenv("BUGBARN_SESSION_SECRET"),
-		sessionTTL:          12 * time.Hour,
-		spoolDir:            getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
-		dbPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
-		maxBodyBytes:        1 << 20,
-		publicURL:           os.Getenv("BUGBARN_PUBLIC_URL"),
-		selfEndpoint:        os.Getenv("BUGBARN_SELF_ENDPOINT"),
-		selfAPIKey:          os.Getenv("BUGBARN_SELF_API_KEY"),
-		selfProject:         os.Getenv("BUGBARN_SELF_PROJECT"),
-		funnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
-		funnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
-		autoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
-	}
-
-	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {
-		for _, o := range strings.Split(raw, ",") {
-			if trimmed := strings.TrimSpace(o); trimmed != "" {
-				cfg.allowedOrigins = append(cfg.allowedOrigins, trimmed)
-			}
-		}
-	}
-	if raw := os.Getenv("BUGBARN_TRUSTED_PROXIES"); raw != "" {
-		for _, cidr := range strings.Split(raw, ",") {
-			cidr = strings.TrimSpace(cidr)
-			if cidr == "" {
-				continue
-			}
-			if !strings.Contains(cidr, "/") {
-				cidr += "/32"
-			}
-			if _, network, err := net.ParseCIDR(cidr); err == nil {
-				cfg.trustedProxies = append(cfg.trustedProxies, network)
-			}
-		}
-	}
-	if raw := os.Getenv("BUGBARN_MAX_BODY_BYTES"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.maxBodyBytes = parsed
-		}
-	}
-	if raw := os.Getenv("BUGBARN_MAX_SPOOL_BYTES"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.maxSpoolBytes = parsed
-		}
-	}
-	if raw := os.Getenv("BUGBARN_MAX_SOURCE_MAP_BYTES"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.maxSourceMapBytes = parsed
-		}
-	}
-	if raw := os.Getenv("BUGBARN_SESSION_TTL_SECONDS"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.sessionTTL = time.Duration(parsed) * time.Second
-		}
-	}
-	cfg.analyticsRetentionDays = 90
-	if raw := os.Getenv("BUGBARN_ANALYTICS_RETENTION_DAYS"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			cfg.analyticsRetentionDays = parsed
-		}
-	}
-
-	// Digest config — SMTP vars use the same names as rapid-root (no BUGBARN_ prefix).
-	// Toggle email with BUGBARN_DIGEST_ENABLED=true|false independent of credentials.
-	smtpPort := 587
-	if raw := os.Getenv("SMTP_PORT"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			smtpPort = parsed
-		}
-	}
-	digestDay := 0
-	if raw := os.Getenv("BUGBARN_DIGEST_DAY"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 6 {
-			digestDay = parsed
-		}
-	}
-	digestHour := 8
-	if raw := os.Getenv("BUGBARN_DIGEST_HOUR"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 23 {
-			digestHour = parsed
-		}
-	}
-	cfg.digest = digest.Config{
-		Day:        digestDay,
-		Hour:       digestHour,
-		WebhookURL: os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
-		PublicURL:  cfg.publicURL,
-		Mail: digest.MailConfig{
-			Enabled: os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
-			Host:    os.Getenv("SMTP_HOST"),
-			Port:    smtpPort,
-			User:    os.Getenv("SMTP_USER"),
-			Pass:    os.Getenv("SMTP_PASS"),
-			From:    os.Getenv("SMTP_FROM"),
-			To:      os.Getenv("BUGBARN_DIGEST_TO"),
-		},
-	}
-
-	return cfg
-}
-
-func newAPIAuthorizer(cfg config, store *storage.Store) (*auth.Authorizer, error) {
+func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer, error) {
 	var base *auth.Authorizer
 	var err error
-	if cfg.apiKeySHA256 != "" {
-		base, err = auth.NewHashed(cfg.apiKeySHA256)
+	if cfg.APIKeySHA256 != "" {
+		base, err = auth.NewHashed(cfg.APIKeySHA256)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		base = auth.New(cfg.apiKey)
+		base = auth.New(cfg.APIKey)
 	}
 	// Always wire in DB-based key lookup so keys created via the CLI work too.
 	return base.WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey), nil
 }
 
-// runUserCmd handles: bugbarn user create --username=X --password=Y
-func runUserCmd(cfg config, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: bugbarn user <create>")
-	}
-	switch args[0] {
-	case "create":
-		fs := flag.NewFlagSet("user create", flag.ContinueOnError)
-		username := fs.String("username", os.Getenv("BUGBARN_ADMIN_USERNAME"), "username")
-		password := fs.String("password", os.Getenv("BUGBARN_ADMIN_PASSWORD"), "plaintext password")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		*username = strings.TrimSpace(*username)
-		*password = strings.TrimSpace(*password)
-		if *username == "" {
-			return fmt.Errorf("--username is required")
-		}
-		if *password == "" {
-			return fmt.Errorf("--password is required")
-		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(*password), bcrypt.DefaultCost)
-		if err != nil {
-			return fmt.Errorf("hash password: %w", err)
-		}
-		store, err := storage.Open(cfg.dbPath)
-		if err != nil {
-			return err
-		}
-		defer store.Close()
-		if err := store.UpsertUser(context.Background(), *username, string(hash)); err != nil {
-			return fmt.Errorf("upsert user: %w", err)
-		}
-		fmt.Printf("user %q created/updated\n", *username)
-		return nil
-	default:
-		return fmt.Errorf("unknown user subcommand %q", args[0])
-	}
-}
-
-// runProjectCmd handles: bugbarn project create --name=X [--slug=Y]
-func runProjectCmd(cfg config, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: bugbarn project <create>")
-	}
-	switch args[0] {
-	case "create":
-		fs := flag.NewFlagSet("project create", flag.ContinueOnError)
-		name := fs.String("name", "", "project display name")
-		slug := fs.String("slug", "", "project slug (defaults to slugified name)")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		*name = strings.TrimSpace(*name)
-		if *name == "" {
-			return fmt.Errorf("--name is required")
-		}
-		if *slug == "" {
-			*slug = toSlug(*name)
-		}
-		if !slugPattern.MatchString(*slug) {
-			return fmt.Errorf("invalid slug %q: must be lowercase alphanumeric with hyphens", *slug)
-		}
-		store, err := storage.Open(cfg.dbPath)
-		if err != nil {
-			return err
-		}
-		defer store.Close()
-		p, err := store.CreateProject(context.Background(), *name, *slug)
-		if err != nil {
-			return fmt.Errorf("create project: %w", err)
-		}
-		return json.NewEncoder(os.Stdout).Encode(map[string]any{
-			"id":   p.ID,
-			"name": p.Name,
-			"slug": p.Slug,
-		})
-	default:
-		return fmt.Errorf("unknown project subcommand %q", args[0])
-	}
-}
-
-// runAPIKeyCmd handles: bugbarn apikey create --project=default --name=my-app
-func runAPIKeyCmd(cfg config, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: bugbarn apikey <create>")
-	}
-	switch args[0] {
-	case "create":
-		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
-		projectSlug := fs.String("project", "default", "project slug")
-		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", storage.APIKeyScopeFull, "key scope: full, ingest, or read")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		*name = strings.TrimSpace(*name)
-		if *name == "" {
-			return fmt.Errorf("--name is required")
-		}
-		if *scope != storage.APIKeyScopeFull && *scope != storage.APIKeyScopeIngest && *scope != storage.APIKeyScopeRead {
-			return fmt.Errorf("--scope must be %q, %q, or %q", storage.APIKeyScopeFull, storage.APIKeyScopeIngest, storage.APIKeyScopeRead)
-		}
-		store, err := storage.Open(cfg.dbPath)
-		if err != nil {
-			return err
-		}
-		defer store.Close()
-		ctx := context.Background()
-		project, err := store.ProjectBySlug(ctx, *projectSlug)
-		if err != nil {
-			// Auto-create the project if it doesn't exist yet.
-			project, err = store.CreateProject(ctx, *projectSlug, *projectSlug)
-			if err != nil {
-				return fmt.Errorf("create project %q: %w", *projectSlug, err)
-			}
-			fmt.Printf("Project %q created automatically.\n", *projectSlug)
-		}
-		// Generate a 32-byte random key.
-		var raw [32]byte
-		if _, err := rand.Read(raw[:]); err != nil {
-			return fmt.Errorf("generate key: %w", err)
-		}
-		plaintext := hex.EncodeToString(raw[:])
-		sum := sha256.Sum256([]byte(plaintext))
-		keySHA256 := hex.EncodeToString(sum[:])
-
-		key, err := store.CreateAPIKey(ctx, *name, project.ID, keySHA256, *scope)
-		if err != nil {
-			return fmt.Errorf("create api key: %w", err)
-		}
-		fmt.Printf("API key created (id=%d, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
-		fmt.Printf("Key (shown once, store securely): %s\n", plaintext)
-		return nil
-	default:
-		return fmt.Errorf("unknown apikey subcommand %q", args[0])
-	}
-}
-
-// toSlug converts a display name to a URL-safe slug.
-func toSlug(name string) string {
-	s := strings.ToLower(name)
-	s = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	return s
-}
-
 // runWorkerOnce replays queued records into the persistent store for local maintenance.
-func runWorkerOnce(cfg config) error {
-	persistentStore, err := storage.Open(cfg.dbPath)
+func runWorkerOnce(cfg config.Config) error {
+	persistentStore, err := storage.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
 	defer persistentStore.Close()
 
-	records, err := spool.ReadRecords(spool.Path(cfg.spoolDir))
+	records, err := spool.ReadRecords(spool.Path(cfg.SpoolDir))
 	if err != nil {
 		return err
 	}
@@ -662,65 +365,4 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 			}
 		}
 	}
-}
-
-func getenv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-// loadConfigFiles applies KEY=VALUE config files to the process environment.
-// Files are read in order: system-wide first, then user-specific. Values from
-// later files win over earlier ones, but env vars already set in the environment
-// always take precedence over values in any file.
-//
-// Supported locations:
-//   - /etc/bugbarn/bugbarn.conf          (Linux system-wide, read by systemd EnvironmentFile)
-//   - ~/.config/bugbarn/bugbarn.conf     (XDG user config, Linux + macOS)
-func loadConfigFiles() {
-	candidates := []string{
-		"/etc/bugbarn/bugbarn.conf",
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".config", "bugbarn", "bugbarn.conf"))
-	}
-	for _, path := range candidates {
-		if err := applyConfigFile(path); err != nil && !os.IsNotExist(err) {
-			log.Printf("warning: reading config file %s: %v", path, err)
-		}
-	}
-}
-
-// applyConfigFile reads KEY=VALUE pairs and sets them as environment variables
-// for keys not already set. Blank lines and # comments are ignored.
-// Values may optionally be wrapped in single or double quotes.
-func applyConfigFile(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		idx := strings.IndexByte(line, '=')
-		if idx < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
-			val = val[1 : len(val)-1]
-		}
-		if key != "" && os.Getenv(key) == "" {
-			os.Setenv(key, val) //nolint:errcheck
-		}
-	}
-	return scanner.Err()
 }

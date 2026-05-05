@@ -10,6 +10,7 @@ interface Props {
 
 const { title, description = '', currentSlug } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const canonicalUrl = new URL(Astro.url.pathname, 'https://bugbarn.webwiebe.nl');
 
 type NavItem = { label: string; slug: string };
 type NavSection = { section: string; items: NavItem[] };
@@ -42,8 +43,11 @@ const nav: NavSection[] = [
   {
     section: 'SDKs',
     items: [
-      { label: 'Overview',       slug: 'sdks/overview' },
-      { label: 'Go SDK',         slug: 'sdks/go' },
+      { label: 'Overview',        slug: 'sdks/overview' },
+      { label: 'Go',              slug: 'sdks/go' },
+      { label: 'TypeScript',      slug: 'sdks/typescript' },
+      { label: 'Python',          slug: 'sdks/python' },
+      { label: 'PHP',             slug: 'sdks/php' },
       { label: 'HTTP (any lang)', slug: 'sdks/http' },
     ],
   },
@@ -69,6 +73,7 @@ const nav: NavSection[] = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title} — BugBarn Docs</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
     <Analytics />
     <style>
       /* Prose styles for rendered markdown */
