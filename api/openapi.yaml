@@ -1,0 +1,2323 @@
+openapi: 3.1.0
+info:
+  title: BugBarn API
+  description: |
+    Self-hosted error tracking, structured logging, and web analytics.
+
+    ## Authentication
+
+    Most endpoints require authentication via one of two methods:
+
+    - **Session cookie** — Log in via `POST /api/v1/login` to receive a `bugbarn_session` cookie.
+      State-changing requests (POST, PUT, PATCH, DELETE) must include the `X-BugBarn-CSRF` header
+      with the value from the `bugbarn_csrf` cookie.
+    - **API key** — Pass a key in the `X-BugBarn-API-Key` header. Keys have scopes:
+      `full` (all access), `read` (GET only, no settings/apikeys), or `ingest` (POST to ingest endpoints only).
+
+    Ingest endpoints (`/api/v1/events`, `/api/v1/logs`, `/api/v1/analytics/collect`) use
+    wildcard CORS and accept ingest-scoped API keys so browser SDKs can POST from any origin.
+  version: 1.0.0
+  contact:
+    name: BugBarn
+    url: https://bugbarn.dev
+
+servers:
+  - url: https://bugbarn.wiebe.xyz
+    description: Production
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Auth
+    description: Login, logout, and session management
+  - name: Health
+    description: Health checks and runtime configuration
+  - name: Ingest
+    description: Event, log, and analytics ingestion (wildcard CORS)
+  - name: Issues
+    description: Grouped error issues
+  - name: Events
+    description: Individual error events
+  - name: Projects
+    description: Project management
+  - name: Groups
+    description: Project groups
+  - name: Releases
+    description: Release tracking
+  - name: Alerts
+    description: Alert rules
+  - name: Logs
+    description: Structured log viewing
+  - name: Settings
+    description: Project settings
+  - name: Source Maps
+    description: Source map management
+  - name: API Keys
+    description: API key management
+  - name: Facets
+    description: Issue facet discovery
+  - name: Analytics
+    description: Web analytics queries
+  - name: Setup
+    description: Project setup and onboarding
+
+security:
+  - sessionCookie: []
+  - apiKey: []
+
+paths:
+  # ──────────────────────────────────────────────
+  # Public / Auth
+  # ──────────────────────────────────────────────
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      tags: [Health]
+      summary: Health check
+      security: []
+      parameters:
+        - name: detail
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: Return detailed health including worker and project status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Degraded or unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/runtime-config:
+    get:
+      operationId: getRuntimeConfig
+      tags: [Health]
+      summary: Public runtime configuration for the web frontend
+      security: []
+      responses:
+        "200":
+          description: Runtime config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeConfig"
+
+  /api/v1/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Authenticate and create a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful
+          headers:
+            Set-Cookie:
+              description: Session and CSRF cookies
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                  authEnabled:
+                    type: boolean
+                  username:
+                    type: string
+        "401":
+          description: Invalid credentials
+        "429":
+          description: Too many login attempts
+          headers:
+            Retry-After:
+              schema:
+                type: string
+
+  /api/v1/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: Clear session
+      security: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                    example: false
+
+  /api/v1/me:
+    get:
+      operationId: me
+      tags: [Auth]
+      summary: Get current user info
+      security: []
+      responses:
+        "200":
+          description: Authenticated user info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                  authEnabled:
+                    type: boolean
+                  username:
+                    type: string
+        "401":
+          description: Not authenticated
+
+  # ──────────────────────────────────────────────
+  # Ingest (wildcard CORS)
+  # ──────────────────────────────────────────────
+  /api/v1/events:
+    post:
+      operationId: ingestEvent
+      tags: [Ingest]
+      summary: Ingest an error event
+      description: |
+        Accepts error events from SDKs. Uses wildcard CORS so browser SDKs can POST
+        from any origin. Accepts ingest-scoped or full-scoped API keys.
+      security:
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/XBugBarnProject"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestEvent"
+      responses:
+        "202":
+          description: Event accepted for processing
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing or invalid API key
+
+  /api/v1/logs:
+    post:
+      operationId: ingestLogs
+      tags: [Ingest]
+      summary: Ingest structured logs
+      description: |
+        Accepts structured log entries. Supports JSON array or NDJSON format.
+        Uses wildcard CORS. Requires a project context via API key or X-BugBarn-Project header.
+      security:
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/XBugBarnProject"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                logs:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/LogObject"
+          application/x-ndjson:
+            schema:
+              type: string
+              description: Newline-delimited JSON log objects
+      responses:
+        "204":
+          description: Logs accepted
+        "400":
+          description: Invalid payload or missing project
+    get:
+      operationId: listLogs
+      tags: [Logs]
+      summary: List structured logs
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+        - name: level
+          in: query
+          schema:
+            type: string
+            enum: [trace, debug, info, warn, error, fatal]
+          description: Minimum log level
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Full-text search query
+        - name: before
+          in: query
+          schema:
+            type: integer
+            format: int64
+          description: Cursor for pagination (log entry ID)
+      responses:
+        "200":
+          description: Log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LogEntry"
+                  next_cursor:
+                    type: integer
+                    format: int64
+
+  /api/v1/analytics/collect:
+    post:
+      operationId: collectPageView
+      tags: [Ingest]
+      summary: Collect a page view for web analytics
+      description: |
+        Accepts page view data from the analytics snippet. Uses wildcard CORS
+        for sendBeacon compatibility. No API key required.
+      security: []
+      parameters:
+        - name: project
+          in: query
+          schema:
+            type: string
+          description: Project slug
+        - $ref: "#/components/parameters/XBugBarnProject"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageViewPayload"
+      responses:
+        "202":
+          description: Page view accepted
+        "400":
+          description: Invalid payload or missing pathname
+
+  # ──────────────────────────────────────────────
+  # Analytics JS snippet
+  # ──────────────────────────────────────────────
+  /analytics.js:
+    get:
+      operationId: getAnalyticsSnippet
+      tags: [Analytics]
+      summary: Serve the analytics JavaScript snippet
+      security: []
+      parameters:
+        - name: project
+          in: query
+          schema:
+            type: string
+          description: Project slug to embed in the snippet
+      responses:
+        "200":
+          description: JavaScript snippet
+          content:
+            application/javascript:
+              schema:
+                type: string
+
+  # ──────────────────────────────────────────────
+  # Setup
+  # ──────────────────────────────────────────────
+  /api/v1/setup/{slug}:
+    get:
+      operationId: getSetup
+      tags: [Setup]
+      summary: Get project setup instructions
+      description: |
+        Returns a plain-text page with integration instructions, API keys,
+        and SDK examples for the given project slug. Auto-creates the project
+        if it does not exist.
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Setup instructions
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Invalid slug
+        "503":
+          description: Setup not configured
+
+  # ──────────────────────────────────────────────
+  # Issues
+  # ──────────────────────────────────────────────
+  /api/v1/issues:
+    get:
+      operationId: listIssues
+      tags: [Issues]
+      summary: List issues with filtering and pagination
+      parameters:
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [last_seen, first_seen, event_count]
+          description: Sort order
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, resolved, muted, all]
+          description: Filter by status
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: project_slug
+          in: query
+          schema:
+            type: string
+          description: Filter by project slug
+      responses:
+        "200":
+          description: List of issues
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Issue"
+                  hasMore:
+                    type: boolean
+
+  /api/v1/issues/sparklines:
+    get:
+      operationId: issueSparklines
+      tags: [Issues]
+      summary: Get 24-hour event count sparklines for issues
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Comma-separated issue display IDs (e.g. "BW-1,BW-2")
+      responses:
+        "200":
+          description: Sparkline data keyed by display ID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sparklines:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: integer
+                      minItems: 24
+                      maxItems: 24
+
+  /api/v1/issues/{issueId}:
+    get:
+      operationId: getIssue
+      tags: [Issues]
+      summary: Get a single issue by display ID
+      parameters:
+        - $ref: "#/components/parameters/issueId"
+      responses:
+        "200":
+          description: Issue detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issue:
+                    $ref: "#/components/schemas/Issue"
+        "404":
+          description: Issue not found
+
+  /api/v1/issues/{issueId}/events:
+    get:
+      operationId: listIssueEvents
+      tags: [Issues]
+      summary: List events for an issue
+      parameters:
+        - $ref: "#/components/parameters/issueId"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 25
+        - name: before
+          in: query
+          schema:
+            type: integer
+            format: int64
+          description: Cursor for pagination (event row ID)
+      responses:
+        "200":
+          description: Events for the issue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Event"
+                  hasMore:
+                    type: boolean
+
+  /api/v1/issues/{issueId}/resolve:
+    post:
+      operationId: resolveIssue
+      tags: [Issues]
+      summary: Resolve an issue
+      parameters:
+        - $ref: "#/components/parameters/issueId"
+      responses:
+        "200":
+          description: Issue resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issue:
+                    $ref: "#/components/schemas/Issue"
+
+  /api/v1/issues/{issueId}/reopen:
+    post:
+      operationId: reopenIssue
+      tags: [Issues]
+      summary: Reopen a resolved issue
+      parameters:
+        - $ref: "#/components/parameters/issueId"
+      responses:
+        "200":
+          description: Issue reopened
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issue:
+                    $ref: "#/components/schemas/Issue"
+
+  /api/v1/issues/{issueId}/mute:
+    patch:
+      operationId: muteIssue
+      tags: [Issues]
+      summary: Mute an issue
+      parameters:
+        - $ref: "#/components/parameters/issueId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mute_mode]
+              properties:
+                mute_mode:
+                  type: string
+                  enum: [until_regression, forever]
+      responses:
+        "200":
+          description: Issue muted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issue:
+                    $ref: "#/components/schemas/Issue"
+
+  /api/v1/issues/{issueId}/unmute:
+    patch:
+      operationId: unmuteIssue
+      tags: [Issues]
+      summary: Unmute an issue
+      parameters:
+        - $ref: "#/components/parameters/issueId"
+      responses:
+        "200":
+          description: Issue unmuted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issue:
+                    $ref: "#/components/schemas/Issue"
+
+  # ──────────────────────────────────────────────
+  # Events
+  # ──────────────────────────────────────────────
+  /api/v1/events/{eventId}:
+    get:
+      operationId: getEvent
+      tags: [Events]
+      summary: Get a single event by ID
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event:
+                    $ref: "#/components/schemas/Event"
+        "404":
+          description: Event not found
+
+  /api/v1/events/stream:
+    get:
+      operationId: streamEvents
+      tags: [Events]
+      summary: SSE stream of live error events
+      description: |
+        Server-Sent Events stream that emits new error events as they are processed.
+        Polls every 3 seconds and sends keepalive comments every 15 seconds.
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Only emit events after this timestamp (RFC 3339)
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/v1/live/events:
+    get:
+      operationId: listRecentEvents
+      tags: [Events]
+      summary: List recent live events
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Events after this timestamp (RFC 3339)
+        - name: window
+          in: query
+          schema:
+            type: string
+          description: Duration window (e.g. "15m", "1h")
+      responses:
+        "200":
+          description: Recent events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Event"
+
+  # ──────────────────────────────────────────────
+  # Projects
+  # ──────────────────────────────────────────────
+  /api/v1/projects:
+    get:
+      operationId: listProjects
+      tags: [Projects]
+      summary: List all projects
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [Projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                  description: Auto-generated from name if omitted
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    $ref: "#/components/schemas/Project"
+
+  /api/v1/projects/pending-count:
+    get:
+      operationId: getPendingProjectCount
+      tags: [Projects]
+      summary: Get count of pending projects
+      responses:
+        "200":
+          description: Pending project count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  slugs:
+                    type: array
+                    items:
+                      type: string
+
+  /api/v1/projects/{slug}:
+    put:
+      operationId: renameProject
+      tags: [Projects]
+      summary: Rename a project
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug]
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+      responses:
+        "200":
+          description: Project renamed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+    delete:
+      operationId: deleteProject
+      tags: [Projects]
+      summary: Delete a project and all its data
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      responses:
+        "200":
+          description: Project deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/v1/projects/{slug}/approve:
+    post:
+      operationId: approveProject
+      tags: [Projects]
+      summary: Approve a pending project
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      responses:
+        "200":
+          description: Project approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/v1/projects/{slug}/merge:
+    post:
+      operationId: mergeProject
+      tags: [Projects]
+      summary: Merge a project into another
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target]
+              properties:
+                target:
+                  type: string
+                  description: Target project slug to merge into
+      responses:
+        "200":
+          description: Project merged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  # ──────────────────────────────────────────────
+  # Groups
+  # ──────────────────────────────────────────────
+  /api/v1/groups:
+    get:
+      operationId: listGroups
+      tags: [Groups]
+      summary: List project groups
+      responses:
+        "200":
+          description: List of groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectGroup"
+    post:
+      operationId: createGroup
+      tags: [Groups]
+      summary: Create a project group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                  description: Auto-generated from name if omitted
+      responses:
+        "201":
+          description: Group created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group:
+                    $ref: "#/components/schemas/ProjectGroup"
+
+  /api/v1/groups/{slug}:
+    delete:
+      operationId: deleteGroup
+      tags: [Groups]
+      summary: Delete a project group
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Group deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  /api/v1/groups/{slug}/projects:
+    post:
+      operationId: assignProjectToGroup
+      tags: [Groups]
+      summary: Assign a project to a group
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project]
+              properties:
+                project:
+                  type: string
+                  description: Project slug to assign
+      responses:
+        "200":
+          description: Project assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/v1/groups/{slug}/projects/{projectSlug}:
+    delete:
+      operationId: removeProjectFromGroup
+      tags: [Groups]
+      summary: Remove a project from a group
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project removed from group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  # ──────────────────────────────────────────────
+  # Releases
+  # ──────────────────────────────────────────────
+  /api/v1/releases:
+    get:
+      operationId: listReleases
+      tags: [Releases]
+      summary: List releases
+      responses:
+        "200":
+          description: List of releases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  releases:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Release"
+    post:
+      operationId: createRelease
+      tags: [Releases]
+      summary: Create a release marker
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseInput"
+      responses:
+        "200":
+          description: Release created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  release:
+                    $ref: "#/components/schemas/Release"
+
+  /api/v1/releases/{releaseId}:
+    get:
+      operationId: getRelease
+      tags: [Releases]
+      summary: Get a release by ID
+      parameters:
+        - $ref: "#/components/parameters/releaseId"
+      responses:
+        "200":
+          description: Release detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  release:
+                    $ref: "#/components/schemas/Release"
+        "404":
+          description: Release not found
+    put:
+      operationId: updateRelease
+      tags: [Releases]
+      summary: Update a release
+      parameters:
+        - $ref: "#/components/parameters/releaseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseInput"
+      responses:
+        "200":
+          description: Release updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  release:
+                    $ref: "#/components/schemas/Release"
+    delete:
+      operationId: deleteRelease
+      tags: [Releases]
+      summary: Delete a release
+      parameters:
+        - $ref: "#/components/parameters/releaseId"
+      responses:
+        "200":
+          description: Release deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  # ──────────────────────────────────────────────
+  # Alerts
+  # ──────────────────────────────────────────────
+  /api/v1/alerts:
+    get:
+      operationId: listAlerts
+      tags: [Alerts]
+      summary: List alert rules
+      responses:
+        "200":
+          description: List of alerts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alerts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Alert"
+    post:
+      operationId: createAlert
+      tags: [Alerts]
+      summary: Create an alert rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertInput"
+      responses:
+        "200":
+          description: Alert created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert:
+                    $ref: "#/components/schemas/Alert"
+
+  /api/v1/alerts/{alertId}:
+    get:
+      operationId: getAlert
+      tags: [Alerts]
+      summary: Get an alert rule by ID
+      parameters:
+        - $ref: "#/components/parameters/alertId"
+      responses:
+        "200":
+          description: Alert detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert:
+                    $ref: "#/components/schemas/Alert"
+        "404":
+          description: Alert not found
+    put:
+      operationId: updateAlert
+      tags: [Alerts]
+      summary: Update an alert rule
+      parameters:
+        - $ref: "#/components/parameters/alertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertInput"
+      responses:
+        "200":
+          description: Alert updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert:
+                    $ref: "#/components/schemas/Alert"
+    delete:
+      operationId: deleteAlert
+      tags: [Alerts]
+      summary: Delete an alert rule
+      parameters:
+        - $ref: "#/components/parameters/alertId"
+      responses:
+        "200":
+          description: Alert deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  # ──────────────────────────────────────────────
+  # Logs
+  # ──────────────────────────────────────────────
+  /api/v1/logs/stream:
+    get:
+      operationId: streamLogs
+      tags: [Logs]
+      summary: SSE stream of live log entries
+      description: |
+        Server-Sent Events stream that emits new log entries as they arrive.
+        Sends keepalive comments every 15 seconds.
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "503":
+          description: Log streaming unavailable
+
+  # ──────────────────────────────────────────────
+  # Settings
+  # ──────────────────────────────────────────────
+  /api/v1/settings:
+    get:
+      operationId: getSettings
+      tags: [Settings]
+      summary: Get project settings
+      responses:
+        "200":
+          description: Settings map
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    type: object
+                    additionalProperties:
+                      type: string
+    put:
+      operationId: updateSettings
+      tags: [Settings]
+      summary: Update project settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    type: object
+                    additionalProperties:
+                      type: string
+
+  # ──────────────────────────────────────────────
+  # Source Maps
+  # ──────────────────────────────────────────────
+  /api/v1/source-maps:
+    get:
+      operationId: listSourceMaps
+      tags: [Source Maps]
+      summary: List uploaded source maps
+      responses:
+        "200":
+          description: Source map list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sourceMaps:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SourceMapMeta"
+    post:
+      operationId: uploadSourceMap
+      tags: [Source Maps]
+      summary: Upload a source map file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [source_map]
+              properties:
+                source_map:
+                  type: string
+                  format: binary
+                  description: The source map file
+                release:
+                  type: string
+                dist:
+                  type: string
+                bundle_url:
+                  type: string
+                  description: URL of the JavaScript bundle
+                source_map_name:
+                  type: string
+      responses:
+        "202":
+          description: Source map accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+                  artifactId:
+                    type: string
+                  release:
+                    type: string
+                  dist:
+                    type: string
+                  bundleUrl:
+                    type: string
+        "413":
+          description: Source map too large
+
+  # ──────────────────────────────────────────────
+  # API Keys
+  # ──────────────────────────────────────────────
+  /api/v1/apikeys:
+    get:
+      operationId: listAPIKeys
+      tags: [API Keys]
+      summary: List API keys (without secret values)
+      responses:
+        "200":
+          description: API key list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKeys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APIKey"
+
+  /api/v1/apikeys/{keyId}:
+    delete:
+      operationId: deleteAPIKey
+      tags: [API Keys]
+      summary: Delete an API key
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: API key deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  # ──────────────────────────────────────────────
+  # Facets
+  # ──────────────────────────────────────────────
+  /api/v1/facets:
+    get:
+      operationId: listFacetKeys
+      tags: [Facets]
+      summary: List available facet keys
+      responses:
+        "200":
+          description: Facet keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: string
+
+  /api/v1/facets/{key}:
+    get:
+      operationId: listFacetValues
+      tags: [Facets]
+      summary: List values for a facet key
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Facet values
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  values:
+                    type: array
+                    items:
+                      type: string
+
+  # ──────────────────────────────────────────────
+  # Analytics queries
+  # ──────────────────────────────────────────────
+  /api/v1/analytics/overview:
+    get:
+      operationId: analyticsOverview
+      tags: [Analytics]
+      summary: Get analytics overview (pageviews, sessions, pages, avg duration)
+      parameters:
+        - $ref: "#/components/parameters/analyticsStart"
+        - $ref: "#/components/parameters/analyticsEnd"
+      responses:
+        "200":
+          description: Overview stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsOverview"
+
+  /api/v1/analytics/pages:
+    get:
+      operationId: analyticsPages
+      tags: [Analytics]
+      summary: Get per-page analytics
+      parameters:
+        - $ref: "#/components/parameters/analyticsStart"
+        - $ref: "#/components/parameters/analyticsEnd"
+      responses:
+        "200":
+          description: Page stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PageStat"
+
+  /api/v1/analytics/timeline:
+    get:
+      operationId: analyticsTimeline
+      tags: [Analytics]
+      summary: Get time series of pageviews and sessions
+      parameters:
+        - $ref: "#/components/parameters/analyticsStart"
+        - $ref: "#/components/parameters/analyticsEnd"
+        - name: granularity
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month]
+            default: day
+      responses:
+        "200":
+          description: Timeline buckets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  granularity:
+                    type: string
+                  buckets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TimelineBucket"
+
+  /api/v1/analytics/referrers:
+    get:
+      operationId: analyticsReferrers
+      tags: [Analytics]
+      summary: Get referrer stats
+      parameters:
+        - $ref: "#/components/parameters/analyticsStart"
+        - $ref: "#/components/parameters/analyticsEnd"
+      responses:
+        "200":
+          description: Referrer stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  referrers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReferrerStat"
+
+  /api/v1/analytics/segments:
+    get:
+      operationId: analyticsSegments
+      tags: [Analytics]
+      summary: Get segment breakdown
+      parameters:
+        - $ref: "#/components/parameters/analyticsStart"
+        - $ref: "#/components/parameters/analyticsEnd"
+        - name: dim
+          in: query
+          schema:
+            type: string
+          description: Segment dimension
+      responses:
+        "200":
+          description: Segment buckets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dim:
+                    type: string
+                  buckets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SegmentBucket"
+
+  /api/v1/analytics/flow:
+    get:
+      operationId: analyticsFlow
+      tags: [Analytics]
+      summary: Get page flow (where users came from and went to)
+      parameters:
+        - $ref: "#/components/parameters/analyticsStart"
+        - $ref: "#/components/parameters/analyticsEnd"
+        - name: pathname
+          in: query
+          schema:
+            type: string
+          description: Page pathname to analyze
+      responses:
+        "200":
+          description: Page flow data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageFlowResult"
+
+  /api/v1/analytics/scroll:
+    get:
+      operationId: analyticsScroll
+      tags: [Analytics]
+      summary: Get scroll depth distribution for a page
+      parameters:
+        - $ref: "#/components/parameters/analyticsStart"
+        - $ref: "#/components/parameters/analyticsEnd"
+        - name: pathname
+          in: query
+          schema:
+            type: string
+          description: Page pathname to analyze
+      responses:
+        "200":
+          description: Scroll depth buckets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrollDepthResult"
+
+  /api/v1/analytics/dropout:
+    get:
+      operationId: analyticsDropout
+      tags: [Analytics]
+      summary: Get page dropout (bounce) stats
+      parameters:
+        - $ref: "#/components/parameters/analyticsStart"
+        - $ref: "#/components/parameters/analyticsEnd"
+      responses:
+        "200":
+          description: Dropout stats per page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DropoutStat"
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: bugbarn_session
+      description: |
+        Session cookie set by POST /api/v1/login. State-changing requests
+        must also include the X-BugBarn-CSRF header with the value from
+        the bugbarn_csrf cookie.
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-BugBarn-API-Key
+      description: |
+        API key header. Scopes: `full` (all access), `read` (GET only, excludes
+        settings and apikeys), `ingest` (POST to ingest endpoints only).
+
+  parameters:
+    issueId:
+      name: issueId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Issue display ID (e.g. "BW-3")
+
+    projectSlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Project slug
+
+    releaseId:
+      name: releaseId
+      in: path
+      required: true
+      schema:
+        type: string
+
+    alertId:
+      name: alertId
+      in: path
+      required: true
+      schema:
+        type: string
+
+    XBugBarnProject:
+      name: X-BugBarn-Project
+      in: header
+      schema:
+        type: string
+      description: Project slug for routing events
+
+    analyticsStart:
+      name: start
+      in: query
+      schema:
+        type: string
+        format: date
+        example: "2025-01-01"
+      description: Start date (YYYY-MM-DD), defaults to 30 days ago
+
+    analyticsEnd:
+      name: end
+      in: query
+      schema:
+        type: string
+        format: date
+        example: "2025-01-31"
+      description: End date (YYYY-MM-DD), defaults to today
+
+  schemas:
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unhealthy]
+        worker:
+          type: object
+          properties:
+            healthy:
+              type: boolean
+            level:
+              type: string
+            lastAdvance:
+              type: string
+              format: date-time
+              nullable: true
+            pendingRecords:
+              type: integer
+              format: int64
+            deadLetterCount:
+              type: integer
+              format: int64
+            processedTotal:
+              type: integer
+              format: int64
+            staleSince:
+              type: string
+              format: date-time
+              nullable: true
+        projects:
+          type: object
+          properties:
+            pendingCount:
+              type: integer
+            pendingSlugs:
+              type: array
+              items:
+                type: string
+
+    RuntimeConfig:
+      type: object
+      properties:
+        funnelbarn:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            endpoint:
+              type: string
+            apiKey:
+              type: string
+        bugbarn:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            apiKey:
+              type: string
+            project:
+              type: string
+
+    Issue:
+      type: object
+      properties:
+        ID:
+          type: string
+        IssueNumber:
+          type: integer
+        Fingerprint:
+          type: string
+        FingerprintMaterial:
+          type: string
+        FingerprintExplanation:
+          type: array
+          items:
+            type: string
+        Title:
+          type: string
+        NormalizedTitle:
+          type: string
+        ExceptionType:
+          type: string
+        Status:
+          type: string
+          enum: [open, resolved, muted]
+        MuteMode:
+          type: string
+          enum: [until_regression, forever, ""]
+        ResolvedAt:
+          type: string
+          format: date-time
+        ReopenedAt:
+          type: string
+          format: date-time
+        LastRegressedAt:
+          type: string
+          format: date-time
+        RegressionCount:
+          type: integer
+        FirstSeen:
+          type: string
+          format: date-time
+        LastSeen:
+          type: string
+          format: date-time
+        EventCount:
+          type: integer
+        RepresentativeEvent:
+          $ref: "#/components/schemas/EventPayload"
+        project_slug:
+          type: string
+
+    Event:
+      type: object
+      properties:
+        ID:
+          type: string
+        IssueID:
+          type: string
+        Fingerprint:
+          type: string
+        FingerprintMaterial:
+          type: string
+        FingerprintExplanation:
+          type: array
+          items:
+            type: string
+        ReceivedAt:
+          type: string
+          format: date-time
+        ObservedAt:
+          type: string
+          format: date-time
+        Severity:
+          type: string
+        Message:
+          type: string
+        Regressed:
+          type: boolean
+        Payload:
+          $ref: "#/components/schemas/EventPayload"
+
+    EventPayload:
+      type: object
+      description: Full event payload as captured by the SDK
+      properties:
+        ingestId:
+          type: string
+        receivedAt:
+          type: string
+          format: date-time
+        observedAt:
+          type: string
+          format: date-time
+        severity:
+          type: string
+        message:
+          type: string
+        exception:
+          $ref: "#/components/schemas/Exception"
+        resource:
+          type: object
+          additionalProperties: true
+        attributes:
+          type: object
+          additionalProperties: true
+        traceId:
+          type: string
+        spanId:
+          type: string
+        sdkName:
+          type: string
+        fingerprint:
+          type: string
+        fingerprintMaterial:
+          type: string
+        fingerprintExplanation:
+          type: array
+          items:
+            type: string
+        rawScrubbed:
+          type: object
+          additionalProperties: true
+        user:
+          $ref: "#/components/schemas/UserContext"
+        breadcrumbs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Breadcrumb"
+
+    Exception:
+      type: object
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+        stacktrace:
+          type: array
+          items:
+            $ref: "#/components/schemas/StackFrame"
+
+    StackFrame:
+      type: object
+      properties:
+        function:
+          type: string
+        file:
+          type: string
+        line:
+          type: integer
+        column:
+          type: integer
+        module:
+          type: string
+        originalFunction:
+          type: string
+        originalFile:
+          type: string
+        originalLine:
+          type: integer
+        originalColumn:
+          type: integer
+        snippet:
+          type: string
+
+    UserContext:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        username:
+          type: string
+
+    Breadcrumb:
+      type: object
+      properties:
+        timestamp:
+          type: string
+        category:
+          type: string
+        message:
+          type: string
+        level:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+
+    IngestEvent:
+      type: object
+      description: Event payload sent by SDKs for ingestion
+      properties:
+        severityText:
+          type: string
+          enum: [error, warning, info]
+        body:
+          type: string
+        exception:
+          $ref: "#/components/schemas/Exception"
+        attributes:
+          type: object
+          additionalProperties: true
+        resource:
+          type: object
+          additionalProperties: true
+        observedTimestamp:
+          type: string
+          format: date-time
+        traceId:
+          type: string
+        spanId:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserContext"
+        breadcrumbs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Breadcrumb"
+
+    Project:
+      type: object
+      properties:
+        ID:
+          type: integer
+          format: int64
+        Name:
+          type: string
+        Slug:
+          type: string
+        Status:
+          type: string
+          enum: [active, pending]
+        IssuePrefix:
+          type: string
+        IssueCounter:
+          type: integer
+        GroupID:
+          type: integer
+          format: int64
+          nullable: true
+        CreatedAt:
+          type: string
+          format: date-time
+
+    ProjectGroup:
+      type: object
+      properties:
+        ID:
+          type: integer
+          format: int64
+        Name:
+          type: string
+        Slug:
+          type: string
+        CreatedAt:
+          type: string
+          format: date-time
+
+    Release:
+      type: object
+      properties:
+        ID:
+          type: string
+        Name:
+          type: string
+        Environment:
+          type: string
+        ObservedAt:
+          type: string
+          format: date-time
+        Version:
+          type: string
+        CommitSHA:
+          type: string
+        URL:
+          type: string
+        Notes:
+          type: string
+        CreatedBy:
+          type: string
+        CreatedAt:
+          type: string
+          format: date-time
+
+    ReleaseInput:
+      type: object
+      properties:
+        name:
+          type: string
+        environment:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+        version:
+          type: string
+        commitSha:
+          type: string
+        url:
+          type: string
+        notes:
+          type: string
+        createdBy:
+          type: string
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        severity:
+          type: string
+        rule:
+          type: object
+          additionalProperties: true
+        webhook_url:
+          type: string
+        condition:
+          type: string
+        threshold:
+          type: integer
+        cooldown_minutes:
+          type: integer
+        last_fired_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        project_slug:
+          type: string
+
+    AlertInput:
+      type: object
+      properties:
+        name:
+          type: string
+        enabled:
+          type: boolean
+        severity:
+          type: string
+        rule:
+          type: object
+          additionalProperties: true
+        webhook_url:
+          type: string
+        condition:
+          type: string
+        threshold:
+          type: integer
+        cooldown_minutes:
+          type: integer
+
+    LogEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        project_id:
+          type: integer
+          format: int64
+        project_slug:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        level_num:
+          type: integer
+        level:
+          type: string
+        message:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+
+    LogObject:
+      type: object
+      description: |
+        Pino-compatible log object. Recognized fields: msg/message, level (string or number),
+        time (unix ms). All other fields are stored as data.
+      properties:
+        msg:
+          type: string
+        message:
+          type: string
+        level:
+          oneOf:
+            - type: string
+            - type: integer
+        time:
+          type: number
+          description: Unix timestamp in milliseconds
+      additionalProperties: true
+
+    SourceMapMeta:
+      type: object
+      properties:
+        id:
+          type: string
+        release:
+          type: string
+        dist:
+          type: string
+        bundleUrl:
+          type: string
+        name:
+          type: string
+        size:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+
+    APIKey:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        projectId:
+          type: integer
+          format: int64
+        scope:
+          type: string
+          enum: [full, read, ingest]
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+
+    PageViewPayload:
+      type: object
+      required: [pathname]
+      properties:
+        pathname:
+          type: string
+        hostname:
+          type: string
+        referrer:
+          type: string
+        visitorId:
+          type: string
+        sessionId:
+          type: string
+        screenWidth:
+          type: integer
+        duration:
+          type: integer
+          format: int64
+          description: Page duration in milliseconds
+        maxScrollPct:
+          type: integer
+          minimum: 0
+          maximum: 100
+        interactionCount:
+          type: integer
+        exitPathname:
+          type: string
+        props:
+          type: object
+          additionalProperties:
+            type: string
+          description: Custom properties (max 10, values truncated at 200 chars)
+
+    AnalyticsOverview:
+      type: object
+      properties:
+        pageviews:
+          type: integer
+          format: int64
+        sessions:
+          type: integer
+          format: int64
+        pages:
+          type: integer
+          format: int64
+        avgDurationMs:
+          type: integer
+          format: int64
+
+    PageStat:
+      type: object
+      properties:
+        pathname:
+          type: string
+        pageviews:
+          type: integer
+          format: int64
+        sessions:
+          type: integer
+          format: int64
+
+    TimelineBucket:
+      type: object
+      properties:
+        date:
+          type: string
+        pageviews:
+          type: integer
+          format: int64
+        sessions:
+          type: integer
+          format: int64
+
+    ReferrerStat:
+      type: object
+      properties:
+        host:
+          type: string
+        pageviews:
+          type: integer
+          format: int64
+        sessions:
+          type: integer
+          format: int64
+
+    SegmentBucket:
+      type: object
+      properties:
+        value:
+          type: string
+        pageviews:
+          type: integer
+          format: int64
+        sessions:
+          type: integer
+          format: int64
+
+    PageFlowResult:
+      type: object
+      properties:
+        pathname:
+          type: string
+        cameFrom:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowEntry"
+        wentTo:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowEntry"
+
+    FlowEntry:
+      type: object
+      properties:
+        pathname:
+          type: string
+        count:
+          type: integer
+          format: int64
+        pct:
+          type: number
+          format: double
+
+    ScrollDepthResult:
+      type: object
+      properties:
+        pathname:
+          type: string
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScrollBucket"
+
+    ScrollBucket:
+      type: object
+      properties:
+        label:
+          type: string
+        count:
+          type: integer
+          format: int64
+        pct:
+          type: number
+          format: double
+
+    DropoutStat:
+      type: object
+      properties:
+        pathname:
+          type: string
+        pageviews:
+          type: integer
+          format: int64
+        bouncedSessions:
+          type: integer
+          format: int64
+        bounceRate:
+          type: number
+          format: double
