@@ -35,6 +35,36 @@ var (
 )
 
 
+// OpenReadOnly opens a read-only connection to an existing SQLite database.
+// The returned Store has no write connection (db is nil) and skips schema
+// initialisation and migrations — the database must already be set up.
+// All read methods that go through readDB() work as normal; write methods
+// will fail because db is nil.
+func OpenReadOnly(path string) (*Store, error) {
+	if strings.TrimSpace(path) == "" {
+		path = defaultDBPath
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+
+	roDB, err := sql.Open(driverName, sqliteReadOnlyDSN(absPath))
+	if err != nil {
+		return nil, err
+	}
+	roDB.SetMaxOpenConns(4)
+
+	// Verify the database is reachable.
+	if err := roDB.Ping(); err != nil {
+		roDB.Close()
+		return nil, err
+	}
+
+	return &Store{db: nil, roDB: roDB}, nil
+}
+
 func Open(path string) (*Store, error) {
 	if strings.TrimSpace(path) == "" {
 		path = defaultDBPath
@@ -110,6 +140,33 @@ func (s *Store) DefaultProjectID() int64 {
 // DB returns the underlying *sql.DB. Use sparingly — prefer Store methods.
 func (s *Store) DB() *sql.DB {
 	return s.db
+}
+
+// SwapReadDB closes the current read-only connection and opens a new one at path.
+// Used by the reader restore loop to pick up a freshly-restored database.
+func (s *Store) SwapReadDB(path string) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+
+	newDB, err := sql.Open(driverName, sqliteReadOnlyDSN(absPath))
+	if err != nil {
+		return err
+	}
+	newDB.SetMaxOpenConns(4)
+
+	if err := newDB.Ping(); err != nil {
+		newDB.Close()
+		return err
+	}
+
+	old := s.roDB
+	s.roDB = newDB
+	if old != nil {
+		old.Close()
+	}
+	return nil
 }
 
 // PersistProcessedEvent stores a processed event and upserts the related issue.
