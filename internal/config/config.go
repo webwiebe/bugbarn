@@ -39,6 +39,8 @@ type Config struct {
 	FunnelBarnEndpoint     string // BUGBARN_FUNNELBARN_ENDPOINT
 	FunnelBarnAPIKey       string // BUGBARN_FUNNELBARN_API_KEY
 	AutoApproveProjects    bool   // BUGBARN_AUTO_APPROVE_PROJECTS
+	Mode                   string // BUGBARN_MODE: "", "writer", or "reader"
+	WriterURL              string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
 }
 
 // Load reads configuration from environment variables and config files.
@@ -64,6 +66,8 @@ func Load() Config {
 		FunnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
 		FunnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
 		AutoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
+		Mode:                os.Getenv("BUGBARN_MODE"),
+		WriterURL:           os.Getenv("BUGBARN_WRITER_URL"),
 	}
 
 	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {
@@ -148,6 +152,16 @@ func Load() Config {
 			From:    os.Getenv("SMTP_FROM"),
 			To:      os.Getenv("BUGBARN_DIGEST_TO"),
 		},
+	}
+
+	// Validate CQRS mode.
+	switch cfg.Mode {
+	case "", "writer", "reader":
+	default:
+		log.Fatalf("invalid BUGBARN_MODE %q: must be \"\", \"writer\", or \"reader\"", cfg.Mode)
+	}
+	if cfg.Mode == "reader" && cfg.WriterURL == "" {
+		log.Fatalf("BUGBARN_WRITER_URL is required when BUGBARN_MODE is \"reader\"")
 	}
 
 	return cfg

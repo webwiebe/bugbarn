@@ -25,6 +25,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
+	"github.com/wiebe-xyz/bugbarn/internal/reader"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
@@ -68,6 +69,10 @@ func run() error {
 		case "apikey":
 			return cli.RunAPIKey(cfg, os.Args[2:])
 		}
+	}
+
+	if cfg.Mode == "reader" {
+		return runReader(cfg, logger)
 	}
 
 	if cfg.SessionSecret == "" {
@@ -166,6 +171,75 @@ func run() error {
 		if selfReporting {
 			bb.Shutdown(2 * time.Second)
 		}
+		return server.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+// runReader starts the server in read-only mode. It opens a read-only SQLite
+// copy (restored from Litestream) and forwards all writes to the writer pod.
+func runReader(cfg config.Config, logger *slog.Logger) error {
+	store, err := storage.OpenReadOnly(cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("open read-only storage: %w", err)
+	}
+	defer store.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	forwarder := api.NewWriteForwarder(cfg.WriterURL)
+
+	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
+	if err != nil {
+		return err
+	}
+	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
+	if err != nil {
+		return err
+	}
+	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
+
+	// Reader needs the ingest handler for API key validation on GET requests,
+	// but with nil spool since writes are forwarded to the writer.
+	handler := ingest.NewHandler(apiAuthorizer, nil, cfg.MaxBodyBytes)
+
+	logHub := logstream.NewHub()
+	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
+	apiServer.SetLogHub(logHub)
+	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
+	apiServer.SetWriteForwarder(forwarder)
+	if len(cfg.TrustedProxies) > 0 {
+		apiServer.SetTrustedProxies(cfg.TrustedProxies)
+	}
+	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
+	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
+	if cfg.MaxSourceMapBytes > 0 {
+		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
+	}
+
+	server := &http.Server{
+		Addr:    cfg.Addr,
+		Handler: apiServer,
+	}
+
+	go reader.StartRestoreLoop(ctx, store, cfg.DBPath, logger)
+
+	logger.Info("starting in reader mode", "addr", cfg.Addr, "writer_url", cfg.WriterURL)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		return server.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {

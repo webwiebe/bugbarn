@@ -49,7 +49,8 @@ type Server struct {
 	workerStatus       *worker.Status
 	autoApproveProjects bool
 
-	loginLimiter sync.Map // map[string]*loginAttempt
+	loginLimiter    sync.Map // map[string]*loginAttempt
+	writeForwarder  *WriteForwarder
 }
 
 // SetTrustedProxies sets the CIDRs from which X-Forwarded-For is trusted.
@@ -99,6 +100,12 @@ func (s *Server) SetWorkerStatus(ws *worker.Status) {
 // new projects instead of creating them with status=pending.
 func (s *Server) SetAutoApproveProjects(auto bool) {
 	s.autoApproveProjects = auto
+}
+
+// SetWriteForwarder configures the server to forward non-GET requests to
+// an upstream writer instance. Used in reader mode (CQRS split).
+func (s *Server) SetWriteForwarder(f *WriteForwarder) {
+	s.writeForwarder = f
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog.Logger) *Server {
@@ -152,6 +159,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.Method == http.MethodPost {
+			if s.writeForwarder != nil {
+				s.writeForwarder.Forward(w, r)
+				return
+			}
 			s.ingestHandler.ServeHTTP(w, r)
 			return
 		}
@@ -164,6 +175,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-project")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		if s.writeForwarder != nil {
+			s.writeForwarder.Forward(w, r)
+			return
+		}
 		// Resolve project from API key / header.
 		var logProjectID int64
 		if s.ingestHandler != nil {
@@ -213,6 +228,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.Method == http.MethodPost {
+			if s.writeForwarder != nil {
+				s.writeForwarder.Forward(w, r)
+				return
+			}
 			s.collectPageView(w, r)
 			return
 		}
@@ -246,9 +265,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveRuntimeConfig(w, r)
 		return
 	case r.URL.Path == "/api/v1/login" && r.Method == http.MethodPost:
+		if s.writeForwarder != nil {
+			s.writeForwarder.Forward(w, r)
+			return
+		}
 		s.login(w, r)
 		return
 	case r.URL.Path == "/api/v1/logout" && r.Method == http.MethodPost:
+		if s.writeForwarder != nil {
+			s.writeForwarder.Forward(w, r)
+			return
+		}
 		s.logout(w, r)
 		return
 	case r.URL.Path == "/api/v1/me" && r.Method == http.MethodGet:
@@ -339,6 +366,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			resolvedProjectID = s.projects.DefaultProjectID()
 		}
 		r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
+	}
+
+	// In reader mode, forward all authenticated non-GET requests to the writer.
+	if s.writeForwarder != nil && r.Method != http.MethodGet {
+		s.writeForwarder.Forward(w, r)
+		return
 	}
 
 	// Protected route dispatch.
