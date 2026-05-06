@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	restoreInterval   = 30 * time.Second
-	litestreamConfig  = "/etc/litestream.yml"
+	restoreInterval      = 30 * time.Second
+	litestreamConfig     = "/etc/litestream.yml"
+	litestreamDBPath     = "/var/lib/bugbarn/bugbarn.db"
 )
 
 // StartRestoreLoop periodically restores a fresh SQLite copy from Litestream
@@ -42,7 +43,7 @@ func restoreAndSwap(ctx context.Context, store *storage.Store, dbPath string, lo
 		"-config", litestreamConfig,
 		"-if-replica-exists",
 		"-o", tmpPath,
-		dbPath,
+		litestreamDBPath,
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

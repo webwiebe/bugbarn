@@ -185,7 +185,16 @@ func run() error {
 func runReader(cfg config.Config, logger *slog.Logger) error {
 	store, err := storage.OpenReadOnly(cfg.DBPath)
 	if err != nil {
-		return fmt.Errorf("open read-only storage: %w", err)
+		logger.Warn("read-only open failed, bootstrapping empty database", "error", err)
+		bootstrap, bErr := storage.Open(cfg.DBPath)
+		if bErr != nil {
+			return fmt.Errorf("bootstrap empty database: %w", bErr)
+		}
+		bootstrap.Close()
+		store, err = storage.OpenReadOnly(cfg.DBPath)
+		if err != nil {
+			return fmt.Errorf("open read-only storage after bootstrap: %w", err)
+		}
 	}
 	defer store.Close()
 

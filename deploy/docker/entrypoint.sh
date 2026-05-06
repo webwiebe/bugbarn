@@ -10,7 +10,8 @@ case "${BUGBARN_MODE:-}" in
       litestream restore \
         -config /etc/litestream.yml \
         -if-replica-exists \
-        "$BUGBARN_DB_PATH" || echo "No replica found, starting with empty DB."
+        -o "$BUGBARN_DB_PATH" \
+        /var/lib/bugbarn/bugbarn.db || echo "No replica found, starting with empty DB."
     fi
     exec bugbarn
     ;;
