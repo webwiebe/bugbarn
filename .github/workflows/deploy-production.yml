@@ -115,11 +115,18 @@ jobs:
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -euo pipefail
             kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/production
-            kubectl -n ${NAMESPACE} set image deployment/bugbarn \
+
+            # Delete the old single deployment if it still exists (migration to CQRS split).
+            kubectl -n ${NAMESPACE} delete deployment/bugbarn --ignore-not-found=true
+
+            kubectl -n ${NAMESPACE} set image deployment/bugbarn-writer \
+              bugbarn=${SERVICE_IMAGE}:${VERSION}
+            kubectl -n ${NAMESPACE} set image deployment/bugbarn-reader \
               bugbarn=${SERVICE_IMAGE}:${VERSION}
             kubectl -n ${NAMESPACE} set image deployment/bugbarn-web \
               bugbarn-web=${WEB_IMAGE}:${VERSION}
-            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn --timeout=180s
+            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-writer --timeout=180s
+            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-reader --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-web --timeout=180s
           "
 
@@ -127,7 +134,8 @@ jobs:
         if: failure()
         run: |
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
-            kubectl -n ${NAMESPACE} rollout undo deployment/bugbarn || true
+            kubectl -n ${NAMESPACE} rollout undo deployment/bugbarn-writer || true
+            kubectl -n ${NAMESPACE} rollout undo deployment/bugbarn-reader || true
             kubectl -n ${NAMESPACE} rollout undo deployment/bugbarn-web || true
             echo 'Rollback triggered'
           " || true

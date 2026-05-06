@@ -8,6 +8,7 @@ resources:
   - writer-service.yaml
   - reader-deployment.yaml
   - reader-service.yaml
+  - reader-hpa.yaml
   - web-deployment.yaml
   - web-service.yaml
   - ingress.yaml

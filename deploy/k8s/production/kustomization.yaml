@@ -4,8 +4,11 @@ namespace: bugbarn-production
 resources:
   - namespace.yaml
   - pvc.yaml
-  - deployment.yaml
-  - service.yaml
+  - writer-deployment.yaml
+  - writer-service.yaml
+  - reader-deployment.yaml
+  - reader-service.yaml
+  - reader-hpa.yaml
   - web-deployment.yaml
   - web-service.yaml
   - ingress.yaml
