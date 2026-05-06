@@ -320,6 +320,7 @@ func ReadRecordsFrom(path string, offset int64) ([]RecordAtOffset, error) {
 	var records []RecordAtOffset
 	pos := offset
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		// Account for the newline that bufio.Scanner strips.
@@ -372,6 +373,7 @@ func ReadRecords(path string) ([]Record, error) {
 
 	var records []Record
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
