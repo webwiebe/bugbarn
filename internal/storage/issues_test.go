@@ -284,3 +284,45 @@ func TestHourlyEventCountsEmptyInput(t *testing.T) {
 		t.Errorf("expected empty map for nil input, got %v", counts)
 	}
 }
+
+func TestIssueDetailsTruncatesLongTitle(t *testing.T) {
+	t.Parallel()
+
+	longMsg := ""
+	for len(longMsg) < 1000 {
+		longMsg += "validation error for field "
+	}
+
+	title, normalized, _ := issueDetails(event.Event{
+		Exception: event.Exception{
+			Type:    "ValueError",
+			Message: longMsg,
+		},
+	})
+
+	if len(title) > 512 {
+		t.Errorf("title not truncated: len=%d", len(title))
+	}
+	if len(normalized) > 512 {
+		t.Errorf("normalized title not truncated: len=%d", len(normalized))
+	}
+}
+
+func TestIssueDetailsShortTitleUnchanged(t *testing.T) {
+	t.Parallel()
+
+	title, _, exType := issueDetails(event.Event{
+		Exception: event.Exception{
+			Type:    "TypeError",
+			Message: "undefined is not a function",
+		},
+	})
+
+	want := "TypeError: undefined is not a function"
+	if title != want {
+		t.Errorf("got %q, want %q", title, want)
+	}
+	if exType != "TypeError" {
+		t.Errorf("got exType %q, want TypeError", exType)
+	}
+}

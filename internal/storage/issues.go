@@ -724,7 +724,15 @@ func issueDetails(evt event.Event) (title, normalizedTitle, exceptionType string
 		title = message
 	}
 
+	const maxTitleLen = 512
+	if len(title) > maxTitleLen {
+		title = title[:maxTitleLen]
+	}
+
 	normalizedTitle = normalizeTitle(title)
+	if len(normalizedTitle) > maxTitleLen {
+		normalizedTitle = normalizedTitle[:maxTitleLen]
+	}
 	return title, normalizedTitle, exceptionType
 }
 
