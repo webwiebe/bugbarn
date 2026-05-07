@@ -63,29 +63,28 @@ func restoreAndSwap(ctx context.Context, store *storage.Store, dbPath string, lo
 	tmpPath := filepath.Join(filepath.Dir(dbPath), ".bugbarn-restore.db")
 	defer os.Remove(tmpPath)
 
-	stderr, err := runLitestreamRestore(ctx, tmpPath, "")
-	if err != nil {
-		if !isWALChainError(stderr) {
-			return err
+	output, _ := runLitestreamRestore(ctx, tmpPath, "")
+	if _, statErr := os.Stat(tmpPath); statErr != nil {
+		// No file produced. Litestream exits 0 even on WAL chain failure, so we
+		// detect the failure type from its stdout output rather than the exit code.
+		if !isWALChainError(output) {
+			return fmt.Errorf("restore produced no file: %w", statErr)
 		}
-		// WAL chain is broken (missing segment in S3). The snapshot that was
-		// taken after the gap already incorporates those frames, so restore
-		// directly to the latest snapshot's timestamp rather than trying to
-		// replay the full chain.
-		logger.Warn("WAL chain broken, retrying restore from latest snapshot", "error", err)
+		// WAL chain is broken (missing segment in S3). The snapshot taken after
+		// the gap already incorporates those frames, so restore directly to the
+		// latest snapshot timestamp rather than replaying the full chain.
+		logger.Warn("WAL chain broken, retrying restore from latest snapshot")
 		ts, tsErr := latestSnapshotTime(ctx)
 		if tsErr != nil {
-			return fmt.Errorf("WAL chain broken and no usable snapshot found: %w", err)
+			return fmt.Errorf("WAL chain broken and no usable snapshot found: %w", tsErr)
 		}
-		if _, snapshotErr := runLitestreamRestore(ctx, tmpPath, ts.UTC().Format(time.RFC3339)); snapshotErr != nil {
-			return fmt.Errorf("snapshot restore also failed: %w", snapshotErr)
+		runLitestreamRestore(ctx, tmpPath, ts.UTC().Format(time.RFC3339)) //nolint:errcheck
+		if _, e := os.Stat(tmpPath); e != nil {
+			return fmt.Errorf("snapshot restore produced no file (ts=%s)", ts.UTC().Format(time.RFC3339))
 		}
 		logger.Info("reader database restored from latest snapshot after WAL chain failure", "snapshot_time", ts)
 	}
 
-	if _, err := os.Stat(tmpPath); err != nil {
-		return err
-	}
 	if err := os.Rename(tmpPath, dbPath); err != nil {
 		return err
 	}
@@ -97,7 +96,9 @@ func restoreAndSwap(ctx context.Context, store *storage.Store, dbPath string, lo
 	return nil
 }
 
-// runLitestreamRestore runs litestream restore and returns (stderr output, error).
+// runLitestreamRestore runs litestream restore and returns (combined output, error).
+// Litestream writes all log output including errors to stdout and exits 0 even on
+// WAL chain failures, so callers must check both the output text and file existence.
 // When timestamp is non-empty, -timestamp is passed to restore to that exact point,
 // which lets Litestream use a known-good snapshot without needing intact WAL before it.
 func runLitestreamRestore(ctx context.Context, tmpPath, timestamp string) (string, error) {
@@ -113,18 +114,18 @@ func runLitestreamRestore(ctx context.Context, tmpPath, timestamp string) (strin
 
 	var buf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "litestream", args...)
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
 	err := cmd.Run()
 	return buf.String(), err
 }
 
-// isWALChainError reports whether litestream stderr indicates a broken WAL chain
+// isWALChainError reports whether litestream output indicates a broken WAL chain
 // rather than a total replica absence.
-func isWALChainError(stderr string) bool {
-	return strings.Contains(stderr, "missing initial wal segment") ||
-		strings.Contains(stderr, "missing wal segment") ||
-		strings.Contains(stderr, "cannot find max wal index")
+func isWALChainError(output string) bool {
+	return strings.Contains(output, "missing initial wal segment") ||
+		strings.Contains(output, "missing wal segment") ||
+		strings.Contains(output, "cannot find max wal index")
 }
 
 // latestSnapshotTime returns the creation time of the most recent Litestream snapshot.
