@@ -65,6 +65,7 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error)
 
 // EnsureProject returns the project with the given slug, creating it if it does not exist.
 // If the slug matches a project alias, it returns the target project.
+// In read-only mode (db is nil), it returns an error instead of attempting creation.
 func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error) {
 	p, err := s.ProjectBySlug(ctx, slug)
 	if err == nil {
@@ -74,6 +75,9 @@ func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error)
 	targetID, aliasErr := s.ResolveAlias(ctx, slug)
 	if aliasErr == nil {
 		return s.projectByID(ctx, targetID)
+	}
+	if s.db == nil {
+		return Project{}, apperr.NotFound("project not found (read-only)", nil)
 	}
 	return s.CreateProject(ctx, slug, slug)
 }
@@ -90,6 +94,9 @@ func (s *Store) EnsureProjectPending(ctx context.Context, slug string) (Project,
 	targetID, aliasErr := s.ResolveAlias(ctx, slug)
 	if aliasErr == nil {
 		return s.projectByID(ctx, targetID)
+	}
+	if s.db == nil {
+		return Project{}, apperr.NotFound("project not found (read-only)", nil)
 	}
 	return s.CreateProjectPending(ctx, slug)
 }
