@@ -65,7 +65,8 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
           sectionHeader = `<div class="issue-section-divider"></div>`;
         }
         const id = firstIdentifier(issue);
-        const title = issueTitle(issue);
+        const rawTitle = issueTitle(issue);
+        const title = rawTitle.length > 300 ? rawTitle.slice(0, 300) + "…" : rawTitle;
         const count = issueEventCount(issue);
         const lastSeen = formatTime(issueLastSeen(issue));
         const firstSeen = formatTime(issueFirstSeen(issue));
@@ -78,7 +79,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
         const statusLabel = status === "resolved" ? "Resolved" : status === "muted" ? "Muted" : status === "regressed" ? "Regressed" : "";
         return `${sectionHeader}
           <button class="item issue-row ${active} ${statusClass}" type="button" data-issue-id="${escapeAttr(id)}">
-            <div class="item-title"><span class="status-dot ${statusClass}"></span>${escapeHtml(title)}</div>
+            <div class="item-title"><span class="status-dot ${statusClass}"></span><a href="#/issues/${escapeAttr(id)}" class="issue-link" onclick="event.stopPropagation()">${escapeHtml(title)}</a></div>
             <span class="issue-cell"><span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity || "n/a")}</span></span>
             <span class="issue-cell">${escapeHtml(lastSeen || "No timestamp")}</span>
             <span class="issue-cell">${escapeHtml(firstSeen || "n/a")}</span>

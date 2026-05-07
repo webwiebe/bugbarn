@@ -528,6 +528,14 @@ button:disabled {
   max-width: 100%;
 }
 
+.issue-link {
+  color: inherit;
+  text-decoration: none;
+}
+.issue-link:hover {
+  text-decoration: underline;
+}
+
 .issue-hero h3 {
   overflow-wrap: break-word;
   word-break: break-word;
