@@ -26,19 +26,23 @@ func Tracer() trace.Tracer {
 //   - OTEL_SERVICE_NAME            (defaults to "bugbarn")
 //
 // Returns a shutdown function that flushes pending spans.
-func Init(ctx context.Context, version string) (shutdown func(context.Context) error, err error) {
+func Init(_ context.Context, version string) (shutdown func(context.Context) error, err error) {
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {
 		return func(context.Context) error { return nil }, nil
 	}
 
-	initCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// Use a short timeout so a slow/unreachable SpanBarn never blocks startup.
+	// The OTLP HTTP client retries exports in the background regardless.
+	initCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	exporter, err := otlptracehttp.New(initCtx,
-		otlptracehttp.WithTimeout(5*time.Second),
+		otlptracehttp.WithRetry(otlptracehttp.RetryConfig{Enabled: false}),
+		otlptracehttp.WithTimeout(2*time.Second),
 	)
 	if err != nil {
-		return nil, err
+		// Non-fatal: run without tracing rather than block the server.
+		return func(context.Context) error { return nil }, nil
 	}
 
 	serviceName := os.Getenv("OTEL_SERVICE_NAME")
@@ -55,13 +59,15 @@ func Init(ctx context.Context, version string) (shutdown func(context.Context) e
 		attrs = append(attrs, resource.WithAttributes(semconv.ServiceVersion(version)))
 	}
 
-	res, err := resource.New(ctx, attrs...)
+	res, err := resource.New(context.Background(), attrs...)
 	if err != nil {
-		return nil, err
+		return func(context.Context) error { return nil }, nil
 	}
 
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithBatcher(exporter,
+			sdktrace.WithExportTimeout(5*time.Second),
+		),
 		sdktrace.WithResource(res),
 	)
 	otel.SetTracerProvider(tp)
