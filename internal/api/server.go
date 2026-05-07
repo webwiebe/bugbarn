@@ -51,6 +51,7 @@ type Server struct {
 
 	loginLimiter    sync.Map // map[string]*loginAttempt
 	writeForwarder  *WriteForwarder
+	dbPath          string
 }
 
 // SetTrustedProxies sets the CIDRs from which X-Forwarded-For is trusted.
@@ -106,6 +107,11 @@ func (s *Server) SetAutoApproveProjects(auto bool) {
 // an upstream writer instance. Used in reader mode (CQRS split).
 func (s *Server) SetWriteForwarder(f *WriteForwarder) {
 	s.writeForwarder = f
+}
+
+// SetDBPath sets the path to the SQLite database file for the backup endpoint.
+func (s *Server) SetDBPath(path string) {
+	s.dbPath = path
 }
 
 func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog.Logger) *Server {
@@ -253,6 +259,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/docs" && r.Method == http.MethodGet {
 		s.serveAPIDocs(w, r)
+		return
+	}
+
+	// Internal endpoint — used by reader pods for DB backup fallback.
+	if r.URL.Path == "/internal/v1/db-backup" && r.Method == http.MethodGet {
+		s.serveDBBackup(w, r)
 		return
 	}
 
