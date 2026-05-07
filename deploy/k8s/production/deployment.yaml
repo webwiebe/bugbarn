@@ -50,11 +50,7 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: https://spanbarn.wiebe.xyz
             - name: OTEL_EXPORTER_OTLP_HEADERS
-              valueFrom:
-                secretKeyRef:
-                  name: bugbarn-secrets
-                  key: OTEL_EXPORTER_OTLP_HEADERS
-                  optional: true
+              value: "Authorization=Bearer a3b4e7194bd5c44046a8cc6e984601914f3d09f1"
             - name: BUGBARN_SPOOL_DIR
               value: /var/lib/bugbarn/spool
             - name: BUGBARN_DB_PATH
