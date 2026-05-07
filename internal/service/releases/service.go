@@ -4,7 +4,12 @@ import (
 	"context"
 	"log/slog"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 type Repository interface {
@@ -31,12 +36,22 @@ func New(repo Repository, logger *slog.Logger) *Service {
 }
 
 func (s *Service) List(ctx context.Context) ([]domain.Release, error) {
-	return s.repo.ListReleases(ctx)
+	ctx, span := tracing.Tracer().Start(ctx, "service.releases.List")
+	defer span.End()
+	releases, err := s.repo.ListReleases(ctx)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return releases, err
 }
 
 func (s *Service) Get(ctx context.Context, id string) (domain.Release, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.releases.Get",
+		trace.WithAttributes(attribute.String("release_id", id)))
+	defer span.End()
 	release, err := s.repo.GetRelease(ctx, id)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "get release", "release_id", id, "error", err)
 		return domain.Release{}, err
 	}
@@ -44,8 +59,11 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Release, error) {
 }
 
 func (s *Service) Create(ctx context.Context, release domain.Release) (domain.Release, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.releases.Create")
+	defer span.End()
 	created, err := s.repo.CreateRelease(ctx, release)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "create release", "name", release.Name, "error", err)
 		return domain.Release{}, err
 	}
@@ -54,8 +72,12 @@ func (s *Service) Create(ctx context.Context, release domain.Release) (domain.Re
 }
 
 func (s *Service) Update(ctx context.Context, id string, release domain.Release) (domain.Release, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.releases.Update",
+		trace.WithAttributes(attribute.String("release_id", id)))
+	defer span.End()
 	updated, err := s.repo.UpdateRelease(ctx, id, release)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "update release", "release_id", id, "error", err)
 		return domain.Release{}, err
 	}
@@ -63,7 +85,11 @@ func (s *Service) Update(ctx context.Context, id string, release domain.Release)
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
+	ctx, span := tracing.Tracer().Start(ctx, "service.releases.Delete",
+		trace.WithAttributes(attribute.String("release_id", id)))
+	defer span.End()
 	if err := s.repo.DeleteRelease(ctx, id); err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "delete release", "release_id", id, "error", err)
 		return err
 	}
@@ -72,8 +98,11 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 }
 
 func (s *Service) UploadSourceMap(ctx context.Context, upload domain.SourceMapUpload) (domain.SourceMap, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.releases.UploadSourceMap")
+	defer span.End()
 	sm, err := s.repo.UploadSourceMap(ctx, upload)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "upload source map", "release", upload.Release, "error", err)
 		return domain.SourceMap{}, err
 	}
@@ -82,5 +111,11 @@ func (s *Service) UploadSourceMap(ctx context.Context, upload domain.SourceMapUp
 }
 
 func (s *Service) ListSourceMaps(ctx context.Context) ([]domain.SourceMapMeta, error) {
-	return s.repo.ListSourceMaps(ctx)
+	ctx, span := tracing.Tracer().Start(ctx, "service.releases.ListSourceMaps")
+	defer span.End()
+	maps, err := s.repo.ListSourceMaps(ctx)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return maps, err
 }

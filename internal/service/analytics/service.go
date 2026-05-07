@@ -4,7 +4,10 @@ import (
 	"context"
 	"log/slog"
 
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 type Repository interface {
@@ -32,12 +35,21 @@ func New(repo Repository, logger *slog.Logger) *Service {
 }
 
 func (s *Service) InsertPageView(ctx context.Context, pv analytics.PageView) error {
-	return s.repo.InsertPageView(ctx, pv)
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.InsertPageView")
+	defer span.End()
+	if err := s.repo.InsertPageView(ctx, pv); err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
 }
 
 func (s *Service) QueryOverview(ctx context.Context, q analytics.Query) (analytics.OverviewResult, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.QueryOverview")
+	defer span.End()
 	result, err := s.repo.QueryOverview(ctx, q)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "query overview", "error", err)
 		return analytics.OverviewResult{}, err
 	}
@@ -45,29 +57,71 @@ func (s *Service) QueryOverview(ctx context.Context, q analytics.Query) (analyti
 }
 
 func (s *Service) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.PageStat, error) {
-	return s.repo.QueryPages(ctx, q)
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.QueryPages")
+	defer span.End()
+	pages, err := s.repo.QueryPages(ctx, q)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return pages, err
 }
 
 func (s *Service) QueryTimeline(ctx context.Context, q analytics.Query, granularity string) ([]analytics.TimelineBucket, error) {
-	return s.repo.QueryTimeline(ctx, q, granularity)
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.QueryTimeline")
+	defer span.End()
+	buckets, err := s.repo.QueryTimeline(ctx, q, granularity)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return buckets, err
 }
 
 func (s *Service) QueryReferrers(ctx context.Context, q analytics.Query) ([]analytics.ReferrerStat, error) {
-	return s.repo.QueryReferrers(ctx, q)
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.QueryReferrers")
+	defer span.End()
+	refs, err := s.repo.QueryReferrers(ctx, q)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return refs, err
 }
 
 func (s *Service) QuerySegments(ctx context.Context, q analytics.Query, dimKey string) ([]analytics.SegmentBucket, error) {
-	return s.repo.QuerySegments(ctx, q, dimKey)
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.QuerySegments")
+	defer span.End()
+	segments, err := s.repo.QuerySegments(ctx, q, dimKey)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return segments, err
 }
 
 func (s *Service) QueryPageFlow(ctx context.Context, q analytics.Query, pathname string) (analytics.PageFlowResult, error) {
-	return s.repo.QueryPageFlow(ctx, q, pathname)
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.QueryPageFlow")
+	defer span.End()
+	result, err := s.repo.QueryPageFlow(ctx, q, pathname)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return result, err
 }
 
 func (s *Service) QueryScrollDepth(ctx context.Context, q analytics.Query, pathname string) (analytics.ScrollDepthResult, error) {
-	return s.repo.QueryScrollDepth(ctx, q, pathname)
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.QueryScrollDepth")
+	defer span.End()
+	result, err := s.repo.QueryScrollDepth(ctx, q, pathname)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return result, err
 }
 
 func (s *Service) QueryDropout(ctx context.Context, q analytics.Query) ([]analytics.DropoutStat, error) {
-	return s.repo.QueryDropout(ctx, q)
+	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.QueryDropout")
+	defer span.End()
+	stats, err := s.repo.QueryDropout(ctx, q)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return stats, err
 }

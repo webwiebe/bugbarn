@@ -13,6 +13,10 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/alert"
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
@@ -30,6 +34,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
@@ -54,6 +59,13 @@ func run() error {
 	})
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
+
+	shutdownTracing, err := tracing.Init(context.Background(), Version)
+	if err != nil {
+		logger.Warn("tracing init failed", "error", err)
+	} else {
+		defer shutdownTracing(context.Background())
+	}
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -150,6 +162,7 @@ func run() error {
 		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
 	var httpHandler http.Handler = apiServer
+	httpHandler = tracing.Middleware(httpHandler)
 	if selfReporting {
 		httpHandler = bb.RecoverMiddleware(httpHandler)
 	}
@@ -183,6 +196,13 @@ func run() error {
 // runReader starts the server in read-only mode. It opens a read-only SQLite
 // copy (restored from Litestream) and forwards all writes to the writer pod.
 func runReader(cfg config.Config, logger *slog.Logger) error {
+	shutdownTracing, err := tracing.Init(context.Background(), Version)
+	if err != nil {
+		logger.Warn("tracing init failed", "error", err)
+	} else {
+		defer shutdownTracing(context.Background())
+	}
+
 	store, err := storage.OpenReadOnly(cfg.DBPath)
 	if err != nil {
 		logger.Warn("read-only open failed, bootstrapping empty database", "error", err)
@@ -233,7 +253,7 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 
 	server := &http.Server{
 		Addr:    cfg.Addr,
-		Handler: apiServer,
+		Handler: tracing.Middleware(apiServer),
 	}
 
 	go reader.StartRestoreLoop(ctx, store, cfg.DBPath, logger)
@@ -315,6 +335,8 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
+	tracer := tracing.Tracer()
+
 	// Restore cursor position from disk so we never re-process already-handled records.
 	offset, err := spool.ReadCursor(spoolDir)
 	if err != nil {
@@ -354,8 +376,17 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 			for _, entry := range entries {
 				record := entry.Record
 
+				recordCtx, recordSpan := tracer.Start(ctx, "worker.ProcessRecord",
+					trace.WithAttributes(
+						attribute.String("ingest_id", record.IngestID),
+						attribute.String("project_slug", record.ProjectSlug),
+					),
+				)
+
 				processed, err := worker.ProcessRecord(record)
 				if err != nil {
+					recordSpan.SetStatus(codes.Error, err.Error())
+					recordSpan.End()
 					retryCounts[record.IngestID]++
 					log.Printf("worker process record %s (attempt %d): %v", record.IngestID, retryCounts[record.IngestID], err)
 					if retryCounts[record.IngestID] >= workerMaxRetries {
@@ -382,19 +413,40 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 					// Stop processing this batch; retry remaining records next tick.
 					break
 				}
+
+				recordSpan.SetAttributes(
+					attribute.String("fingerprint", processed.Fingerprint),
+					attribute.String("event.severity", processed.Event.Severity),
+				)
+
 				// Resolve project from the slug stored in the spool record.
-				persistCtx := ctx
+				persistCtx := recordCtx
 				if record.ProjectSlug != "" {
-					if proj, err := store.EnsureProject(ctx, record.ProjectSlug); err == nil {
-						persistCtx = storage.WithProjectID(ctx, proj.ID)
+					_, resolveSpan := tracer.Start(recordCtx, "worker.ResolveProject",
+						trace.WithAttributes(attribute.String("project_slug", record.ProjectSlug)),
+					)
+					if proj, err := store.EnsureProject(recordCtx, record.ProjectSlug); err == nil {
+						persistCtx = storage.WithProjectID(recordCtx, proj.ID)
+						resolveSpan.SetAttributes(attribute.Int64("project_id", proj.ID))
 					} else {
 						log.Printf("worker ensure project %q: %v", record.ProjectSlug, err)
+						resolveSpan.SetStatus(codes.Error, err.Error())
 					}
+					resolveSpan.End()
 				}
+
 				// Annotate JS stack frames with original positions from stored source maps.
+				_, symSpan := tracer.Start(persistCtx, "worker.Symbolicate")
 				processed.Event = worker.SymbolicateEvent(persistCtx, processed.Event, store)
+				symSpan.End()
+
+				_, persistSpan := tracer.Start(persistCtx, "worker.Persist")
 				issue, _, isNew, isRegressed, persistErr := store.PersistProcessedEvent(persistCtx, processed)
 				if persistErr != nil {
+					persistSpan.SetStatus(codes.Error, persistErr.Error())
+					persistSpan.End()
+					recordSpan.SetStatus(codes.Error, persistErr.Error())
+					recordSpan.End()
 					retryCounts[record.IngestID]++
 					log.Printf("worker persist record %s (attempt %d): %v", record.IngestID, retryCounts[record.IngestID], persistErr)
 					if retryCounts[record.IngestID] >= workerMaxRetries {
@@ -421,6 +473,12 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 					// Stop processing this batch; retry remaining records next tick.
 					break
 				}
+				persistSpan.SetAttributes(
+					attribute.Bool("is_new", isNew),
+					attribute.Bool("is_regressed", isRegressed),
+					attribute.String("issue_id", issue.ID),
+				)
+				persistSpan.End()
 
 				// Publish domain events after successful persistence.
 				var projectID int64
@@ -428,6 +486,8 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 					projectID = pid
 				}
 				svc.PublishIssueEvent(issue, projectID, isNew, isRegressed)
+
+				recordSpan.End()
 
 				delete(retryCounts, record.IngestID)
 				// Advance cursor after each successfully processed record.

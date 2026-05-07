@@ -11,8 +11,12 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 type Handler struct {
@@ -65,6 +69,10 @@ func (h *Handler) APIKeyProjectScope(r *http.Request) (projectID int64, scope st
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.Tracer().Start(r.Context(), "ingest.Receive")
+	defer span.End()
+	r = r.WithContext(ctx)
+
 	if h == nil || h.auth == nil || h.spool == nil {
 		http.Error(w, "ingest unavailable", http.StatusServiceUnavailable)
 		return
@@ -79,6 +87,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.ValidAPIKey(r) {
+		span.SetStatus(codes.Error, "unauthorized")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -107,7 +116,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ProjectSlug:   r.Header.Get("x-bugbarn-project"),
 	}
 
+	span.SetAttributes(
+		attribute.String("ingest_id", record.IngestID),
+		attribute.String("project_slug", record.ProjectSlug),
+		attribute.Int64("content_length", record.ContentLength),
+	)
+
+	_, spoolSpan := tracing.Tracer().Start(ctx, "ingest.SpoolAppend")
 	if err := h.spool.Append(record); err != nil {
+		spoolSpan.SetStatus(codes.Error, err.Error())
+		spoolSpan.End()
 		if errors.Is(err, spool.ErrFull) {
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, "ingest spool full", http.StatusTooManyRequests)
@@ -116,6 +134,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ingest unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	spoolSpan.End()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)

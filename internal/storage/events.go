@@ -9,11 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/bugbarn/internal/event"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func (s *Store) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]Event, bool, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "storage.ListIssueEvents")
+	defer span.End()
+	span.SetAttributes(attribute.String("issue_id", issueID), attribute.Int("limit", limit))
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return nil, false, err
@@ -95,6 +101,9 @@ ORDER BY e.id DESC LIMIT ?`,
 }
 
 func (s *Store) GetEvent(ctx context.Context, eventID string) (Event, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "storage.GetEvent")
+	defer span.End()
+	span.SetAttributes(attribute.String("event_id", eventID))
 	rowID, err := parseID(eventIDPrefix, eventID)
 	if err != nil {
 		return Event{}, err
@@ -141,6 +150,8 @@ WHERE e.id = ?`, rowID)
 }
 
 func (s *Store) ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "storage.ListRecentEvents")
+	defer span.End()
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}

@@ -10,8 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	_ "modernc.org/sqlite"
 
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
@@ -173,7 +177,13 @@ func (s *Store) SwapReadDB(path string) error {
 // It returns the upserted issue, the stored event, a flag indicating whether this
 // was a brand-new issue, a flag indicating whether the issue regressed, and any error.
 func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.ProcessedEvent) (Issue, Event, bool, bool, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "storage.PersistProcessedEvent",
+		trace.WithAttributes(attribute.String("fingerprint", processed.Fingerprint)),
+	)
+	defer span.End()
+
 	if s == nil || s.db == nil {
+		span.SetStatus(codes.Error, "storage is nil")
 		return Issue{}, Event{}, false, false, errors.New("storage is nil")
 	}
 
@@ -181,27 +191,47 @@ func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.Proc
 	if !ok {
 		projectID = s.defaultProjectID
 	}
+	span.SetAttributes(attribute.Int64("project_id", projectID))
 
+	_, upsertSpan := tracing.Tracer().Start(ctx, "storage.UpsertIssue")
 	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
 	if err != nil {
+		upsertSpan.SetStatus(codes.Error, err.Error())
+		upsertSpan.End()
+		span.SetStatus(codes.Error, err.Error())
 		return Issue{}, Event{}, false, false, err
 	}
+	upsertSpan.SetAttributes(attribute.String("issue_id", issue.ID), attribute.Bool("regressed", regressed))
+	upsertSpan.End()
 
-	// isNew is true when the issue was just created (EventCount == 1 and no regression).
 	isNew := issue.EventCount == 1 && !regressed
 
+	_, insertSpan := tracing.Tracer().Start(ctx, "storage.InsertEvent")
 	eventRow, eventRowID, err := s.insertEvent(ctx, projectID, issueID, issue.ID, regressed, processed)
 	if err != nil {
+		insertSpan.SetStatus(codes.Error, err.Error())
+		insertSpan.End()
+		span.SetStatus(codes.Error, err.Error())
 		return Issue{}, Event{}, false, false, err
 	}
+	insertSpan.End()
 
+	_, facetSpan := tracing.Tracer().Start(ctx, "storage.InsertFacets")
 	if err := s.insertFacets(ctx, projectID, issueID, eventRowID, processed.Event); err != nil {
+		facetSpan.SetStatus(codes.Error, err.Error())
+		facetSpan.End()
+		span.SetStatus(codes.Error, err.Error())
 		return Issue{}, Event{}, false, false, err
 	}
 
 	if err := s.PersistFacets(ctx, eventRowID, issueID, extractFacets(processed.Event)); err != nil {
+		facetSpan.SetStatus(codes.Error, err.Error())
+		facetSpan.End()
+		span.SetStatus(codes.Error, err.Error())
 		return Issue{}, Event{}, false, false, err
 	}
+	facetSpan.End()
 
+	span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
 	return issue, eventRow, isNew, regressed, nil
 }

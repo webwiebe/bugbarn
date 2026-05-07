@@ -9,8 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
@@ -18,7 +22,14 @@ func (s *Store) ListIssues(ctx context.Context) ([]Issue, error) {
 	return s.ListIssuesFiltered(ctx, IssueFilter{})
 }
 
-func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) ([]Issue, error) {
+func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) (_ []Issue, retErr error) {
+	ctx, span := tracing.Tracer().Start(ctx, "storage.ListIssuesFiltered")
+	defer func() {
+		if retErr != nil {
+			span.SetStatus(codes.Error, retErr.Error())
+		}
+		span.End()
+	}()
 	var orderBy string
 	switch filter.Sort {
 	case "first_seen":
@@ -156,6 +167,9 @@ ORDER BY ` + orderBy
 }
 
 func (s *Store) GetIssue(ctx context.Context, issueID string) (Issue, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "storage.GetIssue")
+	defer span.End()
+	span.SetAttributes(attribute.String("issue_id", issueID))
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return Issue{}, err

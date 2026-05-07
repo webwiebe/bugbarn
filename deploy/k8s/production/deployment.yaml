@@ -45,6 +45,16 @@ spec:
                 secretKeyRef:
                   name: bugbarn-secrets
                   key: BUGBARN_SELF_PROJECT
+            - name: OTEL_SERVICE_NAME
+              value: bugbarn
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: https://spanbarn.wiebe.xyz
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: OTEL_EXPORTER_OTLP_HEADERS
+                  optional: true
             - name: BUGBARN_SPOOL_DIR
               value: /var/lib/bugbarn/spool
             - name: BUGBARN_DB_PATH
