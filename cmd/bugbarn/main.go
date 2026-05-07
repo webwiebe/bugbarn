@@ -152,6 +152,7 @@ func run() error {
 	if len(cfg.TrustedProxies) > 0 {
 		apiServer.SetTrustedProxies(cfg.TrustedProxies)
 	}
+	apiServer.SetDBPath(cfg.DBPath)
 	apiServer.SetWorkerStatus(workerStatus)
 	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
@@ -256,7 +257,7 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 		Handler: tracing.Middleware(apiServer),
 	}
 
-	go reader.StartRestoreLoop(ctx, store, cfg.DBPath, logger)
+	go reader.StartRestoreLoop(ctx, store, cfg.DBPath, cfg.WriterURL, logger)
 
 	logger.Info("starting in reader mode", "addr", cfg.Addr, "writer_url", cfg.WriterURL)
 
