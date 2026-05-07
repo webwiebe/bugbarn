@@ -273,6 +273,49 @@ func TestReadRecordsFromOffsets(t *testing.T) {
 // TestRotateIfExceedsConcurrentAppend verifies that every record appended
 // concurrently with RotateIfExceeds ends up in exactly one segment and is
 // not silently discarded.
+func TestReadRecordsFromResetsCursorAfterRotation(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("new spool: %v", err)
+	}
+
+	// Write some records and note the cursor position.
+	for i := 0; i < 10; i++ {
+		if err := s.Append(Record{IngestID: fmt.Sprintf("pre-%d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	preRecords, err := ReadRecordsFrom(Path(dir), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleCursor := preRecords[len(preRecords)-1].EndOffset
+
+	// Rotate the spool — active file is now empty.
+	if err := s.Rotate(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write new data to the fresh spool file.
+	if err := s.Append(Record{IngestID: "after-rotation"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Read with the stale cursor — should auto-reset and return the new data.
+	got, err := ReadRecordsFrom(Path(dir), staleCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("ReadRecordsFrom with stale cursor returned 0 records, expected auto-reset")
+	}
+	if got[0].Record.IngestID != "after-rotation" {
+		t.Errorf("expected 'after-rotation', got %q", got[0].Record.IngestID)
+	}
+}
+
 func TestRotateIfExceedsConcurrentAppend(t *testing.T) {
 	dir := t.TempDir()
 	s, err := New(dir)

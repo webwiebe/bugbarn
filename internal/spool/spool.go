@@ -172,7 +172,7 @@ func (s *Spool) Close() error {
 }
 
 // Rotate renames the current active segment to ingest-TIMESTAMP.ndjson and
-// opens a fresh ingest.ndjson. The cursor is reset to 0 on rotation.
+// opens a fresh ingest.ndjson. ReadRecordsFrom detects the stale cursor.
 func (s *Spool) Rotate() error {
 	if s == nil {
 		return errors.New("spool is nil")
@@ -312,8 +312,17 @@ func ReadRecordsFrom(path string, offset int64) ([]RecordAtOffset, error) {
 	defer file.Close()
 
 	if offset > 0 {
-		if _, err := file.Seek(offset, 0); err != nil {
+		info, err := file.Stat()
+		if err != nil {
 			return nil, err
+		}
+		if offset > info.Size() {
+			offset = 0
+		}
+		if offset > 0 {
+			if _, err := file.Seek(offset, 0); err != nil {
+				return nil, err
+			}
 		}
 	}
 
