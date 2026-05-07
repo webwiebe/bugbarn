@@ -37,18 +37,14 @@ type material struct {
 
 var stableContextKeys = []string{
 	"environment",
-	"host",
 	"http.method",
 	"http.route",
 	"http.status_code",
 	"region",
-	"release",
 	"route",
 	"service.name",
 	"service.namespace",
 	"status_code",
-	"user_agent.family",
-	"version",
 }
 
 func Fingerprint(evt event.Event) string {

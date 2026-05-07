@@ -2,17 +2,16 @@ package storage
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"encoding/json"
 	"log"
-	"regexp"
-)
 
-var sourceLocationPattern = regexp.MustCompile(`:\d+(?::\d+)+`)
+	"github.com/wiebe-xyz/bugbarn/internal/event"
+	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
+)
 
 func (s *Store) migrateFingerprints(ctx context.Context) error {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, project_id, fingerprint, fingerprint_material
+		SELECT id, project_id, fingerprint, fingerprint_material, representative_event_json
 		FROM issues
 		WHERE fingerprint_material != ''`)
 	if err != nil {
@@ -24,12 +23,13 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 		projectID   int64
 		fingerprint string
 		material    string
+		eventJSON   []byte
 	}
 
 	var issues []issueRow
 	for rows.Next() {
 		var r issueRow
-		if err := rows.Scan(&r.id, &r.projectID, &r.fingerprint, &r.material); err != nil {
+		if err := rows.Scan(&r.id, &r.projectID, &r.fingerprint, &r.material, &r.eventJSON); err != nil {
 			rows.Close()
 			return err
 		}
@@ -40,25 +40,30 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 		return err
 	}
 
-	// Recompute fingerprints and find issues that need updating.
 	type update struct {
 		id             int64
 		projectID      int64
 		newFingerprint string
 		newMaterial    string
+		newExplanation []string
 	}
 	var updates []update
 	for _, r := range issues {
-		newMaterial := sourceLocationPattern.ReplaceAllString(r.material, ":<loc>")
-		if newMaterial == r.material {
+		var evt event.Event
+		if err := json.Unmarshal(r.eventJSON, &evt); err != nil {
 			continue
 		}
-		sum := sha256.Sum256([]byte(newMaterial))
+		snap := fingerprint.SnapshotFor(evt)
+		fp := fingerprint.Fingerprint(evt)
+		if fp == r.fingerprint {
+			continue
+		}
 		updates = append(updates, update{
 			id:             r.id,
 			projectID:      r.projectID,
-			newFingerprint: hex.EncodeToString(sum[:]),
-			newMaterial:    newMaterial,
+			newFingerprint: fp,
+			newMaterial:    snap.Material,
+			newExplanation: snap.Explanation,
 		})
 	}
 
@@ -66,7 +71,7 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 		return nil
 	}
 
-	log.Printf("[migrate] recomputing %d fingerprints with source-location normalization", len(updates))
+	log.Printf("[migrate] recomputing %d fingerprints", len(updates))
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -75,7 +80,6 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 	defer tx.Rollback()
 
 	for _, u := range updates {
-		// Check if an issue with the new fingerprint already exists for this project.
 		var keeperID int64
 		err := tx.QueryRowContext(ctx, `
 			SELECT id FROM issues
@@ -83,8 +87,9 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 			u.projectID, u.newFingerprint, u.id,
 		).Scan(&keeperID)
 
+		explanationJSON, _ := json.Marshal(u.newExplanation)
+
 		if err == nil {
-			// Duplicate found — merge this issue into the keeper.
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE events SET issue_id = ? WHERE issue_id = ?`,
 				keeperID, u.id); err != nil {
@@ -110,11 +115,10 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 			}
 			log.Printf("[migrate] merged issue %d into %d (fingerprint %s)", u.id, keeperID, u.newFingerprint)
 		} else {
-			// No duplicate — just update the fingerprint.
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE issues SET fingerprint = ?, fingerprint_material = ?, updated_at = CURRENT_TIMESTAMP
+				UPDATE issues SET fingerprint = ?, fingerprint_material = ?, fingerprint_explanation_json = ?, updated_at = CURRENT_TIMESTAMP
 				WHERE id = ?`,
-				u.newFingerprint, u.newMaterial, u.id); err != nil {
+				u.newFingerprint, u.newMaterial, string(explanationJSON), u.id); err != nil {
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, `
