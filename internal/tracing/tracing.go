@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"os"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -30,7 +31,12 @@ func Init(ctx context.Context, version string) (shutdown func(context.Context) e
 		return func(context.Context) error { return nil }, nil
 	}
 
-	exporter, err := otlptracehttp.New(ctx)
+	initCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	exporter, err := otlptracehttp.New(initCtx,
+		otlptracehttp.WithTimeout(5*time.Second),
+	)
 	if err != nil {
 		return nil, err
 	}
