@@ -863,12 +863,17 @@ async function loadAlerts(): Promise<void> {
 
 async function loadSettings(): Promise<void> {
   try {
-    const [settingsPayload, keysPayload] = await Promise.all([
+    const [settingsPayload, keysPayload, projectsPayload] = await Promise.all([
       fetchJson("/api/v1/settings", true),
       fetchJson("/api/v1/apikeys", true).catch(() => null),
+      fetchJson("/api/v1/projects", true).catch(() => null),
     ]);
     state.settings = settingsPayload ? normalizeObject<ApiSettings>(settingsPayload, "settings") : null;
     state.apiKeys = keysPayload ? normalizeList<ApiApiKey>(keysPayload as Record<string, unknown>, "apiKeys") : [];
+    if (projectsPayload) {
+      state.projects = normalizeList<ApiProject>(projectsPayload, "projects");
+      renderProjectSwitcher();
+    }
     if (state.currentRoute === "settings") renderSettingsView();
   } catch (error) {
     state.settings = null;
