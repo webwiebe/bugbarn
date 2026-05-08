@@ -34,6 +34,9 @@ func cmdLogs(args []string) error {
 	}
 
 	proj := resolveProject(*project, client)
+	if proj != "" {
+		client.project = proj
+	}
 
 	if *follow {
 		return streamLogs(client, *level, proj, *noColor)
@@ -82,6 +85,9 @@ func streamLogs(client *Client, level, project string, noColor bool) error {
 		return err
 	}
 
+	if client.project != "" {
+		req.Header.Set("X-BugBarn-Project", client.project)
+	}
 	switch client.config.Auth.Type {
 	case "apikey":
 		req.Header.Set("X-BugBarn-API-Key", client.config.Auth.APIKey)
