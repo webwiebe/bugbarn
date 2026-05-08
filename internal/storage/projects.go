@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -122,18 +123,35 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 	return Project{ID: id, Name: slug, Slug: slug, Status: "pending", IssuePrefix: prefix, CreatedAt: time.Now().UTC()}, nil
 }
 
-// DeleteProject removes the project with the given slug. Related rows are
-// removed via ON DELETE CASCADE foreign keys in the schema.
+// DeleteProject removes the project and all related rows. Most child tables
+// use ON DELETE CASCADE, but api_keys and log_entries do not, so we delete
+// those explicitly in the same transaction.
 func (s *Store) DeleteProject(ctx context.Context, slug string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM projects WHERE slug=?`, slug)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return apperr.NotFound("project not found", nil)
+	defer tx.Rollback()
+
+	var projectID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug=?`, slug).Scan(&projectID); err != nil {
+		if err == sql.ErrNoRows {
+			return apperr.NotFound("project not found", nil)
+		}
+		return err
 	}
-	return nil
+
+	for _, table := range []string{"api_keys", "log_entries"} {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE project_id=?`, projectID); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id=?`, projectID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // ApproveProject sets status='active' for the project with the given slug.
