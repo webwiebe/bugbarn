@@ -146,33 +146,6 @@ func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
-// SwapReadDB closes the current read-only connection and opens a new one at path.
-// Used by the reader restore loop to pick up a freshly-restored database.
-func (s *Store) SwapReadDB(path string) error {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-
-	newDB, err := sql.Open(driverName, sqliteReadOnlyDSN(absPath))
-	if err != nil {
-		return err
-	}
-	newDB.SetMaxOpenConns(4)
-
-	if err := newDB.Ping(); err != nil {
-		newDB.Close()
-		return err
-	}
-
-	old := s.roDB
-	s.roDB = newDB
-	if old != nil {
-		old.Close()
-	}
-	return nil
-}
-
 // PersistProcessedEvent stores a processed event and upserts the related issue.
 // It returns the upserted issue, the stored event, a flag indicating whether this
 // was a brand-new issue, a flag indicating whether the issue regressed, and any error.
