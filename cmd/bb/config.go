@@ -17,6 +17,8 @@ type Config struct {
 type AuthConfig struct {
 	Type         string `json:"type"`
 	APIKey       string `json:"api_key,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
 	SessionToken string `json:"session_token,omitempty"`
 	CSRFToken    string `json:"csrf_token,omitempty"`
 }

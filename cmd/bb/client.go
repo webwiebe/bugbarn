@@ -42,6 +42,10 @@ func (c *Client) patch(path string, body any) (json.RawMessage, error) {
 }
 
 func (c *Client) do(method, path string, body any) (json.RawMessage, error) {
+	return c.doRetry(method, path, body, false)
+}
+
+func (c *Client) doRetry(method, path string, body any, retried bool) (json.RawMessage, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -81,6 +85,16 @@ func (c *Client) do(method, path string, body any) (json.RawMessage, error) {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode == 401 && !retried && c.config.Auth.Type == "session" && c.config.Auth.Username != "" && c.config.Auth.Password != "" {
+		session, csrf, err := loginWithPassword(c.base, c.config.Auth.Username, c.config.Auth.Password)
+		if err == nil {
+			c.config.Auth.SessionToken = session
+			c.config.Auth.CSRFToken = csrf
+			_ = saveConfig(c.config)
+			return c.doRetry(method, path, body, true)
+		}
 	}
 
 	if resp.StatusCode >= 400 {

@@ -68,6 +68,8 @@ func cmdLogin(args []string) error {
 		}
 		cfg.Auth = AuthConfig{
 			Type:         "session",
+			Username:     *username,
+			Password:     *password,
 			SessionToken: session,
 			CSRFToken:    csrf,
 		}
