@@ -25,6 +25,8 @@ func main() {
 
 	var err error
 	switch os.Args[1] {
+	case "init":
+		err = cmdInit(os.Args[2:])
 	case "login":
 		err = cmdLogin(os.Args[2:])
 	case "issues":
@@ -77,6 +79,7 @@ func printUsage() {
 Usage: bb <command> [flags]
 
 Commands:
+  init        Set default project for current directory
   login       Authenticate with a BugBarn instance
   issues      List issues (JSON output)
   tui         Interactive terminal UI for browsing issues
@@ -96,6 +99,7 @@ Authentication:
   bb login --url https://bugbarn.example.com --username USER --password PASS
 
 Examples:
+  bb init                            # set project for this directory
   bb issues                          # list open issues (JSON)
   bb tui                             # interactive issue browser
   bb logs -f                         # live-tail all logs (colored)

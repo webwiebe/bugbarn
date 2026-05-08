@@ -58,5 +58,8 @@ var/
 *.sqlite3
 *.db
 
+# bb CLI local project config
+.bugbarn.json
+
 # Docker and compose state
 docker-compose.override.yml

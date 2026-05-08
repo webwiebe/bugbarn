@@ -139,11 +139,8 @@ func cmdIssues(args []string) error {
 		return err
 	}
 
-	// Resolve project slug from flag or config default.
-	projectSlug := *project
-	if projectSlug == "" {
-		projectSlug = client.config.Project
-	}
+	// Resolve project slug: --project flag > .bugbarn.json > global config.
+	projectSlug := resolveProject(*project, client)
 
 	// If a project is specified, validate it exists before querying issues.
 	if projectSlug != "" {
@@ -372,6 +369,9 @@ func cmdAPIKeys(args []string) error {
 func resolveProject(flag string, c *Client) string {
 	if flag != "" {
 		return flag
+	}
+	if lc, ok := findLocalConfig(); ok {
+		return lc.Project
 	}
 	return c.config.Project
 }
