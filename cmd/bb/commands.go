@@ -228,14 +228,23 @@ func cmdEvents(args []string) error {
 }
 
 func cmdResolve(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: bb resolve <issue-id>")
+	fs := flag.NewFlagSet("resolve", flag.ContinueOnError)
+	project := fs.String("project", "", "project slug")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		return fmt.Errorf("usage: bb resolve <issue-id> [--project SLUG]")
 	}
 	client, err := newClient()
 	if err != nil {
 		return err
 	}
-	data, err := client.post("/api/v1/issues/"+args[0]+"/resolve", nil)
+	if p := resolveProject(*project, client); p != "" {
+		client.project = p
+	}
+	data, err := client.post("/api/v1/issues/"+remaining[0]+"/resolve", nil)
 	if err != nil {
 		return err
 	}
@@ -243,14 +252,23 @@ func cmdResolve(args []string) error {
 }
 
 func cmdReopen(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: bb reopen <issue-id>")
+	fs := flag.NewFlagSet("reopen", flag.ContinueOnError)
+	project := fs.String("project", "", "project slug")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		return fmt.Errorf("usage: bb reopen <issue-id> [--project SLUG]")
 	}
 	client, err := newClient()
 	if err != nil {
 		return err
 	}
-	data, err := client.post("/api/v1/issues/"+args[0]+"/reopen", nil)
+	if p := resolveProject(*project, client); p != "" {
+		client.project = p
+	}
+	data, err := client.post("/api/v1/issues/"+remaining[0]+"/reopen", nil)
 	if err != nil {
 		return err
 	}
@@ -260,17 +278,21 @@ func cmdReopen(args []string) error {
 func cmdMute(args []string) error {
 	fs := flag.NewFlagSet("mute", flag.ContinueOnError)
 	mode := fs.String("mode", "until_regression", "until_regression|forever")
+	project := fs.String("project", "", "project slug")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	remaining := fs.Args()
 	if len(remaining) < 1 {
-		return fmt.Errorf("usage: bb mute <issue-id> [--mode until_regression|forever]")
+		return fmt.Errorf("usage: bb mute <issue-id> [--mode until_regression|forever] [--project SLUG]")
 	}
 
 	client, err := newClient()
 	if err != nil {
 		return err
+	}
+	if p := resolveProject(*project, client); p != "" {
+		client.project = p
 	}
 	data, err := client.patch("/api/v1/issues/"+remaining[0]+"/mute", map[string]string{"mute_mode": *mode})
 	if err != nil {
@@ -280,14 +302,23 @@ func cmdMute(args []string) error {
 }
 
 func cmdUnmute(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: bb unmute <issue-id>")
+	fs := flag.NewFlagSet("unmute", flag.ContinueOnError)
+	project := fs.String("project", "", "project slug")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		return fmt.Errorf("usage: bb unmute <issue-id> [--project SLUG]")
 	}
 	client, err := newClient()
 	if err != nil {
 		return err
 	}
-	data, err := client.patch("/api/v1/issues/"+args[0]+"/unmute", nil)
+	if p := resolveProject(*project, client); p != "" {
+		client.project = p
+	}
+	data, err := client.patch("/api/v1/issues/"+remaining[0]+"/unmute", nil)
 	if err != nil {
 		return err
 	}
@@ -336,6 +367,13 @@ func cmdAPIKeys(args []string) error {
 		return err
 	}
 	return writeRaw(data)
+}
+
+func resolveProject(flag string, c *Client) string {
+	if flag != "" {
+		return flag
+	}
+	return c.config.Project
 }
 
 func writeOut(v any) {

@@ -175,11 +175,6 @@ func (s *Store) GetIssue(ctx context.Context, issueID string) (Issue, error) {
 		return Issue{}, err
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok {
-		projectID = s.defaultProjectID
-	}
-
 	const sel = `
 SELECT
 	i.id,
@@ -203,17 +198,10 @@ SELECT
 	i.issue_number,
 	COALESCE(p.issue_prefix, '') AS issue_prefix
 FROM issues i
-LEFT JOIN projects p ON p.id = i.project_id`
+LEFT JOIN projects p ON p.id = i.project_id
+WHERE i.id = ?`
 
-	var row *sql.Row
-	if projectID != 0 {
-		row = s.readDB().QueryRowContext(ctx, sel+`
-WHERE i.project_id = ? AND i.id = ?`, projectID, rowID)
-	} else {
-		row = s.readDB().QueryRowContext(ctx, sel+`
-WHERE i.id = ?`, rowID)
-	}
-
+	row := s.readDB().QueryRowContext(ctx, sel, rowID)
 	issue, err := scanIssue(row)
 	if err != nil {
 		return Issue{}, wrapNotFound(err, "issue not found")

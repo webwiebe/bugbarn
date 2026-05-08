@@ -32,11 +32,6 @@ func (s *Store) setIssueStatus(ctx context.Context, issueID, status string) (Iss
 		return Issue{}, err
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
-	if !ok || projectID <= 0 {
-		projectID = s.defaultProjectID
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Issue{}, err
@@ -44,24 +39,13 @@ func (s *Store) setIssueStatus(ctx context.Context, issueID, status string) (Iss
 	defer tx.Rollback()
 
 	now := formatTime(time.Now().UTC())
-	var execErr error
-	if projectID != 0 {
-		_, execErr = tx.ExecContext(ctx, `
-UPDATE issues
-SET status = ?,
-	resolved_at = CASE WHEN ? = 'resolved' THEN ? ELSE resolved_at END,
-	reopened_at = CASE WHEN ? = 'unresolved' THEN ? ELSE reopened_at END,
-	updated_at = CURRENT_TIMESTAMP
-WHERE id = ? AND project_id = ?`, status, status, now, status, now, rowID, projectID)
-	} else {
-		_, execErr = tx.ExecContext(ctx, `
+	_, execErr := tx.ExecContext(ctx, `
 UPDATE issues
 SET status = ?,
 	resolved_at = CASE WHEN ? = 'resolved' THEN ? ELSE resolved_at END,
 	reopened_at = CASE WHEN ? = 'unresolved' THEN ? ELSE reopened_at END,
 	updated_at = CURRENT_TIMESTAMP
 WHERE id = ?`, status, status, now, status, now, rowID)
-	}
 	if execErr != nil {
 		return Issue{}, execErr
 	}

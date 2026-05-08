@@ -299,3 +299,52 @@ func TestListIssuesRegressedFirst(t *testing.T) {
 	_ = issueA
 	_ = regressedIssue
 }
+
+func TestResolveIssueInNonDefaultProject(t *testing.T) {
+	t.Parallel()
+
+	srv, store := setupTestServer(t)
+
+	ctx := context.Background()
+	proj, err := store.CreateProject(ctx, "Other Project", "other-project")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	pe := worker.ProcessedEvent{
+		Event: event.Event{
+			ObservedAt: time.Now().UTC(),
+			ReceivedAt: time.Now().UTC().Add(time.Second),
+			Severity:   "ERROR",
+			Message:    "cross-project error",
+			Exception:  event.Exception{Type: "TestError", Message: "cross-project error"},
+		},
+		Fingerprint:         "fp-cross-project",
+		FingerprintMaterial: "TestError: cross-project error",
+	}
+	projCtx := storage.WithProjectID(ctx, proj.ID)
+	issue, _, _, _, err := store.PersistProcessedEvent(projCtx, pe)
+	if err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+
+	// Resolve through the full ServeHTTP handler without setting project context.
+	// This simulates a session-authenticated resolve without X-BugBarn-Project header.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/issues/"+issue.ID+"/resolve", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Issue storage.Issue `json:"issue"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Issue.Status != "resolved" {
+		t.Errorf("expected status 'resolved', got %q", resp.Issue.Status)
+	}
+}
