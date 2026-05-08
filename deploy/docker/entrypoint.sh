@@ -3,16 +3,6 @@ set -eu
 
 case "${BUGBARN_MODE:-}" in
   reader)
-    # Reader mode: restore a snapshot from Litestream, then run read-only.
-    # The binary's internal restore loop handles periodic refreshes.
-    if [ -n "${LITESTREAM_ACCESS_KEY_ID:-}" ]; then
-      echo "Reader: restoring database from Litestream replica..."
-      litestream restore \
-        -config /etc/litestream.yml \
-        -if-replica-exists \
-        -o "$BUGBARN_DB_PATH" \
-        /var/lib/bugbarn/bugbarn.db || echo "No replica found, starting with empty DB."
-    fi
     exec bugbarn
     ;;
   writer|"")

@@ -29,7 +29,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
-	"github.com/wiebe-xyz/bugbarn/internal/reader"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
@@ -194,8 +193,9 @@ func run() error {
 	}
 }
 
-// runReader starts the server in read-only mode. It opens a read-only SQLite
-// copy (restored from Litestream) and forwards all writes to the writer pod.
+// runReader starts the server in read-only mode. It opens the writer's SQLite
+// database directly (WAL mode allows concurrent readers) and forwards all
+// writes to the writer pod via HTTP.
 func runReader(cfg config.Config, logger *slog.Logger) error {
 	shutdownTracing, err := tracing.Init(context.Background(), Version)
 	if err != nil {
@@ -206,16 +206,7 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 
 	store, err := storage.OpenReadOnly(cfg.DBPath)
 	if err != nil {
-		logger.Warn("read-only open failed, bootstrapping empty database", "error", err)
-		bootstrap, bErr := storage.Open(cfg.DBPath)
-		if bErr != nil {
-			return fmt.Errorf("bootstrap empty database: %w", bErr)
-		}
-		bootstrap.Close()
-		store, err = storage.OpenReadOnly(cfg.DBPath)
-		if err != nil {
-			return fmt.Errorf("open read-only storage after bootstrap: %w", err)
-		}
+		return fmt.Errorf("open read-only storage: %w", err)
 	}
 	defer store.Close()
 
@@ -234,8 +225,6 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 	}
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
 
-	// Reader needs the ingest handler for API key validation on GET requests,
-	// but with nil spool since writes are forwarded to the writer.
 	handler := ingest.NewHandler(apiAuthorizer, nil, cfg.MaxBodyBytes)
 
 	logHub := logstream.NewHub()
@@ -256,8 +245,6 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 		Addr:    cfg.Addr,
 		Handler: tracing.Middleware(apiServer),
 	}
-
-	go reader.StartRestoreLoop(ctx, store, cfg.DBPath, cfg.WriterURL, logger)
 
 	logger.Info("starting in reader mode", "addr", cfg.Addr, "writer_url", cfg.WriterURL)
 
