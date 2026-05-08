@@ -3,7 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
@@ -71,7 +71,7 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 		return nil
 	}
 
-	log.Printf("[migrate] recomputing %d fingerprints", len(updates))
+	slog.Info("recomputing fingerprints", "count", len(updates))
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -113,7 +113,7 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM issues WHERE id = ?`, u.id); err != nil {
 				return err
 			}
-			log.Printf("[migrate] merged issue %d into %d (fingerprint %s)", u.id, keeperID, u.newFingerprint)
+			slog.Info("merged issue", "from_id", u.id, "into_id", keeperID, "fingerprint", u.newFingerprint)
 		} else {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE issues SET fingerprint = ?, fingerprint_material = ?, fingerprint_explanation_json = ?, updated_at = CURRENT_TIMESTAMP

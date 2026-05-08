@@ -2,7 +2,7 @@ package worker
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
@@ -35,7 +35,7 @@ func SymbolicateEvent(ctx context.Context, evt event.Event, store SourceMapStore
 
 		blob, err := store.FindSourceMap(ctx, release, dist, frame.File)
 		if err != nil {
-			log.Printf("symbolicate: find source map for %s release=%s dist=%s: %v", frame.File, release, dist, err)
+			slog.Warn("symbolicate: failed to find source map", "file", frame.File, "release", release, "dist", dist, "err", err)
 			continue
 		}
 		if blob == nil {

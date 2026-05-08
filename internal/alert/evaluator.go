@@ -2,7 +2,7 @@ package alert
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -15,11 +15,12 @@ type Evaluator struct {
 	repo      Repository
 	deliverer *Deliverer
 	publicURL string
+	log       *slog.Logger
 }
 
 // NewEvaluator creates an Evaluator wired to the given repository and deliverer.
-func NewEvaluator(repo Repository, deliverer *Deliverer, publicURL string) *Evaluator {
-	return &Evaluator{repo: repo, deliverer: deliverer, publicURL: publicURL}
+func NewEvaluator(repo Repository, deliverer *Deliverer, publicURL string, log *slog.Logger) *Evaluator {
+	return &Evaluator{repo: repo, deliverer: deliverer, publicURL: publicURL, log: log}
 }
 
 // HandleEvent receives a domain event and dispatches to condition evaluation.
@@ -39,7 +40,7 @@ func (e *Evaluator) HandleEvent(evt any) {
 func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.Issue, conditionType string) {
 	rules, err := e.repo.ListForProject(ctx, projectID)
 	if err != nil {
-		log.Printf("alert evaluator: list rules for project %d: %v", projectID, err)
+		e.log.Error("failed to list rules for project", "project_id", projectID, "error", err)
 		return
 	}
 
@@ -65,15 +66,15 @@ func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.
 			defer cancel()
 
 			if err := e.deliverer.Fire(fireCtx, r, iss, e.publicURL); err != nil {
-				log.Printf("alert evaluator: fire alert %s for issue %s: %v", r.ID, iss.ID, err)
+				e.log.Error("failed to fire alert", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
 				return
 			}
 
 			if err := e.repo.RecordFiring(ctx, r.ID, iss.ID); err != nil {
-				log.Printf("alert evaluator: record firing alert %s issue %s: %v", r.ID, iss.ID, err)
+				e.log.Error("failed to record firing", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
 			}
 			if err := e.repo.UpdateLastFired(ctx, r.ID, time.Now().UTC()); err != nil {
-				log.Printf("alert evaluator: update last_fired alert %s: %v", r.ID, err)
+				e.log.Error("failed to update last_fired", "alert_id", r.ID, "error", err)
 			}
 		}()
 	}
@@ -87,7 +88,7 @@ func (e *Evaluator) cooldownPassed(ctx context.Context, rule Rule, issueID strin
 	}
 	last, err := e.repo.LastFiring(ctx, rule.ID, issueID)
 	if err != nil {
-		log.Printf("alert evaluator: last firing for %s/%s: %v", rule.ID, issueID, err)
+		e.log.Error("failed to check last firing", "alert_id", rule.ID, "issue_id", issueID, "error", err)
 		return false
 	}
 	if last.IsZero() {

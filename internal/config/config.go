@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -191,7 +192,7 @@ func loadConfigFiles() {
 	}
 	for _, path := range candidates {
 		if err := applyConfigFile(path); err != nil && !os.IsNotExist(err) {
-			log.Printf("warning: reading config file %s: %v", path, err)
+			slog.Warn("error reading config file", "path", path, "error", err)
 		}
 	}
 }

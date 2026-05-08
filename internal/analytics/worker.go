@@ -2,7 +2,7 @@ package analytics
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -37,7 +37,7 @@ func StartWorker(ctx context.Context, store Store, retentionDays int) {
 func runRollup(ctx context.Context, store Store, retentionDays int) {
 	projectIDs, err := store.ListProjectIDs(ctx)
 	if err != nil {
-		log.Printf("analytics rollup: list projects: %v", err)
+		slog.Error("analytics rollup: failed to list projects", "error", err)
 		return
 	}
 
@@ -51,13 +51,13 @@ func runRollup(ctx context.Context, store Store, retentionDays int) {
 	for _, pid := range projectIDs {
 		for _, date := range dates {
 			if err := store.RollupDailyAnalytics(ctx, pid, date); err != nil {
-				log.Printf("analytics rollup: project %d date %s: %v", pid, date.Format("2006-01-02"), err)
+				slog.Error("analytics rollup: failed to roll up project", "project_id", pid, "date", date.Format("2006-01-02"), "error", err)
 			}
 		}
 	}
 
 	cutoff := now.AddDate(0, 0, -retentionDays)
 	if err := store.DeleteOldPageviews(ctx, cutoff); err != nil {
-		log.Printf("analytics retention: delete old pageviews: %v", err)
+		slog.Error("analytics retention: failed to delete old pageviews", "error", err)
 	}
 }

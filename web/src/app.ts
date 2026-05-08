@@ -1704,6 +1704,16 @@ function wireSettingsActions(): void {
     void submitSourceMapsForm(sourceMapForm);
   });
 
+  const copySetupBtn = elements.overviewView.querySelector<HTMLButtonElement>("#copy-setup-url");
+  copySetupBtn?.addEventListener("click", () => {
+    const urlEl = elements.overviewView.querySelector<HTMLElement>("#setup-url");
+    if (urlEl) {
+      void navigator.clipboard.writeText(urlEl.textContent || "");
+      copySetupBtn.textContent = "✓";
+      setTimeout(() => { copySetupBtn.textContent = "⧉"; }, 1500);
+    }
+  });
+
   elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-approve-project]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const slug = btn.dataset["approveProject"];

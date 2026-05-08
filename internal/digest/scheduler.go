@@ -2,7 +2,7 @@ package digest
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -36,15 +36,15 @@ func run(ctx context.Context, cfg Config, store Store) {
 				continue
 			}
 			lastFired = now
-			log.Printf("digest: sending weekly digest")
+			slog.Info("digest: sending weekly digest")
 			digestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			errs := Send(digestCtx, cfg, store)
 			cancel()
 			for _, err := range errs {
-				log.Printf("digest: %v", err)
+				slog.Error("digest: delivery error", "error", err)
 			}
 			if len(errs) == 0 {
-				log.Printf("digest: sent successfully")
+				slog.Info("digest: sent successfully")
 			}
 		}
 	}

@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -56,7 +55,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	attempt.count++
 	if attempt.count > loginRateLimit {
-		log.Printf("auth: rate-limited login from %s (attempt %d)", ip, attempt.count)
+		s.logger.Warn("auth: rate-limited login", "ip", ip, "attempt", attempt.count)
 		w.Header().Set("Retry-After", "60")
 		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
 		return
@@ -71,7 +70,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.users.Valid(request.Username, request.Password) {
-		log.Printf("auth: failed login for user %q from %s", request.Username, ip)
+		s.logger.Warn("auth: failed login", "username", request.Username, "ip", ip)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
