@@ -33,10 +33,12 @@ func cmdLogs(args []string) error {
 		return err
 	}
 
+	proj := resolveProject(*project, client)
+
 	if *follow {
-		return streamLogs(client, *level, *project, *noColor)
+		return streamLogs(client, *level, proj, *noColor)
 	}
-	return fetchLogs(client, *level, *project, *query, *limit, *noColor)
+	return fetchLogs(client, *level, proj, *query, *limit, *noColor)
 }
 
 func fetchLogs(client *Client, level, project, query string, limit int, noColor bool) error {
