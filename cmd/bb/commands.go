@@ -113,6 +113,7 @@ func loginWithPassword(baseURL, username, password string) (session, csrf string
 func cmdTUI(args []string) error {
 	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
 	status := fs.String("status", "open", "open|resolved|muted|all")
+	project := fs.String("project", "", "project slug filter")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -120,6 +121,9 @@ func cmdTUI(args []string) error {
 	client, err := newClient()
 	if err != nil {
 		return err
+	}
+	if p := resolveProject(*project, client); p != "" {
+		client.project = p
 	}
 	return runTUI(client, *status)
 }

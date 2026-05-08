@@ -291,7 +291,7 @@ func TestListIssuesRegressedFirst(t *testing.T) {
 	}
 
 	firstIssue := issues[0].(map[string]any)
-	firstStatus, _ := firstIssue["Status"].(string)
+	firstStatus, _ := firstIssue["status"].(string)
 	if firstStatus != "regressed" {
 		t.Errorf("expected first issue to be regressed, got %q", firstStatus)
 	}

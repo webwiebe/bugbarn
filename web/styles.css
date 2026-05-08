@@ -93,6 +93,8 @@ h2 {
   gap: 0;
   min-width: 0;
   padding: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -361,16 +363,18 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr) 280px;
   gap: 0;
   align-items: stretch;
-  min-height: calc(100vh - 91px);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .panel {
-  min-height: 100%;
   background: rgba(36, 37, 28, 0.96);
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  overflow: hidden;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .panel-main {
@@ -379,6 +383,14 @@ button:disabled {
 
 .panel-live {
   background: #1d1e16;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-live > .list {
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .view.hidden,

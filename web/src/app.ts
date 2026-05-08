@@ -1,6 +1,5 @@
 import {
   renderAlertsViewMarkup,
-  renderAnalyticsViewMarkup,
   renderEmptyIssues,
   renderErrorDetailMarkup,
   renderEventDetailMarkup,
@@ -14,10 +13,10 @@ import {
   renderSettingsViewMarkup,
   renderSetupGuide,
 } from "./components.js";
-import { fetchAnalyticsOverview, fetchAnalyticsPages, fetchAnalyticsReferrers, fetchAnalyticsSegments, fetchAnalyticsTimeline, normalizeList, normalizeObject, readString } from "./data.js";
+import { normalizeList, normalizeObject, readString } from "./data.js";
 import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
-import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
+import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
 
 const httpUnauthorized = 401;
 const liveWindowMinutes = 15;
@@ -60,14 +59,6 @@ const state: AppState = {
   logSSE: null,
 };
 
-// Analytics module-level state (not in AppState to avoid large interface churn)
-let analyticsRangeDays = 30;
-let analyticsSegmentDim = "";
-let analyticsOverview: AnalyticsOverview | null = null;
-let analyticsPages: AnalyticsPage[] = [];
-let analyticsTimeline: AnalyticsBucket[] = [];
-let analyticsReferrers: AnalyticsReferrer[] = [];
-let analyticsSegments: AnalyticsSegmentBucket[] = [];
 
 const elements: AppElements = {
   refreshAll: byId<HTMLButtonElement>("refresh-all"),
@@ -557,10 +548,6 @@ function route(): void {
     state.currentRoute = "settings";
     setPageTitle("Settings");
     setRouteChip("Settings");
-  } else if (kind === "analytics") {
-    state.currentRoute = "analytics";
-    setPageTitle("Analytics");
-    setRouteChip("Analytics");
   } else {
     state.currentRoute = "issues";
     setPageTitle("Issues");
@@ -584,8 +571,6 @@ function renderCurrentRoute(): void {
     renderLogsView();
   } else if (state.currentRoute === "settings") {
     renderSettingsView();
-  } else if (state.currentRoute === "analytics") {
-    renderAnalyticsView();
   } else if (state.selectedEventId) {
     setDetailLoading(`Event ${state.selectedEventId}`);
   } else if (state.selectedIssueId) {
@@ -682,10 +667,6 @@ async function loadCurrentRouteData(): Promise<void> {
   if (state.currentRoute === "settings") {
     await loadSettings();
     loadSdkInfo();
-    return;
-  }
-  if (state.currentRoute === "analytics") {
-    await loadAnalytics();
     return;
   }
   if (state.selectedEventId) {
@@ -1558,7 +1539,7 @@ async function loadOlderEventsForEvent(
 function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[], hasMore = false): void {
   setActiveView("detail");
   const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
-  elements.detailTitle.textContent = eventTitle(event);
+  elements.detailTitle.textContent = issueId ? `${issueId} — ${firstIdentifier(event)}` : firstIdentifier(event) || eventTitle(event);
   elements.detailBody.innerHTML = renderEventDetailMarkup(event, issue, issueEvents, hasMore, state.releases);
   wireEventDetailActions(issueId);
 
@@ -2049,76 +2030,6 @@ function wireLogsView(): void {
   if (state.logSSE && state.logSSE.readyState === EventSource.OPEN) {
     dot?.classList.add("connected");
   }
-}
-
-function analyticsDateRange(): { start: string; end: string } {
-  const end = new Date();
-  const start = new Date(end.getTime() - analyticsRangeDays * 24 * 60 * 60 * 1000);
-  return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-  };
-}
-
-async function loadAnalytics(error: unknown = null): Promise<void> {
-  if (state.currentRoute !== "analytics") return;
-  const project = state.currentProject;
-  const { start, end } = analyticsDateRange();
-  try {
-    const [ov, pg, tl, rf] = await Promise.all([
-      fetchAnalyticsOverview(project, start, end).catch(() => null),
-      fetchAnalyticsPages(project, start, end).catch(() => []),
-      fetchAnalyticsTimeline(project, start, end).catch(() => []),
-      fetchAnalyticsReferrers(project, start, end).catch(() => []),
-    ]);
-    analyticsOverview = ov;
-    analyticsPages = pg;
-    analyticsTimeline = tl;
-    analyticsReferrers = rf;
-    if (analyticsSegmentDim) {
-      analyticsSegments = await fetchAnalyticsSegments(project, start, end, analyticsSegmentDim).catch(() => []);
-    } else {
-      analyticsSegments = [];
-    }
-    renderAnalyticsView(error);
-  } catch (err) {
-    renderAnalyticsView(err);
-  }
-}
-
-function renderAnalyticsView(error: unknown = null): void {
-  setActiveView("overview");
-  elements.detailTitle.textContent = "Analytics";
-  elements.detailBody.innerHTML = "";
-  elements.overviewView.innerHTML = renderAnalyticsViewMarkup(
-    analyticsOverview,
-    analyticsPages,
-    analyticsTimeline,
-    analyticsReferrers,
-    analyticsSegments,
-    analyticsRangeDays,
-    analyticsSegmentDim,
-    error,
-  );
-  wireAnalyticsView();
-}
-
-function wireAnalyticsView(): void {
-  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-analytics-range]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const days = Number(btn.dataset["analyticsRange"]);
-      if (days && days !== analyticsRangeDays) {
-        analyticsRangeDays = days;
-        void loadAnalytics();
-      }
-    });
-  });
-
-  const dimSelect = document.getElementById("analytics-segment-dim") as HTMLSelectElement | null;
-  dimSelect?.addEventListener("change", () => {
-    analyticsSegmentDim = dimSelect.value;
-    void loadAnalytics();
-  });
 }
 
 function setActiveView(view: "overview" | "detail"): void {

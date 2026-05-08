@@ -203,7 +203,7 @@ export interface AppState {
   projects: ApiProject[];
   currentProject: string;
   currentEnv: string;
-  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs" | "analytics";
+  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs";
   issues: ApiIssue[];
   issueQuery: string;
   issueSort: IssueSort;

@@ -12,19 +12,19 @@ import (
 )
 
 type issue struct {
-	ID            string `json:"ID"`
-	Title         string `json:"Title"`
-	Status        string `json:"Status"`
-	ExceptionType string `json:"ExceptionType"`
-	EventCount    int    `json:"EventCount"`
-	FirstSeen     string `json:"FirstSeen"`
-	LastSeen      string `json:"LastSeen"`
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Status        string `json:"status"`
+	ExceptionType string `json:"exception_type"`
+	EventCount    int    `json:"event_count"`
+	FirstSeen     string `json:"first_seen"`
+	LastSeen      string `json:"last_seen"`
 	ProjectSlug   string `json:"project_slug"`
 }
 
 type issueDetail struct {
 	issue
-	FingerprintExplanation []string `json:"FingerprintExplanation"`
+	FingerprintExplanation []string `json:"fingerprint_explanation"`
 	RepresentativeEvent    struct {
 		Message   string `json:"message"`
 		Severity  string `json:"severity"`
@@ -37,7 +37,7 @@ type issueDetail struct {
 				Line     int    `json:"line"`
 			} `json:"stacktrace"`
 		} `json:"exception"`
-	} `json:"RepresentativeEvent"`
+	} `json:"representative_event"`
 }
 
 type view int
