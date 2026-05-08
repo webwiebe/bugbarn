@@ -740,6 +740,15 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
           <div class="kv"><span>Timezone</span><span>${escapeHtml(timezone || "n/a")}</span></div>
         </div>
       </div>
+      <div class="section quick-setup-card">
+        <h3>⚡ Quick Setup</h3>
+        <p class="muted">Point an LLM or developer at the setup page to auto-configure a project with an ingest API key. The page returns a markdown guide with SDK integration examples.</p>
+        <div class="setup-url-box">
+          <code id="setup-url">${escapeHtml(`${window.location.origin}/api/v1/setup/`)}your-project-slug</code>
+          <button class="btn-sm ghost" id="copy-setup-url" title="Copy URL">⧉</button>
+        </div>
+        <p class="muted" style="margin-top:6px">Replace <code>your-project-slug</code> with the desired project name. The project will appear below as "pending" until you approve.</p>
+      </div>
       <div class="section">
         <h3>Preferences</h3>
         <p class="muted">POST /api/v1/settings</p>

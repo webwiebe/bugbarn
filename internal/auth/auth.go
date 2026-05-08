@@ -32,10 +32,16 @@ type DBKeyLookupWithProject func(ctx context.Context, keySHA256 string) (project
 // DBKeyTouch is called after a successful DB-based auth to update last_used_at.
 type DBKeyTouch func(ctx context.Context, keySHA256 string) error
 
+// SetupKeyVerifier is called when normal auth fails. It checks whether the
+// provided raw key is a valid deterministic setup key and, if so, lazily
+// provisions the project and API key. Returns (projectID, true) on success.
+type SetupKeyVerifier func(ctx context.Context, rawKey, projectSlug string) (projectID int64, ok bool)
+
 type Authorizer struct {
-	apiKeyHash []byte
-	dbLookup   DBKeyLookupWithProject
-	dbTouch    DBKeyTouch
+	apiKeyHash    []byte
+	dbLookup      DBKeyLookupWithProject
+	dbTouch       DBKeyTouch
+	setupVerifier SetupKeyVerifier
 }
 
 func New(apiKey string) *Authorizer {
@@ -68,7 +74,16 @@ func (a *Authorizer) WithDBLookup(lookup DBKeyLookupWithProject, touch DBKeyTouc
 	if a == nil {
 		return &Authorizer{dbLookup: lookup, dbTouch: touch}
 	}
-	return &Authorizer{apiKeyHash: a.apiKeyHash, dbLookup: lookup, dbTouch: touch}
+	return &Authorizer{apiKeyHash: a.apiKeyHash, dbLookup: lookup, dbTouch: touch, setupVerifier: a.setupVerifier}
+}
+
+// WithSetupKeyVerifier returns a copy of the Authorizer that will try setup key
+// verification as a last resort when normal auth fails.
+func (a *Authorizer) WithSetupKeyVerifier(v SetupKeyVerifier) *Authorizer {
+	if a == nil {
+		return &Authorizer{setupVerifier: v}
+	}
+	return &Authorizer{apiKeyHash: a.apiKeyHash, dbLookup: a.dbLookup, dbTouch: a.dbTouch, setupVerifier: v}
 }
 
 // Enabled returns true when at least one auth mechanism is configured.
@@ -113,6 +128,21 @@ func (a *Authorizer) ValidWithProject(ctx context.Context, provided string) (pro
 		}
 	}
 
+	return 0, "", false
+}
+
+// ValidWithSetupFallback is like ValidWithProject but also tries setup key
+// verification using the project slug when normal auth fails.
+func (a *Authorizer) ValidWithSetupFallback(ctx context.Context, provided, projectSlug string) (projectID int64, scope string, ok bool) {
+	pid, sc, valid := a.ValidWithProject(ctx, provided)
+	if valid {
+		return pid, sc, true
+	}
+	if a.setupVerifier != nil && projectSlug != "" {
+		if setupPID, setupOK := a.setupVerifier(ctx, strings.TrimSpace(provided), projectSlug); setupOK {
+			return setupPID, "ingest", true
+		}
+	}
 	return 0, "", false
 }
 

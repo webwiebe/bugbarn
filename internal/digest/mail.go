@@ -3,7 +3,7 @@ package digest
 import (
 	"bytes"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/smtp"
 	"strings"
 	"text/template"
@@ -83,7 +83,7 @@ func deliverEmail(mc MailConfig, subject, plain, html string) error {
 			return lastErr
 		}
 		if attempt < len(delays)-1 {
-			log.Printf("digest mailer: transient error (attempt %d/3), retrying in %s: %v", attempt+1, delay, lastErr)
+			slog.Warn("digest mailer: transient error, retrying", "attempt", attempt+1, "max_attempts", 3, "retry_in", delay, "error", lastErr)
 			time.Sleep(delay)
 		}
 	}

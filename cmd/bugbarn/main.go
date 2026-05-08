@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -87,7 +91,7 @@ func run() error {
 	}
 
 	if cfg.SessionSecret == "" {
-		log.Println("warning: BUGBARN_SESSION_SECRET is not set; sessions will not persist across restarts")
+		logger.Warn("BUGBARN_SESSION_SECRET is not set; sessions will not persist across restarts")
 	}
 
 	store, err := storage.Open(cfg.DBPath)
@@ -109,7 +113,7 @@ func run() error {
 	bus := &domainevents.Bus{}
 	alertRepo := alert.NewSQLiteRepository(store.DB())
 	deliverer := alert.NewDeliverer()
-	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL)
+	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL, logger.With("component", "alert-evaluator"))
 	bus.Subscribe(evaluator.HandleEvent)
 
 	eventPub := service.NewEventPublisher(bus)
@@ -277,8 +281,47 @@ func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer
 	} else {
 		base = auth.New(cfg.APIKey)
 	}
-	// Always wire in DB-based key lookup so keys created via the CLI work too.
-	return base.WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey), nil
+	base = base.WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
+	if cfg.SessionSecret != "" {
+		base = base.WithSetupKeyVerifier(newSetupKeyVerifier(cfg.SessionSecret, store, cfg.AutoApproveProjects))
+	}
+	return base, nil
+}
+
+func newSetupKeyVerifier(secret string, store *storage.Store, autoApprove bool) auth.SetupKeyVerifier {
+	return func(ctx context.Context, rawKey, projectSlug string) (int64, bool) {
+		expected := setupKey(secret, projectSlug)
+		if expected == "" || subtle.ConstantTimeCompare([]byte(rawKey), []byte(expected)) != 1 {
+			return 0, false
+		}
+		var proj storage.Project
+		var err error
+		if autoApprove {
+			proj, err = store.EnsureProject(ctx, projectSlug)
+		} else {
+			proj, err = store.EnsureProjectPending(ctx, projectSlug)
+		}
+		if err != nil {
+			return 0, false
+		}
+		keySHA := sha256Hex(rawKey)
+		_ = store.EnsureSetupAPIKey(ctx, projectSlug+"-setup", proj.ID, keySHA)
+		return proj.ID, true
+	}
+}
+
+func setupKey(secret, slug string) string {
+	if secret == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte("setup:" + slug))
+	return hex.EncodeToString(mac.Sum(nil))[:40]
+}
+
+func sha256Hex(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
 }
 
 // runWorkerOnce replays queued records into the persistent store for local maintenance.
@@ -328,7 +371,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 	// Restore cursor position from disk so we never re-process already-handled records.
 	offset, err := spool.ReadCursor(spoolDir)
 	if err != nil {
-		log.Printf("worker: failed to read cursor (starting from 0): %v", err)
+		slog.Error("worker failed to read cursor, starting from 0", "error", err)
 		offset = 0
 	}
 
@@ -343,7 +386,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 		case <-ticker.C:
 			entries, err := spool.ReadRecordsFrom(spool.Path(spoolDir), offset)
 			if err != nil {
-				log.Printf("worker read spool: %v", err)
+				slog.Error("worker failed to read spool", "error", err)
 				continue
 			}
 
@@ -351,7 +394,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 				ws.SetPendingRecords(int64(len(entries)))
 				snap := ws.Snapshot()
 				if !snap.Healthy && !stallWarned {
-					log.Printf("worker: stall detected — %d pending records, last advance %v", snap.PendingRecords, snap.LastAdvance)
+					slog.Info("worker stall detected", "pending_records", snap.PendingRecords, "last_advance", snap.LastAdvance)
 					if selfReporting {
 						bb.CaptureMessage(fmt.Sprintf("worker stall: %d pending, level=%s", snap.PendingRecords, snap.Level))
 					}
@@ -376,11 +419,11 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 					recordSpan.SetStatus(codes.Error, err.Error())
 					recordSpan.End()
 					retryCounts[record.IngestID]++
-					log.Printf("worker process record %s (attempt %d): %v", record.IngestID, retryCounts[record.IngestID], err)
+					slog.Error("worker failed to process record", "ingest_id", record.IngestID, "attempt", retryCounts[record.IngestID], "error", err)
 					if retryCounts[record.IngestID] >= workerMaxRetries {
-						log.Printf("worker dead-lettering record %s after %d attempts", record.IngestID, retryCounts[record.IngestID])
+						slog.Error("worker dead-lettering record", "ingest_id", record.IngestID, "attempts", retryCounts[record.IngestID])
 						if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
-							log.Printf("worker dead-letter write %s: %v", record.IngestID, dlErr)
+							slog.Error("worker failed to write dead letter", "ingest_id", record.IngestID, "error", dlErr)
 						}
 						if selfReporting {
 							bb.CaptureMessage(fmt.Sprintf("dead-letter: ingest %s: %v", record.IngestID, err))
@@ -392,7 +435,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 						// Advance cursor past this dead-lettered record.
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(spoolDir, offset); err != nil {
-							log.Printf("worker write cursor: %v", err)
+							slog.Error("worker failed to write cursor", "error", err)
 						}
 						if ws != nil {
 							ws.RecordAdvance()
@@ -417,7 +460,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 						persistCtx = storage.WithProjectID(recordCtx, proj.ID)
 						resolveSpan.SetAttributes(attribute.Int64("project_id", proj.ID))
 					} else {
-						log.Printf("worker ensure project %q: %v", record.ProjectSlug, err)
+						slog.Error("worker failed to ensure project", "project_slug", record.ProjectSlug, "error", err)
 						resolveSpan.SetStatus(codes.Error, err.Error())
 					}
 					resolveSpan.End()
@@ -436,11 +479,11 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 					recordSpan.SetStatus(codes.Error, persistErr.Error())
 					recordSpan.End()
 					retryCounts[record.IngestID]++
-					log.Printf("worker persist record %s (attempt %d): %v", record.IngestID, retryCounts[record.IngestID], persistErr)
+					slog.Error("worker failed to persist record", "ingest_id", record.IngestID, "attempt", retryCounts[record.IngestID], "error", persistErr)
 					if retryCounts[record.IngestID] >= workerMaxRetries {
-						log.Printf("worker dead-lettering record %s after %d persist attempts", record.IngestID, retryCounts[record.IngestID])
+						slog.Error("worker dead-lettering record after persist failures", "ingest_id", record.IngestID, "attempts", retryCounts[record.IngestID])
 						if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
-							log.Printf("worker dead-letter write %s: %v", record.IngestID, dlErr)
+							slog.Error("worker failed to write dead letter", "ingest_id", record.IngestID, "error", dlErr)
 						}
 						if selfReporting {
 							bb.CaptureMessage(fmt.Sprintf("dead-letter persist: ingest %s: %v", record.IngestID, persistErr))
@@ -452,7 +495,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 						// Advance cursor past this dead-lettered record.
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(spoolDir, offset); err != nil {
-							log.Printf("worker write cursor: %v", err)
+							slog.Error("worker failed to write cursor", "error", err)
 						}
 						if ws != nil {
 							ws.RecordAdvance()
@@ -481,7 +524,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 				// Advance cursor after each successfully processed record.
 				offset = entry.EndOffset
 				if err := spool.WriteCursor(spoolDir, offset); err != nil {
-					log.Printf("worker write cursor: %v", err)
+					slog.Error("worker failed to write cursor", "error", err)
 				}
 				if ws != nil {
 					ws.RecordAdvance()
@@ -492,7 +535,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 			// Rotate the active spool file once it exceeds the threshold, so old
 			// segments can eventually be archived or deleted.
 			if err := eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
-				log.Printf("worker rotate spool: %v", err)
+				slog.Error("worker failed to rotate spool", "error", err)
 			}
 		}
 	}

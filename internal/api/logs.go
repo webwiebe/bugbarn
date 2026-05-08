@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -132,7 +131,7 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 			Logs []map[string]any `json:"logs"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			log.Printf("logs: invalid JSON payload: %v", err)
+			s.logger.Warn("logs: invalid JSON payload", "error", err)
 			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 			return
 		}

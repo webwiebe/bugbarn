@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -112,7 +112,7 @@ func Send(ctx context.Context, cfg Config, store Store) []error {
 	for _, proj := range projects {
 		data, err := store.WeeklyDigest(ctx, proj.ID, since)
 		if err != nil {
-			log.Printf("digest: gather %s: %v", proj.Slug, err)
+			slog.Error("digest: failed to gather project data", "project", proj.Slug, "error", err)
 			errs = append(errs, fmt.Errorf("gather %s: %w", proj.Slug, err))
 			continue
 		}
@@ -123,20 +123,20 @@ func Send(ctx context.Context, cfg Config, store Store) []error {
 	}
 
 	if len(p.Projects) == 0 {
-		log.Printf("digest: no activity across all projects, skipping")
+		slog.Info("digest: no activity across all projects, skipping")
 		return errs
 	}
 
 	if cfg.WebhookURL != "" {
 		if err := sendWebhook(ctx, cfg.WebhookURL, p); err != nil {
-			log.Printf("digest webhook: %v", err)
+			slog.Error("digest: webhook delivery failed", "error", err)
 			errs = append(errs, fmt.Errorf("webhook: %w", err))
 		}
 	}
 
 	if cfg.Mail.active() {
 		if err := sendEmailDigest(cfg.Mail, p, since, now); err != nil {
-			log.Printf("digest email: %v", err)
+			slog.Error("digest: email delivery failed", "error", err)
 			errs = append(errs, fmt.Errorf("email: %w", err))
 		}
 	}

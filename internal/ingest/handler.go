@@ -65,7 +65,8 @@ func (h *Handler) APIKeyProjectScope(r *http.Request) (projectID int64, scope st
 	if h == nil || h.auth == nil {
 		return 0, "full", true
 	}
-	return h.auth.ValidWithProject(r.Context(), r.Header.Get(auth.HeaderAPIKey))
+	slug := r.Header.Get("x-bugbarn-project")
+	return h.auth.ValidWithSetupFallback(r.Context(), r.Header.Get(auth.HeaderAPIKey), slug)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

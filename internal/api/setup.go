@@ -5,12 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) setupKey(slug string) string {
@@ -36,21 +33,19 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var proj domain.Project
-	var err error
-	if s.autoApproveProjects {
-		proj, err = s.projects.Ensure(r.Context(), slug)
-	} else {
-		proj, err = s.projects.EnsurePending(r.Context(), slug)
-	}
+	proj, err := s.projects.BySlug(r.Context(), slug)
 	if err != nil {
-		log.Printf("setup: failed to ensure project %q: %v", slug, err)
-		http.Error(w, "failed to ensure project", http.StatusInternalServerError)
-		return
+		// Project doesn't exist yet or we're on a read-only replica.
+		// That's fine — the key is deterministic and the project + API key
+		// will be created lazily on the writer when the first event arrives.
+		proj.Slug = slug
+		proj.Status = "new"
 	}
 
 	keySHA := hex.EncodeToString(sha256Sum(rawKey))
-	_ = s.projects.EnsureSetupAPIKey(r.Context(), slug+"-setup", proj.ID, keySHA)
+	if proj.ID != 0 {
+		_ = s.projects.EnsureSetupAPIKey(r.Context(), slug+"-setup", proj.ID, keySHA)
+	}
 
 	endpoint := s.publicURL
 	if endpoint == "" {
