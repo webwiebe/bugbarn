@@ -22,6 +22,10 @@ type Status struct {
 	pendingRecords  atomic.Int64
 }
 
+func NewStatus() *Status {
+	return &Status{lastAdvance: time.Now().UTC()}
+}
+
 type HealthReport struct {
 	Healthy        bool        `json:"healthy"`
 	Level          HealthLevel `json:"level"`
@@ -82,14 +86,6 @@ func (s *Status) Snapshot() HealthReport {
 	case pending == 0:
 		report.Level = HealthOK
 		report.Healthy = true
-	case lastAdv.IsZero():
-		if processed == 0 && pending > 0 {
-			report.Level = HealthDegraded
-			report.Healthy = false
-		} else {
-			report.Level = HealthOK
-			report.Healthy = true
-		}
 	case now.Sub(lastAdv) > unhealthyDuration && pending > 0:
 		report.Level = HealthUnhealthy
 		report.Healthy = false

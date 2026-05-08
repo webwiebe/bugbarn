@@ -130,7 +130,7 @@ func run() error {
 		logger.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 	}
 
-	workerStatus := &worker.Status{}
+	workerStatus := worker.NewStatus()
 	go runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus)
 
 	digest.StartScheduler(ctx, cfg.Digest, store)
@@ -390,20 +390,6 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 				continue
 			}
 
-			if ws != nil {
-				ws.SetPendingRecords(int64(len(entries)))
-				snap := ws.Snapshot()
-				if !snap.Healthy && !stallWarned {
-					slog.Info("worker stall detected", "pending_records", snap.PendingRecords, "last_advance", snap.LastAdvance)
-					if selfReporting {
-						bb.CaptureMessage(fmt.Sprintf("worker stall: %d pending, level=%s", snap.PendingRecords, snap.Level))
-					}
-					stallWarned = true
-				} else if snap.Healthy {
-					stallWarned = false
-				}
-			}
-
 			for _, entry := range entries {
 				record := entry.Record
 
@@ -529,6 +515,26 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 				if ws != nil {
 					ws.RecordAdvance()
 					ws.RecordProcessed(1)
+				}
+			}
+
+			if ws != nil {
+				remaining, _ := spool.ReadRecordsFrom(spool.Path(spoolDir), offset)
+				ws.SetPendingRecords(int64(len(remaining)))
+				snap := ws.Snapshot()
+				if !snap.Healthy && !stallWarned {
+					slog.Info("worker stall detected", "pending_records", snap.PendingRecords, "level", snap.Level, "last_advance", snap.LastAdvance)
+					if selfReporting {
+						bb.CaptureMessage("worker stall: records not advancing",
+							bb.WithAttributes(map[string]any{
+								"pending_records": snap.PendingRecords,
+								"level":           string(snap.Level),
+							}),
+						)
+					}
+					stallWarned = true
+				} else if snap.Healthy {
+					stallWarned = false
 				}
 			}
 
