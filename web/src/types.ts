@@ -151,6 +151,9 @@ export interface ApiProject extends RawRecord {
   Name?: string;
   status?: string;
   Status?: string;
+  issue_count?: number;
+  event_count?: number;
+  log_count?: number;
 }
 
 export interface ApiLogEntry {

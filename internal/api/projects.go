@@ -46,7 +46,38 @@ func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 			writeServiceError(w, err)
 			return
 		}
-		writeJSON(w, map[string]any{"projects": projects})
+		usage, _ := s.projects.UsageAll(r.Context())
+		type projectWithUsage struct {
+			ID           int64   `json:"id"`
+			Name         string  `json:"name"`
+			Slug         string  `json:"slug"`
+			Status       string  `json:"status"`
+			IssuePrefix  string  `json:"issue_prefix"`
+			IssueCounter int     `json:"issue_counter"`
+			GroupID      *int64  `json:"group_id"`
+			CreatedAt    string  `json:"created_at"`
+			IssueCount   int     `json:"issue_count"`
+			EventCount   int     `json:"event_count"`
+			LogCount     int     `json:"log_count"`
+		}
+		out := make([]projectWithUsage, len(projects))
+		for i, p := range projects {
+			u := usage[p.ID]
+			out[i] = projectWithUsage{
+				ID:           p.ID,
+				Name:         p.Name,
+				Slug:         p.Slug,
+				Status:       p.Status,
+				IssuePrefix:  p.IssuePrefix,
+				IssueCounter: p.IssueCounter,
+				GroupID:      p.GroupID,
+				CreatedAt:    p.CreatedAt.Format("2006-01-02T15:04:05Z"),
+				IssueCount:   u.IssueCount,
+				EventCount:   u.EventCount,
+				LogCount:     u.LogCount,
+			}
+		}
+		writeJSON(w, map[string]any{"projects": out})
 	case http.MethodPost:
 		var req struct {
 			Name string `json:"name"`

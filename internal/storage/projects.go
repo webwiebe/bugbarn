@@ -221,6 +221,42 @@ func (s *Store) projectByID(ctx context.Context, id int64) (Project, error) {
 	return p, nil
 }
 
+// ProjectUsage holds per-project usage counts.
+type ProjectUsage struct {
+	ProjectID  int64 `json:"project_id"`
+	IssueCount int   `json:"issue_count"`
+	EventCount int   `json:"event_count"`
+	LogCount   int   `json:"log_count"`
+}
+
+// ProjectUsageAll returns issue, event, and log counts for every project.
+func (s *Store) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUsage, error) {
+	usage := make(map[int64]ProjectUsage)
+
+	rows, err := s.readDB().QueryContext(ctx, `
+		SELECT p.id,
+			COALESCE(ic.cnt, 0),
+			COALESCE(ec.cnt, 0),
+			COALESCE(lc.cnt, 0)
+		FROM projects p
+		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM issues GROUP BY project_id) ic ON ic.project_id = p.id
+		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM events GROUP BY project_id) ec ON ec.project_id = p.id
+		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM log_entries GROUP BY project_id) lc ON lc.project_id = p.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var u ProjectUsage
+		if err := rows.Scan(&u.ProjectID, &u.IssueCount, &u.EventCount, &u.LogCount); err != nil {
+			return nil, err
+		}
+		usage[u.ProjectID] = u
+	}
+	return usage, rows.Err()
+}
+
 // --- Alias operations ---
 
 // CreateAlias creates a slug alias pointing to the given project ID.

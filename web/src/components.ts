@@ -793,11 +793,19 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
           const name = String(p.name ?? p.Name ?? slug);
           const status = String(p.status ?? p.Status ?? 'active');
           const setupUrl = `/api/v1/setup/${slug}`;
+          const issues = p.issue_count ?? 0;
+          const events = p.event_count ?? 0;
+          const logs = p.log_count ?? 0;
           return `
-            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
-              <div style="flex:1;min-width:0">
+            <div class="project-row">
+              <div class="project-info">
                 <strong>${escapeHtml(name)}</strong>
-                <span style="margin-left:8px;font-size:11px;color:var(--muted)">${escapeHtml(slug)}</span>
+                <span class="project-slug">${escapeHtml(slug)}</span>
+              </div>
+              <div class="project-usage">
+                <span class="usage-stat" title="Issues"><span class="usage-icon">◆</span>${escapeHtml(String(issues))}</span>
+                <span class="usage-stat" title="Events"><span class="usage-icon">▸</span>${escapeHtml(String(events))}</span>
+                <span class="usage-stat" title="Logs"><span class="usage-icon">≡</span>${escapeHtml(String(logs))}</span>
               </div>
               <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
               <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup page</a>

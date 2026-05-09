@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -38,6 +39,8 @@ type Repository interface {
 	AssignProjectToGroup(ctx context.Context, projectSlug, groupSlug string) error
 	RemoveProjectFromGroup(ctx context.Context, projectSlug string) error
 	ListGroupProjects(ctx context.Context, groupSlug string) ([]domain.Project, error)
+
+	ProjectUsageAll(ctx context.Context) (map[int64]storage.ProjectUsage, error)
 
 	ListAPIKeys(context.Context) ([]domain.APIKey, error)
 	CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (domain.APIKey, error)
@@ -149,6 +152,10 @@ func (s *Service) BySlug(ctx context.Context, slug string) (domain.Project, erro
 
 func (s *Service) DefaultProjectID() int64 {
 	return s.repo.DefaultProjectID()
+}
+
+func (s *Service) UsageAll(ctx context.Context) (map[int64]storage.ProjectUsage, error) {
+	return s.repo.ProjectUsageAll(ctx)
 }
 
 func (s *Service) ListAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
