@@ -376,7 +376,9 @@ button:disabled {
   border-radius: 0;
   box-shadow: none;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+  min-width: 0;
 }
 
 .panel-main {
@@ -734,6 +736,8 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: #202117;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .section h3 {
@@ -837,11 +841,15 @@ button:disabled {
 .grid {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .kv {
   display: grid;
   gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .kv span:first-child {
@@ -1080,6 +1088,7 @@ button:disabled {
 .stacktrace {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .frame {
@@ -1106,6 +1115,8 @@ button:disabled {
 .frame-head {
   display: grid;
   gap: 2px;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .frame code {
@@ -1226,6 +1237,8 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: #202117;
+  min-width: 0;
+  overflow: hidden;
 }
 .detail-section h4 {
   margin: 0;
@@ -1468,7 +1481,6 @@ button:disabled {
 
   .section {
     padding: 10px;
-    overflow: hidden;
   }
 
   .breadcrumb-row {
