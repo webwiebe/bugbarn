@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -27,7 +29,10 @@ func (r *statusRecorder) Flush() {
 
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, span := Tracer().Start(r.Context(), fmt.Sprintf("%s %s", r.Method, r.URL.Path),
+		// Extract W3C traceparent from incoming request headers.
+		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+		ctx, span := Tracer().Start(ctx, fmt.Sprintf("%s %s", r.Method, r.URL.Path),
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
 				attribute.String("http.method", r.Method),

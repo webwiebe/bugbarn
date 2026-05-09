@@ -442,6 +442,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveFacetsRoute(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/analytics/") && r.Method == http.MethodGet:
 		s.serveAnalyticsQuery(w, r)
+	case r.URL.Path == "/api/v1/telemetry" && r.Method == http.MethodPost:
+		s.serveTelemetry(w, r)
+	case r.URL.Path == "/api/v1/client-errors" && r.Method == http.MethodPost:
+		s.serveClientError(w, r)
 	default:
 		http.NotFound(w, r)
 	}

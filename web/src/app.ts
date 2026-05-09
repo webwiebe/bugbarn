@@ -17,6 +17,9 @@ import { normalizeList, normalizeObject, readString } from "./data.js";
 import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
 import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
+import { initInstrumentation } from "./instrumentation.js";
+
+initInstrumentation();
 
 const httpUnauthorized = 401;
 const liveWindowMinutes = 15;
