@@ -414,6 +414,7 @@ button:disabled {
 
 .view-head > div {
   min-width: 0;
+  overflow: hidden;
 }
 
 .view-head h2 {
@@ -669,6 +670,7 @@ button:disabled {
 
 .issue-hero > div {
   min-width: 0;
+  overflow: hidden;
 }
 
 .issue-hero p.muted {
