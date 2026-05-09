@@ -7,7 +7,7 @@ type Report struct {
 	PeriodStart string           `json:"period_start"`
 	PeriodEnd   string           `json:"period_end"`
 	PublicURL   string           `json:"public_url,omitempty"`
-	Projects    []projectSection `json:"projects"`
+	Projects    []ProjectSection `json:"projects"`
 }
 
 // Notifier delivers a digest report through a specific channel (email, webhook, Slack, …).

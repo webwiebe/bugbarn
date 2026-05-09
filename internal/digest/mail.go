@@ -98,7 +98,7 @@ type mailData struct {
 	NewIssues      int
 	ResolvedIssues int
 	Regressions    int
-	Projects       []projectSection
+	Projects       []ProjectSection
 	PublicURL      string
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
@@ -52,6 +53,9 @@ type Server struct {
 	loginLimiter    sync.Map // map[string]*loginAttempt
 	writeForwarder  *WriteForwarder
 	dbPath          string
+
+	digestConfig    *digest.Config
+	digestStore     digest.Store
 }
 
 // SetTrustedProxies sets the CIDRs from which X-Forwarded-For is trusted.
@@ -64,6 +68,12 @@ func (s *Server) SetMaxSourceMapBytes(n int64) {
 	if n > 0 {
 		s.maxSourceMapBytes = n
 	}
+}
+
+// SetDigest wires digest configuration for the manual trigger endpoint.
+func (s *Server) SetDigest(cfg digest.Config, store digest.Store) {
+	s.digestConfig = &cfg
+	s.digestStore = store
 }
 
 // SetLogHub wires the in-memory log streaming hub into the server.
@@ -446,6 +456,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveTelemetry(w, r)
 	case r.URL.Path == "/api/v1/client-errors" && r.Method == http.MethodPost:
 		s.serveClientError(w, r)
+	case r.URL.Path == "/api/v1/admin/digest" && r.Method == http.MethodPost:
+		s.serveDigestTrigger(w, r)
 	default:
 		http.NotFound(w, r)
 	}

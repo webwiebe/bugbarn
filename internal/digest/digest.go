@@ -29,20 +29,20 @@ type Store interface {
 	ListProjects(ctx context.Context) ([]domain.Project, error)
 }
 
-type projectSection struct {
+type ProjectSection struct {
 	Project   string       `json:"project"`
-	Stats     statsBlock   `json:"stats"`
-	TopIssues []issueBlock `json:"top_issues"`
+	Stats     StatsBlock   `json:"stats"`
+	TopIssues []IssueBlock `json:"top_issues"`
 }
 
-type statsBlock struct {
+type StatsBlock struct {
 	TotalEvents    int `json:"total_events"`
 	NewIssues      int `json:"new_issues"`
 	ResolvedIssues int `json:"resolved_issues"`
 	Regressions    int `json:"regressions"`
 }
 
-type issueBlock struct {
+type IssueBlock struct {
 	ID         string `json:"id"`
 	Title      string `json:"title"`
 	EventCount int    `json:"event_count"`
@@ -50,19 +50,19 @@ type issueBlock struct {
 	URL        string `json:"url,omitempty"`
 }
 
-func buildSection(cfg Config, slug string, data domain.DigestData) projectSection {
-	sec := projectSection{
+func buildSection(cfg Config, slug string, data domain.DigestData) ProjectSection {
+	sec := ProjectSection{
 		Project: slug,
-		Stats: statsBlock{
+		Stats: StatsBlock{
 			TotalEvents:    data.TotalEvents,
 			NewIssues:      data.NewIssues,
 			ResolvedIssues: data.ResolvedIssues,
 			Regressions:    data.Regressions,
 		},
-		TopIssues: []issueBlock{},
+		TopIssues: []IssueBlock{},
 	}
 	for _, iss := range data.TopIssues {
-		ib := issueBlock{
+		ib := IssueBlock{
 			ID:         iss.ID,
 			Title:      iss.Title,
 			EventCount: iss.EventCount,
