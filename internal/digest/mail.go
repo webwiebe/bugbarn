@@ -2,6 +2,7 @@ package digest
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/smtp"
@@ -170,25 +171,35 @@ var htmlTmpl = template.Must(template.New("html").Parse(`<!DOCTYPE html>
 </body>
 </html>`))
 
-func sendEmailDigest(mc MailConfig, p payload, since, now time.Time) error {
-	if !mc.active() {
+// EmailNotifier delivers the digest via SMTP.
+type EmailNotifier struct {
+	Cfg MailConfig
+}
+
+func (n *EmailNotifier) Name() string { return "email" }
+
+func (n *EmailNotifier) Send(_ context.Context, report Report) error {
+	if !n.Cfg.active() {
 		return nil
 	}
 
+	since, _ := time.Parse(time.RFC3339, report.PeriodStart)
+	end, _ := time.Parse(time.RFC3339, report.PeriodEnd)
+
 	d := mailData{
 		Start:     since.Format("Jan 2"),
-		End:       now.Format("Jan 2 2006"),
-		Projects:  p.Projects,
-		PublicURL: p.PublicURL,
+		End:       end.Format("Jan 2 2006"),
+		Projects:  report.Projects,
+		PublicURL: report.PublicURL,
 	}
-	for _, sec := range p.Projects {
+	for _, sec := range report.Projects {
 		d.TotalEvents += sec.Stats.TotalEvents
 		d.NewIssues += sec.Stats.NewIssues
 		d.ResolvedIssues += sec.Stats.ResolvedIssues
 		d.Regressions += sec.Stats.Regressions
 	}
 
-	subject := fmt.Sprintf("[BugBarn] Weekly digest — %s–%s", since.Format("Jan 2"), now.Format("Jan 2 2006"))
+	subject := fmt.Sprintf("[BugBarn] Weekly digest — %s–%s", since.Format("Jan 2"), end.Format("Jan 2 2006"))
 
 	var plain, html bytes.Buffer
 	if err := plainTmpl.Execute(&plain, d); err != nil {
@@ -198,5 +209,5 @@ func sendEmailDigest(mc MailConfig, p payload, since, now time.Time) error {
 		return fmt.Errorf("render html: %w", err)
 	}
 
-	return deliverEmail(mc, subject, plain.String(), html.String())
+	return deliverEmail(n.Cfg, subject, plain.String(), html.String())
 }

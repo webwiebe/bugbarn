@@ -2,12 +2,9 @@
 package digest
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -30,15 +27,6 @@ func (c Config) Enabled() bool {
 type Store interface {
 	WeeklyDigest(ctx context.Context, projectID int64, since time.Time) (domain.DigestData, error)
 	ListProjects(ctx context.Context) ([]domain.Project, error)
-}
-
-// payload is the JSON shape POSTed to the webhook.
-type payload struct {
-	Type        string           `json:"type"`
-	PeriodStart string           `json:"period_start"`
-	PeriodEnd   string           `json:"period_end"`
-	PublicURL   string           `json:"public_url,omitempty"`
-	Projects    []projectSection `json:"projects"`
 }
 
 type projectSection struct {
@@ -89,10 +77,10 @@ func buildSection(cfg Config, slug string, data domain.DigestData) projectSectio
 }
 
 // Send gathers digest data across all projects and delivers to all configured
-// channels. Projects with no activity in the period are silently skipped.
-// If no projects have any activity the send is a no-op. Each channel is
-// attempted independently; failures are returned but do not suppress others.
-func Send(ctx context.Context, cfg Config, store Store) []error {
+// notifiers. Projects with no activity in the period are silently skipped.
+// Each notifier is attempted independently; failures are returned but do not
+// suppress others.
+func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []error {
 	now := time.Now().UTC()
 	since := now.AddDate(0, 0, -7)
 
@@ -101,8 +89,7 @@ func Send(ctx context.Context, cfg Config, store Store) []error {
 		return []error{fmt.Errorf("list projects: %w", err)}
 	}
 
-	p := payload{
-		Type:        "weekly_digest",
+	report := Report{
 		PeriodStart: since.UTC().Format(time.RFC3339),
 		PeriodEnd:   now.UTC().Format(time.RFC3339),
 		PublicURL:   cfg.PublicURL,
@@ -119,50 +106,20 @@ func Send(ctx context.Context, cfg Config, store Store) []error {
 		if data.TotalEvents == 0 {
 			continue
 		}
-		p.Projects = append(p.Projects, buildSection(cfg, proj.Slug, data))
+		report.Projects = append(report.Projects, buildSection(cfg, proj.Slug, data))
 	}
 
-	if len(p.Projects) == 0 {
+	if len(report.Projects) == 0 {
 		slog.Info("digest: no activity across all projects, skipping")
 		return errs
 	}
 
-	if cfg.WebhookURL != "" {
-		if err := sendWebhook(ctx, cfg.WebhookURL, p); err != nil {
-			slog.Error("digest: webhook delivery failed", "error", err)
-			errs = append(errs, fmt.Errorf("webhook: %w", err))
-		}
-	}
-
-	if cfg.Mail.active() {
-		if err := sendEmailDigest(cfg.Mail, p, since, now); err != nil {
-			slog.Error("digest: email delivery failed", "error", err)
-			errs = append(errs, fmt.Errorf("email: %w", err))
+	for _, n := range notifiers {
+		if err := n.Send(ctx, report); err != nil {
+			slog.Error("digest: delivery failed", "channel", n.Name(), "error", err)
+			errs = append(errs, fmt.Errorf("%s: %w", n.Name(), err))
 		}
 	}
 
 	return errs
-}
-
-func sendWebhook(ctx context.Context, url string, p payload) error {
-	body, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned %d", resp.StatusCode)
-	}
-	return nil
 }

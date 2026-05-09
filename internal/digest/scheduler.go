@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+// BuildNotifiers constructs the list of notifiers from configuration.
+func BuildNotifiers(cfg Config) []Notifier {
+	var notifiers []Notifier
+	if cfg.WebhookURL != "" {
+		notifiers = append(notifiers, &WebhookNotifier{URL: cfg.WebhookURL})
+	}
+	if cfg.Mail.active() {
+		notifiers = append(notifiers, &EmailNotifier{Cfg: cfg.Mail})
+	}
+	return notifiers
+}
+
 // StartScheduler launches a goroutine that fires the digest at the configured
 // weekday and hour (UTC). It returns immediately; the goroutine runs until ctx
 // is cancelled. No-ops if cfg.Enabled() is false.
@@ -13,10 +25,14 @@ func StartScheduler(ctx context.Context, cfg Config, store Store) {
 	if !cfg.Enabled() {
 		return
 	}
-	go run(ctx, cfg, store)
+	notifiers := BuildNotifiers(cfg)
+	if len(notifiers) == 0 {
+		return
+	}
+	go run(ctx, cfg, store, notifiers)
 }
 
-func run(ctx context.Context, cfg Config, store Store) {
+func run(ctx context.Context, cfg Config, store Store, notifiers []Notifier) {
 	var lastFired time.Time
 
 	ticker := time.NewTicker(time.Minute)
@@ -31,14 +47,13 @@ func run(ctx context.Context, cfg Config, store Store) {
 			if int(now.Weekday()) != cfg.Day || now.Hour() != cfg.Hour {
 				continue
 			}
-			// Guard against re-firing within the same hour (ticker fires ~60 times/hour).
 			if !lastFired.IsZero() && now.Sub(lastFired) < 23*time.Hour {
 				continue
 			}
 			lastFired = now
 			slog.Info("digest: sending weekly digest")
 			digestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			errs := Send(digestCtx, cfg, store)
+			errs := Send(digestCtx, cfg, store, notifiers)
 			cancel()
 			for _, err := range errs {
 				slog.Error("digest: delivery error", "error", err)
