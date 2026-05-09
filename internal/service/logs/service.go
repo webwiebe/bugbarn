@@ -3,6 +3,8 @@ package logs
 import (
 	"context"
 	"log/slog"
+	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -33,12 +35,23 @@ func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
 	ctx, span := tracing.Tracer().Start(ctx, "service.logs.Insert",
 		trace.WithAttributes(attribute.Int("count", len(entries))))
 	defer span.End()
-	if err := s.repo.InsertLogEntries(ctx, entries); err != nil {
-		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "insert log entries", "count", len(entries), "error", err)
-		return err
+
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = s.repo.InsertLogEntries(ctx, entries); err == nil {
+			if attempt > 0 {
+				span.SetAttributes(attribute.Int("retry.attempts", attempt))
+			}
+			return nil
+		}
+		if !strings.Contains(err.Error(), "database is locked") {
+			break
+		}
+		time.Sleep(time.Duration(50*(1<<attempt)) * time.Millisecond)
 	}
-	return nil
+	span.SetStatus(codes.Error, err.Error())
+	s.logger.ErrorContext(ctx, "insert log entries", "count", len(entries), "error", err)
+	return err
 }
 
 func (s *Service) List(ctx context.Context, projectID int64, levelMin int, query string, limit int, beforeID int64) ([]domain.LogEntry, error) {
