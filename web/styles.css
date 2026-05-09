@@ -637,6 +637,8 @@ button:disabled {
 .detail {
   display: grid;
   gap: 0;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .issue-hero {
@@ -647,6 +649,17 @@ button:disabled {
   padding: 16px;
   border-bottom: 1px solid var(--line);
   background: #202117;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.issue-hero > div {
+  min-width: 0;
+}
+
+.issue-hero p.muted {
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .issue-hero h3 {
@@ -1439,6 +1452,7 @@ button:disabled {
 
   .section {
     padding: 10px;
+    overflow: hidden;
   }
 
   .breadcrumb-row {
