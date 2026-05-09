@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/smtp"
 	"strings"
 	"text/template"
@@ -58,7 +59,7 @@ func deliverEmail(mc MailConfig, subject, plain, html string) error {
 	var msg strings.Builder
 	msg.WriteString("From: " + from + "\r\n")
 	msg.WriteString("To: " + mc.To + "\r\n")
-	msg.WriteString("Subject: " + subject + "\r\n")
+	msg.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", subject) + "\r\n")
 	msg.WriteString("MIME-Version: 1.0\r\n")
 	msg.WriteString(`Content-Type: multipart/alternative; boundary="` + boundary + `"` + "\r\n\r\n")
 	msg.WriteString("--" + boundary + "\r\n")
@@ -199,7 +200,7 @@ func (n *EmailNotifier) Send(_ context.Context, report Report) error {
 		d.Regressions += sec.Stats.Regressions
 	}
 
-	subject := fmt.Sprintf("[BugBarn] Weekly digest — %s–%s", since.Format("Jan 2"), end.Format("Jan 2 2006"))
+	subject := fmt.Sprintf("BugBarn weekly digest: %s - %s", since.Format("Jan 2"), end.Format("Jan 2, 2006"))
 
 	var plain, html bytes.Buffer
 	if err := plainTmpl.Execute(&plain, d); err != nil {
