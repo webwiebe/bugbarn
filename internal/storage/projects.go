@@ -123,35 +123,61 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 	return Project{ID: id, Name: slug, Slug: slug, Status: "pending", IssuePrefix: prefix, CreatedAt: time.Now().UTC()}, nil
 }
 
-// DeleteProject removes the project and all related rows. Most child tables
-// use ON DELETE CASCADE, but api_keys and log_entries do not, so we delete
-// those explicitly in the same transaction.
+// DeleteProject removes the project and all related rows. Child rows are
+// deleted explicitly in batches to avoid a single massive CASCADE transaction
+// that can fail on projects with large amounts of data.
 func (s *Store) DeleteProject(ctx context.Context, slug string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
 	var projectID int64
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug=?`, slug).Scan(&projectID); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug=?`, slug).Scan(&projectID); err != nil {
 		if err == sql.ErrNoRows {
 			return apperr.NotFound("project not found", nil)
 		}
-		return err
+		return apperr.Internal("lookup project", err)
 	}
 
-	for _, table := range []string{"api_keys", "log_entries"} {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE project_id=?`, projectID); err != nil {
-			return err
+	// Delete child rows in batches outside the final transaction to keep
+	// each write small. Order matters: delete leaf tables first to respect
+	// foreign key constraints (event_facets → events → issues).
+	childTables := []string{
+		"event_facets",
+		"events",
+		"issues",
+		"analytics_pageviews",
+		"analytics_daily",
+		"releases",
+		"alerts",
+		"settings",
+		"source_maps",
+		"api_keys",
+		"log_entries",
+		"project_aliases",
+	}
+	for _, table := range childTables {
+		if err := deleteInBatches(ctx, s.db, table, projectID); err != nil {
+			return apperr.Internal(fmt.Sprintf("delete %s", table), err)
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id=?`, projectID); err != nil {
-		return err
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM projects WHERE id=?`, projectID); err != nil {
+		return apperr.Internal("delete project row", err)
 	}
+	return nil
+}
 
-	return tx.Commit()
+func deleteInBatches(ctx context.Context, db *sql.DB, table string, projectID int64) error {
+	const batchSize = 10000
+	for {
+		res, err := db.ExecContext(ctx,
+			fmt.Sprintf(`DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE project_id = ? LIMIT ?)`, table, table),
+			projectID, batchSize)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		if n < batchSize {
+			return nil
+		}
+	}
 }
 
 // ApproveProject sets status='active' for the project with the given slug.
