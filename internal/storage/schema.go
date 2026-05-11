@@ -11,17 +11,6 @@ func (s *Store) init(ctx context.Context) error {
 		return err
 	}
 
-	pragmas := []string{
-		`PRAGMA foreign_keys = ON`,
-		`PRAGMA journal_mode = WAL`,
-		`PRAGMA synchronous = NORMAL`,
-	}
-	for _, stmt := range pragmas {
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-			return err
-		}
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
