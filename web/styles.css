@@ -1472,8 +1472,9 @@ button:disabled {
   }
 
   .view-head h2 {
-    white-space: normal;
-    flex-basis: 100%;
+    flex: 0 0 auto;
+    overflow: visible;
+    text-overflow: clip;
   }
 
   .issue-hero {
