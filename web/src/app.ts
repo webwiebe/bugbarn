@@ -562,7 +562,22 @@ function route(): void {
   renderCurrentRoute();
 }
 
+function setRouteStatus(): void {
+  if (state.currentRoute === "issues") {
+    setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
+  } else if (state.currentRoute === "releases") {
+    setStatus(`${state.releases.length} release${state.releases.length === 1 ? "" : "s"} loaded.`);
+  } else if (state.currentRoute === "alerts") {
+    setStatus(`${state.alerts.length} alert${state.alerts.length === 1 ? "" : "s"} configured.`);
+  } else if (state.currentRoute === "logs") {
+    setStatus("Log stream connected.");
+  } else if (state.currentRoute === "settings") {
+    setStatus("Settings loaded.");
+  }
+}
+
 function renderCurrentRoute(): void {
+  setRouteStatus();
   if (state.currentRoute === "releases") {
     renderReleasesView();
     if (state.selectedReleaseId && state.releases.length) {
@@ -656,24 +671,24 @@ async function loadCurrentRouteData(): Promise<void> {
     if (state.selectedReleaseId) {
       await loadReleaseDetail(state.selectedReleaseId);
     }
-    setStatus(`${state.releases.length} release${state.releases.length === 1 ? "" : "s"} loaded.`);
+    setRouteStatus();
     return;
   }
   if (state.currentRoute === "alerts") {
     await loadAlerts();
-    setStatus(`${state.alerts.length} alert${state.alerts.length === 1 ? "" : "s"} configured.`);
+    setRouteStatus();
     return;
   }
   if (state.currentRoute === "logs") {
     await loadLogs();
     connectLogSSE();
-    setStatus("Log stream connected.");
+    setRouteStatus();
     return;
   }
   if (state.currentRoute === "settings") {
     await loadSettings();
     loadSdkInfo();
-    setStatus("Settings loaded.");
+    setRouteStatus();
     return;
   }
   if (state.selectedEventId) {
@@ -715,7 +730,7 @@ async function loadIssues(): Promise<void> {
     state.issues = normalizeList<ApiIssue>(raw, "issues");
     state.issueHasMore = Boolean(raw?.["hasMore"]);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
-      setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
+      setRouteStatus();
       renderIssuesView();
     }
     loadSparklines();
@@ -757,7 +772,7 @@ async function loadMoreIssues(): Promise<void> {
     state.issues = state.issues.concat(more);
     state.issueHasMore = Boolean(raw?.["hasMore"]);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
-      setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
+      setRouteStatus();
       renderIssuesView();
     }
     loadSparklines();
