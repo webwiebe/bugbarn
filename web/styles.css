@@ -65,6 +65,108 @@ h2 {
   margin: 0 auto;
 }
 
+/* ── Login screen ──────────────────────────────────────────────── */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.login-screen[hidden] {
+  display: none;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  padding: 40px 32px;
+  text-align: center;
+}
+
+.login-brand {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 48px;
+  font-weight: 700;
+  color: #d4a054;
+  margin-bottom: 8px;
+}
+
+.login-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+.login-subtitle {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 0 32px;
+}
+
+.login-form {
+  text-align: left;
+}
+
+.login-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.login-form input {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.login-submit {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #111;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-submit:hover {
+  opacity: 0.9;
+}
+
+.login-error {
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  border-radius: var(--radius);
+  background: rgba(249, 38, 114, 0.12);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.login-error[hidden] {
+  display: none;
+}
+
 .app-frame {
   display: grid;
   grid-template-columns: var(--sidebar-collapsed) minmax(0, 1fr);
@@ -1503,11 +1605,15 @@ button:disabled {
 
   /* Fix cramped project rows on mobile */
   .project-row {
-    flex-wrap: wrap;
-    gap: 6px 10px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
-  .project-info {
-    flex: 1 0 100%;
+  .project-info strong {
+    word-break: break-word;
+  }
+  .project-usage {
+    justify-content: flex-start;
   }
 }
 

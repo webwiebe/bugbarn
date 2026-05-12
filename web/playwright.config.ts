@@ -19,7 +19,7 @@ export default defineConfig({
     {
       name: "tablet",
       use: {
-        ...devices["iPad Pro 11"],
+        viewport: { width: 1024, height: 768 },
         defaultBrowserType: "chromium",
       },
     },

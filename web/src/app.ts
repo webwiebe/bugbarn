@@ -82,6 +82,9 @@ const elements: AppElements = {
 elements.issueFilter.value = state.issueQuery;
 
 const appFrame = document.querySelector<HTMLElement>(".app-frame");
+const loginScreen = document.getElementById("login-screen") as HTMLElement | null;
+const loginForm = document.getElementById("login-form") as HTMLFormElement | null;
+const loginError = document.getElementById("login-error") as HTMLElement | null;
 const bbBtn = document.getElementById("bb-btn") as HTMLButtonElement | null;
 const bbMenu = document.getElementById("bb-menu") as HTMLElement | null;
 const bbMenuUser = document.getElementById("bb-menu-user") as HTMLElement | null;
@@ -138,6 +141,12 @@ document.addEventListener("keydown", (ev) => {
 
 bbLogout?.addEventListener("click", () => {
   void logout();
+});
+
+loginForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const formData = new FormData(loginForm);
+  void login(String(formData.get("username") || ""), String(formData.get("password") || ""));
 });
 
 const mobileMenuBtn = document.getElementById("mobile-menu-btn") as HTMLButtonElement | null;
@@ -1537,37 +1546,13 @@ function _renderDetail(): void {
 
 function renderLogin(error = ""): void {
   stopLiveStream();
-  appFrame?.classList.add("app-locked");
-  setActiveView("detail");
-  setRouteChip("Login", "warn");
-  elements.issueCount.textContent = "Locked";
-  elements.issueList.innerHTML = `<div class="empty">Log in to view issues.</div>`;
-  elements.liveStatus.textContent = "Locked";
-  elements.liveList.innerHTML = `<div class="empty">Live events require a session.</div>`;
-  elements.detailTitle.textContent = "Log in";
-  elements.detailBody.innerHTML = `
-    <form class="section login-form" id="login-form">
-      <p class="muted">Use the admin credentials configured for this BugBarn instance.</p>
-      ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
-      <label class="field">
-        <span>Username</span>
-        <input name="username" type="text" autocomplete="username" required />
-      </label>
-      <label class="field">
-        <span>Password</span>
-        <input name="password" type="password" autocomplete="current-password" required />
-      </label>
-      <div class="link-row">
-        <button type="submit">Log in</button>
-      </div>
-    </form>
-  `;
-  const form = document.getElementById("login-form");
-  form?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formData = new FormData(form as HTMLFormElement);
-    void login(String(formData.get("username") || ""), String(formData.get("password") || ""));
-  });
+  if (loginScreen) loginScreen.hidden = false;
+  if (appFrame) appFrame.hidden = true;
+  if (loginError) {
+    loginError.hidden = !error;
+    loginError.textContent = error;
+  }
+  (loginForm?.querySelector('input[name="username"]') as HTMLInputElement | null)?.focus();
 }
 
 async function login(username: string, password: string): Promise<void> {
@@ -1589,7 +1574,8 @@ async function login(username: string, password: string): Promise<void> {
     state.authRequired = Boolean(payload.authEnabled);
     state.authenticated = Boolean(payload.authenticated);
     state.username = readString(payload, ["username"]);
-    appFrame?.classList.remove("app-locked");
+    if (loginScreen) loginScreen.hidden = true;
+    if (appFrame) appFrame.hidden = false;
     updateBBMenuUser();
     setStatus(state.username ? `Logged in as ${state.username}.` : "Logged in.");
     await Promise.all([loadProjects(), refreshAll()]);
