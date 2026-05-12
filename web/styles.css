@@ -1375,7 +1375,6 @@ button:disabled {
     flex-direction: column;
     min-height: 0;
     height: 100vh;
-    height: 100dvh;
   }
 
   .workspace {
@@ -1383,7 +1382,7 @@ button:disabled {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: 0;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
   /* Hide the hamburger — tab bar takes over */
@@ -1446,8 +1445,9 @@ button:disabled {
 
   .mobile-tab-bar {
     display: flex;
-    flex-shrink: 0;
-    position: sticky;
+    position: fixed;
+    left: 0;
+    right: 0;
     bottom: 0;
     z-index: 50;
     padding-bottom: env(safe-area-inset-bottom, 0px);
