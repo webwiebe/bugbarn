@@ -66,6 +66,7 @@
           <div class="brand">
             <button class="mobile-menu-btn" id="mobile-menu-btn" type="button" aria-label="Open navigation" aria-expanded="false">☰</button>
             <h1 id="topbar-title">Issues</h1>
+            <button class="scope-btn" id="scope-btn" type="button" aria-label="Select project and environment">All projects <span class="scope-chevron">▾</span></button>
           </div>
 
           <div class="toolbar">
@@ -113,6 +114,16 @@
         <footer class="footer">
           <span id="status-text">Waiting for data.</span>
         </footer>
+      </div>
+
+      <!-- Scope picker bottom sheet (mobile project+env selector) -->
+      <div class="scope-sheet-backdrop" id="scope-backdrop" hidden></div>
+      <div class="scope-sheet" id="scope-sheet" hidden>
+        <div class="scope-sheet-header">
+          <h3>Select scope</h3>
+          <button class="scope-sheet-close" id="scope-close" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="scope-sheet-body" id="scope-sheet-body"></div>
       </div>
 
       <!-- Bottom tab bar: inside app-frame so flex layout keeps it pinned -->

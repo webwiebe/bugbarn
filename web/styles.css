@@ -285,6 +285,10 @@ h2 {
   justify-content: flex-end;
 }
 
+.scope-btn {
+  display: none;
+}
+
 .mobile-menu-btn {
   display: none;
 }
@@ -1366,16 +1370,12 @@ button:disabled {
 
 /* ── Phone: bottom tab bar ───────────────────────────────────────── */
 @media (max-width: 768px) {
-  /* Switch app-frame to flex column so the tab bar sits natively at
-     the bottom and the workspace scrolls above it — no position:fixed
-     needed, no viewport-height bugs. */
   .app-frame {
     display: flex;
     flex-direction: column;
     min-height: 0;
     height: 100vh;
     height: 100dvh;
-    overflow: hidden;
   }
 
   .workspace {
@@ -1383,6 +1383,7 @@ button:disabled {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    padding-bottom: 0;
   }
 
   /* Hide the hamburger — tab bar takes over */
@@ -1409,11 +1410,46 @@ button:disabled {
     position: sticky;
     top: 0;
     z-index: 10;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  /* Hide desktop toolbar on mobile — scope-btn replaces it */
+  .toolbar {
+    display: none;
+  }
+
+  /* Show compact scope button */
+  .scope-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .scope-chevron {
+    flex-shrink: 0;
+    font-size: 11px;
+    opacity: 0.6;
   }
 
   .mobile-tab-bar {
     display: flex;
     flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+    z-index: 50;
     padding-bottom: env(safe-area-inset-bottom, 0px);
     background: #0d0e09;
     border-top: 1px solid rgba(255,255,255,0.06);
@@ -1427,7 +1463,7 @@ button:disabled {
     justify-content: center;
     gap: 4px;
     padding: 10px 4px 8px;
-    min-height: 64px;
+    min-height: 56px;
     color: #5a5c4a;
     text-decoration: none;
     font-size: 11px;
@@ -1449,17 +1485,18 @@ button:disabled {
   .mobile-tab svg {
     flex-shrink: 0;
   }
+
+  /* Fix cramped project rows on mobile */
+  .project-row {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  .project-info {
+    flex: 1 0 100%;
+  }
 }
 
 @media (max-width: 720px) {
-  body {
-  }
-
-  .topbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .issue-table-head,
   .issue-row {
     grid-template-columns: minmax(0, 1fr) 72px 56px;
@@ -1474,25 +1511,9 @@ button:disabled {
     grid-template-columns: 1fr 1fr;
   }
 
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-  }
-
-  .toolbar #project-select,
-  .toolbar #env-select {
-    width: 100%;
-  }
-
   .field {
     min-width: 0;
     width: 100%;
-  }
-
-  .toolbar button {
-    width: 100%;
-    flex: none;
   }
 
   .form-grid {
@@ -1864,4 +1885,130 @@ button:disabled {
   font-size: 11px;
   font-weight: 700;
   margin-left: auto;
+}
+
+/* ── Scope picker bottom sheet ─────────────────────────────────── */
+.scope-sheet-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 299;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.scope-sheet-backdrop:not([hidden]) {
+  display: block;
+}
+
+.scope-sheet {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 300;
+  max-height: 70vh;
+  border-radius: 14px 14px 0 0;
+  background: #1d1e16;
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+  animation: scope-slide-up 0.2s ease-out;
+}
+
+.scope-sheet:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes scope-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.scope-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.scope-sheet-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.scope-sheet-close {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.scope-sheet-body {
+  overflow-y: auto;
+  padding: 8px 0 env(safe-area-inset-bottom, 8px);
+}
+
+.scope-section-label {
+  padding: 10px 16px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.scope-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scope-item:active {
+  background: rgba(255,255,255,0.04);
+}
+
+.scope-item.selected {
+  color: var(--accent);
+}
+
+.scope-item.selected::after {
+  content: "✓";
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.scope-item-sub {
+  padding-left: 32px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.scope-item-sub.selected {
+  color: var(--accent);
+}
+
+.scope-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 16px;
 }

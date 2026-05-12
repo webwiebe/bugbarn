@@ -945,6 +945,16 @@ function renderProjectSwitcher(): void {
       })
       .join("");
   projectSelect.hidden = false;
+  updateScopeBtn();
+}
+
+function updateScopeBtn(): void {
+  const btn = document.getElementById("scope-btn");
+  if (!btn) return;
+  const proj = state.projects.find(p => String(p.slug ?? p.Slug ?? "") === state.currentProject);
+  let label = proj ? String(proj.name ?? proj.Name ?? state.currentProject) : "All projects";
+  if (state.currentEnv) label += ` / ${state.currentEnv}`;
+  btn.innerHTML = `${escapeHtml(label)} <span class="scope-chevron">▾</span>`;
 }
 
 async function checkPendingProjects(): Promise<void> {
@@ -1011,7 +1021,107 @@ function renderEnvSwitcher(envs: string[]): void {
       })
       .join("");
   envSelect.hidden = envs.length === 0;
+  updateScopeBtn();
 }
+
+// ── Scope picker (mobile bottom sheet) ──────────────────────────────────
+const scopeBtn = document.getElementById("scope-btn");
+const scopeSheet = document.getElementById("scope-sheet");
+const scopeBackdrop = document.getElementById("scope-backdrop");
+const scopeClose = document.getElementById("scope-close");
+const scopeBody = document.getElementById("scope-sheet-body");
+
+function openScopeSheet(): void {
+  if (!scopeSheet || !scopeBackdrop || !scopeBody) return;
+  renderScopeSheetBody();
+  scopeSheet.hidden = false;
+  scopeBackdrop.hidden = false;
+}
+
+function closeScopeSheet(): void {
+  if (scopeSheet) scopeSheet.hidden = true;
+  if (scopeBackdrop) scopeBackdrop.hidden = true;
+}
+
+function renderScopeSheetBody(): void {
+  if (!scopeBody) return;
+  const current = state.currentProject;
+  let html = `<div class="scope-section-label">Project</div>`;
+  html += `<button class="scope-item${current === "__all" || !current ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
+  for (const p of state.projects) {
+    const slug = String(p.slug ?? p.Slug ?? "");
+    const name = String(p.name ?? p.Name ?? slug);
+    html += `<button class="scope-item${slug === current ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
+  }
+  if (current && current !== "__all") {
+    html += `<div class="scope-divider"></div>`;
+    html += `<div class="scope-section-label">Environment</div>`;
+    html += `<button class="scope-item scope-item-sub${!state.currentEnv ? " selected" : ""}" data-scope-env="">All environments</button>`;
+    html += `<div id="scope-env-list"></div>`;
+    loadScopeEnvs();
+  }
+  scopeBody.innerHTML = html;
+  scopeBody.querySelectorAll<HTMLButtonElement>("[data-scope-project]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const slug = btn.getAttribute("data-scope-project") ?? "__all";
+      state.currentProject = slug;
+      localStorage.setItem(projectKey, slug);
+      state.currentEnv = "";
+      localStorage.removeItem(envKey);
+      renderProjectSwitcher();
+      if (slug === "__all") {
+        renderEnvSwitcher([]);
+        closeScopeSheet();
+        void refreshAll();
+      } else {
+        renderScopeSheetBody();
+        void Promise.all([loadEnvironments(), refreshAll()]);
+      }
+    });
+  });
+  scopeBody.querySelectorAll<HTMLButtonElement>("[data-scope-env]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const env = btn.getAttribute("data-scope-env") ?? "";
+      state.currentEnv = env;
+      if (env) localStorage.setItem(envKey, env); else localStorage.removeItem(envKey);
+      renderEnvSwitcher([]);
+      updateScopeBtn();
+      closeScopeSheet();
+      void refreshAll();
+    });
+  });
+}
+
+async function loadScopeEnvs(): Promise<void> {
+  const el = document.getElementById("scope-env-list");
+  if (!el) return;
+  try {
+    const payload = await fetchJson("/api/v1/facets/attributes.environment", true);
+    const raw = payload as Record<string, unknown>;
+    const envs = Array.isArray(raw?.["values"]) ? (raw["values"] as string[]) : [];
+    let html = "";
+    for (const e of envs) {
+      html += `<button class="scope-item scope-item-sub${e === state.currentEnv ? " selected" : ""}" data-scope-env="${escapeHtml(e)}">${escapeHtml(e)}</button>`;
+    }
+    el.innerHTML = html;
+    el.querySelectorAll<HTMLButtonElement>("[data-scope-env]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const env = btn.getAttribute("data-scope-env") ?? "";
+        state.currentEnv = env;
+        if (env) localStorage.setItem(envKey, env); else localStorage.removeItem(envKey);
+        updateScopeBtn();
+        closeScopeSheet();
+        void refreshAll();
+      });
+    });
+  } catch {
+    el.innerHTML = "";
+  }
+}
+
+scopeBtn?.addEventListener("click", openScopeSheet);
+scopeClose?.addEventListener("click", closeScopeSheet);
+scopeBackdrop?.addEventListener("click", closeScopeSheet);
 
 async function loadIssueDetail(issueId: string): Promise<void> {
   setDetailLoading(`Issue ${issueId}`);
