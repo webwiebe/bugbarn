@@ -1603,17 +1603,13 @@ button:disabled {
     flex-shrink: 0;
   }
 
-  /* Fix cramped project rows on mobile */
+  /* Fix cramped project rows on mobile — stack vertically */
   .project-row {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 6px;
+    flex-direction: column;
+    align-items: stretch;
   }
-  .project-info strong {
-    word-break: break-word;
-  }
-  .project-usage {
-    justify-content: flex-start;
+  .project-actions {
+    flex-wrap: wrap;
   }
 }
 
@@ -1941,6 +1937,12 @@ button:disabled {
   margin-left: 8px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.project-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .project-usage {

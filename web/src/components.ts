@@ -793,14 +793,16 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
                 <strong>${escapeHtml(name)}</strong>
                 <span class="project-slug">${escapeHtml(slug)}</span>
               </div>
-              <div class="project-usage">
-                <span class="usage-stat" title="Issues"><span class="usage-icon">◆</span>${escapeHtml(String(issues))}</span>
-                <span class="usage-stat" title="Events"><span class="usage-icon">▸</span>${escapeHtml(String(events))}</span>
-                <span class="usage-stat" title="Logs"><span class="usage-icon">≡</span>${escapeHtml(String(logs))}</span>
+              <div class="project-actions">
+                <div class="project-usage">
+                  <span class="usage-stat" title="Issues"><span class="usage-icon">◆</span>${escapeHtml(String(issues))}</span>
+                  <span class="usage-stat" title="Events"><span class="usage-icon">▸</span>${escapeHtml(String(events))}</span>
+                  <span class="usage-stat" title="Logs"><span class="usage-icon">≡</span>${escapeHtml(String(logs))}</span>
+                </div>
+                <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
+                <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup page</a>
+                ${status === 'pending' ? `<button class="btn-sm" data-approve-project="${escapeAttr(slug)}">Approve</button><button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Reject</button>` : `<button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Delete</button>`}
               </div>
-              <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
-              <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup page</a>
-              ${status === 'pending' ? `<button class="btn-sm" data-approve-project="${escapeAttr(slug)}">Approve</button><button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Reject</button>` : `<button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Delete</button>`}
             </div>
           `;
         }).join('')}
