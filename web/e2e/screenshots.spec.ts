@@ -30,7 +30,9 @@ async function navigateTo(page: Page, route: string): Promise<void> {
 async function unlockScrollForFullPage(page: Page): Promise<void> {
   await page.addStyleTag({
     content: `.app-frame { height: auto !important; overflow: visible !important; }
-              .workspace { overflow: visible !important; }`,
+              .workspace { overflow: visible !important; padding-top: 0 !important; padding-bottom: 0 !important; }
+              .topbar { position: relative !important; }
+              .mobile-tab-bar { position: relative !important; }`,
   });
 }
 
