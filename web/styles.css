@@ -1406,17 +1406,24 @@ button:disabled {
 }
 
 /* ── Tablet / mid-size: hamburger + overlay sidebar ─────────────── */
+/* ── Tablet: collapsed sidebar, single-column shell ────────────── */
 @media (max-width: 1120px) {
-  .app-frame {
-    grid-template-columns: 1fr;
+  .app-frame,
+  .app-frame.sidebar-open {
+    grid-template-columns: var(--sidebar-collapsed) minmax(0, 1fr);
   }
 
   .app-frame > * {
     min-width: 0;
   }
 
-  .sidebar {
+  /* Force collapsed state — hide expand toggle and labels */
+  .sidebar-toggle {
     display: none;
+  }
+
+  .nav-label {
+    display: none !important;
   }
 
   .shell {
@@ -1429,47 +1436,6 @@ button:disabled {
   }
 
   .panel-live {
-    display: none;
-  }
-
-  .mobile-menu-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .app-frame.mobile-nav-open .sidebar {
-    display: flex !important;
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-    padding: 20px 16px;
-    overflow: hidden auto;
-    flex-direction: column;
-    background: #1d1e16;
-  }
-
-  .app-frame.mobile-nav-open .nav-label {
-    display: inline;
-  }
-
-  .app-frame.mobile-nav-open .side-nav a {
-    padding: 14px 12px;
-    font-size: 15px;
-  }
-
-  .app-frame.mobile-nav-open .sidebar-toggle {
     display: none;
   }
 }
@@ -1490,6 +1456,10 @@ button:disabled {
     overflow-x: hidden;
     padding-top: 52px;
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .sidebar {
+    display: none;
   }
 
   /* Hide the hamburger — tab bar takes over */
