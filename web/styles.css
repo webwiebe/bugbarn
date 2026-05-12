@@ -297,6 +297,10 @@ h2 {
   display: none;
 }
 
+.mobile-brand {
+  display: none;
+}
+
 /* Tab bar is a grid item inside app-frame on phones; hide on desktop */
 @media (min-width: 769px) {
   .mobile-tab-bar {
@@ -1382,6 +1386,7 @@ button:disabled {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    padding-top: 52px;
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
@@ -1406,11 +1411,21 @@ button:disabled {
   }
 
   .topbar {
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 10;
+    left: 0;
+    right: 0;
+    z-index: 40;
     flex-direction: row;
     align-items: center;
+  }
+
+  .mobile-brand {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: #d4a054;
   }
 
   /* Hide desktop toolbar on mobile — scope-btn replaces it */
