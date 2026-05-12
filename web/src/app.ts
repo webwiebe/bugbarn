@@ -656,20 +656,24 @@ async function loadCurrentRouteData(): Promise<void> {
     if (state.selectedReleaseId) {
       await loadReleaseDetail(state.selectedReleaseId);
     }
+    setStatus(`${state.releases.length} release${state.releases.length === 1 ? "" : "s"} loaded.`);
     return;
   }
   if (state.currentRoute === "alerts") {
     await loadAlerts();
+    setStatus(`${state.alerts.length} alert${state.alerts.length === 1 ? "" : "s"} configured.`);
     return;
   }
   if (state.currentRoute === "logs") {
     await loadLogs();
     connectLogSSE();
+    setStatus("Log stream connected.");
     return;
   }
   if (state.currentRoute === "settings") {
     await loadSettings();
     loadSdkInfo();
+    setStatus("Settings loaded.");
     return;
   }
   if (state.selectedEventId) {
@@ -710,8 +714,8 @@ async function loadIssues(): Promise<void> {
     const raw = payload as Record<string, unknown>;
     state.issues = normalizeList<ApiIssue>(raw, "issues");
     state.issueHasMore = Boolean(raw?.["hasMore"]);
-    setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
+      setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
       renderIssuesView();
     }
     loadSparklines();
@@ -721,8 +725,8 @@ async function loadIssues(): Promise<void> {
     state.issueHasMore = false;
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       renderIssuesView(error);
+      setStatus(`Issues unavailable: ${errorMessage(error)}`);
     }
-    setStatus(`Issues unavailable: ${errorMessage(error)}`);
   }
 }
 
@@ -752,8 +756,8 @@ async function loadMoreIssues(): Promise<void> {
     const more = normalizeList<ApiIssue>(raw, "issues");
     state.issues = state.issues.concat(more);
     state.issueHasMore = Boolean(raw?.["hasMore"]);
-    setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
+      setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
       renderIssuesView();
     }
     loadSparklines();

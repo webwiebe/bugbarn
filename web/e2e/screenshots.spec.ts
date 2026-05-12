@@ -27,8 +27,16 @@ async function navigateTo(page: Page, route: string): Promise<void> {
   await page.waitForTimeout(1_500);
 }
 
+async function unlockScrollForFullPage(page: Page): Promise<void> {
+  await page.addStyleTag({
+    content: `.app-frame { height: auto !important; overflow: visible !important; }
+              .workspace { overflow: visible !important; }`,
+  });
+}
+
 async function snap(page: Page, route: string, name: string, projectName: string): Promise<void> {
   await navigateTo(page, route);
+  await unlockScrollForFullPage(page);
   await page.screenshot({
     path: path.join(SCREENSHOT_DIR, projectName, `${name}.png`),
     fullPage: true,
@@ -52,6 +60,7 @@ test("capture all pages", async ({ page }, testInfo) => {
       // fall through — screenshot whatever state we have
     }
     await page.waitForTimeout(500);
+    await unlockScrollForFullPage(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, proj, "issue-detail.png"),
       fullPage: true,
@@ -70,6 +79,7 @@ test("capture all pages", async ({ page }, testInfo) => {
   if (await firstRelease.isVisible().catch(() => false)) {
     await firstRelease.click();
     await page.waitForTimeout(800);
+    await unlockScrollForFullPage(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, proj, "release-detail.png"),
       fullPage: true,
