@@ -471,6 +471,34 @@ button:disabled {
   gap: 0;
 }
 
+.issue-status-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px;
+}
+
+.issue-status-tabs .tab {
+  padding: 5px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.issue-status-tabs .tab:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.issue-status-tabs .tab.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .issue-table-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 92px 86px 86px 112px 56px 56px;
