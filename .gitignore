@@ -12,6 +12,9 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Playwright screenshots
+web/screenshots/
+
 # Go
 bin/
 *.test

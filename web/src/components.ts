@@ -640,10 +640,7 @@ init(
 export function renderReleasesViewMarkup(releases: ApiRelease[], error: unknown = null): string {
   return `
     <div class="view-head">
-      <div>
-        <p class="eyebrow">Releases</p>
-        <h2>Release markers</h2>
-      </div>
+      <h2>Release markers</h2>
       <span class="chip">${escapeHtml(String(releases.length))}</span>
     </div>
     <div class="detail-main">
@@ -677,10 +674,7 @@ export function renderReleasesViewMarkup(releases: ApiRelease[], error: unknown 
 export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null): string {
   return `
     <div class="view-head">
-      <div>
-        <p class="eyebrow">Alerts</p>
-        <h2>Alert rules</h2>
-      </div>
+      <h2>Alert rules</h2>
       <span class="chip">${escapeHtml(String(alerts.length))}</span>
     </div>
     <div class="detail-main">
@@ -724,10 +718,7 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
 
   return `
     <div class="view-head">
-      <div>
-        <p class="eyebrow">Settings</p>
-        <h2>Workspace settings</h2>
-      </div>
+      <h2>Workspace settings</h2>
       <span class="chip">${escapeHtml(username || "signed in")}</span>
     </div>
     <div class="detail-main">
@@ -1276,7 +1267,8 @@ function renderLogData(data: Record<string, unknown>): string {
   const keys = Object.keys(data).slice(0, 6);
   return keys
     .map((k) => {
-      const raw = String(data[k] ?? "");
+      const v = data[k] ?? "";
+      const raw = typeof v === "object" && v !== null ? JSON.stringify(v) : String(v);
       const val = raw.length > 40 ? `${raw.slice(0, 37)}…` : raw;
       return `<span class="log-pill">${escapeHtml(k)}: <strong>${escapeHtml(val)}</strong></span>`;
     })
@@ -1367,10 +1359,7 @@ export function renderLogsViewMarkup(logs: ApiLogEntry[], level: string, search:
 
   return `
     <div class="view-head">
-      <div>
-        <p class="eyebrow">Logs</p>
-        <h2>Log stream</h2>
-      </div>
+      <h2>Log stream</h2>
       <span class="chip">${escapeHtml(String(count))}</span>
     </div>
     ${timeline}
@@ -1400,10 +1389,7 @@ export function renderAnalyticsViewMarkup(
 ): string {
   return `
     <div class="view-head">
-      <div>
-        <p class="eyebrow">Analytics</p>
-        <h2>Web analytics</h2>
-      </div>
+      <h2>Web analytics</h2>
       <div class="view-actions">
         <div class="analytics-range-bar" role="group" aria-label="Date range">
           <button class="tab${rangeDays === 7 ? " active" : ""}" data-analytics-range="7">7d</button>

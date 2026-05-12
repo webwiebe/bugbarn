@@ -323,7 +323,9 @@ h2 {
 }
 
 .field input,
+.field select,
 #issue-filter,
+select,
 button {
   min-height: 32px;
   border: 1px solid var(--line);
@@ -331,6 +333,11 @@ button {
   background: var(--panel);
   color: var(--text);
   font: inherit;
+}
+
+select {
+  padding: 0 10px;
+  cursor: pointer;
 }
 
 .field input,
@@ -420,6 +427,7 @@ button:disabled {
 }
 
 .view-head h2 {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -981,6 +989,7 @@ button:disabled {
   background: var(--panel);
   color: var(--text);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .pre {
@@ -1430,6 +1439,7 @@ button:disabled {
   .toolbar {
     flex-direction: column;
     align-items: stretch;
+    gap: 6px;
   }
 
   .toolbar #project-select,
@@ -1689,11 +1699,11 @@ button:disabled {
 }
 
 .log-time {
-  width: 68px;
   flex-shrink: 0;
   color: var(--muted);
   font-size: 11px;
   text-align: right;
+  white-space: nowrap;
 }
 
 .log-level-trace { color: var(--muted); }

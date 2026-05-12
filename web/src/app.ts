@@ -1287,10 +1287,7 @@ function renderIssuesView(error: unknown = null): void {
   const count = state.issues.length;
   elements.overviewView.innerHTML = `
     <div class="view-head">
-      <div>
-        <p class="eyebrow">Issues</p>
-        <h2 id="issue-count">${escapeHtml(error ? "Unavailable" : `${count} issue${count === 1 ? "" : "s"}`)}</h2>
-      </div>
+      <h2 id="issue-count">${escapeHtml(error ? "Unavailable" : `${count} issue${count === 1 ? "" : "s"}`)}</h2>
       <div class="view-actions">
         <input id="issue-filter" type="search" placeholder="Search issues…" aria-label="Search issues" value="${escapeHtml(state.issueQuery)}" />
         <select id="issue-sort" aria-label="Sort issues">
