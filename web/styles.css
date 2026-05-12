@@ -304,10 +304,10 @@ h2 {
 #env-select {
   font-size: 13px;
   padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border, #333);
-  background: var(--surface-2, #1e1e1e);
-  color: inherit;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
   cursor: pointer;
 }
 
@@ -675,7 +675,10 @@ button:disabled {
   border-bottom: 1px solid var(--line);
   background: #202117;
   min-width: 0;
-  overflow: hidden;
+}
+
+.issue-hero .link-row {
+  flex-shrink: 0;
 }
 
 .issue-hero > div {
@@ -1464,6 +1467,15 @@ button:disabled {
 
 /* ── Narrow screens: prevent overflow of long strings & buttons ──── */
 @media (max-width: 600px) {
+  .view-head {
+    flex-wrap: wrap;
+  }
+
+  .view-head h2 {
+    white-space: normal;
+    flex-basis: 100%;
+  }
+
   .issue-hero {
     flex-direction: column;
     gap: 10px;

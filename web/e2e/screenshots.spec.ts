@@ -42,16 +42,25 @@ test("capture all pages", async ({ page }, testInfo) => {
   // Issues list
   await snap(page, "issues", "issues", proj);
 
-  // Issue detail — click first issue if one exists
+  // Issue detail — click first issue and wait for content to load
   const firstIssue = page.locator("#issue-list .issue-row").first();
   if (await firstIssue.isVisible().catch(() => false)) {
     await firstIssue.click();
-    await page.waitForTimeout(800);
+    try {
+      await page.locator(".issue-hero").waitFor({ state: "visible", timeout: 5_000 });
+    } catch {
+      // fall through — screenshot whatever state we have
+    }
+    await page.waitForTimeout(500);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, proj, "issue-detail.png"),
       fullPage: true,
     });
   }
+
+  // Navigate back to issues list before going to other sections,
+  // so the detail-view doesn't bleed into subsequent pages.
+  await navigateTo(page, "issues");
 
   // Releases
   await snap(page, "releases", "releases", proj);
