@@ -1463,7 +1463,7 @@ async function login(username: string, password: string): Promise<void> {
     appFrame?.classList.remove("app-locked");
     updateBBMenuUser();
     setStatus(state.username ? `Logged in as ${state.username}.` : "Logged in.");
-    await refreshAll();
+    await Promise.all([loadProjects(), refreshAll()]);
   } catch (error) {
     renderLogin(errorMessage(error));
   }
