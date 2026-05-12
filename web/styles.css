@@ -1610,6 +1610,7 @@ button:disabled {
   }
   .project-actions {
     flex-wrap: wrap;
+    gap: 6px;
   }
 }
 
