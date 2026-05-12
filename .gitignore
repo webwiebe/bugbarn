@@ -46,6 +46,7 @@ htmlcov/
 
 # Local runtime data
 .cache/
+.data/
 tmp/
 var/
 /data/
@@ -57,9 +58,17 @@ var/
 *.sqlite
 *.sqlite3
 *.db
+*.yaml.tmp
 
 # bb CLI local project config
 .bugbarn.json
+
+# Go compiled binaries at repo root
+/bb
+/bugbarn
+
+# Claude Code worktrees
+.claude/worktrees/
 
 # Docker and compose state
 docker-compose.override.yml

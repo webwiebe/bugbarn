@@ -1,0 +1,340 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+const llmContext = `# BugBarn — LLM Integration Context
+
+## What is BugBarn?
+
+BugBarn is a self-hosted, open-source error tracking server. It captures, groups, and
+alerts on application errors. The goal is to give you a Sentry-like experience without
+sending data to a third party. It runs as a single Go binary with SQLite storage and
+a built-in web UI — no external services required.
+
+GitHub: https://github.com/webwiebe/bugbarn
+License: open source (see repository)
+
+
+## Architecture Overview
+
+Ingest path (non-blocking):
+  SDK / HTTP client → POST /api/v1/events → disk spool (SPOOL_DIR)
+                                                       ↓
+                                              background worker
+                                                       ↓
+                                              SQLite database (DB_PATH)
+
+Web UI and API run in the same process on the same port (default 8080).
+
+Key concepts:
+- Events: individual error occurrences sent by an SDK or HTTP client
+- Issues: groups of events with the same fingerprint (exception type + message + stack)
+  Each issue tracks: first seen, last seen, event count, resolved/regressed status
+- Projects: isolated namespaces, each with its own API key
+- Alerts: rule-based notifications (threshold on error count) via webhook or email
+- Releases: version/commit/environment metadata for correlating errors with deployments
+- Source maps: JS symbolication keyed by release + dist + bundle URL
+
+
+## Installation
+
+### APT (Debian/Ubuntu)
+  curl -fsSL https://webwiebe.nl/apt/key.gpg | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/webwiebe.gpg
+  echo "deb https://webwiebe.nl/apt/ stable main" | sudo tee /etc/apt/sources.list.d/webwiebe.list
+  sudo apt-get update && sudo apt-get install bugbarn
+
+### Homebrew (macOS / Linux)
+  brew tap webwiebe/bugbarn
+  brew install bugbarn
+
+### Docker
+  docker run -d \\
+    -p 8080:8080 \\
+    -v bugbarn-data:/data \\
+    -e BUGBARN_DB_PATH=/data/bugbarn.db \\
+    -e BUGBARN_SPOOL_DIR=/data/spool \\
+    -e BUGBARN_ADMIN_USERNAME=admin \\
+    -e BUGBARN_ADMIN_PASSWORD=secret \\
+    -e BUGBARN_SESSION_SECRET=changeme \\
+    ghcr.io/webwiebe/bugbarn/service:latest
+
+### Binary (GitHub Releases)
+  Download the pre-built binary for your platform from:
+  https://github.com/webwiebe/bugbarn/releases
+
+
+## Configuration (Environment Variables)
+
+All configuration is done via BUGBARN_* environment variables.
+
+  BUGBARN_PORT              HTTP port to listen on (default: 8080)
+  BUGBARN_DB_PATH           Path to SQLite database file (default: bugbarn.db)
+  BUGBARN_SPOOL_DIR         Directory for the ingest spool (default: spool)
+  BUGBARN_ADMIN_USERNAME    Admin UI username
+  BUGBARN_ADMIN_PASSWORD    Admin UI password
+  BUGBARN_SESSION_SECRET    Secret used to sign session cookies (change this!)
+  BUGBARN_SESSION_TTL       Session duration (e.g. "12h", default: 12h)
+
+Email / SMTP:
+  BUGBARN_SMTP_HOST         SMTP server hostname
+  BUGBARN_SMTP_PORT         SMTP server port (e.g. 587)
+  BUGBARN_SMTP_USERNAME     SMTP auth username
+  BUGBARN_SMTP_PASSWORD     SMTP auth password
+  BUGBARN_SMTP_FROM         From address for outgoing emails
+
+Email / SendGrid:
+  BUGBARN_SENDGRID_API_KEY  SendGrid API key (used instead of SMTP if set)
+  BUGBARN_SENDGRID_FROM     From address for SendGrid emails
+
+Self-reporting (BugBarn reporting its own errors to itself):
+  BUGBARN_SELF_REPORT_ENDPOINT  Full URL to your BugBarn ingest endpoint
+  BUGBARN_SELF_REPORT_API_KEY   API key for self-reporting project
+
+
+## API Keys
+
+API keys are scoped per project:
+  full    — read + write (suitable for dashboards or internal tooling)
+  ingest  — write-only (suitable for SDKs in production)
+
+The API key is passed in the x-bugbarn-api-key request header.
+
+
+## HTTP Ingest API
+
+Endpoint: POST /api/v1/events
+Header:   x-bugbarn-api-key: <your-api-key>
+Body:     application/json
+
+Minimal event payload:
+  {
+    "exception": {
+      "type": "Error",
+      "value": "Something went wrong",
+      "stacktrace": {
+        "frames": [
+          {
+            "filename": "src/app.ts",
+            "function": "handleRequest",
+            "lineno": 42,
+            "colno": 10
+          }
+        ]
+      }
+    },
+    "level": "error",
+    "platform": "node"
+  }
+
+Optional top-level fields:
+  "release"     — version string (e.g. "1.2.3")
+  "environment" — deployment environment (e.g. "production")
+  "tags"        — key/value object for filtering
+  "user"        — { "id": "...", "email": "..." }
+  "request"     — { "url": "...", "method": "GET", "headers": {...} }
+  "extra"       — arbitrary key/value object
+
+Response: 202 Accepted on success (event is spooled, not yet stored)
+
+
+## TypeScript / Node.js SDK
+
+Install:
+  npm install @bugbarn/sdk
+  # or
+  pnpm add @bugbarn/sdk
+
+Node.js uncaught exception handler (catches unhandled errors and promise rejections):
+  import { BugBarn } from '@bugbarn/sdk';
+
+  const client = new BugBarn({
+    endpoint: 'https://your-bugbarn-host/api/v1/events',
+    apiKey: 'your-ingest-api-key',
+    release: process.env.APP_VERSION,
+    environment: process.env.NODE_ENV,
+  });
+
+  client.install(); // hooks process.on('uncaughtException') and 'unhandledRejection'
+
+Manual capture in Node.js:
+  try {
+    riskyOperation();
+  } catch (err) {
+    await client.captureException(err, {
+      tags: { component: 'payment' },
+      user: { id: userId },
+    });
+  }
+
+Browser (manual capture, no auto-handler):
+  import { BugBarn } from '@bugbarn/sdk';
+
+  const client = new BugBarn({
+    endpoint: 'https://your-bugbarn-host/api/v1/events',
+    apiKey: 'your-ingest-api-key',
+    release: '__BUILD_HASH__',
+    environment: 'production',
+  });
+
+  window.addEventListener('error', (event) => {
+    client.captureException(event.error);
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    client.captureException(event.reason);
+  });
+
+
+## Python SDK
+
+Install:
+  pip install bugbarn-sdk
+
+sys.excepthook integration (catches all unhandled exceptions):
+  from bugbarn import BugBarn
+
+  client = BugBarn(
+      endpoint='https://your-bugbarn-host/api/v1/events',
+      api_key='your-ingest-api-key',
+      release='1.2.3',
+      environment='production',
+  )
+
+  client.install()  # replaces sys.excepthook
+
+Manual capture:
+  try:
+      risky_operation()
+  except Exception as e:
+      client.capture_exception(e, tags={'component': 'worker'})
+
+
+## Go SDK
+
+Install:
+  go get github.com/wiebe-xyz/bugbarn
+
+Initialise once (e.g. in main):
+  import bugbarn "github.com/wiebe-xyz/bugbarn"
+
+  bugbarn.Init(bugbarn.Options{
+      APIKey:      "your-ingest-api-key",
+      Endpoint:    "https://your-bugbarn-host/api/v1/events",
+      ProjectSlug: "my-service",
+      Release:     "1.2.3",
+      Environment: "production",
+  })
+  defer bugbarn.Shutdown(5 * time.Second)
+
+Capture errors:
+  bugbarn.CaptureError(err)
+  bugbarn.CaptureMessage("something unexpected happened")
+
+HTTP panic recovery middleware:
+  http.Handle("/", bugbarn.RecoverMiddleware(myHandler))
+  // After capturing the panic it is re-raised so upstream middleware can handle it.
+
+
+## Web UI Features
+
+Access the web UI at http://localhost:8080 (or your configured port).
+
+Issue list:
+  - Groups events by fingerprint (exception type + message + stack)
+  - Shows first seen, last seen, event count
+  - Filter by project, environment, release, level, tag
+  - Mark issues as resolved; they reappear (regressed) if a new event arrives
+
+Live event stream:
+  - Real-time SSE (Server-Sent Events) feed of incoming events
+  - Useful for watching errors during deploys
+
+Alerts:
+  - Rule-based: trigger when error count exceeds threshold in a time window
+  - Delivery via webhook (POST JSON payload) or email (SMTP / SendGrid)
+  - Configurable per project
+
+Source maps (JS symbolication):
+  - Upload source maps keyed by: release + dist + bundle URL
+  - Stack frames are automatically symbolicated when viewing an issue
+  - Upload via the web UI or API
+
+Releases:
+  - Track version, commit SHA, environment, and deploy time
+  - Associate events with a release to correlate errors with code changes
+
+Weekly digest email:
+  - Summary of top issues, new regressions, and error volume
+  - Requires SMTP or SendGrid configuration
+
+Multi-project support:
+  - Each project has its own API key and isolated issue list
+  - Manage projects from the admin settings panel
+`;
+---
+<BaseLayout
+  title="BugBarn — LLM Context"
+  description="Copy-paste context for AI assistants to help you integrate BugBarn error tracking into your application."
+>
+  <Nav />
+
+  <main class="max-w-5xl mx-auto px-6 py-16">
+    <div class="mb-10">
+      <h1 class="text-3xl font-bold mb-3" style="color: #e6edf3;">LLM Context</h1>
+      <p class="text-base leading-relaxed max-w-2xl" style="color: #8b949e;">
+        Paste the text below into any AI assistant (ChatGPT, Claude, Gemini, etc.) to give it accurate,
+        up-to-date context about BugBarn. Then ask your integration question and it will give you
+        correct, specific answers.
+      </p>
+    </div>
+
+    <div class="rounded-lg overflow-hidden" style="border: 1px solid #21262d;">
+      <div class="flex items-center justify-between px-4 py-3" style="background-color: #161b22; border-bottom: 1px solid #21262d;">
+        <span class="text-xs font-mono" style="color: #8b949e;">bugbarn-context.txt</span>
+        <button
+          id="copy-btn"
+          class="text-xs font-medium px-3 py-1.5 rounded transition-colors"
+          style="background-color: #21262d; color: #e6edf3; border: 1px solid #30363d; cursor: pointer;"
+        >
+          Copy
+        </button>
+      </div>
+      <pre
+        id="llm-context"
+        class="text-xs leading-relaxed overflow-x-auto p-5"
+        style="background-color: #0d1117; color: #c9d1d9; white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;"
+      >{llmContext}</pre>
+    </div>
+
+    <p class="mt-6 text-sm" style="color: #484f58;">
+      This page is also available at
+      <a href="/llm" class="hover:text-white transition-colors" style="color: #8b949e;">bugbarn.webwiebe.nl/llm</a>
+      — you can share the URL directly with an AI assistant that supports web browsing.
+    </p>
+  </main>
+
+  <Footer />
+</BaseLayout>
+
+<script>
+  const btn = document.getElementById('copy-btn') as HTMLButtonElement;
+  const pre = document.getElementById('llm-context') as HTMLPreElement;
+
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(pre.textContent ?? '');
+      btn.textContent = 'Copied!';
+      btn.style.color = '#b5843a';
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+        btn.style.color = '#e6edf3';
+      }, 2000);
+    } catch {
+      btn.textContent = 'Failed';
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+      }, 2000);
+    }
+  });
+</script>
