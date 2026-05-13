@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -103,11 +104,11 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := store.migrateFingerprints(ctx); err != nil {
-		roDB.Close()
-		db.Close()
-		return nil, err
-	}
+	go func() {
+		if err := store.migrateFingerprints(context.Background()); err != nil {
+			slog.Error("fingerprint migration failed", "err", err)
+		}
+	}()
 	return store, nil
 }
 

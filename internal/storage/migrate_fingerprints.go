@@ -9,6 +9,14 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
 )
 
+type fingerprintUpdate struct {
+	id             int64
+	projectID      int64
+	newFingerprint string
+	newMaterial    string
+	newExplanation []string
+}
+
 func (s *Store) migrateFingerprints(ctx context.Context) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, project_id, fingerprint, fingerprint_material, representative_event_json
@@ -40,14 +48,7 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 		return err
 	}
 
-	type update struct {
-		id             int64
-		projectID      int64
-		newFingerprint string
-		newMaterial    string
-		newExplanation []string
-	}
-	var updates []update
+	var updates []fingerprintUpdate
 	for _, r := range issues {
 		var evt event.Event
 		if err := json.Unmarshal(r.eventJSON, &evt); err != nil {
@@ -58,7 +59,7 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 		if fp == r.fingerprint {
 			continue
 		}
-		updates = append(updates, update{
+		updates = append(updates, fingerprintUpdate{
 			id:             r.id,
 			projectID:      r.projectID,
 			newFingerprint: fp,
@@ -73,13 +74,27 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 
 	slog.Info("recomputing fingerprints", "count", len(updates))
 
+	const batchSize = 100
+	for start := 0; start < len(updates); start += batchSize {
+		end := start + batchSize
+		if end > len(updates) {
+			end = len(updates)
+		}
+		if err := s.applyFingerprintBatch(ctx, updates[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpdate) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	for _, u := range updates {
+	for _, u := range batch {
 		var keeperID int64
 		err := tx.QueryRowContext(ctx, `
 			SELECT id FROM issues
