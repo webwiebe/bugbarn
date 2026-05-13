@@ -71,8 +71,12 @@ var/
 /bb
 /bugbarn
 
-# Claude Code worktrees
+# Claude Code worktrees and runtime
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# Playwright test output
+web/test-results/
 
 # Docker and compose state
 docker-compose.override.yml
