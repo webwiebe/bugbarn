@@ -126,7 +126,12 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 // DeleteProject removes the project and all related rows. Child rows are
 // deleted explicitly in batches to avoid a single massive CASCADE transaction
 // that can fail on projects with large amounts of data.
-func (s *Store) DeleteProject(ctx context.Context, slug string) error {
+func (s *Store) DeleteProject(_ context.Context, slug string) error {
+	// Use a background context so client disconnects don't abort the
+	// multi-step deletion and leave orphaned child rows.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
 	var projectID int64
 	if err := s.db.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug=?`, slug).Scan(&projectID); err != nil {
 		if err == sql.ErrNoRows {

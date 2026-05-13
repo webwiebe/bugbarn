@@ -37,7 +37,7 @@ func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
 	defer span.End()
 
 	var err error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < 5; attempt++ {
 		if err = s.repo.InsertLogEntries(ctx, entries); err == nil {
 			if attempt > 0 {
 				span.SetAttributes(attribute.Int("retry.attempts", attempt))
@@ -47,7 +47,7 @@ func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
 		if !strings.Contains(err.Error(), "database is locked") {
 			break
 		}
-		time.Sleep(time.Duration(50*(1<<attempt)) * time.Millisecond)
+		time.Sleep(time.Duration(100*(1<<attempt)) * time.Millisecond)
 	}
 	span.SetStatus(codes.Error, err.Error())
 	s.logger.ErrorContext(ctx, "insert log entries", "count", len(entries), "error", err)

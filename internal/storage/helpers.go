@@ -96,7 +96,7 @@ func sqliteDSN(path string) string {
 		Scheme: "file",
 		Path:   filepath.ToSlash(path),
 	}
-	return u.String() + "?mode=rwc&_busy_timeout=5000&_pragma=foreign_keys(1)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)"
+	return u.String() + "?mode=rwc&_busy_timeout=10000&_pragma=foreign_keys(1)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)"
 }
 
 func sqliteReadOnlyDSN(path string) string {
@@ -104,7 +104,7 @@ func sqliteReadOnlyDSN(path string) string {
 		Scheme: "file",
 		Path:   filepath.ToSlash(path),
 	}
-	return u.String() + "?mode=ro&_busy_timeout=5000&_pragma=foreign_keys(1)"
+	return u.String() + "?mode=ro&_busy_timeout=10000&_pragma=foreign_keys(1)"
 }
 
 func marshalEvent(evt event.Event) ([]byte, error) {

@@ -2,12 +2,14 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -116,6 +118,12 @@ func (s *Service) Delete(ctx context.Context, slug string) error {
 		trace.WithAttributes(attribute.String("slug", slug)))
 	defer span.End()
 	if err := s.repo.DeleteProject(ctx, slug); err != nil {
+		// Treat "not found" as success — delete is idempotent.
+		var appErr *apperr.Error
+		if errors.As(err, &appErr) && appErr.Code == "not_found" {
+			s.logger.InfoContext(ctx, "project already deleted", "slug", slug)
+			return nil
+		}
 		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "delete project", "slug", slug, "error", err)
 		return err

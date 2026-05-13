@@ -10,10 +10,13 @@ import (
 
 // InsertLogEntries inserts a batch of log entries for a project.
 // After insert, trims to the 10,000 most recent entries for that project.
-func (s *Store) InsertLogEntries(ctx context.Context, entries []LogEntry) error {
+func (s *Store) InsertLogEntries(_ context.Context, entries []LogEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
