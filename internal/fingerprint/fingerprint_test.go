@@ -118,6 +118,34 @@ func TestFingerprintRawScrubbedSameMessageProducesSameFingerprint(t *testing.T) 
 	}
 }
 
+func TestFingerprintGroupsBareHexIDs(t *testing.T) {
+	first := event.Event{Exception: event.Exception{
+		Type:    "Error",
+		Message: "dead-letter persist: ingest 02c6a89cadf87259a7188a87: database is locked (5) (SQLITE_BUSY)",
+	}}
+	second := event.Event{Exception: event.Exception{
+		Type:    "Error",
+		Message: "dead-letter persist: ingest bd26fa35f1b190c93177fe56: database is locked (5) (SQLITE_BUSY)",
+	}}
+	if Fingerprint(first) != Fingerprint(second) {
+		t.Fatalf("expected matching fingerprints:\n%s\n%s", Material(first), Material(second))
+	}
+}
+
+func TestFingerprintGroupsShortCountVariance(t *testing.T) {
+	first := event.Event{Exception: event.Exception{
+		Type:    "Error",
+		Message: "worker stall: 1 pending, level=degraded",
+	}}
+	second := event.Event{Exception: event.Exception{
+		Type:    "Error",
+		Message: "worker stall: 4 pending, level=degraded",
+	}}
+	if Fingerprint(first) != Fingerprint(second) {
+		t.Fatalf("expected matching fingerprints:\n%s\n%s", Material(first), Material(second))
+	}
+}
+
 func TestFingerprintRawScrubbedNotUsedWhenExceptionPresent(t *testing.T) {
 	// When exception has data, rawScrubbed should be ignored for fingerprinting.
 	withException := event.Event{

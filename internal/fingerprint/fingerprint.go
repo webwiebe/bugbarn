@@ -15,8 +15,9 @@ import (
 var (
 	uuidPattern       = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
 	ipv4Pattern       = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	longNumber        = regexp.MustCompile(`\b\d{4,}\b`)
 	hexAddress        = regexp.MustCompile(`(?i)\b0x[0-9a-f]{6,}\b`)
+	hexToken          = regexp.MustCompile(`(?i)\b[0-9a-f]{12,}\b`)
+	longNumber        = regexp.MustCompile(`\b\d+\b`)
 	redactedID        = regexp.MustCompile(`(?i)\[redacted-(?:id|ip|email|secret)\]`)
 	sourceLocation    = regexp.MustCompile(`:\d+(?::\d+)+`)
 	whitespace        = regexp.MustCompile(`\s+`)
@@ -257,6 +258,7 @@ func normalize(value string) string {
 	value = uuidPattern.ReplaceAllString(value, "<id>")
 	value = ipv4Pattern.ReplaceAllString(value, "<ip>")
 	value = hexAddress.ReplaceAllString(value, "<hex>")
+	value = hexToken.ReplaceAllString(value, "<hex>")
 	value = longNumber.ReplaceAllString(value, "<num>")
 	value = sourceLocation.ReplaceAllString(value, ":<loc>")
 	value = redactedID.ReplaceAllString(value, "<redacted>")
