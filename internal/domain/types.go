@@ -74,6 +74,13 @@ type ProjectGroup struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ProjectAlias is a slug that transparently redirects to another project.
+type ProjectAlias struct {
+	AliasSlug   string `json:"alias_slug"`
+	ProjectID   int64  `json:"project_id"`
+	ProjectSlug string `json:"project_slug"`
+}
+
 // Scope constants for API keys.
 const (
 	APIKeyScopeFull   = "full"

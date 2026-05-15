@@ -55,8 +55,21 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Copy all response headers.
+	// Copy response headers, excluding CORS headers that the outer ServeHTTP
+	// already set. Copying them would produce duplicates, and the Fetch spec
+	// requires exactly one Access-Control-Allow-Origin value.
+	corsHeaders := map[string]bool{
+		"Access-Control-Allow-Origin":      true,
+		"Access-Control-Allow-Headers":     true,
+		"Access-Control-Allow-Methods":     true,
+		"Access-Control-Allow-Credentials": true,
+		"Access-Control-Expose-Headers":    true,
+		"Access-Control-Max-Age":           true,
+	}
 	for key, vals := range resp.Header {
+		if corsHeaders[key] {
+			continue
+		}
 		for _, v := range vals {
 			w.Header().Add(key, v)
 		}

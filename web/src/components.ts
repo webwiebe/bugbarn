@@ -709,7 +709,7 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
   `;
 }
 
-export function renderSettingsViewMarkup(settings: ApiSettings | null, username: string, apiKeys: ApiApiKey[] = [], error: unknown = null, projects: ApiProject[] = []): string {
+export function renderSettingsViewMarkup(settings: ApiSettings | null, username: string, apiKeys: ApiApiKey[] = [], error: unknown = null, projects: ApiProject[] = [], groups: import("./types.js").ApiProjectGroup[] = [], aliases: import("./types.js").ApiAlias[] = []): string {
   const displayName = settings?.displayName || settings?.display_name || username || "";
   const timezone = settings?.timezone || settings?.timezoneName || "";
   const defaultEnvironment = settings?.defaultEnvironment || settings?.default_environment || "";
@@ -787,11 +787,13 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
           const issues = p.issue_count ?? 0;
           const events = p.event_count ?? 0;
           const logs = p.log_count ?? 0;
+          const group = p.group_id != null ? groups.find(g => g.id === p.group_id) : undefined;
           return `
             <div class="project-row">
               <div class="project-info">
                 <strong>${escapeHtml(name)}</strong>
                 <span class="project-slug">${escapeHtml(slug)}</span>
+                ${group ? `<span class="chip" style="font-size:11px">${escapeHtml(group.name)}</span>` : ""}
               </div>
               <div class="project-actions">
                 <div class="project-usage">
@@ -806,6 +808,72 @@ export function renderSettingsViewMarkup(settings: ApiSettings | null, username:
             </div>
           `;
         }).join('')}
+      </div>
+      <div class="section">
+        <h3>Project groups</h3>
+        <p class="muted">Group related projects together so you can filter and view them as a unit.</p>
+        ${groups.length === 0 ? `<p class="muted">No groups yet.</p>` : groups.map(g => {
+          const members = projects.filter(p => p.group_id === g.id);
+          const ungrouped = projects.filter(p => !p.group_id && p.status !== "pending");
+          return `
+            <div class="project-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px;width:100%">
+                <strong>${escapeHtml(g.name)}</strong>
+                <span class="project-slug">${escapeHtml(g.slug)}</span>
+                <button class="btn-sm danger" style="margin-left:auto" data-delete-group="${escapeAttr(g.slug)}">Delete</button>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+                ${members.map(p => {
+                  const slug = String(p.slug ?? p.Slug ?? "");
+                  return `<span class="chip">${escapeHtml(String(p.name ?? p.Name ?? slug))}<button class="btn-inline" data-remove-from-group="${escapeAttr(slug)}" title="Remove from group" style="margin-left:4px;opacity:.6;font-size:11px">×</button></span>`;
+                }).join("")}
+                ${ungrouped.length > 0 ? `
+                <form data-add-to-group="${escapeAttr(g.slug)}" style="display:flex;gap:4px">
+                  <select name="project" style="font-size:12px">
+                    ${ungrouped.map(p => {
+                      const slug = String(p.slug ?? p.Slug ?? "");
+                      return `<option value="${escapeAttr(slug)}">${escapeHtml(String(p.name ?? p.Name ?? slug))}</option>`;
+                    }).join("")}
+                  </select>
+                  <button type="submit" class="btn-sm">Add</button>
+                </form>` : ""}
+              </div>
+            </div>
+          `;
+        }).join("")}
+        <form id="create-group-form" class="form-grid" style="margin-top:12px">
+          ${renderField("Group name", "name", "text", "")}
+          <div class="link-row form-actions">
+            <button type="submit">Create group</button>
+          </div>
+        </form>
+      </div>
+      <div class="section">
+        <h3>Project aliases</h3>
+        <p class="muted">An alias slug transparently routes events to an existing project — useful when an SDK is reporting under an old name.</p>
+        ${aliases.length === 0 ? `<p class="muted">No aliases yet.</p>` : `
+          <div class="grid">
+            ${aliases.map(a => `
+              <div class="kv">
+                <span><code>${escapeHtml(a.alias_slug)}</code> → <code>${escapeHtml(a.project_slug)}</code></span>
+                <button class="btn-sm danger" data-delete-alias="${escapeAttr(a.alias_slug)}">Delete</button>
+              </div>`).join("")}
+          </div>`}
+        <form id="create-alias-form" class="form-grid" style="margin-top:12px">
+          ${renderField("Alias slug", "alias", "text", "")}
+          <label class="field">
+            <span>Target project</span>
+            <select name="project">
+              ${projects.filter(p => p.status !== "pending").map(p => {
+                const slug = String(p.slug ?? p.Slug ?? "");
+                return `<option value="${escapeAttr(slug)}">${escapeHtml(String(p.name ?? p.Name ?? slug))}</option>`;
+              }).join("")}
+            </select>
+          </label>
+          <div class="link-row form-actions">
+            <button type="submit">Create alias</button>
+          </div>
+        </form>
       </div>
       <div class="section">
         <h3>API keys</h3>

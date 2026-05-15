@@ -33,6 +33,7 @@ type SourceMapUpload = domain.SourceMapUpload
 type DigestIssue = domain.DigestIssue
 type DigestData = domain.DigestData
 type ProjectGroup = domain.ProjectGroup
+type ProjectAlias = domain.ProjectAlias
 
 // Scope constants for API keys.
 const (

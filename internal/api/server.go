@@ -444,6 +444,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveGroupsRoot(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/groups/"):
 		s.serveGroupRoute(w, r)
+	case r.URL.Path == "/api/v1/aliases" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		s.serveAliasesRoot(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/aliases/") && r.Method == http.MethodDelete:
+		s.deleteAlias(w, r)
 	case r.URL.Path == "/api/v1/apikeys" && r.Method == http.MethodGet:
 		s.listAPIKeys(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/apikeys/") && r.Method == http.MethodDelete:

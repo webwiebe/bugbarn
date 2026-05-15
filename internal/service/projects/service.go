@@ -29,6 +29,7 @@ type Repository interface {
 	CreateAlias(ctx context.Context, aliasSlug string, projectID int64) error
 	DeleteAlias(ctx context.Context, aliasSlug string) error
 	ResolveAlias(ctx context.Context, slug string) (int64, error)
+	ListAliases(ctx context.Context) ([]domain.ProjectAlias, error)
 
 	// Rename and merge
 	RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error
@@ -243,6 +244,10 @@ func (s *Service) DeleteAlias(ctx context.Context, aliasSlug string) error {
 
 func (s *Service) ResolveAlias(ctx context.Context, slug string) (int64, error) {
 	return s.repo.ResolveAlias(ctx, slug)
+}
+
+func (s *Service) ListAliases(ctx context.Context) ([]domain.ProjectAlias, error) {
+	return s.repo.ListAliases(ctx)
 }
 
 // --- Rename and Merge ---

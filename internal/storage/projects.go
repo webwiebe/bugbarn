@@ -322,6 +322,28 @@ func (s *Store) ResolveAlias(ctx context.Context, slug string) (int64, error) {
 	return projectID, nil
 }
 
+// ListAliases returns all project aliases with their target project slug.
+func (s *Store) ListAliases(ctx context.Context) ([]ProjectAlias, error) {
+	rows, err := s.readDB().QueryContext(ctx, `
+		SELECT pa.alias_slug, pa.project_id, p.slug
+		FROM project_aliases pa
+		JOIN projects p ON pa.project_id = p.id
+		ORDER BY pa.alias_slug ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var aliases []ProjectAlias
+	for rows.Next() {
+		var a ProjectAlias
+		if err := rows.Scan(&a.AliasSlug, &a.ProjectID, &a.ProjectSlug); err != nil {
+			return nil, err
+		}
+		aliases = append(aliases, a)
+	}
+	return aliases, rows.Err()
+}
+
 // --- Rename and Merge ---
 
 // RenameProject updates the project's slug and name, creating an alias from the old slug.

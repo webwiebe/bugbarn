@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"strings"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
@@ -248,6 +250,18 @@ func (s *Server) serveGroupRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// GET /api/v1/groups/:slug/projects
+	if strings.HasSuffix(path, "/projects") && r.Method == http.MethodGet {
+		groupSlug := strings.TrimSuffix(path, "/projects")
+		projects, err := s.projects.ListGroupProjects(r.Context(), groupSlug)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"projects": projects})
+		return
+	}
+
 	// POST /api/v1/groups/:slug/projects
 	if strings.HasSuffix(path, "/projects") && r.Method == http.MethodPost {
 		s.assignProjectToGroup(w, r)
@@ -261,4 +275,57 @@ func (s *Server) serveGroupRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.NotFound(w, r)
+}
+
+// --- Alias endpoints ---
+
+func (s *Server) serveAliasesRoot(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		aliases, err := s.projects.ListAliases(r.Context())
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		if aliases == nil {
+			aliases = []domain.ProjectAlias{}
+		}
+		writeJSON(w, map[string]any{"aliases": aliases})
+	case http.MethodPost:
+		var req struct {
+			Alias   string `json:"alias"`
+			Project string `json:"project"`
+		}
+		if err := decodeJSON(w, r, &req); err != nil {
+			http.Error(w, "invalid payload", http.StatusBadRequest)
+			return
+		}
+		req.Alias = strings.TrimSpace(req.Alias)
+		req.Project = strings.TrimSpace(req.Project)
+		if req.Alias == "" || req.Project == "" {
+			http.Error(w, "alias and project are required", http.StatusBadRequest)
+			return
+		}
+		p, err := s.projects.BySlug(r.Context(), req.Project)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		if err := s.projects.CreateAlias(r.Context(), req.Alias, p.ID); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSONStatus(w, http.StatusCreated, map[string]any{"ok": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) deleteAlias(w http.ResponseWriter, r *http.Request) {
+	aliasSlug := strings.TrimPrefix(r.URL.Path, "/api/v1/aliases/")
+	if err := s.projects.DeleteAlias(r.Context(), aliasSlug); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"deleted": true})
 }

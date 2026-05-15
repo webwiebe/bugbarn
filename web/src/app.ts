@@ -16,7 +16,7 @@ import {
 import { normalizeList, normalizeObject, readString } from "./data.js";
 import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
-import type { ApiAlert, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
+import type { ApiAlert, ApiAlias, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiProjectGroup, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
 import { initInstrumentation } from "./instrumentation.js";
 
 initInstrumentation();
@@ -34,6 +34,8 @@ const state: AppState = {
   authenticated: false,
   username: "",
   projects: [],
+  groups: [],
+  aliases: [],
   currentProject: (() => { const v = localStorage.getItem(projectKey); return (v && v !== "default") ? v : "__all"; })(),
   currentEnv: localStorage.getItem(envKey) ?? "",
   currentRoute: "issues",
@@ -894,10 +896,12 @@ async function loadAlerts(): Promise<void> {
 
 async function loadSettings(): Promise<void> {
   try {
-    const [settingsPayload, keysPayload, projectsPayload] = await Promise.all([
+    const [settingsPayload, keysPayload, projectsPayload, groupsPayload, aliasesPayload] = await Promise.all([
       fetchJson("/api/v1/settings", true),
       fetchJson("/api/v1/apikeys", true).catch(() => null),
       fetchJson("/api/v1/projects", true).catch(() => null),
+      fetchJson("/api/v1/groups", true).catch(() => null),
+      fetchJson("/api/v1/aliases", true).catch(() => null),
     ]);
     state.settings = settingsPayload ? normalizeObject<ApiSettings>(settingsPayload, "settings") : null;
     state.apiKeys = keysPayload ? normalizeList<ApiApiKey>(keysPayload as Record<string, unknown>, "apiKeys") : [];
@@ -905,6 +909,8 @@ async function loadSettings(): Promise<void> {
       state.projects = normalizeList<ApiProject>(projectsPayload, "projects");
       renderProjectSwitcher();
     }
+    state.groups = groupsPayload ? ((groupsPayload as Record<string, unknown>)["groups"] as ApiProjectGroup[] ?? []) : [];
+    state.aliases = aliasesPayload ? ((aliasesPayload as Record<string, unknown>)["aliases"] as ApiAlias[] ?? []) : [];
     if (state.currentRoute === "settings") renderSettingsView();
   } catch (error) {
     state.settings = null;
@@ -1523,7 +1529,7 @@ function renderSettingsView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Settings";
   elements.detailBody.innerHTML = "";
-  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects);
+  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases);
   wireSettingsActions();
 }
 
@@ -1847,6 +1853,56 @@ function wireSettingsActions(): void {
       if (slug) void deleteProject(slug);
     });
   });
+
+  // Group actions
+  const createGroupForm = elements.overviewView.querySelector<HTMLFormElement>("#create-group-form");
+  createGroupForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const data = new FormData(createGroupForm);
+    const name = String(data.get("name") || "").trim();
+    if (name) void createGroup(name);
+  });
+
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-delete-group]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const slug = btn.dataset["deleteGroup"];
+      if (slug) void deleteGroup(slug);
+    });
+  });
+
+  elements.overviewView.querySelectorAll<HTMLFormElement>("[data-add-to-group]").forEach((form) => {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const groupSlug = form.dataset["addToGroup"]!;
+      const select = form.querySelector<HTMLSelectElement>("select");
+      const projectSlug = select?.value;
+      if (projectSlug) void addProjectToGroup(groupSlug, projectSlug);
+    });
+  });
+
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-remove-from-group]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const projectSlug = btn.dataset["removeFromGroup"];
+      if (projectSlug) void removeProjectFromGroup(projectSlug);
+    });
+  });
+
+  // Alias actions
+  const createAliasForm = elements.overviewView.querySelector<HTMLFormElement>("#create-alias-form");
+  createAliasForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const data = new FormData(createAliasForm);
+    const alias = String(data.get("alias") || "").trim();
+    const project = String(data.get("project") || "").trim();
+    if (alias && project) void createAlias(alias, project);
+  });
+
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-delete-alias]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const slug = btn.dataset["deleteAlias"];
+      if (slug) void deleteAlias(slug);
+    });
+  });
 }
 
 async function approveProject(slug: string): Promise<void> {
@@ -1873,6 +1929,72 @@ async function deleteProject(slug: string): Promise<void> {
     void checkPendingProjects();
   } catch (error) {
     showFlash(`Delete failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+async function createGroup(name: string): Promise<void> {
+  try {
+    await postJson("/api/v1/groups", { name });
+    showFlash(`Group "${name}" created.`, "success");
+    await loadSettings();
+  } catch (error) {
+    showFlash(`Create group failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+async function deleteGroup(slug: string): Promise<void> {
+  if (!confirm(`Delete group "${slug}"? Projects will be ungrouped but not deleted.`)) return;
+  try {
+    const res = await apiFetch(`/api/v1/groups/${encodeURIComponent(slug)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(res.statusText);
+    showFlash(`Group "${slug}" deleted.`, "success");
+    await loadSettings();
+  } catch (error) {
+    showFlash(`Delete group failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+async function addProjectToGroup(groupSlug: string, projectSlug: string): Promise<void> {
+  try {
+    await postJson(`/api/v1/groups/${encodeURIComponent(groupSlug)}/projects`, { project: projectSlug });
+    showFlash(`"${projectSlug}" added to group.`, "success");
+    await loadSettings();
+  } catch (error) {
+    showFlash(`Add to group failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+async function removeProjectFromGroup(projectSlug: string): Promise<void> {
+  try {
+    const group = state.groups.find(g => state.projects.find(p => (p.slug ?? p.Slug) === projectSlug && p.group_id === g.id));
+    if (!group) throw new Error("project not in a group");
+    const res = await apiFetch(`/api/v1/groups/${encodeURIComponent(group.slug)}/projects/${encodeURIComponent(projectSlug)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(res.statusText);
+    showFlash(`"${projectSlug}" removed from group.`, "success");
+    await loadSettings();
+  } catch (error) {
+    showFlash(`Remove from group failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+async function createAlias(alias: string, project: string): Promise<void> {
+  try {
+    await postJson("/api/v1/aliases", { alias, project });
+    showFlash(`Alias "${alias}" → "${project}" created.`, "success");
+    await loadSettings();
+  } catch (error) {
+    showFlash(`Create alias failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+async function deleteAlias(aliasSlug: string): Promise<void> {
+  try {
+    const res = await apiFetch(`/api/v1/aliases/${encodeURIComponent(aliasSlug)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(res.statusText);
+    showFlash(`Alias "${aliasSlug}" deleted.`, "success");
+    await loadSettings();
+  } catch (error) {
+    showFlash(`Delete alias failed: ${errorMessage(error)}`, "error", 8000);
   }
 }
 

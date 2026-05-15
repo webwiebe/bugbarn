@@ -114,6 +114,10 @@ func (f *fakeRepo) ResolveAlias(_ context.Context, _ string) (int64, error) {
 	return 0, apperr.NotFound("not found", nil)
 }
 
+func (f *fakeRepo) ListAliases(context.Context) ([]domain.ProjectAlias, error) {
+	return nil, f.err
+}
+
 func (f *fakeRepo) RenameProject(_ context.Context, _, _, _ string) error {
 	return f.err
 }

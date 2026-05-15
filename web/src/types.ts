@@ -154,6 +154,20 @@ export interface ApiProject extends RawRecord {
   issue_count?: number;
   event_count?: number;
   log_count?: number;
+  group_id?: number | null;
+}
+
+export interface ApiProjectGroup {
+  id: number;
+  name: string;
+  slug: string;
+  created_at: string;
+}
+
+export interface ApiAlias {
+  alias_slug: string;
+  project_id: number;
+  project_slug: string;
 }
 
 export interface ApiLogEntry {
@@ -204,6 +218,8 @@ export interface AppState {
   authenticated: boolean;
   username: string;
   projects: ApiProject[];
+  groups: ApiProjectGroup[];
+  aliases: ApiAlias[];
   currentProject: string;
   currentEnv: string;
   currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs";
