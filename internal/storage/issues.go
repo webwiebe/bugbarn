@@ -58,9 +58,18 @@ func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) (_ [
 	}
 	allProjects := projectID == 0
 
+	groupIDs, hasGroupFilter := ProjectIDsFromContext(ctx)
+
 	var conditions []string
 	var whereArgs []any
-	if !allProjects {
+	if hasGroupFilter {
+		placeholders := make([]string, len(groupIDs))
+		for i, id := range groupIDs {
+			placeholders[i] = "?"
+			whereArgs = append(whereArgs, id)
+		}
+		conditions = append(conditions, "i.project_id IN ("+strings.Join(placeholders, ",")+")")
+	} else if !allProjects {
 		conditions = append(conditions, "i.project_id = ?")
 		whereArgs = append(whereArgs, projectID)
 	}

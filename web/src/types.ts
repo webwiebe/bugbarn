@@ -211,6 +211,7 @@ export interface AnalyticsSegmentBucket extends RawRecord { value: string; pagev
 
 export type IssueSort = "last_seen" | "first_seen" | "event_count";
 export type IssueStatus = "all" | "open" | "resolved" | "muted";
+export type SettingsTab = "overview" | "projects" | "preferences" | "keys";
 
 export interface AppState {
   authChecked: boolean;
@@ -221,6 +222,8 @@ export interface AppState {
   groups: ApiProjectGroup[];
   aliases: ApiAlias[];
   currentProject: string;
+  currentGroup: string | null;
+  settingsTab: SettingsTab;
   currentEnv: string;
   currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs";
   issues: ApiIssue[];

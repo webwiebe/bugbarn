@@ -16,7 +16,7 @@ import {
 import { normalizeList, normalizeObject, readString } from "./data.js";
 import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
-import type { ApiAlert, ApiAlias, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiProjectGroup, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord } from "./types.js";
+import type { ApiAlert, ApiAlias, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiProjectGroup, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord, SettingsTab } from "./types.js";
 import { initInstrumentation } from "./instrumentation.js";
 
 initInstrumentation();
@@ -27,6 +27,7 @@ const liveWindowMinutes = 15;
 const sidebarKey = "bugbarn_sidebar";
 const projectKey = "bugbarn_project";
 const envKey = "bugbarn_env";
+const groupKey = "bugbarn_group";
 
 const state: AppState = {
   authChecked: false,
@@ -37,6 +38,8 @@ const state: AppState = {
   groups: [],
   aliases: [],
   currentProject: (() => { const v = localStorage.getItem(projectKey); return (v && v !== "default") ? v : "__all"; })(),
+  currentGroup: localStorage.getItem(groupKey) || null,
+  settingsTab: "overview",
   currentEnv: localStorage.getItem(envKey) ?? "",
   currentRoute: "issues",
   issues: [],
@@ -183,16 +186,29 @@ document.querySelectorAll<HTMLAnchorElement>(".side-nav a").forEach((link) => {
 });
 
 projectSelect?.addEventListener("change", () => {
-  const slug = projectSelect.value;
-  state.currentProject = slug;
-  localStorage.setItem(projectKey, slug);
+  const val = projectSelect.value;
   state.currentEnv = "";
   localStorage.removeItem(envKey);
-  if (slug === "__all") {
+  if (val.startsWith("__group:")) {
+    const slug = val.slice("__group:".length);
+    state.currentGroup = slug;
+    localStorage.setItem(groupKey, slug);
+    state.currentProject = "__all";
+    localStorage.removeItem(projectKey);
     renderEnvSwitcher([]);
+    updateScopeBtn();
     void refreshAll();
   } else {
-    void Promise.all([loadEnvironments(), refreshAll()]);
+    state.currentGroup = null;
+    localStorage.removeItem(groupKey);
+    state.currentProject = val;
+    localStorage.setItem(projectKey, val);
+    if (val === "__all") {
+      renderEnvSwitcher([]);
+      void refreshAll();
+    } else {
+      void Promise.all([loadEnvironments(), refreshAll()]);
+    }
   }
 });
 
@@ -560,6 +576,8 @@ function route(): void {
     setRouteChip("Logs");
   } else if (kind === "settings") {
     state.currentRoute = "settings";
+    const validTabs: SettingsTab[] = ["overview", "projects", "preferences", "keys"];
+    state.settingsTab = (validTabs.includes(id as SettingsTab) ? id : "overview") as SettingsTab;
     setPageTitle("Settings");
     setRouteChip("Settings");
   } else {
@@ -949,16 +967,21 @@ async function loadProjects(): Promise<void> {
 function renderProjectSwitcher(): void {
   if (!projectSelect) return;
   const current = state.currentProject;
-  const allSelected = (current === "__all" || !current) ? ' selected' : '';
-  projectSelect.innerHTML = `<option value="__all"${allSelected}>All projects</option>` +
-    state.projects
-      .map((p) => {
-        const slug = String(p.slug ?? p.Slug ?? "default");
-        const name = String(p.name ?? p.Name ?? slug);
-        const selected = slug === current ? ' selected' : '';
-        return `<option value="${escapeHtml(slug)}"${selected}>${escapeHtml(name)}</option>`;
-      })
-      .join("");
+  const allSelected = (!state.currentGroup && (current === "__all" || !current)) ? ' selected' : '';
+  let opts = `<option value="__all"${allSelected}>All projects</option>`;
+  if (state.groups.length > 0) {
+    for (const g of state.groups) {
+      const sel = state.currentGroup === g.slug ? ' selected' : '';
+      opts += `<option value="__group:${escapeHtml(g.slug)}"${sel}>${escapeHtml(g.name)}</option>`;
+    }
+  }
+  opts += state.projects.map((p) => {
+    const slug = String(p.slug ?? p.Slug ?? "default");
+    const name = String(p.name ?? p.Name ?? slug);
+    const selected = (!state.currentGroup && slug === current) ? ' selected' : '';
+    return `<option value="${escapeHtml(slug)}"${selected}>${escapeHtml(name)}</option>`;
+  }).join("");
+  projectSelect.innerHTML = opts;
   projectSelect.hidden = false;
   updateScopeBtn();
 }
@@ -966,8 +989,14 @@ function renderProjectSwitcher(): void {
 function updateScopeBtn(): void {
   const btn = document.getElementById("scope-btn");
   if (!btn) return;
-  const proj = state.projects.find(p => String(p.slug ?? p.Slug ?? "") === state.currentProject);
-  let label = proj ? String(proj.name ?? proj.Name ?? state.currentProject) : "All projects";
+  let label: string;
+  if (state.currentGroup) {
+    const group = state.groups.find(g => g.slug === state.currentGroup);
+    label = group ? group.name : state.currentGroup;
+  } else {
+    const proj = state.projects.find(p => String(p.slug ?? p.Slug ?? "") === state.currentProject);
+    label = proj ? String(proj.name ?? proj.Name ?? state.currentProject) : "All projects";
+  }
   if (state.currentEnv) label += ` / ${state.currentEnv}`;
   btn.innerHTML = `${escapeHtml(label)} <span class="scope-chevron">▾</span>`;
 }
@@ -1061,14 +1090,34 @@ function closeScopeSheet(): void {
 function renderScopeSheetBody(): void {
   if (!scopeBody) return;
   const current = state.currentProject;
-  let html = `<div class="scope-section-label">Project</div>`;
-  html += `<button class="scope-item${current === "__all" || !current ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
-  for (const p of state.projects) {
-    const slug = String(p.slug ?? p.Slug ?? "");
-    const name = String(p.name ?? p.Name ?? slug);
-    html += `<button class="scope-item${slug === current ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
+  let html = "";
+
+  if (state.groups.length > 0) {
+    html += `<div class="scope-section-label">Group</div>`;
+    html += `<button class="scope-item${state.currentGroup === null && (current === "__all" || !current) ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
+    for (const g of state.groups) {
+      const selected = state.currentGroup === g.slug;
+      html += `<button class="scope-item${selected ? " selected" : ""}" data-scope-group="${escapeHtml(g.slug)}">${escapeHtml(g.name)}</button>`;
+    }
+    html += `<div class="scope-divider"></div>`;
+    html += `<div class="scope-section-label">Project</div>`;
+    for (const p of state.projects) {
+      const slug = String(p.slug ?? p.Slug ?? "");
+      const name = String(p.name ?? p.Name ?? slug);
+      const selected = !state.currentGroup && slug === current;
+      html += `<button class="scope-item${selected ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
+    }
+  } else {
+    html += `<div class="scope-section-label">Project</div>`;
+    html += `<button class="scope-item${current === "__all" || !current ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
+    for (const p of state.projects) {
+      const slug = String(p.slug ?? p.Slug ?? "");
+      const name = String(p.name ?? p.Name ?? slug);
+      html += `<button class="scope-item${slug === current ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
+    }
   }
-  if (current && current !== "__all") {
+
+  if (!state.currentGroup && current && current !== "__all") {
     html += `<div class="scope-divider"></div>`;
     html += `<div class="scope-section-label">Environment</div>`;
     html += `<button class="scope-item scope-item-sub${!state.currentEnv ? " selected" : ""}" data-scope-env="">All environments</button>`;
@@ -1076,9 +1125,28 @@ function renderScopeSheetBody(): void {
     loadScopeEnvs();
   }
   scopeBody.innerHTML = html;
+
+  scopeBody.querySelectorAll<HTMLButtonElement>("[data-scope-group]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const slug = btn.getAttribute("data-scope-group") ?? "";
+      state.currentGroup = slug;
+      localStorage.setItem(groupKey, slug);
+      state.currentProject = "__all";
+      localStorage.removeItem(projectKey);
+      state.currentEnv = "";
+      localStorage.removeItem(envKey);
+      renderEnvSwitcher([]);
+      renderProjectSwitcher();
+      closeScopeSheet();
+      void refreshAll();
+    });
+  });
+
   scopeBody.querySelectorAll<HTMLButtonElement>("[data-scope-project]").forEach(btn => {
     btn.addEventListener("click", () => {
       const slug = btn.getAttribute("data-scope-project") ?? "__all";
+      state.currentGroup = null;
+      localStorage.removeItem(groupKey);
       state.currentProject = slug;
       localStorage.setItem(projectKey, slug);
       state.currentEnv = "";
@@ -1301,7 +1369,9 @@ async function fetchJson(path: string, allowMissing = false): Promise<unknown> {
   }
 
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
+  if (state.currentGroup) {
+    headers["X-BugBarn-Group"] = state.currentGroup;
+  } else if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
     headers["X-BugBarn-Project"] = state.currentProject;
   }
   const request = fetch(url, { credentials: "include", headers }).then(async (response) => {
@@ -1355,7 +1425,9 @@ async function postJson(path: string, body: unknown, _retried = false): Promise<
   if (csrf) {
     headers["X-BugBarn-CSRF"] = csrf;
   }
-  if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
+  if (state.currentGroup) {
+    headers["X-BugBarn-Group"] = state.currentGroup;
+  } else if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
     headers["X-BugBarn-Project"] = state.currentProject;
   }
   const response = await fetch(apiUrl(path), {
@@ -1529,7 +1601,7 @@ function renderSettingsView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Settings";
   elements.detailBody.innerHTML = "";
-  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases);
+  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab);
   wireSettingsActions();
 }
 
@@ -2072,7 +2144,9 @@ async function apiFetch(path: string, init: RequestInit = {}, _retried = false):
   if (csrf) {
     headers["X-BugBarn-CSRF"] = csrf;
   }
-  if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
+  if (state.currentGroup) {
+    headers["X-BugBarn-Group"] = state.currentGroup;
+  } else if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
     headers["X-BugBarn-Project"] = state.currentProject;
   }
   const res = await fetch(apiUrl(path), { credentials: "include", ...init, headers });

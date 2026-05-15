@@ -709,183 +709,286 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
   `;
 }
 
-export function renderSettingsViewMarkup(settings: ApiSettings | null, username: string, apiKeys: ApiApiKey[] = [], error: unknown = null, projects: ApiProject[] = [], groups: import("./types.js").ApiProjectGroup[] = [], aliases: import("./types.js").ApiAlias[] = []): string {
+export function renderSettingsViewMarkup(
+  settings: ApiSettings | null,
+  username: string,
+  apiKeys: ApiApiKey[] = [],
+  error: unknown = null,
+  projects: ApiProject[] = [],
+  groups: import("./types.js").ApiProjectGroup[] = [],
+  aliases: import("./types.js").ApiAlias[] = [],
+  tab: import("./types.js").SettingsTab = "overview",
+): string {
+  const tabs: { id: import("./types.js").SettingsTab; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "projects", label: "Projects" },
+    { id: "preferences", label: "Preferences" },
+    { id: "keys", label: "API Keys" },
+  ];
+  const pendingProjects = projects.filter(p => (p.status ?? p.Status) === "pending");
+  const activeProjects = projects.filter(p => (p.status ?? p.Status) !== "pending");
+
+  const tabNav = `
+    <div class="settings-tabs">
+      ${tabs.map(t => `<a href="#/settings/${t.id}" class="settings-tab${tab === t.id ? " active" : ""}">${escapeHtml(t.label)}${t.id === "projects" && pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</a>`).join("")}
+    </div>`;
+
+  let content = "";
+  if (tab === "overview") {
+    content = renderSettingsOverview(settings, username, activeProjects, groups, apiKeys, pendingProjects, error);
+  } else if (tab === "projects") {
+    content = renderSettingsProjects(projects, groups, aliases);
+  } else if (tab === "preferences") {
+    content = renderSettingsPreferences(settings);
+  } else {
+    content = renderSettingsKeys(apiKeys);
+  }
+
+  return `
+    <div class="view-head">
+      <h2>Settings</h2>
+      <span class="chip">${escapeHtml(username || "signed in")}</span>
+    </div>
+    ${tabNav}
+    <div class="detail-main">${content}</div>
+  `;
+}
+
+function renderSettingsOverview(
+  settings: ApiSettings | null,
+  username: string,
+  activeProjects: ApiProject[],
+  groups: import("./types.js").ApiProjectGroup[],
+  apiKeys: ApiApiKey[],
+  pendingProjects: ApiProject[],
+  error: unknown,
+): string {
   const displayName = settings?.displayName || settings?.display_name || username || "";
+  const timezone = settings?.timezone || settings?.timezoneName || "";
+
+  const statsBar = `
+    <div class="settings-stats">
+      <a href="#/settings/projects" class="settings-stat">
+        <span class="stat-value">${activeProjects.length}</span>
+        <span class="stat-label">project${activeProjects.length !== 1 ? "s" : ""}</span>
+      </a>
+      <a href="#/settings/projects" class="settings-stat">
+        <span class="stat-value">${groups.length}</span>
+        <span class="stat-label">group${groups.length !== 1 ? "s" : ""}</span>
+      </a>
+      <a href="#/settings/keys" class="settings-stat">
+        <span class="stat-value">${apiKeys.length}</span>
+        <span class="stat-label">API key${apiKeys.length !== 1 ? "s" : ""}</span>
+      </a>
+    </div>`;
+
+  const errorBanner = error ? `<div class="callout callout-error">Unable to load settings — ${escapeHtml(errorMessage(error))}</div>` : "";
+
+  const pendingBanner = pendingProjects.length > 0 ? `
+    <div class="callout callout-warn">
+      <strong>${pendingProjects.length} project${pendingProjects.length > 1 ? "s" : ""} awaiting approval</strong>
+      <span>${pendingProjects.map(p => escapeHtml(String(p.slug ?? p.Slug ?? ""))).join(", ")}</span>
+      <a href="#/settings/projects" class="btn-sm">Review</a>
+    </div>` : "";
+
+  const noProjectsBanner = activeProjects.length === 0 ? `
+    <div class="callout callout-info">
+      <strong>No projects yet</strong>
+      <span>Use the Quick Setup URL below to add your first project in seconds.</span>
+    </div>` : "";
+
+  const setupCard = `
+    <div class="section quick-setup-card">
+      <h3>Quick Setup</h3>
+      <p class="muted">Point an LLM or developer at the setup page to auto-configure a project with an ingest API key. Returns a markdown guide with SDK examples.</p>
+      <div class="setup-url-box">
+        <code id="setup-url">${escapeHtml(`${window.location.origin}/api/v1/setup/`)}your-project-slug</code>
+        <button class="btn-sm ghost" id="copy-setup-url" title="Copy URL">⧉</button>
+      </div>
+      <p class="muted" style="margin-top:6px">Replace <code>your-project-slug</code> with the desired name. Approve the project once it appears in <a href="#/settings/projects">Projects</a>.</p>
+    </div>`;
+
+  const sessionCard = `
+    <div class="section">
+      <h3>Session</h3>
+      <div class="grid">
+        <div class="kv"><span>Username</span><span>${escapeHtml(username || "n/a")}</span></div>
+        ${displayName ? `<div class="kv"><span>Display name</span><span>${escapeHtml(displayName)}</span></div>` : ""}
+        ${timezone ? `<div class="kv"><span>Timezone</span><span>${escapeHtml(timezone)}</span></div>` : ""}
+      </div>
+    </div>`;
+
+  const quickLinks = `
+    <div class="section">
+      <h3>What's here</h3>
+      <div class="grid">
+        <div class="kv"><a href="#/settings/projects">Projects</a><span>Manage projects, groups, and slug aliases</span></div>
+        <div class="kv"><a href="#/settings/preferences">Preferences</a><span>Display settings, SDK info, source map uploads</span></div>
+        <div class="kv"><a href="#/settings/keys">API Keys</a><span>View ingest and full-access API keys</span></div>
+      </div>
+    </div>`;
+
+  return errorBanner + pendingBanner + noProjectsBanner + statsBar + setupCard + sessionCard + quickLinks;
+}
+
+function renderSettingsProjects(
+  projects: ApiProject[],
+  groups: import("./types.js").ApiProjectGroup[],
+  aliases: import("./types.js").ApiAlias[],
+): string {
+  const projectList = `
+    <div class="section">
+      <h3>Projects</h3>
+      ${projects.length === 0 ? `<p class="muted">No projects yet. Use the Quick Setup URL on the <a href="#/settings/overview">Overview</a> tab.</p>` : projects.map(p => {
+        const slug = String(p.slug ?? p.Slug ?? '');
+        const name = String(p.name ?? p.Name ?? slug);
+        const status = String(p.status ?? p.Status ?? 'active');
+        const setupUrl = `/api/v1/setup/${slug}`;
+        const issues = p.issue_count ?? 0;
+        const events = p.event_count ?? 0;
+        const logs = p.log_count ?? 0;
+        const group = p.group_id != null ? groups.find(g => g.id === p.group_id) : undefined;
+        return `
+          <div class="project-row">
+            <div class="project-info">
+              <strong>${escapeHtml(name)}</strong>
+              <span class="project-slug">${escapeHtml(slug)}</span>
+              ${group ? `<span class="chip" style="font-size:11px">${escapeHtml(group.name)}</span>` : ""}
+            </div>
+            <div class="project-actions">
+              <div class="project-usage">
+                <span class="usage-stat" title="Issues"><span class="usage-icon">◆</span>${escapeHtml(String(issues))}</span>
+                <span class="usage-stat" title="Events"><span class="usage-icon">▸</span>${escapeHtml(String(events))}</span>
+                <span class="usage-stat" title="Logs"><span class="usage-icon">≡</span>${escapeHtml(String(logs))}</span>
+              </div>
+              <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
+              <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup</a>
+              ${status === 'pending'
+                ? `<button class="btn-sm" data-approve-project="${escapeAttr(slug)}">Approve</button><button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Reject</button>`
+                : `<button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Delete</button>`}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+
+  const groupsSection = `
+    <div class="section">
+      <h3>Project groups</h3>
+      <p class="muted">Group related projects so you can filter issues across all of them at once.</p>
+      ${groups.length === 0 ? `<p class="muted">No groups yet.</p>` : groups.map(g => {
+        const members = projects.filter(p => p.group_id === g.id);
+        const ungrouped = projects.filter(p => !p.group_id && (p.status ?? p.Status) !== "pending");
+        return `
+          <div class="project-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;width:100%">
+              <strong>${escapeHtml(g.name)}</strong>
+              <span class="project-slug">${escapeHtml(g.slug)}</span>
+              <button class="btn-sm danger" style="margin-left:auto" data-delete-group="${escapeAttr(g.slug)}">Delete</button>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+              ${members.map(p => {
+                const slug = String(p.slug ?? p.Slug ?? "");
+                return `<span class="chip">${escapeHtml(String(p.name ?? p.Name ?? slug))}<button class="btn-inline" data-remove-from-group="${escapeAttr(slug)}" title="Remove" style="margin-left:4px;opacity:.6;font-size:11px">×</button></span>`;
+              }).join("")}
+              ${ungrouped.length > 0 ? `
+              <form data-add-to-group="${escapeAttr(g.slug)}" style="display:flex;gap:4px">
+                <select name="project" style="font-size:12px">
+                  ${ungrouped.map(p => { const s = String(p.slug ?? p.Slug ?? ""); return `<option value="${escapeAttr(s)}">${escapeHtml(String(p.name ?? p.Name ?? s))}</option>`; }).join("")}
+                </select>
+                <button type="submit" class="btn-sm">Add</button>
+              </form>` : ""}
+            </div>
+          </div>`;
+      }).join("")}
+      <form id="create-group-form" class="form-grid" style="margin-top:12px">
+        ${renderField("Group name", "name", "text", "")}
+        <div class="link-row form-actions"><button type="submit">Create group</button></div>
+      </form>
+    </div>`;
+
+  const aliasesSection = `
+    <div class="section">
+      <h3>Project aliases</h3>
+      <p class="muted">An alias slug transparently routes events to an existing project — useful when an SDK is reporting under an old name.</p>
+      ${aliases.length === 0 ? `<p class="muted">No aliases yet.</p>` : `
+        <div class="grid">
+          ${aliases.map(a => `
+            <div class="kv">
+              <span><code>${escapeHtml(a.alias_slug)}</code> → <code>${escapeHtml(a.project_slug)}</code></span>
+              <button class="btn-sm danger" data-delete-alias="${escapeAttr(a.alias_slug)}">Delete</button>
+            </div>`).join("")}
+        </div>`}
+      <form id="create-alias-form" class="form-grid" style="margin-top:12px">
+        ${renderField("Alias slug", "alias", "text", "")}
+        <label class="field">
+          <span>Target project</span>
+          <select name="project">
+            ${projects.filter(p => (p.status ?? p.Status) !== "pending").map(p => {
+              const slug = String(p.slug ?? p.Slug ?? "");
+              return `<option value="${escapeAttr(slug)}">${escapeHtml(String(p.name ?? p.Name ?? slug))}</option>`;
+            }).join("")}
+          </select>
+        </label>
+        <div class="link-row form-actions"><button type="submit">Create alias</button></div>
+      </form>
+    </div>`;
+
+  return projectList + groupsSection + aliasesSection;
+}
+
+function renderSettingsPreferences(settings: ApiSettings | null): string {
+  const displayName = settings?.displayName || settings?.display_name || "";
   const timezone = settings?.timezone || settings?.timezoneName || "";
   const defaultEnvironment = settings?.defaultEnvironment || settings?.default_environment || "";
   const liveWindowMinutes = settings?.liveWindowMinutes ?? settings?.live_window_minutes ?? 15;
   const stacktraceContextLines = settings?.stacktraceContextLines ?? settings?.stacktrace_context_lines ?? 3;
 
   return `
-    <div class="view-head">
-      <h2>Workspace settings</h2>
-      <span class="chip">${escapeHtml(username || "signed in")}</span>
+    <div class="section">
+      <h3>Preferences</h3>
+      <form class="form-grid" id="settings-form">
+        ${renderField("Display name", "displayName", "text", displayName)}
+        ${renderField("Timezone", "timezone", "text", timezone || "Europe/Amsterdam")}
+        ${renderField("Default environment", "defaultEnvironment", "text", defaultEnvironment || "testing")}
+        ${renderField("Live window minutes", "liveWindowMinutes", "number", String(liveWindowMinutes))}
+        ${renderField("Stacktrace context lines", "stacktraceContextLines", "number", String(stacktraceContextLines))}
+        <div class="link-row form-actions"><button type="submit">Save settings</button></div>
+      </form>
     </div>
-    <div class="detail-main">
-      <div class="section">
-        <h3>Session</h3>
-        ${error ? `<div class="error">Unable to load settings. ${escapeHtml(errorMessage(error))}</div>` : ""}
-        <div class="grid">
-          <div class="kv"><span>Username</span><span>${escapeHtml(username || "n/a")}</span></div>
-          <div class="kv"><span>Display name</span><span>${escapeHtml(displayName || "n/a")}</span></div>
-          <div class="kv"><span>Timezone</span><span>${escapeHtml(timezone || "n/a")}</span></div>
-        </div>
-      </div>
-      <div class="section quick-setup-card">
-        <h3>⚡ Quick Setup</h3>
-        <p class="muted">Point an LLM or developer at the setup page to auto-configure a project with an ingest API key. The page returns a markdown guide with SDK integration examples.</p>
-        <div class="setup-url-box">
-          <code id="setup-url">${escapeHtml(`${window.location.origin}/api/v1/setup/`)}your-project-slug</code>
-          <button class="btn-sm ghost" id="copy-setup-url" title="Copy URL">⧉</button>
-        </div>
-        <p class="muted" style="margin-top:6px">Replace <code>your-project-slug</code> with the desired project name. The project will appear below as "pending" until you approve.</p>
-      </div>
-      <div class="section">
-        <h3>Preferences</h3>
-        <p class="muted">POST /api/v1/settings</p>
-        <form class="form-grid" id="settings-form">
-          ${renderField("Display name", "displayName", "text", displayName)}
-          ${renderField("Timezone", "timezone", "text", timezone || "Europe/Amsterdam")}
-          ${renderField("Default environment", "defaultEnvironment", "text", defaultEnvironment || "testing")}
-          ${renderField("Live window minutes", "liveWindowMinutes", "number", String(liveWindowMinutes))}
-          ${renderField("Stacktrace context lines", "stacktraceContextLines", "number", String(stacktraceContextLines))}
-          <div class="link-row form-actions">
-            <button type="submit">Save settings</button>
-          </div>
-        </form>
-      </div>
-      <div class="section">
-        <h3>SDK</h3>
-        <p class="muted">Install the TypeScript SDK in your project to capture errors automatically.</p>
-        <div id="sdk-info" class="grid">
-          <div class="kv"><span>Status</span><span>Loading…</span></div>
-        </div>
-      </div>
-      <div class="section">
-        <h3>Source maps</h3>
-        <p class="muted">Upload source maps so frames can show a short source snippet instead of only minified output.</p>
-        <form class="form-grid" id="source-map-form" enctype="multipart/form-data">
-          ${renderField("Release", "release", "text", "")}
-          ${renderField("Environment", "environment", "text", defaultEnvironment || "testing")}
-          ${renderField("URL prefix", "urlPrefix", "text", "https://app.example.com/static/")}
-          <label class="field field-wide">
-            <span>Source map files</span>
-            <input name="files" type="file" accept=".map,.js,.ts" multiple />
-          </label>
-          <div class="link-row form-actions">
-            <button type="submit">Upload source maps</button>
-          </div>
-        </form>
-      </div>
-      <div class="section">
-        <h3>Projects</h3>
-        ${projects.map(p => {
-          const slug = String(p.slug ?? p.Slug ?? '');
-          const name = String(p.name ?? p.Name ?? slug);
-          const status = String(p.status ?? p.Status ?? 'active');
-          const setupUrl = `/api/v1/setup/${slug}`;
-          const issues = p.issue_count ?? 0;
-          const events = p.event_count ?? 0;
-          const logs = p.log_count ?? 0;
-          const group = p.group_id != null ? groups.find(g => g.id === p.group_id) : undefined;
-          return `
-            <div class="project-row">
-              <div class="project-info">
-                <strong>${escapeHtml(name)}</strong>
-                <span class="project-slug">${escapeHtml(slug)}</span>
-                ${group ? `<span class="chip" style="font-size:11px">${escapeHtml(group.name)}</span>` : ""}
-              </div>
-              <div class="project-actions">
-                <div class="project-usage">
-                  <span class="usage-stat" title="Issues"><span class="usage-icon">◆</span>${escapeHtml(String(issues))}</span>
-                  <span class="usage-stat" title="Events"><span class="usage-icon">▸</span>${escapeHtml(String(events))}</span>
-                  <span class="usage-stat" title="Logs"><span class="usage-icon">≡</span>${escapeHtml(String(logs))}</span>
-                </div>
-                <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
-                <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup page</a>
-                ${status === 'pending' ? `<button class="btn-sm" data-approve-project="${escapeAttr(slug)}">Approve</button><button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Reject</button>` : `<button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Delete</button>`}
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-      <div class="section">
-        <h3>Project groups</h3>
-        <p class="muted">Group related projects together so you can filter and view them as a unit.</p>
-        ${groups.length === 0 ? `<p class="muted">No groups yet.</p>` : groups.map(g => {
-          const members = projects.filter(p => p.group_id === g.id);
-          const ungrouped = projects.filter(p => !p.group_id && p.status !== "pending");
-          return `
-            <div class="project-row" style="flex-direction:column;align-items:flex-start;gap:8px">
-              <div style="display:flex;align-items:center;gap:8px;width:100%">
-                <strong>${escapeHtml(g.name)}</strong>
-                <span class="project-slug">${escapeHtml(g.slug)}</span>
-                <button class="btn-sm danger" style="margin-left:auto" data-delete-group="${escapeAttr(g.slug)}">Delete</button>
-              </div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-                ${members.map(p => {
-                  const slug = String(p.slug ?? p.Slug ?? "");
-                  return `<span class="chip">${escapeHtml(String(p.name ?? p.Name ?? slug))}<button class="btn-inline" data-remove-from-group="${escapeAttr(slug)}" title="Remove from group" style="margin-left:4px;opacity:.6;font-size:11px">×</button></span>`;
-                }).join("")}
-                ${ungrouped.length > 0 ? `
-                <form data-add-to-group="${escapeAttr(g.slug)}" style="display:flex;gap:4px">
-                  <select name="project" style="font-size:12px">
-                    ${ungrouped.map(p => {
-                      const slug = String(p.slug ?? p.Slug ?? "");
-                      return `<option value="${escapeAttr(slug)}">${escapeHtml(String(p.name ?? p.Name ?? slug))}</option>`;
-                    }).join("")}
-                  </select>
-                  <button type="submit" class="btn-sm">Add</button>
-                </form>` : ""}
-              </div>
-            </div>
-          `;
-        }).join("")}
-        <form id="create-group-form" class="form-grid" style="margin-top:12px">
-          ${renderField("Group name", "name", "text", "")}
-          <div class="link-row form-actions">
-            <button type="submit">Create group</button>
-          </div>
-        </form>
-      </div>
-      <div class="section">
-        <h3>Project aliases</h3>
-        <p class="muted">An alias slug transparently routes events to an existing project — useful when an SDK is reporting under an old name.</p>
-        ${aliases.length === 0 ? `<p class="muted">No aliases yet.</p>` : `
-          <div class="grid">
-            ${aliases.map(a => `
-              <div class="kv">
-                <span><code>${escapeHtml(a.alias_slug)}</code> → <code>${escapeHtml(a.project_slug)}</code></span>
-                <button class="btn-sm danger" data-delete-alias="${escapeAttr(a.alias_slug)}">Delete</button>
-              </div>`).join("")}
-          </div>`}
-        <form id="create-alias-form" class="form-grid" style="margin-top:12px">
-          ${renderField("Alias slug", "alias", "text", "")}
-          <label class="field">
-            <span>Target project</span>
-            <select name="project">
-              ${projects.filter(p => p.status !== "pending").map(p => {
-                const slug = String(p.slug ?? p.Slug ?? "");
-                return `<option value="${escapeAttr(slug)}">${escapeHtml(String(p.name ?? p.Name ?? slug))}</option>`;
-              }).join("")}
-            </select>
-          </label>
-          <div class="link-row form-actions">
-            <button type="submit">Create alias</button>
-          </div>
-        </form>
-      </div>
-      <div class="section">
-        <h3>API keys</h3>
-        <p class="muted">
-          <strong>ingest</strong> keys are safe to embed in browser bundles — they can only POST events.
-          <strong>full</strong> keys grant full API access; keep them server-side only.
-          Create keys with <code>bugbarn apikey create --scope ingest --name my-frontend</code>.
-        </p>
-        ${renderApiKeyTable(apiKeys)}
+    <div class="section">
+      <h3>TypeScript SDK</h3>
+      <p class="muted">Install the SDK to capture errors automatically from browser and Node.js apps.</p>
+      <div id="sdk-info" class="grid">
+        <div class="kv"><span>Status</span><span>Loading…</span></div>
       </div>
     </div>
-  `;
+    <div class="section">
+      <h3>Source maps</h3>
+      <p class="muted">Upload source maps so stack frames show original source instead of minified output.</p>
+      <form class="form-grid" id="source-map-form" enctype="multipart/form-data">
+        ${renderField("Release", "release", "text", "")}
+        ${renderField("Environment", "environment", "text", defaultEnvironment || "testing")}
+        ${renderField("URL prefix", "urlPrefix", "text", "https://app.example.com/static/")}
+        <label class="field field-wide">
+          <span>Source map files</span>
+          <input name="files" type="file" accept=".map,.js,.ts" multiple />
+        </label>
+        <div class="link-row form-actions"><button type="submit">Upload source maps</button></div>
+      </form>
+    </div>`;
+}
+
+function renderSettingsKeys(apiKeys: ApiApiKey[]): string {
+  return `
+    <div class="section">
+      <h3>API keys</h3>
+      <p class="muted">
+        <strong>ingest</strong> keys are safe to embed in browser bundles — they can only POST events.
+        <strong>full</strong> keys grant full API access; keep them server-side only.
+        Create keys with <code>bugbarn apikey create --scope ingest --name my-frontend</code>.
+      </p>
+      ${renderApiKeyTable(apiKeys)}
+    </div>`;
 }
 
 function renderApiKeyTable(keys: ApiApiKey[]): string {

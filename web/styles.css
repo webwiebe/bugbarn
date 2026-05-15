@@ -2106,3 +2106,85 @@ button:disabled {
   background: var(--line);
   margin: 4px 16px;
 }
+
+/* ── Settings tabs ────────────────────────────────────────── */
+.settings-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.settings-tab {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.1s, border-color 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.settings-tab:hover { color: var(--text); }
+.settings-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Settings overview stats ──────────────────────────────── */
+.settings-stats {
+  display: flex;
+  gap: 1px;
+  margin-bottom: 16px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.settings-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 8px;
+  background: var(--surface);
+  text-decoration: none;
+  transition: background 0.1s;
+}
+.settings-stat:hover { background: var(--hover); }
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+/* ── Callout banners ──────────────────────────────────────── */
+.callout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+.callout strong { white-space: nowrap; }
+.callout span { flex: 1; color: var(--muted); }
+.callout a.btn-sm { margin-left: auto; flex-shrink: 0; }
+
+.callout-warn  { background: color-mix(in srgb, #e0a020 10%, var(--surface)); border-color: color-mix(in srgb, #e0a020 30%, transparent); }
+.callout-error { background: color-mix(in srgb, #e05050 10%, var(--surface)); border-color: color-mix(in srgb, #e05050 30%, transparent); }
+.callout-info  { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }

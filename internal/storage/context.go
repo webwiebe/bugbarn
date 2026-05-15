@@ -3,6 +3,7 @@ package storage
 import "context"
 
 type ctxProjectKey struct{}
+type ctxProjectIDsKey struct{}
 
 // projectIDVal wraps an int64 so that WithProjectID(ctx, 0) (all-projects) is
 // distinguishable from a context that carries no project at all.
@@ -20,4 +21,15 @@ func WithProjectID(ctx context.Context, id int64) context.Context {
 func ProjectIDFromContext(ctx context.Context) (int64, bool) {
 	val, ok := ctx.Value(ctxProjectKey{}).(projectIDVal)
 	return val.id, ok
+}
+
+// WithProjectIDs puts a set of project IDs in the context for group-scoped queries.
+func WithProjectIDs(ctx context.Context, ids []int64) context.Context {
+	return context.WithValue(ctx, ctxProjectIDsKey{}, ids)
+}
+
+// ProjectIDsFromContext returns the group-scoped project IDs, if set.
+func ProjectIDsFromContext(ctx context.Context) ([]int64, bool) {
+	ids, ok := ctx.Value(ctxProjectIDsKey{}).([]int64)
+	return ids, ok && len(ids) > 0
 }
