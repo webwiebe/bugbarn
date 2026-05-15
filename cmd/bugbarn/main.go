@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -131,7 +133,12 @@ func run() error {
 	}
 
 	workerStatus := worker.NewStatus()
-	go runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus)
+	var bgWg sync.WaitGroup
+	bgWg.Add(1)
+	go func() {
+		defer bgWg.Done()
+		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus)
+	}()
 
 	digest.StartScheduler(ctx, cfg.Digest, store)
 	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays)
@@ -184,12 +191,22 @@ func run() error {
 
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
+		shutdownErr := server.Shutdown(shutdownCtx)
+		// Wait for the worker to finish its current batch (and write its cursor)
+		// before exiting, so a deploy doesn't strand in-flight records.
+		drained := make(chan struct{})
+		go func() { bgWg.Wait(); close(drained) }()
+		select {
+		case <-drained:
+		case <-shutdownCtx.Done():
+			slog.Warn("worker did not drain before shutdown deadline")
+		}
 		if selfReporting {
 			bb.Shutdown(2 * time.Second)
 		}
-		return server.Shutdown(shutdownCtx)
+		return shutdownErr
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
@@ -363,6 +380,23 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
+// isTransientPersistError reports whether a persist failure should be retried
+// forever instead of counting toward the dead-letter budget. SQLite lock
+// contention (SQLITE_BUSY/BUSY_SNAPSHOT, "database is locked") is environmental
+// — Litestream checkpointing, slow disk — and resolves on its own.
+func isTransientPersistError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "SQLITE_BUSY") ||
+		strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked")
+}
+
 func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.EventPublisher, selfReporting bool, ws *worker.Status) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -465,6 +499,10 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 					persistSpan.End()
 					recordSpan.SetStatus(codes.Error, persistErr.Error())
 					recordSpan.End()
+					if isTransientPersistError(persistErr) {
+						slog.Warn("worker transient persist failure, will retry", "ingest_id", record.IngestID, "error", persistErr)
+						break
+					}
 					retryCounts[record.IngestID]++
 					slog.Error("worker failed to persist record", "ingest_id", record.IngestID, "attempt", retryCounts[record.IngestID], "error", persistErr)
 					if retryCounts[record.IngestID] >= workerMaxRetries {
