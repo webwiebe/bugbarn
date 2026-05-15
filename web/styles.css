@@ -410,7 +410,6 @@ h2 {
   }
 }
 
-#project-select,
 #env-select {
   font-size: 14px;
   padding: 6px 28px 6px 10px;
@@ -2188,3 +2187,111 @@ button:disabled {
 .callout-warn  { background: color-mix(in srgb, #e0a020 10%, var(--surface)); border-color: color-mix(in srgb, #e0a020 30%, transparent); }
 .callout-error { background: color-mix(in srgb, #e05050 10%, var(--surface)); border-color: color-mix(in srgb, #e05050 30%, transparent); }
 .callout-info  { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* ── Custom project picker (desktop toolbar) ─────────────── */
+.project-picker {
+  position: relative;
+}
+
+.project-picker-btn {
+  font-size: 14px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-picker-btn:hover { border-color: var(--accent); }
+
+.project-picker-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 260px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0,0,0,.4);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
+  overflow: hidden;
+}
+
+.project-picker-filter {
+  padding: 9px 12px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.project-picker-filter::placeholder { color: var(--muted); }
+
+.project-picker-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.picker-section-label {
+  padding: 6px 12px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  gap: 6px;
+}
+.picker-item:hover, .picker-item:focus { background: var(--hover); outline: none; }
+.picker-item.selected { color: var(--accent); }
+
+.picker-item-badge {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 10px;
+}
+
+.picker-empty { padding: 12px; color: var(--muted); font-size: 13px; margin: 0; }
+
+/* ── Scope sheet filter input (mobile) ──────────────────────── */
+.scope-sheet-filter {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.scope-sheet-filter::placeholder { color: var(--muted); }

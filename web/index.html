@@ -90,7 +90,13 @@
           </div>
 
           <div class="toolbar">
-            <select id="project-select" aria-label="Current project"></select>
+            <div class="project-picker" id="project-picker">
+              <button class="project-picker-btn" id="project-picker-btn" type="button" aria-label="Select project">All projects <span class="scope-chevron">▾</span></button>
+              <div class="project-picker-dropdown" id="project-picker-dropdown" hidden>
+                <input class="project-picker-filter" id="project-picker-filter" type="text" placeholder="Filter…" autocomplete="off" spellcheck="false" />
+                <div class="project-picker-list" id="project-picker-list"></div>
+              </div>
+            </div>
             <select id="env-select" aria-label="Environment" hidden></select>
             <button id="refresh-all" type="button">Refresh</button>
           </div>
