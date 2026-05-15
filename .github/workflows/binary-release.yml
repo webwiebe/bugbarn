@@ -59,6 +59,11 @@ jobs:
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
           PATCH=$((PATCH + 1))
           NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          # Skip past any tags that already exist (e.g. manually pushed deploy tags)
+          while git tag | grep -q "^${NEW_VERSION}$"; do
+            PATCH=$((PATCH + 1))
+            NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          done
           echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "version_num=${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
           echo "Next version: ${NEW_VERSION}"
