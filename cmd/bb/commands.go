@@ -125,8 +125,8 @@ func cmdTUI(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *group != "" {
-		client.group = *group
+	if g := resolveGroup(*group); g != "" && *project == "" {
+		client.group = g
 	} else if p := resolveProject(*project, client); p != "" {
 		client.project = p
 	}
@@ -153,59 +153,18 @@ func cmdIssues(args []string) error {
 		return fmt.Errorf("--group and --project are mutually exclusive")
 	}
 
-	if *group != "" {
-		// Validate group exists.
-		data, err := client.get("/api/v1/groups")
-		if err != nil {
+	// Resolution order: explicit flag > .bugbarn.json group > .bugbarn.json project / global config.
+	resolvedGroup := resolveGroup(*group)
+	if resolvedGroup != "" && *project == "" {
+		if err := validateGroup(client, resolvedGroup); err != nil {
 			return err
 		}
-		var resp struct {
-			Groups []struct {
-				Slug string `json:"slug"`
-				Name string `json:"name"`
-			} `json:"groups"`
-		}
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return fmt.Errorf("parse groups response: %w", err)
-		}
-		found := false
-		for _, g := range resp.Groups {
-			if g.Slug == *group {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("group %q not found — run 'bb groups' to see available groups", *group)
-		}
-		client.group = *group
+		client.group = resolvedGroup
 	} else {
-		// Resolve project slug: --project flag > .bugbarn.json > global config.
 		projectSlug := resolveProject(*project, client)
-
-		// If a project is specified, validate it exists before querying issues.
 		if projectSlug != "" {
-			data, err := client.get("/api/v1/projects")
-			if err != nil {
+			if err := validateProject(client, projectSlug); err != nil {
 				return err
-			}
-			var resp struct {
-				Projects []struct {
-					Slug string `json:"slug"`
-				} `json:"projects"`
-			}
-			if err := json.Unmarshal(data, &resp); err != nil {
-				return fmt.Errorf("parse projects response: %w", err)
-			}
-			found := false
-			for _, p := range resp.Projects {
-				if p.Slug == projectSlug {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("project %q not found — run 'bb projects' to see available projects", projectSlug)
 			}
 			client.project = projectSlug
 		}
@@ -440,14 +399,62 @@ func cmdAPIKeys(args []string) error {
 	return writeRaw(data)
 }
 
+func validateProject(c *Client, slug string) error {
+	data, err := c.get("/api/v1/projects")
+	if err != nil {
+		return err
+	}
+	var resp struct {
+		Projects []struct{ Slug string `json:"slug"` } `json:"projects"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return fmt.Errorf("parse projects response: %w", err)
+	}
+	for _, p := range resp.Projects {
+		if p.Slug == slug {
+			return nil
+		}
+	}
+	return fmt.Errorf("project %q not found — run 'bb projects' to see available projects", slug)
+}
+
+func validateGroup(c *Client, slug string) error {
+	data, err := c.get("/api/v1/groups")
+	if err != nil {
+		return err
+	}
+	var resp struct {
+		Groups []struct{ Slug string `json:"slug"` } `json:"groups"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return fmt.Errorf("parse groups response: %w", err)
+	}
+	for _, g := range resp.Groups {
+		if g.Slug == slug {
+			return nil
+		}
+	}
+	return fmt.Errorf("group %q not found — run 'bb groups' to see available groups", slug)
+}
+
 func resolveProject(flag string, c *Client) string {
 	if flag != "" {
 		return flag
 	}
-	if lc, ok := findLocalConfig(); ok {
+	if lc, ok := findLocalConfig(); ok && lc.Project != "" {
 		return lc.Project
 	}
 	return c.config.Project
+}
+
+func resolveGroup(flag string) string {
+	if flag != "" {
+		return flag
+	}
+	if lc, ok := findLocalConfig(); ok {
+		return lc.Group
+	}
+	return ""
 }
 
 func writeOut(v any) {

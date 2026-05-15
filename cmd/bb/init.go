@@ -15,7 +15,8 @@ import (
 const localConfigFile = ".bugbarn.json"
 
 type LocalConfig struct {
-	Project string `json:"project"`
+	Project string `json:"project,omitempty"`
+	Group   string `json:"group,omitempty"`
 }
 
 func findLocalConfig() (LocalConfig, bool) {
@@ -28,7 +29,7 @@ func findLocalConfig() (LocalConfig, bool) {
 		data, err := os.ReadFile(p)
 		if err == nil {
 			var lc LocalConfig
-			if json.Unmarshal(data, &lc) == nil && lc.Project != "" {
+			if json.Unmarshal(data, &lc) == nil && (lc.Project != "" || lc.Group != "") {
 				return lc, true
 			}
 		}

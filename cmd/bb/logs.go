@@ -35,8 +35,8 @@ func cmdLogs(args []string) error {
 	}
 
 	proj := ""
-	if *group != "" {
-		client.group = *group
+	if g := resolveGroup(*group); g != "" && *project == "" {
+		client.group = g
 	} else {
 		proj = resolveProject(*project, client)
 		if proj != "" {
