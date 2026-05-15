@@ -14,7 +14,8 @@ type Client struct {
 	base    string
 	http    *http.Client
 	config  Config
-	project string // project slug to send as X-BugBarn-Project header
+	project string // project slug → X-BugBarn-Project header
+	group   string // group slug → X-BugBarn-Group header (overrides project)
 }
 
 func newClient() (*Client, error) {
@@ -62,7 +63,9 @@ func (c *Client) doRetry(method, path string, body any, retried bool) (json.RawM
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.project != "" {
+	if c.group != "" {
+		req.Header.Set("X-BugBarn-Group", c.group)
+	} else if c.project != "" {
 		req.Header.Set("X-BugBarn-Project", c.project)
 	}
 

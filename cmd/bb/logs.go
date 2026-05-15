@@ -21,6 +21,7 @@ func cmdLogs(args []string) error {
 	fs.BoolVar(follow, "f", false, "stream live logs (SSE)")
 	level := fs.String("level", "", "minimum level: trace|debug|info|warn|error|fatal")
 	project := fs.String("project", "", "project slug")
+	group := fs.String("group", "", "group slug (shows logs from all projects in the group)")
 	query := fs.String("query", "", "search text")
 	limit := fs.Int("limit", 50, "max entries (non-follow mode)")
 	noColor := fs.Bool("no-color", false, "disable colored output")
@@ -33,9 +34,14 @@ func cmdLogs(args []string) error {
 		return err
 	}
 
-	proj := resolveProject(*project, client)
-	if proj != "" {
-		client.project = proj
+	proj := ""
+	if *group != "" {
+		client.group = *group
+	} else {
+		proj = resolveProject(*project, client)
+		if proj != "" {
+			client.project = proj
+		}
 	}
 
 	if *follow {

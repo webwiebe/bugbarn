@@ -49,6 +49,8 @@ func main() {
 		err = cmdUnmute(os.Args[2:])
 	case "projects":
 		err = cmdProjects(os.Args[2:])
+	case "groups":
+		err = cmdGroups(os.Args[2:])
 	case "apikeys":
 		err = cmdAPIKeys(os.Args[2:])
 	case "version", "--version", "-v":
@@ -91,6 +93,7 @@ Commands:
   mute        Mute an issue
   unmute      Unmute an issue
   projects    List or create projects
+  groups      List or create project groups
   apikeys     List API keys
   version     Print version
 
@@ -110,6 +113,8 @@ Examples:
   bb events issue-000042             # list events for issue
   bb resolve issue-000042            # resolve an issue
   bb projects --create "My App"      # create a new project
+  bb groups                          # list project groups
+  bb issues --group bugbarn          # issues across all bugbarn-* projects
   bb apikeys                         # list API keys
 
 Config: ~/.config/bugbarn/cli.json (override with BB_CONFIG env var)

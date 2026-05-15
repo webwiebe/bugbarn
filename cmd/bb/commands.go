@@ -116,6 +116,7 @@ func cmdTUI(args []string) error {
 	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
 	status := fs.String("status", "open", "open|resolved|muted|all")
 	project := fs.String("project", "", "project slug filter")
+	group := fs.String("group", "", "group slug filter (shows all projects in the group)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -124,7 +125,9 @@ func cmdTUI(args []string) error {
 	if err != nil {
 		return err
 	}
-	if p := resolveProject(*project, client); p != "" {
+	if *group != "" {
+		client.group = *group
+	} else if p := resolveProject(*project, client); p != "" {
 		client.project = p
 	}
 	return runTUI(client, *status)
@@ -136,6 +139,7 @@ func cmdIssues(args []string) error {
 	sort := fs.String("sort", "last_seen", "last_seen|first_seen|event_count")
 	query := fs.String("query", "", "search text")
 	project := fs.String("project", "", "project slug filter")
+	group := fs.String("group", "", "group slug filter (shows all projects in the group)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -145,34 +149,66 @@ func cmdIssues(args []string) error {
 		return err
 	}
 
-	// Resolve project slug: --project flag > .bugbarn.json > global config.
-	projectSlug := resolveProject(*project, client)
+	if *group != "" && *project != "" {
+		return fmt.Errorf("--group and --project are mutually exclusive")
+	}
 
-	// If a project is specified, validate it exists before querying issues.
-	if projectSlug != "" {
-		data, err := client.get("/api/v1/projects")
+	if *group != "" {
+		// Validate group exists.
+		data, err := client.get("/api/v1/groups")
 		if err != nil {
 			return err
 		}
 		var resp struct {
-			Projects []struct {
+			Groups []struct {
 				Slug string `json:"slug"`
-			} `json:"projects"`
+				Name string `json:"name"`
+			} `json:"groups"`
 		}
 		if err := json.Unmarshal(data, &resp); err != nil {
-			return fmt.Errorf("parse projects response: %w", err)
+			return fmt.Errorf("parse groups response: %w", err)
 		}
 		found := false
-		for _, p := range resp.Projects {
-			if p.Slug == projectSlug {
+		for _, g := range resp.Groups {
+			if g.Slug == *group {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return fmt.Errorf("project %q not found — run 'bb projects' to see available projects", projectSlug)
+			return fmt.Errorf("group %q not found — run 'bb groups' to see available groups", *group)
 		}
-		client.project = projectSlug
+		client.group = *group
+	} else {
+		// Resolve project slug: --project flag > .bugbarn.json > global config.
+		projectSlug := resolveProject(*project, client)
+
+		// If a project is specified, validate it exists before querying issues.
+		if projectSlug != "" {
+			data, err := client.get("/api/v1/projects")
+			if err != nil {
+				return err
+			}
+			var resp struct {
+				Projects []struct {
+					Slug string `json:"slug"`
+				} `json:"projects"`
+			}
+			if err := json.Unmarshal(data, &resp); err != nil {
+				return fmt.Errorf("parse projects response: %w", err)
+			}
+			found := false
+			for _, p := range resp.Projects {
+				if p.Slug == projectSlug {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("project %q not found — run 'bb projects' to see available projects", projectSlug)
+			}
+			client.project = projectSlug
+		}
 	}
 
 	params := url.Values{}
@@ -354,6 +390,38 @@ func cmdProjects(args []string) error {
 	}
 
 	data, err := client.get("/api/v1/projects")
+	if err != nil {
+		return err
+	}
+	return writeRaw(data)
+}
+
+func cmdGroups(args []string) error {
+	fs := flag.NewFlagSet("groups", flag.ContinueOnError)
+	create := fs.String("create", "", "create a new group with this name")
+	slug := fs.String("slug", "", "group slug (defaults to slugified name)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	if *create != "" {
+		body := map[string]string{"name": *create}
+		if *slug != "" {
+			body["slug"] = *slug
+		}
+		data, err := client.post("/api/v1/groups", body)
+		if err != nil {
+			return err
+		}
+		return writeRaw(data)
+	}
+
+	data, err := client.get("/api/v1/groups")
 	if err != nil {
 		return err
 	}

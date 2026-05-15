@@ -389,10 +389,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
 
-		// Group-scoped filtering: when a session GET carries X-BugBarn-Group and no
+		// Group-scoped filtering: when a GET carries X-BugBarn-Group and no
 		// specific project was selected, resolve the group to its member IDs so that
 		// storage queries use IN (...) instead of showing all projects.
-		if usingSession && r.Method == http.MethodGet && resolvedProjectID == 0 {
+		// Works for both session and API key auth.
+		if r.Method == http.MethodGet && resolvedProjectID == 0 {
 			if groupSlug := r.Header.Get("X-BugBarn-Group"); groupSlug != "" {
 				if members, err := s.projects.ListGroupProjects(r.Context(), groupSlug); err == nil && len(members) > 0 {
 					ids := make([]int64, len(members))
