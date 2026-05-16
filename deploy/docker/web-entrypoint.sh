@@ -19,4 +19,4 @@ if [ -n "$tarball" ]; then
     > /srv/packages/typescript/latest.json
 fi
 
-exec caddy file-server --root /srv --listen :8080
+exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

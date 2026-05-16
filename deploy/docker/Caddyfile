@@ -1,0 +1,21 @@
+:8080 {
+    # SDK packages served from persistent volume
+    handle /packages/* {
+        root * /srv/packages
+        file_server
+    }
+
+    # Dashboard SPA — strip /app prefix, fallback to index.html for client routing
+    handle /app* {
+        uri strip_prefix /app
+        root * /srv/app
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Marketing site
+    handle {
+        root * /srv/site
+        file_server
+    }
+}
