@@ -252,8 +252,11 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 
 	forwarder := api.NewWriteForwarder(cfg.WriterURL)
 
+	// The ingest spool is opt-in for readers: only enabled when BUGBARN_SPOOL_DIR
+	// is set explicitly in the environment (config.SpoolDir has a default that
+	// points at a non-writable path inside the container).
 	var ingestSpool *api.SpoolForwarder
-	if cfg.SpoolDir != "" {
+	if os.Getenv("BUGBARN_SPOOL_DIR") != "" {
 		ingestSpool, err = api.NewSpoolForwarder(cfg.SpoolDir, cfg.WriterURL, cfg.MaxBodyBytes, logger)
 		if err != nil {
 			return fmt.Errorf("open ingest spool: %w", err)
