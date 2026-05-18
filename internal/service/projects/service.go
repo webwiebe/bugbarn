@@ -153,7 +153,9 @@ func (s *Service) BySlug(ctx context.Context, slug string) (domain.Project, erro
 	proj, err := s.repo.ProjectBySlug(ctx, slug)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "project by slug", "slug", slug, "error", err)
+		if !errors.Is(err, apperr.ErrNotFound) {
+			s.logger.ErrorContext(ctx, "project by slug", "slug", slug, "error", err)
+		}
 		return domain.Project{}, err
 	}
 	return proj, nil
