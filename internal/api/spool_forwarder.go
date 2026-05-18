@@ -84,7 +84,7 @@ func NewSpoolForwarder(dir, writerURL string, maxBodyBytes int64, logger *slog.L
 		maxBodyByte: maxBodyBytes,
 		rotateBytes: defaultRotateBytes,
 		logger:      logger,
-		client:      &http.Client{Timeout: 30 * time.Second},
+		client:      &http.Client{Timeout: 5 * time.Second},
 		file:        file,
 		path:        path,
 	}, nil
