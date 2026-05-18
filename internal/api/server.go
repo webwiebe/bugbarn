@@ -57,6 +57,15 @@ type Server struct {
 
 	digestConfig    *digest.Config
 	digestStore     digest.Store
+
+	oidc *auth.OIDCClient
+}
+
+// SetOIDCClient wires the optional iambarn OIDC login adapter. When set, the
+// frontend's runtime-config reports oidc.enabled=true and the SPA redirects to
+// /api/v1/oidc/login on the login screen. Local single-user login still works.
+func (s *Server) SetOIDCClient(c *auth.OIDCClient) {
+	s.oidc = c
 }
 
 // SetTrustedProxies sets the CIDRs from which X-Forwarded-For is trusted.
@@ -323,6 +332,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.URL.Path == "/api/v1/me" && r.Method == http.MethodGet:
 		s.me(w, r)
+		return
+	case r.URL.Path == "/api/v1/oidc/login" && r.Method == http.MethodGet:
+		s.oidcLogin(w, r)
+		return
+	case r.URL.Path == "/api/v1/oidc/callback" && r.Method == http.MethodGet:
+		s.oidcCallback(w, r)
 		return
 	}
 

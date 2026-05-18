@@ -170,6 +170,9 @@ func run() error {
 	if selfReporting {
 		apiServer.SetSelfReportingConfig(cfg.SelfAPIKey, cfg.SelfProject)
 	}
+	if oidcClient := buildOIDCClient(cfg, logger); oidcClient != nil {
+		apiServer.SetOIDCClient(oidcClient)
+	}
 	if cfg.MaxSourceMapBytes > 0 {
 		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
@@ -289,6 +292,9 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	}
 	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
+	if oidcClient := buildOIDCClient(cfg, logger); oidcClient != nil {
+		apiServer.SetOIDCClient(oidcClient)
+	}
 	if cfg.MaxSourceMapBytes > 0 {
 		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
@@ -375,6 +381,25 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 		}
 		return err
 	}
+}
+
+// buildOIDCClient returns an OIDC adapter when all four BUGBARN_OIDC_* vars
+// are set, or nil otherwise (in which case the local single-user login is the
+// only auth path). Discovery is lazy so an unreachable issuer at startup does
+// not crash the process.
+func buildOIDCClient(cfg config.Config, logger *slog.Logger) *auth.OIDCClient {
+	oc := auth.OIDCConfig{
+		Issuer:        cfg.OIDCIssuer,
+		ClientID:      cfg.OIDCClientID,
+		ClientSecret:  cfg.OIDCClientSecret,
+		RedirectURL:   cfg.OIDCRedirectURL,
+		RequiredGroup: cfg.OIDCRequiredGroup,
+	}
+	if !oc.Enabled() {
+		return nil
+	}
+	logger.Info("oidc: enabled", "issuer", oc.Issuer, "client_id", oc.ClientID, "required_group", oc.RequiredGroup)
+	return auth.NewOIDCClient(oc)
 }
 
 func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer, error) {
