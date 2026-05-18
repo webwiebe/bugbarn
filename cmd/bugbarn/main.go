@@ -342,10 +342,24 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 			if pending > 0 {
 				logger.Info("draining ingest spool before exit", "pending", pending)
 				drainDeadline, cancelDrain := context.WithTimeout(context.Background(), 45*time.Second)
-				if err := ingestSpool.DrainOnce(drainDeadline); err != nil {
-					logger.Error("ingest spool drain incomplete", "error", err, "remaining", ingestSpool.Pending())
-				} else {
-					logger.Info("ingest spool drained")
+				for {
+					err := ingestSpool.DrainOnce(drainDeadline)
+					if err == nil {
+						logger.Info("ingest spool drained")
+						break
+					}
+					if drainDeadline.Err() != nil {
+						logger.Error("ingest spool drain incomplete", "error", err, "remaining", ingestSpool.Pending())
+						break
+					}
+					// Transient error (e.g. writer restarting) — back off and retry.
+					select {
+					case <-drainDeadline.Done():
+						logger.Error("ingest spool drain incomplete", "error", err, "remaining", ingestSpool.Pending())
+					case <-time.After(2 * time.Second):
+						continue
+					}
+					break
 				}
 				cancelDrain()
 			}
