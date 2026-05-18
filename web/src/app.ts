@@ -588,8 +588,10 @@ function route(): void {
     state.currentRoute = "settings";
     const validTabs: SettingsTab[] = ["overview", "projects", "preferences", "keys"];
     state.settingsTab = (validTabs.includes(id as SettingsTab) ? id : "overview") as SettingsTab;
-    setPageTitle("Settings");
-    setRouteChip("Settings");
+    const subPageTitles: Record<string, string> = { projects: "Projects", preferences: "Preferences", keys: "API Keys" };
+    const subTitle = subPageTitles[state.settingsTab];
+    setPageTitle(subTitle ? `Settings — ${subTitle}` : "Settings");
+    setRouteChip(subTitle ?? "Settings");
   } else {
     state.currentRoute = "issues";
     setPageTitle("Issues");

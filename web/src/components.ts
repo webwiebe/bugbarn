@@ -719,19 +719,14 @@ export function renderSettingsViewMarkup(
   aliases: import("./types.js").ApiAlias[] = [],
   tab: import("./types.js").SettingsTab = "overview",
 ): string {
-  const tabs: { id: import("./types.js").SettingsTab; label: string }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "projects", label: "Projects" },
-    { id: "preferences", label: "Preferences" },
-    { id: "keys", label: "API Keys" },
-  ];
   const pendingProjects = projects.filter(p => (p.status ?? p.Status) === "pending");
   const activeProjects = projects.filter(p => (p.status ?? p.Status) !== "pending");
 
-  const tabNav = `
-    <div class="settings-tabs">
-      ${tabs.map(t => `<a href="#/settings/${t.id}" class="settings-tab${tab === t.id ? " active" : ""}">${escapeHtml(t.label)}${t.id === "projects" && pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</a>`).join("")}
-    </div>`;
+  const subPageTitles: Record<string, string> = { projects: "Projects", preferences: "Preferences", keys: "API Keys" };
+  const subTitle = subPageTitles[tab] ?? "";
+  const headContent = subTitle
+    ? `<a href="#/settings/overview" class="back-link">← Settings</a><h2>${escapeHtml(subTitle)}${tab === "projects" && pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</h2>`
+    : `<h2>Settings</h2><span class="chip">${escapeHtml(username || "signed in")}</span>`;
 
   let content = "";
   if (tab === "overview") {
@@ -746,10 +741,8 @@ export function renderSettingsViewMarkup(
 
   return `
     <div class="view-head">
-      <h2>Settings</h2>
-      <span class="chip">${escapeHtml(username || "signed in")}</span>
+      ${headContent}
     </div>
-    ${tabNav}
     <div class="detail-main">${content}</div>
   `;
 }
@@ -818,17 +811,26 @@ function renderSettingsOverview(
       </div>
     </div>`;
 
-  const quickLinks = `
-    <div class="section">
-      <h3>What's here</h3>
-      <div class="grid">
-        <div class="kv"><a href="#/settings/projects">Projects</a><span>Manage projects, groups, and slug aliases</span></div>
-        <div class="kv"><a href="#/settings/preferences">Preferences</a><span>Display settings, SDK info, source map uploads</span></div>
-        <div class="kv"><a href="#/settings/keys">API Keys</a><span>View ingest and full-access API keys</span></div>
-      </div>
+  const navItems = `
+    <div class="settings-nav">
+      <a href="#/settings/projects" class="settings-nav-item">
+        <span class="settings-nav-label">Projects${pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</span>
+        <span class="settings-nav-desc">Manage projects, groups, and slug aliases</span>
+        <span class="settings-nav-arrow">›</span>
+      </a>
+      <a href="#/settings/preferences" class="settings-nav-item">
+        <span class="settings-nav-label">Preferences</span>
+        <span class="settings-nav-desc">Display settings, SDK info, source map uploads</span>
+        <span class="settings-nav-arrow">›</span>
+      </a>
+      <a href="#/settings/keys" class="settings-nav-item">
+        <span class="settings-nav-label">API Keys</span>
+        <span class="settings-nav-desc">View ingest and full-access API keys</span>
+        <span class="settings-nav-arrow">›</span>
+      </a>
     </div>`;
 
-  return errorBanner + pendingBanner + noProjectsBanner + statsBar + setupCard + sessionCard + quickLinks;
+  return errorBanner + pendingBanner + noProjectsBanner + statsBar + navItems + setupCard + sessionCard;
 }
 
 function renderSettingsProjects(
@@ -839,7 +841,7 @@ function renderSettingsProjects(
   const projectList = `
     <div class="section">
       <h3>Projects</h3>
-      ${projects.length === 0 ? `<p class="muted">No projects yet. Use the Quick Setup URL on the <a href="#/settings/overview">Overview</a> tab.</p>` : projects.map(p => {
+      ${projects.length === 0 ? `<p class="muted">No projects yet. Use the Quick Setup URL on the <a href="#/settings/overview">Settings overview</a>.</p>` : projects.map(p => {
         const slug = String(p.slug ?? p.Slug ?? '');
         const name = String(p.name ?? p.Name ?? slug);
         const status = String(p.status ?? p.Status ?? 'active');
