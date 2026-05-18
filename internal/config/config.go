@@ -42,6 +42,11 @@ type Config struct {
 	AutoApproveProjects    bool   // BUGBARN_AUTO_APPROVE_PROJECTS
 	Mode                   string // BUGBARN_MODE: "", "writer", or "reader"
 	WriterURL              string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
+	OIDCIssuer             string // BUGBARN_OIDC_ISSUER — when all four OIDC vars are set, OIDC login is offered alongside local auth
+	OIDCClientID           string // BUGBARN_OIDC_CLIENT_ID
+	OIDCClientSecret       string // BUGBARN_OIDC_CLIENT_SECRET
+	OIDCRedirectURL        string // BUGBARN_OIDC_REDIRECT_URL
+	OIDCRequiredGroup      string // BUGBARN_OIDC_REQUIRED_GROUP — defaults to "bugbarn-users"
 }
 
 // Load reads configuration from environment variables and config files.
@@ -69,6 +74,11 @@ func Load() Config {
 		AutoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
 		Mode:                os.Getenv("BUGBARN_MODE"),
 		WriterURL:           os.Getenv("BUGBARN_WRITER_URL"),
+		OIDCIssuer:          os.Getenv("BUGBARN_OIDC_ISSUER"),
+		OIDCClientID:        os.Getenv("BUGBARN_OIDC_CLIENT_ID"),
+		OIDCClientSecret:    os.Getenv("BUGBARN_OIDC_CLIENT_SECRET"),
+		OIDCRedirectURL:     os.Getenv("BUGBARN_OIDC_REDIRECT_URL"),
+		OIDCRequiredGroup:   getenv("BUGBARN_OIDC_REQUIRED_GROUP", "bugbarn-users"),
 	}
 
 	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {

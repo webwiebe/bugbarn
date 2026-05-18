@@ -21,9 +21,15 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 		Project string `json:"project,omitempty"`
 	}
 
+	type oidcConfigOut struct {
+		Enabled  bool   `json:"enabled"`
+		LoginURL string `json:"loginURL,omitempty"`
+	}
+
 	type runtimeConfig struct {
 		FunnelBarn funnelBarnConfig  `json:"funnelbarn"`
 		BugBarn    bugbarnSelfConfig `json:"bugbarn"`
+		OIDC       oidcConfigOut     `json:"oidc"`
 	}
 
 	cfg := runtimeConfig{}
@@ -40,6 +46,9 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 			APIKey:  s.selfAPIKey,
 			Project: s.selfProject,
 		}
+	}
+	if s.oidc != nil {
+		cfg.OIDC = oidcConfigOut{Enabled: true, LoginURL: "/api/v1/oidc/login"}
 	}
 
 	writeJSON(w, cfg)

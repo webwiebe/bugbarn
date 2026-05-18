@@ -1732,6 +1732,10 @@ function _renderDetail(): void {
 
 function renderLogin(error = ""): void {
   stopLiveStream();
+  // If OIDC is configured server-side, auto-redirect to the OIDC login URL
+  // instead of showing the local password form. The local form is still wired
+  // up and reachable by other code paths when OIDC is not enabled.
+  void maybeRedirectToOIDC();
   if (loginScreen) loginScreen.hidden = false;
   if (appFrame) appFrame.hidden = true;
   if (loginError) {
@@ -1739,6 +1743,23 @@ function renderLogin(error = ""): void {
     loginError.textContent = error;
   }
   (loginForm?.querySelector('input[name="username"]') as HTMLInputElement | null)?.focus();
+}
+
+let oidcRedirectStarted = false;
+async function maybeRedirectToOIDC(): Promise<void> {
+  if (oidcRedirectStarted) return;
+  try {
+    const res = await fetch("/api/v1/runtime-config");
+    if (!res.ok) return;
+    const cfg = await res.json() as { oidc?: { enabled?: boolean; loginURL?: string } };
+    const oc = cfg?.oidc;
+    if (oc?.enabled && oc.loginURL) {
+      oidcRedirectStarted = true;
+      window.location.assign(oc.loginURL);
+    }
+  } catch {
+    // Network error — fall back to the local login form silently.
+  }
 }
 
 async function login(username: string, password: string): Promise<void> {
