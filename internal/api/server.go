@@ -52,6 +52,7 @@ type Server struct {
 
 	loginLimiter    sync.Map // map[string]*loginAttempt
 	writeForwarder  *WriteForwarder
+	ingestSpool     *SpoolForwarder
 	dbPath          string
 
 	digestConfig    *digest.Config
@@ -119,6 +120,14 @@ func (s *Server) SetWriteForwarder(f *WriteForwarder) {
 	s.writeForwarder = f
 }
 
+// SetIngestSpool wires a spool-backed forwarder for fire-and-forget ingest
+// endpoints (events, logs, analytics). When set, those endpoints append to
+// the on-disk spool and return 202 instead of forwarding synchronously, so
+// writer downtime during deploys does not surface as 502s to SDKs.
+func (s *Server) SetIngestSpool(sp *SpoolForwarder) {
+	s.ingestSpool = sp
+}
+
 // SetDBPath sets the path to the SQLite database file for the backup endpoint.
 func (s *Server) SetDBPath(path string) {
 	s.dbPath = path
@@ -175,6 +184,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.Method == http.MethodPost {
+			if s.ingestSpool != nil {
+				s.ingestSpool.Forward(w, r)
+				return
+			}
 			if s.writeForwarder != nil {
 				s.writeForwarder.Forward(w, r)
 				return
@@ -191,6 +204,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-project")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		if s.ingestSpool != nil {
+			s.ingestSpool.Forward(w, r)
+			return
+		}
 		if s.writeForwarder != nil {
 			s.writeForwarder.Forward(w, r)
 			return
@@ -244,6 +261,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.Method == http.MethodPost {
+			if s.ingestSpool != nil {
+				s.ingestSpool.Forward(w, r)
+				return
+			}
 			if s.writeForwarder != nil {
 				s.writeForwarder.Forward(w, r)
 				return

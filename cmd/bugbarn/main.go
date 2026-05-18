@@ -89,7 +89,7 @@ func run() error {
 	}
 
 	if cfg.Mode == "reader" {
-		return runReader(cfg, logger)
+		return runReader(cfg, logHandler)
 	}
 
 	if cfg.SessionSecret == "" {
@@ -218,7 +218,22 @@ func run() error {
 // runReader starts the server in read-only mode. It opens the writer's SQLite
 // database directly (WAL mode allows concurrent readers) and forwards all
 // writes to the writer pod via HTTP.
-func runReader(cfg config.Config, logger *slog.Logger) error {
+func runReader(cfg config.Config, logHandler slog.Handler) error {
+	logger := slog.New(logHandler)
+	slog.SetDefault(logger)
+
+	selfReporting := cfg.SelfEndpoint != "" && cfg.SelfAPIKey != ""
+	if selfReporting {
+		bb.Init(bb.Options{
+			APIKey:      cfg.SelfAPIKey,
+			Endpoint:    cfg.SelfEndpoint,
+			ProjectSlug: cfg.SelfProject,
+		})
+		logger = slog.New(selflog.NewHandler(logHandler))
+		slog.SetDefault(logger)
+		logger.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
+	}
+
 	shutdownTracing, err := tracing.Init(context.Background(), Version)
 	if err != nil {
 		logger.Warn("tracing init failed", "error", err)
@@ -237,6 +252,15 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 
 	forwarder := api.NewWriteForwarder(cfg.WriterURL)
 
+	var ingestSpool *api.SpoolForwarder
+	if cfg.SpoolDir != "" {
+		ingestSpool, err = api.NewSpoolForwarder(cfg.SpoolDir, cfg.WriterURL, cfg.MaxBodyBytes, logger)
+		if err != nil {
+			return fmt.Errorf("open ingest spool: %w", err)
+		}
+		defer ingestSpool.Close()
+	}
+
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
 		return err
@@ -254,6 +278,9 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 	apiServer.SetLogHub(logHub)
 	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
 	apiServer.SetWriteForwarder(forwarder)
+	if ingestSpool != nil {
+		apiServer.SetIngestSpool(ingestSpool)
+	}
 	if len(cfg.TrustedProxies) > 0 {
 		apiServer.SetTrustedProxies(cfg.TrustedProxies)
 	}
@@ -263,12 +290,32 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
 
-	server := &http.Server{
-		Addr:    cfg.Addr,
-		Handler: tracing.Middleware(apiServer),
+	var httpHandler http.Handler = apiServer
+	httpHandler = tracing.Middleware(httpHandler)
+	if selfReporting {
+		httpHandler = bb.RecoverMiddleware(httpHandler)
 	}
 
-	logger.Info("starting in reader mode", "addr", cfg.Addr, "writer_url", cfg.WriterURL)
+	server := &http.Server{
+		Addr:    cfg.Addr,
+		Handler: httpHandler,
+	}
+
+	logger.Info("starting in reader mode", "addr", cfg.Addr, "writer_url", cfg.WriterURL, "spool_dir", cfg.SpoolDir)
+
+	// Background drain loop: continuously pumps spooled ingest payloads to the
+	// writer. Stops when drainCtx is cancelled at shutdown.
+	drainCtx, drainCancel := context.WithCancel(context.Background())
+	defer drainCancel()
+	drainDone := make(chan struct{})
+	if ingestSpool != nil {
+		go func() {
+			defer close(drainDone)
+			ingestSpool.Drain(drainCtx)
+		}()
+	} else {
+		close(drainDone)
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -277,9 +324,34 @@ func runReader(cfg config.Config, logger *slog.Logger) error {
 
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// 1. Stop accepting new HTTP traffic.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return server.Shutdown(shutdownCtx)
+		shutdownErr := server.Shutdown(shutdownCtx)
+
+		// 2. Drain whatever is left in the spool before exiting, so the next
+		//    reader version doesn't take over with our backlog still on disk.
+		//    Bounded so a permanently-down writer can't block pod termination.
+		if ingestSpool != nil {
+			drainCancel() // stop the background loop so DrainOnce has the spool to itself
+			<-drainDone
+			pending := ingestSpool.Pending()
+			if pending > 0 {
+				logger.Info("draining ingest spool before exit", "pending", pending)
+				drainDeadline, cancelDrain := context.WithTimeout(context.Background(), 45*time.Second)
+				if err := ingestSpool.DrainOnce(drainDeadline); err != nil {
+					logger.Error("ingest spool drain incomplete", "error", err, "remaining", ingestSpool.Pending())
+				} else {
+					logger.Info("ingest spool drained")
+				}
+				cancelDrain()
+			}
+		}
+
+		if selfReporting {
+			bb.Shutdown(2 * time.Second)
+		}
+		return shutdownErr
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
