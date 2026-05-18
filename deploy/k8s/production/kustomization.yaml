@@ -12,6 +12,7 @@ resources:
   - web-deployment.yaml
   - web-service.yaml
   - ingress.yaml
+  - ingest-ingress.yaml
 images:
   - name: bugbarn/service
     newName: ghcr.io/webwiebe/bugbarn/service

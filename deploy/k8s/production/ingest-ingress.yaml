@@ -1,0 +1,186 @@
+---
+# Redirects bb.<domain> → <domain> for any path not matched by a more-specific
+# router (i.e. anything that isn't an ingest API path).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: bb-redirect-to-root
+spec:
+  redirectRegex:
+    regex: "^https://bb\\.([^/]+)(/.*)?$"
+    replacement: "https://$1/"
+    permanent: true
+
+---
+# Ingest-only access for bb.* alias domains.
+# Exposes the event/log ingest endpoints and the setup guide; nothing else.
+# cert-manager provisions TLS for all three hosts via DNS-01.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bugbarn-ingest-bb
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: bb.pensioenfeest.nl
+      http:
+        paths:
+          - path: /api/v1/events
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/logs
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/setup/
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/health
+            pathType: Exact
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+    - host: bb.scanoo.nl
+      http:
+        paths:
+          - path: /api/v1/events
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/logs
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/setup/
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/health
+            pathType: Exact
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+    - host: bb.scanbarelinks.nl
+      http:
+        paths:
+          - path: /api/v1/events
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/logs
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/setup/
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/health
+            pathType: Exact
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+  tls:
+    - hosts:
+        - bb.pensioenfeest.nl
+      secretName: bb-pensioenfeest-nl-tls
+    - hosts:
+        - bb.scanoo.nl
+      secretName: bb-scanoo-nl-tls
+    - hosts:
+        - bb.scanbarelinks.nl
+      secretName: bb-scanbarelinks-nl-tls
+
+---
+# Catch-all for bb.* domains: redirects everything not matched by the more-specific
+# ingest routes above back to the root domain (e.g. bb.scanoo.nl/ → scanoo.nl/).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bugbarn-ingest-bb-redirect
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: bugbarn-production-bb-redirect-to-root@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: bb.pensioenfeest.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+    - host: bb.scanoo.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+    - host: bb.scanbarelinks.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+  tls:
+    - hosts:
+        - bb.pensioenfeest.nl
+      secretName: bb-pensioenfeest-nl-tls
+    - hosts:
+        - bb.scanoo.nl
+      secretName: bb-scanoo-nl-tls
+    - hosts:
+        - bb.scanbarelinks.nl
+      secretName: bb-scanbarelinks-nl-tls
