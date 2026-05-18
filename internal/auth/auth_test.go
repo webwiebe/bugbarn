@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
@@ -88,5 +89,110 @@ func TestSessionManager(t *testing.T) {
 	manager.now = func() time.Time { return now.Add(2 * time.Hour) }
 	if _, ok := manager.Valid(token); ok {
 		t.Fatal("expected expired session to fail")
+	}
+}
+
+func TestValidWithProject_StaticKey(t *testing.T) {
+	a := New("secret")
+
+	pid, scope, ok := a.ValidWithProject(context.Background(), "secret")
+	if !ok {
+		t.Fatal("expected static key to be accepted")
+	}
+	if pid != 0 || scope != "full" {
+		t.Fatalf("expected pid=0 scope=full, got pid=%d scope=%q", pid, scope)
+	}
+
+	_, _, ok = a.ValidWithProject(context.Background(), "wrong")
+	if ok {
+		t.Fatal("expected wrong key to be rejected")
+	}
+}
+
+func TestValidWithProject_DBLookup(t *testing.T) {
+	var touched string
+	lookup := func(_ context.Context, sha string) (int64, string, bool, error) {
+		if sha == "knownhash" {
+			return 42, "ingest", true, nil
+		}
+		return 0, "", false, nil
+	}
+	touch := func(_ context.Context, sha string) error {
+		touched = sha
+		return nil
+	}
+
+	a := New("").WithDBLookup(lookup, touch)
+
+	sum := sha256.Sum256([]byte("mykey"))
+	hexSum := hex.EncodeToString(sum[:])
+
+	// Key not in DB.
+	_, _, ok := a.ValidWithProject(context.Background(), "mykey")
+	if ok {
+		t.Fatal("expected unknown DB key to be rejected")
+	}
+
+	// Inject a lookup that matches the key hash.
+	a = New("").WithDBLookup(func(_ context.Context, sha string) (int64, string, bool, error) {
+		if sha == hexSum {
+			return 7, "ingest", true, nil
+		}
+		return 0, "", false, nil
+	}, touch)
+
+	pid, scope, ok := a.ValidWithProject(context.Background(), "mykey")
+	if !ok {
+		t.Fatal("expected DB key to be accepted")
+	}
+	if pid != 7 || scope != "ingest" {
+		t.Fatalf("expected pid=7 scope=ingest, got pid=%d scope=%q", pid, scope)
+	}
+	if touched != hexSum {
+		t.Fatalf("expected touch to be called with %q, got %q", hexSum, touched)
+	}
+}
+
+func TestValidWithSetupFallback(t *testing.T) {
+	sum := sha256.Sum256([]byte("realkey"))
+	hexSum := hex.EncodeToString(sum[:])
+
+	lookup := func(_ context.Context, sha string) (int64, string, bool, error) {
+		if sha == hexSum {
+			return 1, "ingest", true, nil
+		}
+		return 0, "", false, nil
+	}
+
+	var setupCalled bool
+	setup := func(_ context.Context, rawKey, slug string) (int64, bool) {
+		setupCalled = true
+		if rawKey == "setupkey" && slug == "my-project" {
+			return 99, true
+		}
+		return 0, false
+	}
+
+	a := New("").WithDBLookup(lookup, nil).WithSetupKeyVerifier(setup)
+
+	// Normal DB key hits — setup verifier must not be called.
+	pid, scope, ok := a.ValidWithSetupFallback(context.Background(), "realkey", "my-project")
+	if !ok || pid != 1 || scope != "ingest" {
+		t.Fatalf("expected DB key match, got ok=%v pid=%d scope=%q", ok, pid, scope)
+	}
+	if setupCalled {
+		t.Fatal("setup verifier must not be called when normal auth succeeds")
+	}
+
+	// Unknown key falls through to setup verifier.
+	pid, scope, ok = a.ValidWithSetupFallback(context.Background(), "setupkey", "my-project")
+	if !ok || pid != 99 || scope != "ingest" {
+		t.Fatalf("expected setup key match, got ok=%v pid=%d scope=%q", ok, pid, scope)
+	}
+
+	// Unknown key, setup verifier also rejects.
+	_, _, ok = a.ValidWithSetupFallback(context.Background(), "unknown", "my-project")
+	if ok {
+		t.Fatal("expected rejection when both DB and setup verifier fail")
 	}
 }
