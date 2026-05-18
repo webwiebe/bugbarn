@@ -218,7 +218,7 @@ pickerList?.addEventListener("keydown", (e) => {
   const items = Array.from(pickerList.querySelectorAll<HTMLButtonElement>(".picker-item"));
   const idx = items.indexOf(document.activeElement as HTMLButtonElement);
   if (e.key === "ArrowDown" && idx < items.length - 1) { items[idx + 1].focus(); e.preventDefault(); }
-  if (e.key === "ArrowUp") { idx > 0 ? items[idx - 1].focus() : pickerFilter?.focus(); e.preventDefault(); }
+  if (e.key === "ArrowUp") { if (idx > 0) items[idx - 1].focus(); else pickerFilter?.focus(); e.preventDefault(); }
   if (e.key === "Escape") { closePicker(); pickerBtn?.focus(); }
 });
 
