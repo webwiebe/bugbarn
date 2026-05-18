@@ -198,6 +198,9 @@ func (s *Service) ListLiveEvents(ctx context.Context, limit int, since time.Time
 	}
 	events, err := s.repo.ListRecentEvents(ctx, limit, since)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, err
+		}
 		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "list live events", "error", err)
 		return nil, err

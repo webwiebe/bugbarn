@@ -73,6 +73,9 @@ func (s *Store) DeleteAPIKey(ctx context.Context, id int64) error {
 
 // TouchAPIKey updates last_used_at for the key matching the given SHA-256 hex.
 func (s *Store) TouchAPIKey(ctx context.Context, keySHA256 string) error {
+	if s.db == nil {
+		return nil
+	}
 	_, err := s.db.ExecContext(ctx, `
 UPDATE api_keys SET last_used_at = ? WHERE key_sha256 = ?`,
 		formatTime(time.Now().UTC()), keySHA256,
