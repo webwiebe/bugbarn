@@ -58,7 +58,7 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 	if s.oidc != nil {
 		cfg.OIDC = oidcConfigOut{Enabled: true, LoginURL: "/api/v1/oidc/login"}
 		if issuer := strings.TrimRight(s.oidc.Config().Issuer, "/"); issuer != "" {
-			cfg.IAMBarn.ProfileURL = issuer + "/admin"
+			cfg.IAMBarn.ProfileURL = issuer + "/admin#profile"
 		}
 	}
 
