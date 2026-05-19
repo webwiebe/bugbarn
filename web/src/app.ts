@@ -262,6 +262,7 @@ void start();
 async function start(): Promise<void> {
   void initFunnelBarn();
   void initSelfReporting();
+  void initIAMBarnProfileLink();
 
   await loadSession();
   updateBBMenuUser();
@@ -397,6 +398,23 @@ function parseStack(stack?: string): Array<{ file: string; line: number; column:
     frames.push(f);
   }
   return frames.length > 0 ? frames : undefined;
+}
+
+async function initIAMBarnProfileLink(): Promise<void> {
+  let cfg: { iambarn?: { profileURL?: string } };
+  try {
+    const res = await fetch("/api/v1/runtime-config");
+    if (!res.ok) return;
+    cfg = await res.json() as typeof cfg;
+  } catch {
+    return;
+  }
+  const url = cfg?.iambarn?.profileURL;
+  if (!url) return;
+  const link = document.getElementById("bb-iambarn-profile") as HTMLAnchorElement | null;
+  if (!link) return;
+  link.href = url;
+  link.removeAttribute("hidden");
 }
 
 async function initSelfReporting(): Promise<void> {
