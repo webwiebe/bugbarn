@@ -48,9 +48,17 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: bugbarn
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: https://spanbarn.wiebe.xyz
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: OTEL_EXPORTER_OTLP_ENDPOINT
+                  optional: true
             - name: OTEL_EXPORTER_OTLP_HEADERS
-              value: "Authorization=Bearer a3b4e7194bd5c44046a8cc6e984601914f3d09f1"
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: OTEL_EXPORTER_OTLP_HEADERS
+                  optional: true
             - name: BUGBARN_SPOOL_DIR
               value: /var/lib/bugbarn/spool
             - name: BUGBARN_DB_PATH
@@ -141,6 +149,42 @@ spec:
                 secretKeyRef:
                   name: smtp-secret
                   key: BUGBARN_DIGEST_WEBHOOK_URL
+                  optional: true
+            - name: BUGBARN_FUNNELBARN_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_FUNNELBARN_ENDPOINT
+                  optional: true
+            - name: BUGBARN_FUNNELBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_FUNNELBARN_API_KEY
+                  optional: true
+            - name: BUGBARN_OIDC_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_ISSUER
+                  optional: true
+            - name: BUGBARN_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_CLIENT_ID
+                  optional: true
+            - name: BUGBARN_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_CLIENT_SECRET
+                  optional: true
+            - name: BUGBARN_OIDC_REDIRECT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_REDIRECT_URL
                   optional: true
           resources:
             requests:
