@@ -67,6 +67,54 @@ spec:
                   name: bugbarn-secrets
                   key: BUGBARN_SESSION_SECRET
                   optional: true
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: OTEL_EXPORTER_OTLP_ENDPOINT
+                  optional: true
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: OTEL_EXPORTER_OTLP_HEADERS
+                  optional: true
+            - name: BUGBARN_FUNNELBARN_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_FUNNELBARN_ENDPOINT
+                  optional: true
+            - name: BUGBARN_FUNNELBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_FUNNELBARN_API_KEY
+                  optional: true
+            - name: BUGBARN_OIDC_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_ISSUER
+                  optional: true
+            - name: BUGBARN_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_CLIENT_ID
+                  optional: true
+            - name: BUGBARN_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_CLIENT_SECRET
+                  optional: true
+            - name: BUGBARN_OIDC_REDIRECT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_REDIRECT_URL
+                  optional: true
           resources:
             requests:
               cpu: 25m
