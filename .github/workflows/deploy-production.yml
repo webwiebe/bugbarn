@@ -102,8 +102,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             kubectl create secret docker-registry ghcr-secret \
               --docker-server=ghcr.io \
-              --docker-username='${{ github.actor }}' \
-              --docker-password='${{ secrets.GITHUB_TOKEN }}' \
+              --docker-username='webwiebe' \
+              --docker-password='${{ secrets.GHCR_PULL_PAT }}' \
               --namespace=${NAMESPACE} \
               --dry-run=client -o yaml | kubectl apply -f -
           "
