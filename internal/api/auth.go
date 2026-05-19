@@ -93,6 +93,15 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	secure := secureCookie(r)
 	http.SetCookie(w, auth.ClearSessionCookie(secure))
 	http.SetCookie(w, auth.ClearCSRFCookie(secure))
+	// Clear the auth-method hint set by the OIDC callback.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "bugbarn_auth_method",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
 	writeJSON(w, map[string]any{"authenticated": false})
 }
 

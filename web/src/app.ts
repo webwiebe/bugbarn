@@ -401,6 +401,13 @@ function parseStack(stack?: string): Array<{ file: string; line: number; column:
 }
 
 async function initIAMBarnProfileLink(): Promise<void> {
+  // Only show the IAMBarn profile link when the current session was
+  // actually established via the iambarn OIDC callback — local
+  // single-user installs shouldn't be linking to a remote profile
+  // they don't have.
+  if (!document.cookie.split("; ").some((c) => c.startsWith("bugbarn_auth_method=oidc"))) {
+    return;
+  }
   let cfg: { iambarn?: { profileURL?: string } };
   try {
     const res = await fetch("/api/v1/runtime-config");
