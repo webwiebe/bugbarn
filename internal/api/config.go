@@ -1,6 +1,9 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 // serveRuntimeConfig returns public (non-secret) configuration that the web
 // frontend needs at startup. This endpoint requires no authentication so the
@@ -26,10 +29,15 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 		LoginURL string `json:"loginURL,omitempty"`
 	}
 
+	type iambarnConfig struct {
+		ProfileURL string `json:"profileURL,omitempty"`
+	}
+
 	type runtimeConfig struct {
 		FunnelBarn funnelBarnConfig  `json:"funnelbarn"`
 		BugBarn    bugbarnSelfConfig `json:"bugbarn"`
 		OIDC       oidcConfigOut     `json:"oidc"`
+		IAMBarn    iambarnConfig     `json:"iambarn"`
 	}
 
 	cfg := runtimeConfig{}
@@ -49,6 +57,9 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.oidc != nil {
 		cfg.OIDC = oidcConfigOut{Enabled: true, LoginURL: "/api/v1/oidc/login"}
+		if issuer := strings.TrimRight(s.oidc.Config().Issuer, "/"); issuer != "" {
+			cfg.IAMBarn.ProfileURL = issuer + "/admin"
+		}
 	}
 
 	writeJSON(w, cfg)
