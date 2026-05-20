@@ -254,6 +254,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// IAMBarn theme manifest — public, no auth, no redirect.
+	if r.URL.Path == "/.well-known/iambarn-theme.json" && r.Method == http.MethodGet {
+		s.serveThemeManifest(w, r)
+		return
+	}
+
 	// Analytics JS snippet — public, no auth required.
 	if r.URL.Path == "/analytics.js" && r.Method == http.MethodGet {
 		s.serveAnalyticsSnippet(w, r)
