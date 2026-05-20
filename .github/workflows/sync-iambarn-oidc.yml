@@ -1,0 +1,191 @@
+name: Sync iambarn OIDC Client
+
+# Provisions a confidential OIDC client in the iambarn instance for the chosen
+# environment, writes the resulting client_id + client_secret into the matching
+# SOPS-encrypted secret file (deploy/k8s/<env>/secret.yaml), and opens a PR.
+#
+# Look up the organization_id ahead of time by running the iambarn
+# "List Organizations" workflow against the same environment.
+#
+# Re-running this workflow always mints a NEW client (existing clients in
+# iambarn stay intact). Orphans can be cleaned up via iamctl manually.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'iambarn environment to provision against'
+        required: true
+        type: choice
+        options:
+          - testing
+          - staging
+          - production
+        default: production
+      organization_id:
+        description: 'iambarn organization_id (use the iambarn list-orgs workflow to look this up)'
+        required: true
+        type: string
+
+concurrency:
+  group: sync-iambarn-oidc-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync OIDC client for bugbarn-${{ inputs.environment }}
+    runs-on: [self-hosted, build]
+    env:
+      K3S_USER: ${{ inputs.environment == 'production' && 'deployer' || 'root' }}
+      K3S_HOST: ${{ inputs.environment == 'production' && 'layer7.wiebe.xyz' || 'k3s1.nijmegen.wiebe.xyz' }}
+      NAMESPACE: iambarn-${{ inputs.environment }}
+      BARN_NAME: bugbarn
+      SECRET_FILE: deploy/k8s/${{ inputs.environment }}/secret.yaml
+      CLIENT_ID_KEY: BUGBARN_OIDC_CLIENT_ID
+      CLIENT_SECRET_KEY: BUGBARN_OIDC_CLIENT_SECRET
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve hostnames
+        id: hosts
+        run: |
+          set -euo pipefail
+          case "${{ inputs.environment }}" in
+            production)
+              IAM_HOST="iam.wiebe.xyz"
+              BARN_HOST="bugbarn.wiebe.xyz"
+              ;;
+            staging)
+              IAM_HOST="iam.staging.wiebe.xyz"
+              BARN_HOST="bugbarn.staging.wiebe.xyz"
+              ;;
+            testing)
+              IAM_HOST="iam.test.wiebe.xyz"
+              BARN_HOST="bugbarn.test.wiebe.xyz"
+              ;;
+          esac
+          REDIRECT_URI="https://${BARN_HOST}/api/v1/oidc/callback"
+          echo "iam_host=${IAM_HOST}" >> "$GITHUB_OUTPUT"
+          echo "barn_host=${BARN_HOST}" >> "$GITHUB_OUTPUT"
+          echo "redirect_uri=${REDIRECT_URI}" >> "$GITHUB_OUTPUT"
+          echo "Redirect URI: ${REDIRECT_URI}"
+
+      - name: Resolve iambarn pod
+        id: pod
+        run: |
+          set -euo pipefail
+          POD=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl get pods -n ${NAMESPACE} -o name | grep -v web | head -1")
+          POD="${POD#pod/}"
+          echo "name=${POD}" >> "$GITHUB_OUTPUT"
+          echo "Resolved pod: ${POD}"
+
+      - name: Create confidential OIDC client via iamctl
+        id: create
+        run: |
+          set -euo pipefail
+          DB='file:/var/lib/iambarn/iambarn.sqlite?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)'
+          CLIENT_NAME="${BARN_NAME}-${{ inputs.environment }}"
+          RAW=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl exec -n ${NAMESPACE} pod/${{ steps.pod.outputs.name }} -- iamctl client create \
+              --database-path '${DB}' \
+              --organization-id '${{ inputs.organization_id }}' \
+              --name '${CLIENT_NAME}' \
+              --redirect-uri '${{ steps.hosts.outputs.redirect_uri }}' \
+              --confidential")
+
+          CLIENT_ID=$(printf '%s' "$RAW" | jq -r '.client_id')
+          CLIENT_SECRET=$(printf '%s' "$RAW" | jq -r '.client_secret')
+
+          if [ -z "$CLIENT_ID" ] || [ "$CLIENT_ID" = "null" ] || [ -z "$CLIENT_SECRET" ] || [ "$CLIENT_SECRET" = "null" ]; then
+            echo "iamctl output missing client_id or client_secret"
+            exit 1
+          fi
+
+          # Mask both immediately so they cannot leak in any subsequent log lines.
+          echo "::add-mask::${CLIENT_SECRET}"
+          echo "::add-mask::${CLIENT_ID}"
+
+          # Stash in env for the next step (still masked in logs).
+          {
+            echo "CLIENT_ID<<__EOF__"
+            echo "$CLIENT_ID"
+            echo "__EOF__"
+            echo "CLIENT_SECRET<<__EOF__"
+            echo "$CLIENT_SECRET"
+            echo "__EOF__"
+          } >> "$GITHUB_ENV"
+
+          CLIENT_ID_SHORT=$(printf '%s' "$CLIENT_ID" | cut -c1-12)
+          echo "client_id_short=${CLIENT_ID_SHORT}" >> "$GITHUB_OUTPUT"
+          echo "client_name=${CLIENT_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Created client: ${CLIENT_NAME} (client_id ${CLIENT_ID_SHORT}...)"
+
+      - name: Update SOPS-encrypted secret
+        env:
+          SOPS_AGE_KEY: ${{ inputs.environment == 'production' && secrets.SOPS_AGE_KEY_PRODUCTION || (inputs.environment == 'staging' && secrets.SOPS_AGE_KEY_STAGING || secrets.SOPS_AGE_KEY_TESTING) }}
+        run: |
+          set -euo pipefail
+          sops --set "[\"stringData\"][\"${CLIENT_ID_KEY}\"] \"${CLIENT_ID}\"" "${SECRET_FILE}"
+          sops --set "[\"stringData\"][\"${CLIENT_SECRET_KEY}\"] \"${CLIENT_SECRET}\"" "${SECRET_FILE}"
+          echo "Updated ${SECRET_FILE}"
+
+      - name: Commit and push branch
+        id: branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TS=$(date -u +%Y%m%d-%H%M%S)
+          BRANCH="chore/sync-iambarn-oidc-${{ inputs.environment }}-${TS}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
+          git add "${SECRET_FILE}"
+          git commit -m "chore(${{ inputs.environment }}): sync iambarn OIDC client for ${BARN_NAME}"
+          git push -u origin "${BRANCH}"
+          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR_BODY=$(cat <<EOF
+          Provisions a fresh confidential OIDC client in iambarn-${{ inputs.environment }} for ${BARN_NAME} and writes the resulting credentials into \`${SECRET_FILE}\`.
+
+          - Environment: \`${{ inputs.environment }}\`
+          - Client name: \`${{ steps.create.outputs.client_name }}\`
+          - Organization: \`${{ inputs.organization_id }}\`
+          - Redirect URI: \`${{ steps.hosts.outputs.redirect_uri }}\`
+          - client_id prefix: \`${{ steps.create.outputs.client_id_short }}...\` (full value lives only in the encrypted secret)
+
+          Merge this PR, then redeploy ${BARN_NAME}-${{ inputs.environment }} to pick up the new credentials. The previous client (if any) is still registered in iambarn and can be cleaned up via \`iamctl\` once this rollout is verified.
+          EOF
+          )
+          gh pr create \
+            --title "chore(${{ inputs.environment }}): sync iambarn OIDC client for ${BARN_NAME}" \
+            --body "${PR_BODY}" \
+            --head "${{ steps.branch.outputs.name }}" \
+            --base main
+
+      - name: Summary
+        run: |
+          {
+            echo "## iambarn OIDC client synced"
+            echo ""
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| barn | ${BARN_NAME} |"
+            echo "| environment | ${{ inputs.environment }} |"
+            echo "| client name | ${{ steps.create.outputs.client_name }} |"
+            echo "| organization_id | ${{ inputs.organization_id }} |"
+            echo "| redirect URI | ${{ steps.hosts.outputs.redirect_uri }} |"
+            echo "| client_id prefix | ${{ steps.create.outputs.client_id_short }}... |"
+            echo "| branch | ${{ steps.branch.outputs.name }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
