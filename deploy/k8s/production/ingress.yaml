@@ -19,6 +19,13 @@ spec:
                 name: bugbarn
                 port:
                   name: http
+          - path: /.well-known/iambarn-theme.json
+            pathType: Exact
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:
