@@ -11,6 +11,11 @@ import Footer from '../components/Footer.astro';
   title="BugBarn — Self-hosted error tracking"
   description="Error tracking that lives on your infrastructure. Self-hosted, no per-event pricing, your data stays on your servers. Single binary, SQLite, open source."
 >
+  <script is:inline>
+    if (document.cookie.split('; ').some((c) => c.startsWith('bugbarn_csrf='))) {
+      window.location.replace('/app/');
+    }
+  </script>
   <Nav />
   <main>
     <Hero />
