@@ -16,6 +16,7 @@ require (
 replace github.com/wiebe-xyz/bugbarn-go => ./sdks/go
 
 require (
+	github.com/XSAM/otelsql v0.42.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

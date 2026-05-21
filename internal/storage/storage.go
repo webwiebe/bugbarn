@@ -9,10 +9,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/XSAM/otelsql"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
 	_ "modernc.org/sqlite"
 
@@ -23,7 +26,7 @@ import (
 const (
 	defaultDBPath  = ".data/bugbarn.db"
 	defaultProject = "default"
-	driverName     = "sqlite"
+	baseDriverName = "sqlite"
 	issueIDPrefix  = "issue-"
 	eventIDPrefix  = "event-"
 	timeLayout     = time.RFC3339Nano
@@ -38,6 +41,32 @@ var (
 	pathNumber      = regexp.MustCompile(`/\d+`)
 	trimPunctuation = regexp.MustCompile(`^[\s:;,_\-]+|[\s:;,_\-]+$`)
 )
+
+var (
+	registerDriverOnce sync.Once
+	registeredDriver   = baseDriverName
+)
+
+// tracedDriver registers (once) an otelsql-wrapped SQLite driver and returns
+// its name. Falls back to the plain driver if registration fails.
+func tracedDriver() string {
+	registerDriverOnce.Do(func() {
+		name, err := otelsql.Register(baseDriverName,
+			otelsql.WithAttributes(semconv.DBSystemSqlite),
+			otelsql.WithSpanOptions(otelsql.SpanOptions{
+				OmitConnResetSession: true,
+				OmitConnPrepare:      true,
+				OmitRows:             true,
+			}),
+		)
+		if err != nil {
+			slog.Warn("otelsql driver registration failed; falling back to plain driver", "err", err)
+			return
+		}
+		registeredDriver = name
+	})
+	return registeredDriver
+}
 
 
 // OpenReadOnly opens a read-only connection to an existing SQLite database.
@@ -55,7 +84,7 @@ func OpenReadOnly(path string) (*Store, error) {
 		return nil, err
 	}
 
-	roDB, err := sql.Open(driverName, sqliteReadOnlyDSN(absPath))
+	roDB, err := sql.Open(tracedDriver(), sqliteReadOnlyDSN(absPath))
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +113,13 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open(driverName, sqliteDSN(absPath))
+	db, err := sql.Open(tracedDriver(), sqliteDSN(absPath))
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 
-	roDB, err := sql.Open(driverName, sqliteReadOnlyDSN(absPath))
+	roDB, err := sql.Open(tracedDriver(), sqliteReadOnlyDSN(absPath))
 	if err != nil {
 		db.Close()
 		return nil, err
