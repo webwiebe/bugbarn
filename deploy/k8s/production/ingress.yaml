@@ -33,7 +33,27 @@ spec:
                 name: bugbarn-web
                 port:
                   name: http
+    - host: bb.bananasketch.nl
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn-web
+                port:
+                  name: http
   tls:
     - hosts:
         - bugbarn.wiebe.xyz
       secretName: bugbarn-wiebe-xyz-tls
+    - hosts:
+        - bb.bananasketch.nl
+      secretName: bb-bananasketch-nl-tls
