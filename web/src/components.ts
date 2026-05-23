@@ -887,9 +887,9 @@ function renderSettingsProjects(
             </div>
             <div class="project-actions">
               <div class="project-usage">
-                <span class="usage-stat" title="Issues"><span class="usage-icon">◆</span>${escapeHtml(String(issues))}</span>
-                <span class="usage-stat" title="Events"><span class="usage-icon">▸</span>${escapeHtml(String(events))}</span>
-                <span class="usage-stat" title="Logs"><span class="usage-icon">≡</span>${escapeHtml(String(logs))}</span>
+                <span class="usage-stat" title="Open issues"><span class="usage-icon">◆</span>${escapeHtml(String(issues))}<span class="usage-label">${issues === 1 ? "issue" : "issues"}</span></span>
+                <span class="usage-stat" title="Total ingested events"><span class="usage-icon">▸</span>${escapeHtml(String(events))}<span class="usage-label">${events === 1 ? "event" : "events"}</span></span>
+                <span class="usage-stat" title="Total ingested log lines"><span class="usage-icon">≡</span>${escapeHtml(String(logs))}<span class="usage-label">${logs === 1 ? "log" : "logs"}</span></span>
               </div>
               <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
               <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup</a>
