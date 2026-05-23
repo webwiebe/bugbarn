@@ -1954,9 +1954,15 @@ button:disabled {
   font-size: 11px;
   color: var(--muted);
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 3px;
   font-variant-numeric: tabular-nums;
+}
+
+.usage-label {
+  font-size: 10px;
+  opacity: 0.75;
+  margin-left: 2px;
 }
 
 .usage-icon {
