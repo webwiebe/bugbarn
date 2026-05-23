@@ -13,7 +13,13 @@
         file_server
     }
 
-    # Marketing site
+    # Marketing site — redirect logged-in users straight to the dashboard
+    @loggedInHome {
+        path /
+        header_regexp Cookie bugbarn_csrf=
+    }
+    redir @loggedInHome /app/ 302
+
     handle {
         root * /srv/site
         file_server

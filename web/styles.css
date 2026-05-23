@@ -1127,6 +1127,11 @@ button:disabled {
   padding: 0 10px;
 }
 
+.ghost.btn-sm {
+  min-height: 24px;
+  padding: 3px 10px;
+}
+
 .ghost {
   display: inline-flex;
   align-items: center;
@@ -1895,6 +1900,20 @@ button:disabled {
 }
 
 /* ── Project rows (settings page) ──────────────────────── */
+
+.project-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.project-controls #project-filter {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.project-controls select {
+  flex: 0 1 auto;
+}
 
 .project-row {
   display: flex;

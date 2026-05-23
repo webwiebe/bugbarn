@@ -2066,6 +2066,8 @@ function wireSettingsActions(): void {
     }
   });
 
+  wireProjectListControls();
+
   elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-approve-project]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const slug = btn.dataset["approveProject"];
@@ -2129,6 +2131,58 @@ function wireSettingsActions(): void {
       if (slug) void deleteAlias(slug);
     });
   });
+}
+
+function wireProjectListControls(): void {
+  const list = elements.overviewView.querySelector<HTMLElement>("#project-list");
+  const filter = elements.overviewView.querySelector<HTMLInputElement>("#project-filter");
+  const sort = elements.overviewView.querySelector<HTMLSelectElement>("#project-sort");
+  const statusFilter = elements.overviewView.querySelector<HTMLSelectElement>("#project-status-filter");
+  if (!list) return;
+
+  const rows = Array.from(list.querySelectorAll<HTMLElement>(".project-row"));
+
+  const apply = (): void => {
+    const q = (filter?.value ?? "").trim().toLowerCase();
+    const statusVal = statusFilter?.value ?? "all";
+    const sortVal = sort?.value ?? "default";
+
+    const visible = rows.filter((row) => {
+      const name = row.dataset["name"] ?? "";
+      const slug = (row.dataset["slug"] ?? "").toLowerCase();
+      const status = row.dataset["status"] ?? "";
+      if (q && !name.includes(q) && !slug.includes(q)) return false;
+      if (statusVal !== "all" && status !== statusVal) return false;
+      return true;
+    });
+
+    rows.forEach((row) => { row.hidden = !visible.includes(row); });
+
+    const num = (row: HTMLElement, key: string): number => Number(row.dataset[key] ?? 0);
+    const byName = (a: HTMLElement, b: HTMLElement, dir: 1 | -1): number =>
+      (a.dataset["name"] ?? "").localeCompare(b.dataset["name"] ?? "") * dir;
+
+    let sorted = [...visible];
+    switch (sortVal) {
+      case "name-asc": sorted.sort((a, b) => byName(a, b, 1)); break;
+      case "name-desc": sorted.sort((a, b) => byName(a, b, -1)); break;
+      case "issues-desc": sorted.sort((a, b) => num(b, "issues") - num(a, "issues")); break;
+      case "events-desc": sorted.sort((a, b) => num(b, "events") - num(a, "events")); break;
+      case "logs-desc": sorted.sort((a, b) => num(b, "logs") - num(a, "logs")); break;
+      case "status": sorted.sort((a, b) => (a.dataset["status"] ?? "").localeCompare(b.dataset["status"] ?? "") || byName(a, b, 1)); break;
+      default:
+        sorted.sort((a, b) => {
+          const ap = a.dataset["status"] === "pending" ? 0 : 1;
+          const bp = b.dataset["status"] === "pending" ? 0 : 1;
+          return ap - bp || byName(a, b, 1);
+        });
+    }
+    sorted.forEach((row) => { list.appendChild(row); });
+  };
+
+  filter?.addEventListener("input", apply);
+  sort?.addEventListener("change", apply);
+  statusFilter?.addEventListener("change", apply);
 }
 
 async function approveProject(slug: string): Promise<void> {
