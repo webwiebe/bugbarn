@@ -838,10 +838,38 @@ function renderSettingsProjects(
   groups: import("./types.js").ApiProjectGroup[],
   aliases: import("./types.js").ApiAlias[],
 ): string {
+  const sortedProjects = [...projects].sort((a, b) => {
+    const aPending = (a.status ?? a.Status) === "pending" ? 0 : 1;
+    const bPending = (b.status ?? b.Status) === "pending" ? 0 : 1;
+    if (aPending !== bPending) return aPending - bPending;
+    const aName = String(a.name ?? a.Name ?? a.slug ?? a.Slug ?? "").toLowerCase();
+    const bName = String(b.name ?? b.Name ?? b.slug ?? b.Slug ?? "").toLowerCase();
+    return aName.localeCompare(bName);
+  });
+
   const projectList = `
     <div class="section">
       <h3>Projects</h3>
-      ${projects.length === 0 ? `<p class="muted">No projects yet. Use the Quick Setup URL on the <a href="#/settings/overview">Settings overview</a>.</p>` : projects.map(p => {
+      ${projects.length === 0 ? `<p class="muted">No projects yet. Use the Quick Setup URL on the <a href="#/settings/overview">Settings overview</a>.</p>` : `
+      <div class="project-controls">
+        <input type="search" id="project-filter" placeholder="Filter projects…" autocomplete="off" />
+        <select id="project-sort">
+          <option value="default">Pending first, then A–Z</option>
+          <option value="name-asc">Name A–Z</option>
+          <option value="name-desc">Name Z–A</option>
+          <option value="issues-desc">Most issues</option>
+          <option value="events-desc">Most events</option>
+          <option value="logs-desc">Most logs</option>
+          <option value="status">Status</option>
+        </select>
+        <select id="project-status-filter">
+          <option value="all">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="active">Active</option>
+        </select>
+      </div>
+      <div id="project-list">
+      ${sortedProjects.map(p => {
         const slug = String(p.slug ?? p.Slug ?? '');
         const name = String(p.name ?? p.Name ?? slug);
         const status = String(p.status ?? p.Status ?? 'active');
@@ -851,7 +879,7 @@ function renderSettingsProjects(
         const logs = p.log_count ?? 0;
         const group = p.group_id != null ? groups.find(g => g.id === p.group_id) : undefined;
         return `
-          <div class="project-row">
+          <div class="project-row" data-slug="${escapeAttr(slug)}" data-name="${escapeAttr(name.toLowerCase())}" data-status="${escapeAttr(status)}" data-issues="${issues}" data-events="${events}" data-logs="${logs}">
             <div class="project-info">
               <strong>${escapeHtml(name)}</strong>
               <span class="project-slug">${escapeHtml(slug)}</span>
@@ -871,6 +899,7 @@ function renderSettingsProjects(
             </div>
           </div>`;
       }).join('')}
+      </div>`}
     </div>`;
 
   const groupsSection = `
