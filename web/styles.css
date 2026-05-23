@@ -1787,7 +1787,11 @@ button:disabled {
 }
 
 .log-row.expanded .log-msg {
-  white-space: normal;
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .log-level {
