@@ -400,6 +400,35 @@ function parseStack(stack?: string): Array<{ file: string; line: number; column:
   return frames.length > 0 ? frames : undefined;
 }
 
+// Populates the IAMBarn profile + sign-out links on the Settings → Session
+// card. Mobile users have no sidebar/bb-menu, so this is their only path to
+// log out or hop to their iambarn profile.
+async function initSettingsIAMBarnLinks(): Promise<void> {
+  if (!document.cookie.split("; ").some((c) => c.startsWith("bugbarn_auth_method=oidc"))) {
+    return;
+  }
+  let cfg: { iambarn?: { profileURL?: string }; oidc?: OIDCRuntime } = {};
+  try {
+    const res = await fetch("/api/v1/runtime-config");
+    if (!res.ok) return;
+    cfg = await res.json() as typeof cfg;
+  } catch {
+    return;
+  }
+  const profile = elements.overviewView.querySelector<HTMLAnchorElement>("#settings-iambarn-profile");
+  if (profile && cfg.iambarn?.profileURL) {
+    profile.href = cfg.iambarn.profileURL;
+    profile.removeAttribute("hidden");
+  }
+  const signOut = elements.overviewView.querySelector<HTMLAnchorElement>("#settings-iambarn-logout");
+  if (signOut && cfg.oidc?.endSessionURL) {
+    const ret = `${window.location.origin}/`;
+    const sep = cfg.oidc.endSessionURL.includes("?") ? "&" : "?";
+    signOut.href = `${cfg.oidc.endSessionURL}${sep}post_logout_redirect_uri=${encodeURIComponent(ret)}`;
+    signOut.removeAttribute("hidden");
+  }
+}
+
 async function initIAMBarnProfileLink(): Promise<void> {
   // Only show the IAMBarn profile link when the current session was
   // actually established via the iambarn OIDC callback — local
@@ -2125,6 +2154,10 @@ function wireSettingsActions(): void {
       setTimeout(() => { copySetupBtn.textContent = "⧉"; }, 1500);
     }
   });
+
+  const logoutBtn = elements.overviewView.querySelector<HTMLButtonElement>("#settings-logout");
+  logoutBtn?.addEventListener("click", () => { void logout(); });
+  void initSettingsIAMBarnLinks();
 
   wireProjectListControls();
 
