@@ -163,14 +163,6 @@ func (s *Store) init(ctx context.Context) error {
 			slug TEXT NOT NULL UNIQUE,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE TABLE IF NOT EXISTS regression_events (
-			id           INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-			issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-			regressed_at TEXT NOT NULL,
-			created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_regression_events_project_time ON regression_events(project_id, regressed_at DESC)`,
 	}
 	for _, stmt := range schema {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
@@ -306,6 +298,22 @@ func (s *Store) init(ctx context.Context) error {
 	if err := ensureColumn(ctx, tx, "analytics_pageviews", "max_scroll_pct",    "INTEGER NOT NULL DEFAULT 0");  err != nil { return err }
 	if err := ensureColumn(ctx, tx, "analytics_pageviews", "interaction_count", "INTEGER NOT NULL DEFAULT 0");  err != nil { return err }
 	if err := ensureColumn(ctx, tx, "analytics_pageviews", "exit_pathname",     "TEXT    NOT NULL DEFAULT ''"); err != nil { return err }
+
+	// regression_events: per-project historical log of issue regressions (2026-05-24)
+	for _, stmt := range []string{
+		`CREATE TABLE IF NOT EXISTS regression_events (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+			regressed_at TEXT NOT NULL,
+			created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_regression_events_project_time ON regression_events(project_id, regressed_at DESC)`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO projects (slug, name)
