@@ -178,6 +178,20 @@ h2 {
   text-decoration: underline;
 }
 
+.session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.session-actions a {
+  color: var(--text);
+  text-decoration: underline;
+  font-size: 13px;
+}
+
 .app-frame {
   display: grid;
   grid-template-columns: var(--sidebar-collapsed) minmax(0, 1fr);

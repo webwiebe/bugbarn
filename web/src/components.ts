@@ -809,6 +809,11 @@ function renderSettingsOverview(
         ${displayName ? `<div class="kv"><span>Display name</span><span>${escapeHtml(displayName)}</span></div>` : ""}
         ${timezone ? `<div class="kv"><span>Timezone</span><span>${escapeHtml(timezone)}</span></div>` : ""}
       </div>
+      <div class="session-actions">
+        <a id="settings-iambarn-profile" target="_blank" rel="noopener noreferrer" hidden>Edit IAMBarn profile</a>
+        <a id="settings-iambarn-logout" hidden>Sign out of IAMBarn</a>
+        <button type="button" id="settings-logout" class="btn-sm">Sign out</button>
+      </div>
     </div>`;
 
   const navItems = `
