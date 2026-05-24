@@ -103,7 +103,7 @@ func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []
 			errs = append(errs, fmt.Errorf("gather %s: %w", proj.Slug, err))
 			continue
 		}
-		if data.TotalEvents == 0 {
+		if data.TotalEvents == 0 && data.NewIssues == 0 && data.ResolvedIssues == 0 && data.Regressions == 0 {
 			continue
 		}
 		report.Projects = append(report.Projects, buildSection(cfg, proj.Slug, data))

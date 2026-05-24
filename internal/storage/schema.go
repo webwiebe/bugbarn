@@ -163,6 +163,14 @@ func (s *Store) init(ctx context.Context) error {
 			slug TEXT NOT NULL UNIQUE,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS regression_events (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+			regressed_at TEXT NOT NULL,
+			created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_regression_events_project_time ON regression_events(project_id, regressed_at DESC)`,
 	}
 	for _, stmt := range schema {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {

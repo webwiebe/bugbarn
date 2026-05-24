@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-
 // WeeklyDigest returns aggregate error stats for the given project since the
 // given time. All queries run under the provided context deadline.
 func (s *Store) WeeklyDigest(ctx context.Context, projectID int64, since time.Time) (DigestData, error) {
@@ -14,19 +13,31 @@ func (s *Store) WeeklyDigest(ctx context.Context, projectID int64, since time.Ti
 
 	var d DigestData
 
-	row := s.readDB().QueryRowContext(ctx, `
-		SELECT
-			COUNT(*)                                                                          AS total_events,
-			COUNT(*) FILTER (WHERE i.first_seen >= ?)                                         AS new_issues,
-			COUNT(*) FILTER (WHERE i.status = 'resolved' AND i.resolved_at >= ?)              AS resolved_issues,
-			COUNT(*) FILTER (WHERE i.last_regressed_at IS NOT NULL AND i.last_regressed_at >= ?) AS regressions
-		FROM issues i
-		JOIN events e ON e.issue_id = i.id AND e.project_id = ?
-		WHERE e.project_id = ?
-		  AND e.received_at >= ?
-	`, sinceStr, sinceStr, sinceStr, projectID, projectID, sinceStr)
+	if err := s.readDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM events WHERE project_id = ? AND received_at >= ?`,
+		projectID, sinceStr,
+	).Scan(&d.TotalEvents); err != nil && err != sql.ErrNoRows {
+		return d, err
+	}
 
-	if err := row.Scan(&d.TotalEvents, &d.NewIssues, &d.ResolvedIssues, &d.Regressions); err != nil && err != sql.ErrNoRows {
+	if err := s.readDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM issues WHERE project_id = ? AND first_seen >= ?`,
+		projectID, sinceStr,
+	).Scan(&d.NewIssues); err != nil && err != sql.ErrNoRows {
+		return d, err
+	}
+
+	if err := s.readDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM issues WHERE project_id = ? AND status = 'resolved' AND resolved_at >= ?`,
+		projectID, sinceStr,
+	).Scan(&d.ResolvedIssues); err != nil && err != sql.ErrNoRows {
+		return d, err
+	}
+
+	if err := s.readDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM regression_events WHERE project_id = ? AND regressed_at >= ?`,
+		projectID, sinceStr,
+	).Scan(&d.Regressions); err != nil && err != sql.ErrNoRows {
 		return d, err
 	}
 

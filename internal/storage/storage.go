@@ -207,6 +207,15 @@ func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.Proc
 	upsertSpan.SetAttributes(attribute.String("issue_id", issue.ID), attribute.Bool("regressed", regressed))
 	upsertSpan.End()
 
+	if regressed {
+		if _, rerr := s.db.ExecContext(ctx,
+			`INSERT INTO regression_events (project_id, issue_id, regressed_at) VALUES (?, ?, ?)`,
+			projectID, issueID, formatTime(issue.LastRegressedAt),
+		); rerr != nil {
+			slog.WarnContext(ctx, "storage: failed to record regression_event", "error", rerr)
+		}
+	}
+
 	isNew := issue.EventCount == 1 && !regressed
 
 	_, insertSpan := tracing.Tracer().Start(ctx, "storage.InsertEvent")
