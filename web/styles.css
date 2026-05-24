@@ -167,6 +167,17 @@ h2 {
   display: none;
 }
 
+.login-error-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.login-error-actions a {
+  color: var(--danger);
+  text-decoration: underline;
+}
+
 .app-frame {
   display: grid;
   grid-template-columns: var(--sidebar-collapsed) minmax(0, 1fr);

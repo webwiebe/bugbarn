@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
@@ -25,7 +26,17 @@ func (s *Server) oidcLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	state := randomToken()
 	nonce := randomToken()
-	authURL, err := s.oidc.AuthorizeURL(state, nonce)
+	// Allow the SPA to ask iambarn to re-prompt (e.g. after we rejected the
+	// previous identity for not having access). Only the two standard OIDC
+	// values are accepted.
+	prompt := ""
+	switch r.URL.Query().Get("prompt") {
+	case "login":
+		prompt = "login"
+	case "select_account":
+		prompt = "select_account"
+	}
+	authURL, err := s.oidc.AuthorizeURL(state, nonce, prompt)
 	if err != nil {
 		s.logger.Warn("oidc: build authorize url", "error", err)
 		http.Error(w, "oidc unavailable", http.StatusServiceUnavailable)
@@ -69,7 +80,17 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	if !s.oidc.Allowed(claims) {
 		s.logger.Warn("oidc: access denied",
 			"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
-		http.Error(w, "access denied: user is not a member of the required group", http.StatusForbidden)
+		// Clear the short-lived state/nonce cookies before redirecting so the
+		// SPA's "Switch account" button starts a clean flow.
+		secure := secureCookie(r)
+		http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
+		http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
+		q := url.Values{}
+		q.Set("oidc_error", "access_denied")
+		if id := claims.PreferredName(); id != "" {
+			q.Set("identity", id)
+		}
+		http.Redirect(w, r, "/?"+q.Encode(), http.StatusFound)
 		return
 	}
 	if s.sessions == nil {

@@ -1757,10 +1757,15 @@ function _renderDetail(): void {
 
 function renderLogin(error = ""): void {
   stopLiveStream();
-  // If OIDC is configured server-side, auto-redirect to the OIDC login URL
-  // instead of showing the local password form. The local form is still wired
-  // up and reachable by other code paths when OIDC is not enabled.
-  void maybeRedirectToOIDC();
+  // If the OIDC callback bounced us here with ?oidc_error=…, show an inline
+  // error card with switch/sign-out actions instead of silently looping the
+  // user back into the IdP (which would just re-reject the same identity).
+  const oidcErr = readOIDCErrorFromURL();
+  if (oidcErr) {
+    void renderOIDCAccessDenied(oidcErr);
+  } else {
+    void maybeRedirectToOIDC();
+  }
   if (loginScreen) loginScreen.hidden = false;
   if (appFrame) appFrame.hidden = true;
   if (loginError) {
@@ -1770,13 +1775,68 @@ function renderLogin(error = ""): void {
   (loginForm?.querySelector('input[name="username"]') as HTMLInputElement | null)?.focus();
 }
 
+type OIDCRuntime = {
+  enabled?: boolean;
+  loginURL?: string;
+  switchAccountURL?: string;
+  endSessionURL?: string;
+};
+
+function readOIDCErrorFromURL(): { code: string; identity: string } | null {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("oidc_error");
+  if (!code) return null;
+  return { code, identity: params.get("identity") ?? "" };
+}
+
+async function renderOIDCAccessDenied(err: { code: string; identity: string }): Promise<void> {
+  let oc: OIDCRuntime | undefined;
+  try {
+    const res = await fetch("/api/v1/runtime-config");
+    if (res.ok) {
+      const cfg = await res.json() as { oidc?: OIDCRuntime };
+      oc = cfg?.oidc;
+    }
+  } catch {
+    // Best-effort — we still render a useful message even without runtime config.
+  }
+  if (loginError) {
+    const who = err.identity ? ` as ${err.identity}` : "";
+    loginError.hidden = false;
+    loginError.textContent = "";
+    const msg = document.createElement("div");
+    msg.textContent = `You're signed in to IAMBarn${who}, but that account doesn't have access to BugBarn.`;
+    loginError.appendChild(msg);
+    const actions = document.createElement("div");
+    actions.className = "login-error-actions";
+    if (oc?.switchAccountURL ?? oc?.loginURL) {
+      const a = document.createElement("a");
+      a.href = oc.switchAccountURL ?? oc.loginURL!;
+      a.textContent = "Switch account";
+      actions.appendChild(a);
+    }
+    if (oc?.endSessionURL) {
+      const a = document.createElement("a");
+      const ret = `${window.location.origin}/`;
+      const sep = oc.endSessionURL.includes("?") ? "&" : "?";
+      a.href = `${oc.endSessionURL}${sep}post_logout_redirect_uri=${encodeURIComponent(ret)}`;
+      a.textContent = "Sign out of IAMBarn";
+      actions.appendChild(a);
+    }
+    if (actions.children.length) loginError.appendChild(actions);
+  }
+  // Strip the query string so a reload doesn't re-show the error (and doesn't
+  // leak the identity into browser history beyond this view).
+  history.replaceState(null, "", window.location.pathname + window.location.hash);
+}
+
 let oidcRedirectStarted = false;
 async function maybeRedirectToOIDC(): Promise<void> {
   if (oidcRedirectStarted) return;
   try {
     const res = await fetch("/api/v1/runtime-config");
     if (!res.ok) return;
-    const cfg = await res.json() as { oidc?: { enabled?: boolean; loginURL?: string } };
+    const cfg = await res.json() as { oidc?: OIDCRuntime };
     const oc = cfg?.oidc;
     if (oc?.enabled && oc.loginURL) {
       oidcRedirectStarted = true;
