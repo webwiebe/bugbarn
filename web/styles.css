@@ -183,13 +183,28 @@ h2 {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 .session-actions a {
   color: var(--text);
   text-decoration: underline;
-  font-size: 13px;
+  font-size: 14px;
+}
+
+#settings-logout {
+  font-size: 14px;
+  padding: 8px 16px;
+  min-height: 36px;
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+#settings-logout:hover {
+  background: #401423;
 }
 
 .app-frame {

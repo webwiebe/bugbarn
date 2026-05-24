@@ -835,7 +835,7 @@ function renderSettingsOverview(
       </a>
     </div>`;
 
-  return errorBanner + pendingBanner + noProjectsBanner + statsBar + navItems + setupCard + sessionCard;
+  return errorBanner + pendingBanner + noProjectsBanner + sessionCard + statsBar + navItems + setupCard;
 }
 
 function renderSettingsProjects(
