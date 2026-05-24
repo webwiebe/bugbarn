@@ -25,8 +25,10 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type oidcConfigOut struct {
-		Enabled  bool   `json:"enabled"`
-		LoginURL string `json:"loginURL,omitempty"`
+		Enabled          bool   `json:"enabled"`
+		LoginURL         string `json:"loginURL,omitempty"`
+		SwitchAccountURL string `json:"switchAccountURL,omitempty"`
+		EndSessionURL    string `json:"endSessionURL,omitempty"`
 	}
 
 	type iambarnConfig struct {
@@ -56,7 +58,12 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.oidc != nil {
-		cfg.OIDC = oidcConfigOut{Enabled: true, LoginURL: "/api/v1/oidc/login"}
+		cfg.OIDC = oidcConfigOut{
+			Enabled:          true,
+			LoginURL:         "/api/v1/oidc/login",
+			SwitchAccountURL: "/api/v1/oidc/login?prompt=login",
+			EndSessionURL:    s.oidc.EndSessionURL(),
+		}
 		if issuer := strings.TrimRight(s.oidc.Config().Issuer, "/"); issuer != "" {
 			cfg.IAMBarn.ProfileURL = issuer + "/admin#profile"
 		}

@@ -57,12 +57,33 @@ func (c *OIDCClient) Config() OIDCConfig { return c.cfg }
 
 // AuthorizeURL builds the URL the browser should be redirected to. The caller
 // is responsible for storing state + nonce in short-lived cookies and matching
-// them on callback.
-func (c *OIDCClient) AuthorizeURL(state, nonce string) (string, error) {
+// them on callback. If prompt is non-empty (e.g. "login", "select_account"),
+// it is forwarded to the IdP so the user is re-prompted instead of silently
+// reusing an existing IdP session.
+func (c *OIDCClient) AuthorizeURL(state, nonce, prompt string) (string, error) {
 	if err := c.ensureReady(context.Background()); err != nil {
 		return "", err
 	}
-	return c.oauth.AuthCodeURL(state, oidcv3.Nonce(nonce)), nil
+	opts := []oauth2.AuthCodeOption{oidcv3.Nonce(nonce)}
+	if prompt != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", prompt))
+	}
+	return c.oauth.AuthCodeURL(state, opts...), nil
+}
+
+// EndSessionURL returns the issuer's RP-initiated logout endpoint, or "" if
+// the issuer's discovery document doesn't advertise one.
+func (c *OIDCClient) EndSessionURL() string {
+	if err := c.ensureReady(context.Background()); err != nil {
+		return ""
+	}
+	var meta struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+	if err := c.provider.Claims(&meta); err != nil {
+		return ""
+	}
+	return meta.EndSessionEndpoint
 }
 
 // Exchange swaps an authorization code for tokens and verifies the ID token's
