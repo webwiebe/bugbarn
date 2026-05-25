@@ -230,6 +230,11 @@ envSelect?.addEventListener("change", () => {
 });
 
 async function logout(): Promise<void> {
+  // Snapshot before /api/v1/logout clears the hint cookie — if this session
+  // came from iambarn we must also end the IdP session, otherwise the SPA's
+  // login screen would auto-redirect back into iambarn, iambarn would reuse
+  // its still-valid session, and the user would bounce straight back in.
+  const wasOIDC = document.cookie.split("; ").some((c) => c.startsWith("bugbarn_auth_method=oidc"));
   try {
     await fetch(apiUrl("/api/v1/logout"), { method: "POST", credentials: "include" });
   } catch {
@@ -238,7 +243,25 @@ async function logout(): Promise<void> {
   state.authenticated = false;
   state.username = "";
   stopLiveStream();
+  if (wasOIDC) {
+    const endURL = await fetchIAMBarnEndSessionURL();
+    if (endURL) {
+      window.location.assign(endURL);
+      return;
+    }
+  }
   renderLogin();
+}
+
+async function fetchIAMBarnEndSessionURL(): Promise<string> {
+  try {
+    const res = await fetch("/api/v1/runtime-config");
+    if (!res.ok) return "";
+    const cfg = await res.json() as { oidc?: OIDCRuntime };
+    return cfg?.oidc?.endSessionURL ?? "";
+  } catch {
+    return "";
+  }
 }
 
 function updateBBMenuUser(): void {
