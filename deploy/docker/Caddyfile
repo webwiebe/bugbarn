@@ -1,6 +1,7 @@
 :8080 {
     # SDK packages served from persistent volume
     handle /packages/* {
+        uri strip_prefix /packages
         root * /srv/packages
         file_server
     }
