@@ -58,7 +58,7 @@ spec:
             - name: BUGBARN_SESSION_TTL_SECONDS
               value: "86400"
             - name: LITESTREAM_ENDPOINT
-              value: http://minio.production.svc.cluster.local:9000
+              value: https://s3.wiebe.xyz
             - name: LITESTREAM_REPLICA_PATH
               value: production/bugbarn.db
             - name: BUGBARN_API_KEY
