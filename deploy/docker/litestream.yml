@@ -4,7 +4,7 @@ dbs:
       - type: s3
         bucket: bugbarn-sqlite
         path: ${LITESTREAM_REPLICA_PATH}
-        endpoint: https://s3.wiebe.xyz
+        endpoint: ${LITESTREAM_ENDPOINT}
         force-path-style: true
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
