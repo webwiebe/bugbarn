@@ -15,12 +15,11 @@ brew install bb
 
 ### APT (Debian / Ubuntu)
 
+The Linux package is named `bugbarn-cli` (to avoid a name collision with Ubuntu universe's `bb`). The binary on PATH is still `bb`.
+
 ```sh
-curl -fsSL https://webwiebe.nl/apt/key.gpg \
-  | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/webwiebe.gpg
-echo "deb https://webwiebe.nl/apt/ stable main" \
-  | sudo tee /etc/apt/sources.list.d/webwiebe.list
-sudo apt-get update && sudo apt-get install bb
+curl -fsSL https://webwiebe.nl/apt/install.sh | sudo bash
+sudo apt install bugbarn-cli
 ```
 
 ### Build from source
