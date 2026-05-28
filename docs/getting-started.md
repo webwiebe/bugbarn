@@ -16,11 +16,14 @@ brew install bugbarn
 ### APT (Debian / Ubuntu)
 
 ```sh
-curl -fsSL https://webwiebe.nl/apt/key.gpg \
-  | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/webwiebe.gpg
-echo "deb https://webwiebe.nl/apt/ stable main" \
-  | sudo tee /etc/apt/sources.list.d/webwiebe.list
-sudo apt-get update && sudo apt-get install bugbarn
+curl -fsSL https://webwiebe.nl/apt/install.sh | sudo bash
+sudo apt install bugbarn
+```
+
+To also install the `bb` CLI:
+
+```sh
+sudo apt install bugbarn-cli
 ```
 
 ### Docker Compose (pre-built images)
@@ -242,7 +245,7 @@ Service worker updates are versioned by a hash of the compiled assets. New deplo
 `bb` is a standalone CLI for querying BugBarn from the terminal or from AI agents.
 
 ```sh
-brew install webwiebe/bugbarn/bb   # or: sudo apt-get install bb
+brew install webwiebe/bugbarn/bb   # or: sudo apt install bugbarn-cli
 bb login --url http://localhost:8080 --api-key <your-api-key>
 bb issues                          # list open issues (JSON)
 bb logs -f                         # live-tail logs

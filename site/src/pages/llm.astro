@@ -39,14 +39,23 @@ Key concepts:
 
 ## Installation
 
-### APT (Debian/Ubuntu)
-  curl -fsSL https://webwiebe.nl/apt/key.gpg | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/webwiebe.gpg
-  echo "deb https://webwiebe.nl/apt/ stable main" | sudo tee /etc/apt/sources.list.d/webwiebe.list
-  sudo apt-get update && sudo apt-get install bugbarn
+BugBarn ships as two separate artifacts: the `bugbarn` server (HTTP API + UI + worker)
+and the `bb` CLI client. Install one, both, or only the CLI to talk to a remote server.
 
-### Homebrew (macOS / Linux)
+### Server: APT (Debian/Ubuntu)
+  curl -fsSL https://webwiebe.nl/apt/install.sh | sudo bash
+  sudo apt install bugbarn
+
+### Server: Homebrew (macOS / Linux)
   brew tap webwiebe/bugbarn
   brew install bugbarn
+
+### CLI: APT (Debian/Ubuntu)
+  curl -fsSL https://webwiebe.nl/apt/install.sh | sudo bash
+  sudo apt install bugbarn-cli  # binary on PATH: bb
+
+### CLI: Homebrew (macOS / Linux)
+  brew install webwiebe/bugbarn/bb
 
 ### Docker
   docker run -d \\

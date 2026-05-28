@@ -1,11 +1,13 @@
-name: bb
+name: bugbarn-cli
 arch: "${GOARCH}"
 platform: linux
 version: "${VERSION}"
 maintainer: "Wiebe Zweers <bugbarn@wiebe.xyz>"
 description: |
-  bb - BugBarn CLI client.
+  BugBarn CLI client (bb).
   Query and manage BugBarn issues from the command line.
+  Installs /usr/bin/bb. Renamed from the `bb` package to avoid a
+  name collision with Ubuntu universe's bb (ASCII art demo).
 vendor: "BugBarn"
 homepage: "https://github.com/wiebe-xyz/bugbarn"
 license: "MIT"
