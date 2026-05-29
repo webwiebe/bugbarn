@@ -337,11 +337,17 @@ jobs:
           MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
         run: |
           pip install awscli
-          # No --delete: existing files from other apps are never touched.
-          aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
-            brew-repo/ \
-            s3://${MINIO_BUCKET}/brew/ \
-            --cache-control "public, max-age=3600, must-revalidate"
+          # Use cp per-file instead of sync to avoid the LIST operation
+          # that consistently times out against the MinIO endpoint from
+          # GitHub Actions runners. --no-delete behaviour is preserved
+          # since we only upload, never remove.
+          find brew-repo -type f | while read f; do
+            key="${f#brew-repo/}"
+            aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp \
+              "$f" \
+              "s3://${MINIO_BUCKET}/brew/${key}" \
+              --cache-control "public, max-age=3600, must-revalidate"
+          done
 
   update-homebrew-tap:
     name: Update GitHub Tap Repository
