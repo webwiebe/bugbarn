@@ -43,6 +43,14 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          # Authenticate the checkout (and subsequent `git push`) with a PAT
+          # instead of the default GITHUB_TOKEN so that the auto-generated v*
+          # tag triggers downstream workflows. Events created by GITHUB_TOKEN
+          # are explicitly suppressed by Actions (except workflow_dispatch /
+          # repository_dispatch), which is why the tag-push from this job
+          # never used to fire `release.yml` (staging deploy) — tags had to
+          # be re-pushed manually under a human identity to start staging.
+          token: ${{ secrets.RELEASE_TAG_TOKEN }}
 
       - name: Get latest tag
         id: latest_tag
