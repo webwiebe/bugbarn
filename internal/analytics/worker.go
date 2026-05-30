@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -15,11 +16,24 @@ type Store interface {
 
 // StartWorker rolls up raw page-view data into analytics_daily on a 1-hour
 // cadence. It performs an initial run on startup to catch any missed rollups.
-func StartWorker(ctx context.Context, store Store, retentionDays int) {
+// If wg is non-nil, it increments the WaitGroup before starting and decrements
+// it when the goroutine exits, so callers can wait for a clean shutdown.
+func StartWorker(ctx context.Context, store Store, retentionDays int, wg *sync.WaitGroup) {
 	if retentionDays <= 0 {
 		retentionDays = 90
 	}
+	if wg != nil {
+		wg.Add(1)
+	}
 	go func() {
+		if wg != nil {
+			defer wg.Done()
+		}
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Error("analytics worker panic", "panic", p)
+			}
+		}()
 		runRollup(ctx, store, retentionDays)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()

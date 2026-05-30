@@ -140,8 +140,8 @@ func run() error {
 		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus)
 	}()
 
-	digest.StartScheduler(ctx, cfg.Digest, store)
-	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays)
+	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
+	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, &bgWg)
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -176,6 +176,8 @@ func run() error {
 	if cfg.MaxSourceMapBytes > 0 {
 		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
+	apiServer.Start(ctx)
+
 	var httpHandler http.Handler = apiServer
 	httpHandler = tracing.Middleware(httpHandler)
 	if selfReporting {
@@ -298,6 +300,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	if cfg.MaxSourceMapBytes > 0 {
 		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
+	apiServer.Start(ctx)
 
 	var httpHandler http.Handler = apiServer
 	httpHandler = tracing.Middleware(httpHandler)
