@@ -46,17 +46,30 @@ export function issueStatus(issue: ApiIssue): string {
   return readString(issue, ["status", "Status"]) || "unresolved";
 }
 
+const fingerprintMaterialKeys = [
+  "fingerprintMaterial",
+  "fingerprint_material",
+  "fingerprintParts",
+  "fingerprint_parts",
+  "fingerprintInputs",
+  "fingerprint_inputs",
+  "fingerprintDebug",
+  "fingerprint_debug",
+];
+
 export function issueFingerprintMaterial(issue: ApiIssue): RawRecord {
-  return readRecord(issue, [
-    "fingerprintMaterial",
-    "fingerprint_material",
-    "fingerprintParts",
-    "fingerprint_parts",
-    "fingerprintInputs",
-    "fingerprint_inputs",
-    "fingerprintDebug",
-    "fingerprint_debug",
-  ]);
+  const direct = readRecord(issue, fingerprintMaterialKeys);
+  if (Object.keys(direct).length) return direct;
+  const raw = readFirst(issue, fingerprintMaterialKeys);
+  if (typeof raw === "string") {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (isRecord(parsed)) return parsed;
+    } catch {
+      // not valid JSON
+    }
+  }
+  return {};
 }
 
 export function issueLastSeen(issue: ApiIssue): unknown {

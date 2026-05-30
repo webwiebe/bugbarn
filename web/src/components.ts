@@ -1260,14 +1260,10 @@ function buildFingerprintMaterial(issue: ApiIssue, lastEvent: ApiEvent | null): 
 
   const material: RawRecord = {};
   const exception = lastEvent ? eventException(lastEvent) : {};
-  const context = lastEvent ? eventContext(lastEvent) : {};
   const stacktrace = lastEvent ? eventStacktrace(lastEvent) : [];
 
   material["normalized exception type"] = issueExceptionType(issue) || readString(exception, ["type", "Type"]) || "n/a";
   material["normalized message"] = issueNormalizedTitle(issue) || readString(exception, ["message", "Message"]) || "n/a";
-  if (hasKeys(context)) {
-    material["stable context"] = context;
-  }
   if (stacktrace.length) {
     material["stack frames"] = stacktrace.slice(0, 5).map((frame) => {
       if (!isRecord(frame)) {
