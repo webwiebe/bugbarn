@@ -127,6 +127,7 @@ jobs:
           curl -sf -X POST "${BUGBARN_ENDPOINT}/api/v1/releases" \
             -H "Content-Type: application/json" \
             -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
+            -H "X-BugBarn-Project: bugbarn-service" \
             -d "{
               \"name\": \"${GITHUB_SHA:0:7}\",
               \"environment\": \"testing\",
