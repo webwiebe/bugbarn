@@ -340,7 +340,8 @@ func ReadRecordsFrom(path string, offset int64) ([]RecordAtOffset, error) {
 
 		var record Record
 		if err := json.Unmarshal(line, &record); err != nil {
-			return nil, err
+			// corrupt line (e.g. truncated write during pod restart) — skip it
+			continue
 		}
 		records = append(records, RecordAtOffset{Record: record, EndOffset: pos})
 	}

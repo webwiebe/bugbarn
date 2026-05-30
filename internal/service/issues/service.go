@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -9,9 +10,17 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
+
+// isClientError returns true for errors that represent bad caller input rather
+// than unexpected server-side failures. These are not logged at ERROR level to
+// avoid self-reporting noise from normal 400/404 responses.
+func isClientError(err error) bool {
+	return errors.Is(err, apperr.ErrInvalidInput) || errors.Is(err, apperr.ErrNotFound)
+}
 
 type Repository interface {
 	ListIssues(context.Context) ([]domain.Issue, error)
@@ -75,7 +84,9 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Issue, error) {
 	issue, err := s.repo.GetIssue(ctx, id)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "get issue", "issue_id", id, "error", err)
+		if !isClientError(err) {
+			s.logger.ErrorContext(ctx, "get issue", "issue_id", id, "error", err)
+		}
 		return domain.Issue{}, err
 	}
 	return issue, nil
@@ -167,7 +178,9 @@ func (s *Service) ListEvents(ctx context.Context, issueID string, limit int, bef
 	events, hasMore, err := s.repo.ListIssueEvents(ctx, issueID, limit, beforeID)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "list events", "issue_id", issueID, "error", err)
+		if !isClientError(err) {
+			s.logger.ErrorContext(ctx, "list events", "issue_id", issueID, "error", err)
+		}
 		return nil, false, err
 	}
 	span.SetAttributes(attribute.Int("count", len(events)))

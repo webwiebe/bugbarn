@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
@@ -44,23 +45,23 @@ func formatIssueID(prefix string, number int) string {
 func parseIssueID(value string) (prefix string, number int, err error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return "", 0, fmt.Errorf("empty issue id")
+		return "", 0, apperr.InvalidInput("empty issue id", nil)
 	}
 	// Legacy format: issue-NNNNNN
 	if strings.HasPrefix(value, issueIDPrefix) {
 		n, err := strconv.ParseInt(strings.TrimPrefix(value, issueIDPrefix), 10, 64)
 		if err != nil {
-			return "", 0, fmt.Errorf("invalid legacy issue id %q: %w", value, err)
+			return "", 0, apperr.InvalidInput(fmt.Sprintf("invalid legacy issue id %q", value), err)
 		}
 		return "", int(n), nil
 	}
 	idx := strings.LastIndex(value, "-")
 	if idx <= 0 {
-		return "", 0, fmt.Errorf("invalid issue id %q", value)
+		return "", 0, apperr.InvalidInput(fmt.Sprintf("invalid issue id %q", value), nil)
 	}
 	n, err := strconv.Atoi(value[idx+1:])
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid issue id %q: %w", value, err)
+		return "", 0, apperr.InvalidInput(fmt.Sprintf("invalid issue id %q", value), err)
 	}
 	return value[:idx], n, nil
 }
