@@ -102,7 +102,7 @@ export function eventTitle(event: ApiEvent): string {
 }
 
 export function eventTimestamp(event: ApiEvent): unknown {
-  return readFirst(event, ["timestamp", "Timestamp", "createdAt", "CreatedAt", "created_at", "receivedAt", "ReceivedAt", "observedAt", "ObservedAt"]);
+  return readFirst(event, ["timestamp", "Timestamp", "createdAt", "CreatedAt", "created_at", "receivedAt", "ReceivedAt", "received_at", "observedAt", "ObservedAt", "observed_at"]);
 }
 
 export function eventSeverity(event: ApiEvent): string {
