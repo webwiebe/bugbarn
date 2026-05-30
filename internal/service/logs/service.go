@@ -3,7 +3,6 @@ package logs
 import (
 	"context"
 	"log/slog"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -11,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -44,7 +44,7 @@ func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
 			}
 			return nil
 		}
-		if !strings.Contains(err.Error(), "database is locked") {
+		if !storage.IsDatabaseLocked(err) {
 			break
 		}
 		time.Sleep(time.Duration(100*(1<<attempt)) * time.Millisecond)

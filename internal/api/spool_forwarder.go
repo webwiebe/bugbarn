@@ -356,6 +356,7 @@ func readRecords(path string, offset int64) ([]spooledRequestAt, int64, error) {
 		var rec spooledRequest
 		if err := json.Unmarshal(line, &rec); err != nil {
 			// corrupt line (e.g. truncated write during pod restart) — skip it
+			slog.Warn("spool: skipping corrupt record", "offset", pos, "error", err)
 			continue
 		}
 		out = append(out, spooledRequestAt{req: rec, endOffset: pos})

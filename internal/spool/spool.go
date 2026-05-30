@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -341,6 +342,7 @@ func ReadRecordsFrom(path string, offset int64) ([]RecordAtOffset, error) {
 		var record Record
 		if err := json.Unmarshal(line, &record); err != nil {
 			// corrupt line (e.g. truncated write during pod restart) — skip it
+			slog.Warn("spool: skipping corrupt record", "offset", pos, "error", err)
 			continue
 		}
 		records = append(records, RecordAtOffset{Record: record, EndOffset: pos})

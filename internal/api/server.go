@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
@@ -177,8 +178,14 @@ func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, user
 		allowedOrigins:    allowedOrigins,
 		maxSourceMapBytes: defaultMaxSourceMapBytes,
 	}
-	go s.cleanupLoginLimiter()
 	return s
+}
+
+// Start launches background goroutines that require a context for clean
+// shutdown (e.g. login-limiter cleanup). It must be called once after the
+// server is fully configured and before it begins serving requests.
+func (s *Server) Start(ctx context.Context) {
+	go s.cleanupLoginLimiter(ctx)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

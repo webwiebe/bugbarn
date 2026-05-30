@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -23,17 +24,22 @@ const (
 )
 
 // cleanupLoginLimiter periodically removes stale IP entries from the login limiter.
-func (s *Server) cleanupLoginLimiter() {
+func (s *Server) cleanupLoginLimiter(ctx context.Context) {
 	ticker := time.NewTicker(loginCleanupFreq)
 	defer ticker.Stop()
-	for range ticker.C {
-		cutoff := time.Now().Add(-loginRateWindow)
-		s.loginLimiter.Range(func(key, value any) bool {
-			if a, ok := value.(*loginAttempt); ok && a.windowStart.Before(cutoff) {
-				s.loginLimiter.Delete(key)
-			}
-			return true
-		})
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cutoff := time.Now().Add(-loginRateWindow)
+			s.loginLimiter.Range(func(key, value any) bool {
+				if a, ok := value.(*loginAttempt); ok && a.windowStart.Before(cutoff) {
+					s.loginLimiter.Delete(key)
+				}
+				return true
+			})
+		}
 	}
 }
 

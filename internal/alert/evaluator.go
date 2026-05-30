@@ -62,6 +62,12 @@ func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.
 		r := rule
 		iss := issue
 		go func() {
+			defer func() {
+				if p := recover(); p != nil {
+					e.log.Error("alert delivery panic", "alert_id", r.ID, "issue_id", iss.ID, "panic", p)
+				}
+			}()
+
 			fireCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 

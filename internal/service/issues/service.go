@@ -19,7 +19,10 @@ import (
 // than unexpected server-side failures. These are not logged at ERROR level to
 // avoid self-reporting noise from normal 400/404 responses.
 func isClientError(err error) bool {
-	return errors.Is(err, apperr.ErrInvalidInput) || errors.Is(err, apperr.ErrNotFound)
+	return errors.Is(err, apperr.ErrInvalidInput) ||
+		errors.Is(err, apperr.ErrNotFound) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded)
 }
 
 type Repository interface {

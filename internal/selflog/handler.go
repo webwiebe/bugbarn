@@ -3,9 +3,12 @@ package selflog
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
 )
+
+const captureTimeout = 2 * time.Second
 
 type Handler struct {
 	inner slog.Handler
@@ -28,7 +31,17 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 			}
 			return true
 		})
-		bb.CaptureMessage(msg)
+		// Fire-and-forget with a hard timeout so a slow or unavailable ingest
+		// endpoint never blocks the caller's logging path.
+		done := make(chan struct{}, 1)
+		go func() {
+			bb.CaptureMessage(msg)
+			done <- struct{}{}
+		}()
+		select {
+		case <-done:
+		case <-time.After(captureTimeout):
+		}
 	}
 	return h.inner.Handle(ctx, r)
 }
