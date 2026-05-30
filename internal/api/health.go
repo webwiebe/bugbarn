@@ -6,6 +6,16 @@ func (s *Server) serveHealth(w http.ResponseWriter, r *http.Request) {
 	detail := r.URL.Query().Get("detail") == "true"
 
 	if !detail {
+		// Even the basic probe reflects worker health so K8s readiness probes
+		// can pull degraded pods out of rotation without requiring ?detail=true.
+		if s.workerStatus != nil {
+			snap := s.workerStatus.Snapshot()
+			if snap.Level == "degraded" || snap.Level == "unhealthy" {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				writeJSON(w, map[string]any{"status": string(snap.Level)})
+				return
+			}
+		}
 		writeJSON(w, map[string]any{"status": "ok"})
 		return
 	}

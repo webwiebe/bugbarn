@@ -133,4 +133,4 @@ jobs:
               \"version\": \"${GITHUB_SHA}\",
               \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
-            }" || echo "BugBarn release marker skipped"
+            }" || echo "::warning::BugBarn release marker failed"

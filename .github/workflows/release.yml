@@ -143,4 +143,4 @@ jobs:
               \"version\": \"${{ github.ref_name }}\",
               \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ github.ref_name }}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
-            }" || echo "BugBarn release marker skipped"
+            }" || echo "::warning::BugBarn release marker failed"

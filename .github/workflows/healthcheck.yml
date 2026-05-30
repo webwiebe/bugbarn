@@ -1,0 +1,25 @@
+name: Health Check
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: Probe production health
+    runs-on: ubuntu-latest
+    if: vars.BUGBARN_ENDPOINT != ''
+    steps:
+      - name: Check /api/v1/health
+        env:
+          BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
+        run: |
+          echo "Probing ${BUGBARN_ENDPOINT}/api/v1/health"
+          response=$(curl -sf --max-time 10 "${BUGBARN_ENDPOINT}/api/v1/health")
+          echo "Response: ${response}"
+          status=$(echo "${response}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unknown")
+          if [ "${status}" != "ok" ]; then
+            echo "::error::Health check returned status=${status}"
+            exit 1
+          fi
