@@ -65,11 +65,14 @@ func Init(_ context.Context, version string) (shutdown func(context.Context) err
 		return func(context.Context) error { return nil }, nil
 	}
 
+	batcher := sdktrace.NewBatchSpanProcessor(exporter,
+		sdktrace.WithExportTimeout(5*time.Second),
+	)
+
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter,
-			sdktrace.WithExportTimeout(5*time.Second),
-		),
+		sdktrace.WithSpanProcessor(NewTailSampler(batcher, 0.1)),
 		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 	)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
