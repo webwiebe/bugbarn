@@ -38,6 +38,10 @@ func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
 
 	var err error
 	for attempt := 0; attempt < 5; attempt++ {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+			break
+		}
 		if err = s.repo.InsertLogEntries(ctx, entries); err == nil {
 			if attempt > 0 {
 				span.SetAttributes(attribute.Int("retry.attempts", attempt))
@@ -47,7 +51,11 @@ func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
 		if !storage.IsDatabaseLocked(err) {
 			break
 		}
-		time.Sleep(time.Duration(100*(1<<attempt)) * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		case <-time.After(time.Duration(100*(1<<attempt)) * time.Millisecond):
+		}
 	}
 	span.SetStatus(codes.Error, err.Error())
 	s.logger.ErrorContext(ctx, "insert log entries", "count", len(entries), "error", err)
