@@ -201,7 +201,9 @@ func (s *Service) GetEvent(ctx context.Context, id string) (domain.Event, error)
 	evt, err := s.repo.GetEvent(ctx, id)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "get event", "event_id", id, "error", err)
+		if !isClientError(err) && !apperr.IsContextError(err) {
+			s.logger.ErrorContext(ctx, "get event", "event_id", id, "error", err)
+		}
 		return domain.Event{}, err
 	}
 	return evt, nil
