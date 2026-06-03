@@ -119,6 +119,7 @@ export interface ApiAlert extends RawRecord {
   name?: string;
   enabled?: boolean;
   condition?: string;
+  param?: string;
   webhook_url?: string;
   threshold?: number;
   cooldown_minutes?: number;
@@ -235,6 +236,7 @@ export interface AppState {
   selectedEventId: string | null;
   selectedReleaseId: string | null;
   releases: ApiRelease[];
+  releasesEnvFilter: string;
   alerts: ApiAlert[];
   settings: ApiSettings | null;
   apiKeys: ApiApiKey[];

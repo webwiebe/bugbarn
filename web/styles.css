@@ -178,34 +178,6 @@ h2 {
   text-decoration: underline;
 }
 
-.session-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  margin-top: 16px;
-}
-
-.session-actions a {
-  color: var(--text);
-  text-decoration: underline;
-  font-size: 14px;
-}
-
-#settings-logout {
-  font-size: 14px;
-  padding: 8px 16px;
-  min-height: 36px;
-  border: 1px solid var(--danger);
-  background: transparent;
-  color: var(--danger);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-#settings-logout:hover {
-  background: #401423;
-}
 
 .app-frame {
   display: grid;
@@ -266,24 +238,48 @@ h2 {
   font-weight: 700;
   font-size: 12px;
   letter-spacing: 0.04em;
-  border: none;
+  user-select: none;
+}
+
+.side-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-avatar-wrap {
+  position: relative;
+}
+
+.user-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #3a3060;
+  color: #f8f8f2;
+  font-weight: 600;
+  font-size: 13px;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
   cursor: pointer;
   padding: 0;
+  transition: background 0.15s;
 }
 
-.side-mark:hover {
-  background: #7e52e9;
-  border-color: transparent;
+.user-avatar:hover {
+  background: #4a3a7a;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
-.side-mark:focus {
+.user-avatar:focus {
   outline: 2px solid rgba(109, 66, 217, 0.5);
   outline-offset: 2px;
 }
 
 .bb-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  bottom: calc(100% + 6px);
   left: 0;
   z-index: 200;
   min-width: 164px;
@@ -1792,16 +1788,22 @@ button:disabled {
 
 .log-row {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border, var(--line));
   font-family: monospace;
   font-size: 12px;
   min-height: 28px;
-  align-items: baseline;
   cursor: pointer;
+}
+
+.log-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .log-row:hover {
@@ -1810,10 +1812,9 @@ button:disabled {
 
 .log-data-expanded {
   display: none;
-  flex: 0 0 100%;
-  padding-left: 96px;
   font-size: 11px;
   color: var(--muted);
+  padding-left: 20px;
 }
 
 .log-data-expanded pre {
@@ -1860,11 +1861,11 @@ button:disabled {
 .log-level-fatal .log-level-dot { background: #c040fb; }
 
 .log-body {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  padding-left: 20px;
 }
 
 .log-msg {
@@ -1911,6 +1912,7 @@ button:disabled {
 
 .log-time {
   flex-shrink: 0;
+  margin-left: auto;
   color: var(--muted);
   font-size: 11px;
   text-align: right;
@@ -2262,6 +2264,54 @@ button:disabled {
   grid-column: 2;
   grid-row: 1 / 3;
   align-self: center;
+}
+
+button.settings-nav-item {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.settings-nav-item:last-child {
+  border-bottom: none;
+}
+
+.settings-signout .settings-nav-label {
+  color: var(--danger);
+}
+
+/* ── Releases env filter ──────────────────────────────────── */
+.env-filter-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.env-filter-btn {
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.env-filter-btn:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.env-filter-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ── Settings overview stats ──────────────────────────────── */

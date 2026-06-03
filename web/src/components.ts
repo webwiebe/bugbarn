@@ -637,16 +637,23 @@ init(
   `;
 }
 
-export function renderReleasesViewMarkup(releases: ApiRelease[], error: unknown = null): string {
+export function renderReleasesViewMarkup(releases: ApiRelease[], error: unknown = null, envFilter = ""): string {
+  const envs = Array.from(new Set(releases.map(r => readString(r, ["environment", "Environment"]) || "").filter(Boolean))).sort();
+  const filtered = envFilter ? releases.filter(r => (readString(r, ["environment", "Environment"]) || "") === envFilter) : releases;
+  const filterBar = envs.length > 1 ? `
+    <div class="env-filter-bar">
+      <button class="env-filter-btn${envFilter === "" ? " active" : ""}" data-env="">All</button>
+      ${envs.map(e => `<button class="env-filter-btn${envFilter === e ? " active" : ""}" data-env="${escapeAttr(e)}">${escapeHtml(e)}</button>`).join("")}
+    </div>` : "";
   return `
     <div class="view-head">
       <h2>Release markers</h2>
-      <span class="chip">${escapeHtml(String(releases.length))}</span>
+      <span class="chip">${escapeHtml(String(filtered.length))}</span>
     </div>
     <div class="detail-main">
       <div class="section">
         <h3>Recent release markers</h3>
-        ${error ? `<div class="error">Unable to load releases. ${escapeHtml(errorMessage(error))}</div>` : renderReleaseList(releases)}
+        ${error ? `<div class="error">Unable to load releases. ${escapeHtml(errorMessage(error))}</div>` : filterBar + renderReleaseList(filtered)}
       </div>
       <div class="section">
         <h3>Mark a release</h3>
@@ -689,10 +696,20 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
           ${renderField("Name", "name", "text", "New errors on checkout")}
           <label class="field">
             <span>Condition</span>
-            <select name="condition">
+            <select name="condition" id="alert-condition-select">
               <option value="new_issue">New issue created</option>
               <option value="regression">Issue regressed</option>
+              <option value="event_count_exceeds">Event count exceeds</option>
+              <option value="message_contains">Message contains</option>
             </select>
+          </label>
+          <label class="field alert-threshold-field" hidden>
+            <span>Threshold (event count)</span>
+            <input name="threshold" type="number" min="1" placeholder="100" />
+          </label>
+          <label class="field alert-param-field" hidden>
+            <span>Match text (case-insensitive)</span>
+            <input name="param" type="text" placeholder="database error" />
           </label>
           ${renderField("Webhook URL", "webhook_url", "url", "https://hooks.slack.com/…")}
           ${renderField("Cooldown (minutes)", "cooldown_minutes", "number", "60")}
@@ -801,21 +818,6 @@ function renderSettingsOverview(
       <p class="muted" style="margin-top:6px">Replace <code>your-project-slug</code> with the desired name. Approve the project once it appears in <a href="#/settings/projects">Projects</a>.</p>
     </div>`;
 
-  const sessionCard = `
-    <div class="section">
-      <h3>Session</h3>
-      <div class="grid">
-        <div class="kv"><span>Username</span><span>${escapeHtml(username || "n/a")}</span></div>
-        ${displayName ? `<div class="kv"><span>Display name</span><span>${escapeHtml(displayName)}</span></div>` : ""}
-        ${timezone ? `<div class="kv"><span>Timezone</span><span>${escapeHtml(timezone)}</span></div>` : ""}
-      </div>
-      <div class="session-actions">
-        <a id="settings-iambarn-profile" target="_blank" rel="noopener noreferrer" hidden>Edit IAMBarn profile</a>
-        <a id="settings-iambarn-logout" hidden>Sign out of IAMBarn</a>
-        <button type="button" id="settings-logout" class="btn-sm">Sign out</button>
-      </div>
-    </div>`;
-
   const navItems = `
     <div class="settings-nav">
       <a href="#/settings/projects" class="settings-nav-item">
@@ -833,9 +835,14 @@ function renderSettingsOverview(
         <span class="settings-nav-desc">View ingest and full-access API keys</span>
         <span class="settings-nav-arrow">›</span>
       </a>
+      <button type="button" id="settings-logout" class="settings-nav-item settings-signout">
+        <span class="settings-nav-label">Sign out</span>
+        <span class="settings-nav-desc">${escapeHtml(username || "signed in")}</span>
+        <span class="settings-nav-arrow">›</span>
+      </button>
     </div>`;
 
-  return errorBanner + pendingBanner + noProjectsBanner + sessionCard + statsBar + navItems + setupCard;
+  return errorBanner + pendingBanner + noProjectsBanner + statsBar + navItems + setupCard;
 }
 
 function renderSettingsProjects(
@@ -1163,8 +1170,10 @@ function webhookBadge(webhookUrl: string | undefined): string {
 }
 
 function conditionLabel(condition: string | undefined): string {
-  if (condition === "new_issue") return "New issue";
-  if (condition === "regression") return "Regression";
+  if (condition === "new_issue") return "New issue created";
+  if (condition === "regression") return "Issue regressed";
+  if (condition === "event_count_exceeds") return "Event count exceeds";
+  if (condition === "message_contains") return "Message contains";
   return condition || "n/a";
 }
 
@@ -1185,11 +1194,14 @@ function renderAlertList(alerts: ApiAlert[]): string {
           const id = alert.id ?? "";
           const title = alert.name || "Untitled alert";
           const condition = alert.condition ?? "";
+          const param = alert.param ?? "";
+          const threshold = alert.threshold ?? 0;
           const webhookUrl = alert.webhook_url ?? "";
           const cooldown = alert.cooldown_minutes ?? 0;
           const enabled = Boolean(alert.enabled);
           const lastFiredAt = formatTime(alert.last_fired_at) || "never";
           const projectSlug = alert.project_slug ? String(alert.project_slug) : "";
+          const conditionDetail = condition === "event_count_exceeds" && threshold ? ` > ${threshold}` : condition === "message_contains" && param ? ` "${param}"` : "";
           return `
             <article class="route-item">
               <div class="route-item-head">
@@ -1199,7 +1211,7 @@ function renderAlertList(alerts: ApiAlert[]): string {
                 ${webhookBadge(webhookUrl)}
               </div>
               <div class="route-item-meta">
-                <span>${escapeHtml(conditionLabel(condition))}</span>
+                <span>${escapeHtml(conditionLabel(condition))}${escapeHtml(conditionDetail)}</span>
                 ${cooldown ? `<span>cooldown ${escapeHtml(String(cooldown))}m</span>` : ""}
                 <span>last fired: ${escapeHtml(lastFiredAt)}</span>
               </div>
@@ -1532,13 +1544,15 @@ export function renderLogRow(entry: ApiLogEntry): string {
   const levelNum = entry.level_num ?? 0;
   return `
     <div class="log-row log-row-${escapeAttr(entry.level)}" data-log-id="${escapeAttr(String(entry.id))}">
-      <span class="log-level log-level-${escapeAttr(entry.level)}"><span class="log-level-dot"></span>${escapeHtml(entry.level.toUpperCase())}${levelNum ? ` (${escapeHtml(String(levelNum))})` : ""}</span>
+      <div class="log-header">
+        <span class="log-level log-level-${escapeAttr(entry.level)}"><span class="log-level-dot"></span>${escapeHtml(entry.level.toUpperCase())}${levelNum ? ` (${escapeHtml(String(levelNum))})` : ""}</span>
+        ${projectBadge}
+        <span class="log-time">${escapeHtml(formatTime(entry.received_at))}</span>
+      </div>
       <div class="log-body">
         <span class="log-msg">${escapeHtml(entry.message)}</span>
         ${dataPills}
       </div>
-      ${projectBadge}
-      <span class="log-time">${escapeHtml(formatTime(entry.received_at))}</span>
       ${dataExpanded}
     </div>
   `;

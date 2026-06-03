@@ -51,6 +51,7 @@ const state: AppState = {
   selectedEventId: null,
   selectedReleaseId: null,
   releases: [],
+  releasesEnvFilter: "",
   alerts: [],
   settings: null,
   apiKeys: [],
@@ -90,9 +91,10 @@ const appFrame = document.querySelector<HTMLElement>(".app-frame");
 const loginScreen = document.getElementById("login-screen") as HTMLElement | null;
 const loginForm = document.getElementById("login-form") as HTMLFormElement | null;
 const loginError = document.getElementById("login-error") as HTMLElement | null;
-const bbBtn = document.getElementById("bb-btn") as HTMLButtonElement | null;
+const userAvatarBtn = document.getElementById("user-avatar-btn") as HTMLButtonElement | null;
 const bbMenu = document.getElementById("bb-menu") as HTMLElement | null;
 const bbMenuUser = document.getElementById("bb-menu-user") as HTMLElement | null;
+const userAvatarInitial = document.getElementById("user-avatar-initial") as HTMLElement | null;
 const bbLogout = document.getElementById("bb-logout") as HTMLButtonElement | null;
 const sidebarToggle = document.getElementById("sidebar-toggle") as HTMLButtonElement | null;
 const envSelect = document.getElementById("env-select") as HTMLSelectElement | null;
@@ -124,15 +126,15 @@ sidebarToggle?.addEventListener("click", () => {
 
 function closeBBMenu(): void {
   bbMenu?.setAttribute("hidden", "");
-  bbBtn?.setAttribute("aria-expanded", "false");
+  userAvatarBtn?.setAttribute("aria-expanded", "false");
 }
 
-bbBtn?.addEventListener("click", (ev) => {
+userAvatarBtn?.addEventListener("click", (ev) => {
   ev.stopPropagation();
   const isHidden = bbMenu?.hasAttribute("hidden");
   if (isHidden) {
     bbMenu?.removeAttribute("hidden");
-    bbBtn?.setAttribute("aria-expanded", "true");
+    userAvatarBtn?.setAttribute("aria-expanded", "true");
   } else {
     closeBBMenu();
   }
@@ -143,7 +145,7 @@ document.addEventListener("click", closeBBMenu);
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") {
     closeBBMenu();
-    bbBtn?.focus();
+    userAvatarBtn?.focus();
   }
 });
 
@@ -268,6 +270,9 @@ function updateBBMenuUser(): void {
   if (bbMenuUser) {
     bbMenuUser.textContent = state.username || "BugBarn";
   }
+  if (userAvatarInitial) {
+    userAvatarInitial.textContent = (state.username || "?").charAt(0).toUpperCase();
+  }
 }
 
 elements.refreshAll.addEventListener("click", () => {
@@ -285,7 +290,7 @@ void start();
 async function start(): Promise<void> {
   void initFunnelBarn();
   void initSelfReporting();
-  void initIAMBarnProfileLink();
+  void initIAMBarnLinks();
 
   await loadSession();
   updateBBMenuUser();
@@ -423,10 +428,8 @@ function parseStack(stack?: string): Array<{ file: string; line: number; column:
   return frames.length > 0 ? frames : undefined;
 }
 
-// Populates the IAMBarn profile + sign-out links on the Settings → Session
-// card. Mobile users have no sidebar/bb-menu, so this is their only path to
-// log out or hop to their iambarn profile.
-async function initSettingsIAMBarnLinks(): Promise<void> {
+async function initIAMBarnLinks(): Promise<void> {
+  // Only show IAMBarn links when the session was established via OIDC.
   if (!document.cookie.split("; ").some((c) => c.startsWith("bugbarn_auth_method=oidc"))) {
     return;
   }
@@ -438,42 +441,18 @@ async function initSettingsIAMBarnLinks(): Promise<void> {
   } catch {
     return;
   }
-  const profile = elements.overviewView.querySelector<HTMLAnchorElement>("#settings-iambarn-profile");
-  if (profile && cfg.iambarn?.profileURL) {
-    profile.href = cfg.iambarn.profileURL;
-    profile.removeAttribute("hidden");
+  const profileLink = document.getElementById("bb-iambarn-profile") as HTMLAnchorElement | null;
+  if (profileLink && cfg.iambarn?.profileURL) {
+    profileLink.href = cfg.iambarn.profileURL;
+    profileLink.removeAttribute("hidden");
   }
-  const signOut = elements.overviewView.querySelector<HTMLAnchorElement>("#settings-iambarn-logout");
-  if (signOut && cfg.oidc?.endSessionURL) {
+  const logoutLink = document.getElementById("bb-iambarn-logout") as HTMLAnchorElement | null;
+  if (logoutLink && cfg.oidc?.endSessionURL) {
     const ret = `${window.location.origin}/`;
     const sep = cfg.oidc.endSessionURL.includes("?") ? "&" : "?";
-    signOut.href = `${cfg.oidc.endSessionURL}${sep}post_logout_redirect_uri=${encodeURIComponent(ret)}`;
-    signOut.removeAttribute("hidden");
+    logoutLink.href = `${cfg.oidc.endSessionURL}${sep}post_logout_redirect_uri=${encodeURIComponent(ret)}`;
+    logoutLink.removeAttribute("hidden");
   }
-}
-
-async function initIAMBarnProfileLink(): Promise<void> {
-  // Only show the IAMBarn profile link when the current session was
-  // actually established via the iambarn OIDC callback — local
-  // single-user installs shouldn't be linking to a remote profile
-  // they don't have.
-  if (!document.cookie.split("; ").some((c) => c.startsWith("bugbarn_auth_method=oidc"))) {
-    return;
-  }
-  let cfg: { iambarn?: { profileURL?: string } };
-  try {
-    const res = await fetch("/api/v1/runtime-config");
-    if (!res.ok) return;
-    cfg = await res.json() as typeof cfg;
-  } catch {
-    return;
-  }
-  const url = cfg?.iambarn?.profileURL;
-  if (!url) return;
-  const link = document.getElementById("bb-iambarn-profile") as HTMLAnchorElement | null;
-  if (!link) return;
-  link.href = url;
-  link.removeAttribute("hidden");
 }
 
 async function initSelfReporting(): Promise<void> {
@@ -1765,7 +1744,7 @@ function renderIssuesList(error: unknown = null): void {
 }
 
 function renderReleasesView(error: unknown = null): void {
-  elements.overviewView.innerHTML = renderReleasesViewMarkup(state.releases, error);
+  elements.overviewView.innerHTML = renderReleasesViewMarkup(state.releases, error, state.releasesEnvFilter);
   wireReleaseActions();
   if (!state.selectedReleaseId) {
     setActiveView("overview");
@@ -2108,6 +2087,13 @@ function wireCopyButtons(): void {
 }
 
 function wireReleaseActions(): void {
+  elements.overviewView.querySelectorAll<HTMLButtonElement>(".env-filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.releasesEnvFilter = btn.dataset["env"] ?? "";
+      renderReleasesView();
+    });
+  });
+
   const form = elements.overviewView.querySelector<HTMLFormElement>("#release-form");
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2131,6 +2117,19 @@ function wireReleaseActions(): void {
 
 function wireAlertActions(): void {
   const form = elements.overviewView.querySelector<HTMLFormElement>("#alert-form");
+  const conditionSelect = form?.querySelector<HTMLSelectElement>("#alert-condition-select");
+  const thresholdField = form?.querySelector<HTMLElement>(".alert-threshold-field");
+  const paramField = form?.querySelector<HTMLElement>(".alert-param-field");
+
+  function updateAlertFormFields(): void {
+    const cond = conditionSelect?.value;
+    if (thresholdField) thresholdField.hidden = cond !== "event_count_exceeds";
+    if (paramField) paramField.hidden = cond !== "message_contains";
+  }
+
+  conditionSelect?.addEventListener("change", updateAlertFormFields);
+  updateAlertFormFields();
+
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
     void submitAlertForm(form);
@@ -2180,7 +2179,6 @@ function wireSettingsActions(): void {
 
   const logoutBtn = elements.overviewView.querySelector<HTMLButtonElement>("#settings-logout");
   logoutBtn?.addEventListener("click", () => { void logout(); });
-  void initSettingsIAMBarnLinks();
 
   wireProjectListControls();
 
@@ -2416,11 +2414,15 @@ async function submitReleaseForm(form: HTMLFormElement): Promise<void> {
 async function submitAlertForm(form: HTMLFormElement): Promise<void> {
   const data = new FormData(form);
   const cooldownRaw = data.get("cooldown_minutes");
+  const thresholdRaw = data.get("threshold");
+  const param = String(data.get("param") || "").trim();
   try {
     await postJson("/api/v1/alerts", {
       name: String(data.get("name") || ""),
       condition: String(data.get("condition") || ""),
+      param: param || undefined,
       webhook_url: String(data.get("webhook_url") || ""),
+      threshold: thresholdRaw ? Number(thresholdRaw) : undefined,
       cooldown_minutes: cooldownRaw ? Number(cooldownRaw) : undefined,
       enabled: data.get("enabled") !== null,
     });

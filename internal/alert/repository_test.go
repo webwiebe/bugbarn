@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 	rule_json TEXT NOT NULL DEFAULT '{}',
 	webhook_url TEXT NOT NULL DEFAULT '',
 	condition TEXT NOT NULL DEFAULT 'new_issue',
+	param TEXT NOT NULL DEFAULT '',
 	threshold INTEGER NOT NULL DEFAULT 0,
 	cooldown_minutes INTEGER NOT NULL DEFAULT 15,
 	last_fired_at TEXT NOT NULL DEFAULT '',

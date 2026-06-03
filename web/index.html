@@ -45,13 +45,7 @@
     <div class="app-frame">
       <aside class="sidebar" id="sidebar" aria-label="Primary">
         <div class="side-top">
-          <button class="side-mark" id="bb-btn" type="button" aria-label="BugBarn menu" aria-haspopup="true" aria-expanded="false">BB</button>
-          <div class="bb-menu" id="bb-menu" hidden role="menu">
-            <div class="bb-menu-user" id="bb-menu-user">BugBarn</div>
-            <div class="bb-menu-divider"></div>
-            <a class="bb-menu-item" id="bb-iambarn-profile" role="menuitem" hidden target="_blank" rel="noopener noreferrer">Edit IAMBarn profile</a>
-            <button class="bb-menu-item" id="bb-logout" type="button" role="menuitem">Log out</button>
-          </div>
+          <span class="side-mark" aria-label="BugBarn">BB</span>
         </div>
 
         <nav class="side-nav">
@@ -77,7 +71,21 @@
           </a>
         </nav>
 
-        <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Expand sidebar">›</button>
+        <div class="side-bottom">
+          <div class="user-avatar-wrap">
+            <button class="user-avatar" id="user-avatar-btn" type="button" aria-label="User menu" aria-haspopup="true" aria-expanded="false">
+              <span id="user-avatar-initial">?</span>
+            </button>
+            <div class="bb-menu" id="bb-menu" hidden role="menu">
+              <div class="bb-menu-user" id="bb-menu-user">BugBarn</div>
+              <div class="bb-menu-divider"></div>
+              <a class="bb-menu-item" id="bb-iambarn-profile" role="menuitem" hidden target="_blank" rel="noopener noreferrer">Edit IAMBarn profile</a>
+              <a class="bb-menu-item" id="bb-iambarn-logout" role="menuitem" hidden>Sign out of IAMBarn</a>
+              <button class="bb-menu-item" id="bb-logout" type="button" role="menuitem">Log out</button>
+            </div>
+          </div>
+          <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Expand sidebar">›</button>
+        </div>
       </aside>
 
       <div class="workspace">

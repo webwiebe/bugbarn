@@ -3,6 +3,7 @@ package alert
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -30,8 +31,10 @@ func (e *Evaluator) HandleEvent(evt any) {
 	switch v := evt.(type) {
 	case domainevents.IssueCreated:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "new_issue")
+		e.evaluate(ctx, v.ProjectID, v.Issue, "message_contains")
 	case domainevents.IssueRegressed:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "regression")
+		e.evaluate(ctx, v.ProjectID, v.Issue, "message_contains")
 	case domainevents.IssueEventRecorded:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "event_count_exceeds")
 	}
@@ -53,6 +56,14 @@ func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.
 		}
 		if conditionType == "event_count_exceeds" && (rule.Threshold <= 0 || issue.EventCount <= rule.Threshold) {
 			continue
+		}
+		if conditionType == "message_contains" {
+			if rule.Param == "" {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(issue.Title), strings.ToLower(rule.Param)) {
+				continue
+			}
 		}
 		if !e.cooldownPassed(ctx, rule, issue.ID) {
 			continue

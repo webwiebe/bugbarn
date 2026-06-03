@@ -9,7 +9,8 @@ type Rule struct {
 	Enabled         bool
 	ProjectID       int64
 	WebhookURL      string
-	Condition       string // "new_issue" | "regression" | "event_count_exceeds"
+	Condition       string // "new_issue" | "regression" | "event_count_exceeds" | "message_contains"
+	Param           string // condition-specific string parameter (e.g. substring for message_contains)
 	Threshold       int
 	CooldownMinutes int
 	LastFiredAt     time.Time

@@ -36,6 +36,7 @@ SELECT
 	enabled,
 	webhook_url,
 	condition,
+	param,
 	threshold,
 	cooldown_minutes,
 	last_fired_at,
@@ -128,6 +129,7 @@ func scanRule(scanner interface {
 		enabled         int
 		webhookURL      string
 		condition       string
+		param           string
 		threshold       int
 		cooldownMinutes int
 		lastFiredAt     string
@@ -140,6 +142,7 @@ func scanRule(scanner interface {
 		&enabled,
 		&webhookURL,
 		&condition,
+		&param,
 		&threshold,
 		&cooldownMinutes,
 		&lastFiredAt,
@@ -152,6 +155,7 @@ func scanRule(scanner interface {
 	rule.Enabled = enabled != 0
 	rule.WebhookURL = webhookURL
 	rule.Condition = condition
+	rule.Param = param
 	rule.Threshold = threshold
 	rule.CooldownMinutes = cooldownMinutes
 	rule.LastFiredAt, _ = parseAlertTime(lastFiredAt)

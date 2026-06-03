@@ -86,6 +86,7 @@ func alertFromRequest(payload map[string]any) domain.Alert {
 		Severity:   stringValue(payload["severity"]),
 		WebhookURL: stringValue(payload["webhook_url"]),
 		Condition:  stringValue(payload["condition"]),
+		Param:      stringValue(payload["param"]),
 		Enabled:    true,
 		Rule:       map[string]any{},
 	}
@@ -101,7 +102,7 @@ func alertFromRequest(payload map[string]any) domain.Alert {
 	// Top-level known keys — do not copy into Rule.
 	topLevel := map[string]bool{
 		"name": true, "severity": true, "enabled": true,
-		"webhook_url": true, "condition": true, "threshold": true, "cooldown_minutes": true,
+		"webhook_url": true, "condition": true, "param": true, "threshold": true, "cooldown_minutes": true,
 	}
 	for _, key := range []string{"query", "target"} {
 		if value, ok := payload[key]; ok && value != nil {

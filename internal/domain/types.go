@@ -122,6 +122,7 @@ type Alert struct {
 	Rule            map[string]any `json:"rule,omitempty"`
 	WebhookURL      string         `json:"webhook_url,omitempty"`
 	Condition       string         `json:"condition,omitempty"`
+	Param           string         `json:"param,omitempty"`
 	Threshold       int            `json:"threshold,omitempty"`
 	CooldownMinutes int            `json:"cooldown_minutes,omitempty"`
 	LastFiredAt     time.Time      `json:"last_fired_at,omitempty"`
