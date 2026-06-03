@@ -773,9 +773,6 @@ function renderSettingsOverview(
   pendingProjects: ApiProject[],
   error: unknown,
 ): string {
-  const displayName = settings?.displayName || settings?.display_name || username || "";
-  const timezone = settings?.timezone || settings?.timezoneName || "";
-
   const statsBar = `
     <div class="settings-stats">
       <a href="#/settings/projects" class="settings-stat">
