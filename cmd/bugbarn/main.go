@@ -358,13 +358,13 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 						break
 					}
 					if drainDeadline.Err() != nil {
-						logger.Error("ingest spool drain incomplete", "error", err, "remaining", ingestSpool.Pending())
+						logger.Warn("ingest spool drain incomplete", "error", err, "remaining", ingestSpool.Pending())
 						break
 					}
 					// Transient error (e.g. writer restarting) — back off and retry.
 					select {
 					case <-drainDeadline.Done():
-						logger.Error("ingest spool drain incomplete", "error", err, "remaining", ingestSpool.Pending())
+						logger.Warn("ingest spool drain incomplete", "error", err, "remaining", ingestSpool.Pending())
 					case <-time.After(2 * time.Second):
 						continue
 					}

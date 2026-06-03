@@ -171,7 +171,9 @@ func (s *Service) UsageAll(ctx context.Context) (map[int64]storage.ProjectUsage,
 	result, err := s.repo.ProjectUsageAll(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "usage all", "error", err)
+		if !apperr.IsContextError(err) {
+			s.logger.ErrorContext(ctx, "usage all", "error", err)
+		}
 	}
 	return result, err
 }

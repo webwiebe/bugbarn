@@ -60,7 +60,9 @@ func (s *Service) List(ctx context.Context) ([]domain.Issue, error) {
 	issues, err := s.repo.ListIssues(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "list issues", "error", err)
+		if !apperr.IsContextError(err) {
+			s.logger.ErrorContext(ctx, "list issues", "error", err)
+		}
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("count", len(issues)))
@@ -73,7 +75,9 @@ func (s *Service) ListFiltered(ctx context.Context, filter domain.IssueFilter) (
 	issues, err := s.repo.ListIssuesFiltered(ctx, filter)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "list issues filtered", "error", err)
+		if !apperr.IsContextError(err) {
+			s.logger.ErrorContext(ctx, "list issues filtered", "error", err)
+		}
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("count", len(issues)))
@@ -214,11 +218,10 @@ func (s *Service) ListLiveEvents(ctx context.Context, limit int, since time.Time
 	}
 	events, err := s.repo.ListRecentEvents(ctx, limit, since)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, err
-		}
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "list live events", "error", err)
+		if !apperr.IsContextError(err) {
+			s.logger.ErrorContext(ctx, "list live events", "error", err)
+		}
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("count", len(events)))

@@ -1,6 +1,17 @@
 package apperr
 
-import "fmt"
+import (
+	"context"
+	"errors"
+	"fmt"
+)
+
+// IsContextError reports whether err is a context cancellation or deadline
+// exceeded. These are normal client-disconnect / shutdown scenarios and should
+// not be logged at ERROR level by services.
+func IsContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
 
 type Error struct {
 	Code    string

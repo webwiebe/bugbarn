@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -64,7 +65,9 @@ func (s *Service) Create(ctx context.Context, release domain.Release) (domain.Re
 	created, err := s.repo.CreateRelease(ctx, release)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "create release", "name", release.Name, "error", err)
+		if !apperr.IsContextError(err) {
+			s.logger.ErrorContext(ctx, "create release", "name", release.Name, "error", err)
+		}
 		return domain.Release{}, err
 	}
 	s.logger.InfoContext(ctx, "release created", "release_id", created.ID, "name", created.Name)
