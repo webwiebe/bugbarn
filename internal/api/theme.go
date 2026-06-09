@@ -19,7 +19,7 @@ type themeManifest struct {
 // web/styles.css (--bg, --panel, --accent, --text) and web/manifest.json.
 var bugbarnThemeManifest = themeManifest{
 	Name:            "BugBarn",
-	LogoURL:         "https://bugbarn.wiebe.xyz/icons/icon-512.png",
+	LogoURL:         "https://bugbarn.wiebe.xyz/app/icons/icon-512.png",
 	PrimaryColor:    "#a6e22e",
 	BackgroundColor: "#171812",
 	CardColor:       "#24251c",
