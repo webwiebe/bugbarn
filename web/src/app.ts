@@ -2185,14 +2185,14 @@ function wireSettingsActions(): void {
   elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-approve-project]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const slug = btn.dataset["approveProject"];
-      if (slug) void approveProject(slug);
+      if (slug) void approveProject(slug, btn);
     });
   });
 
   elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-delete-project]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const slug = btn.dataset["deleteProject"];
-      if (slug) void deleteProject(slug);
+      if (slug) void deleteProject(slug, btn);
     });
   });
 
@@ -2299,19 +2299,24 @@ function wireProjectListControls(): void {
   statusFilter?.addEventListener("change", apply);
 }
 
-async function approveProject(slug: string): Promise<void> {
+async function approveProject(slug: string, btn?: HTMLButtonElement): Promise<void> {
+  const label = btn?.textContent ?? "";
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
   try {
     await postJson(`/api/v1/projects/${encodeURIComponent(slug)}/approve`, {});
     showFlash(`Project "${slug}" approved.`, "success");
     await loadSettings();
     void checkPendingProjects();
   } catch (error) {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
     showFlash(`Approve failed: ${errorMessage(error)}`, "error", 8000);
   }
 }
 
-async function deleteProject(slug: string): Promise<void> {
+async function deleteProject(slug: string, btn?: HTMLButtonElement): Promise<void> {
   if (!confirm(`Delete project "${slug}"? This will remove all its issues and events.`)) return;
+  const label = btn?.textContent ?? "";
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
   try {
     const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(slug)}`, { method: "DELETE" });
     if (!res.ok) {
@@ -2322,6 +2327,7 @@ async function deleteProject(slug: string): Promise<void> {
     await loadSettings();
     void checkPendingProjects();
   } catch (error) {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
     showFlash(`Delete failed: ${errorMessage(error)}`, "error", 8000);
   }
 }
