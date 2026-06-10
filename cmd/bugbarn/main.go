@@ -143,6 +143,16 @@ func run() error {
 	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
 	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, &bgWg)
 
+	// Keep the WAL bounded by running explicit TRUNCATE checkpoints through the
+	// single writer connection. With wal_autocheckpoint(0) this is the only thing
+	// that reclaims the WAL; Litestream's out-of-process checkpoint cannot (it
+	// loses the lock race and logs "database is locked"). See Store.checkpoint.
+	bgWg.Add(1)
+	go func() {
+		defer bgWg.Done()
+		store.RunPeriodicCheckpoint(ctx, 30*time.Second, logger)
+	}()
+
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
 		return err
@@ -208,6 +218,10 @@ func run() error {
 		case <-shutdownCtx.Done():
 			slog.Warn("worker did not drain before shutdown deadline")
 		}
+		// All writers have stopped: merge the WAL into the main file so the next
+		// start (and Litestream's restore) sees a small WAL. Must run before the
+		// deferred store.Close(), since wal_autocheckpoint(0) disables Close's own.
+		store.FinalCheckpoint(logger)
 		if selfReporting {
 			bb.Shutdown(2 * time.Second)
 		}
