@@ -8,14 +8,31 @@ import (
 	"time"
 )
 
+// logRetentionCap is the soft per-project cap on retained log entries.
+const logRetentionCap = 10000
+
+// logInsertChunk is the max rows per multi-row INSERT statement. At 6 columns
+// per row this stays well under SQLite's 999 bound parameter limit.
+const logInsertChunk = 100
+
+// logTrimInterval amortizes the retention trim: the COUNT + DELETE runs roughly
+// once per this many insert batches instead of on every insert, so the typical
+// log write holds the single shared writer connection for as little as possible.
+const logTrimInterval = 32
+
 // InsertLogEntries inserts a batch of log entries for a project.
-// After insert, trims to the 10,000 most recent entries for that project.
-func (s *Store) InsertLogEntries(_ context.Context, entries []LogEntry) error {
+// Periodically trims to the logRetentionCap most recent entries for that project.
+//
+// The write path honors the caller's context: the single writer connection is
+// shared with event ingestion, so if a client disconnects we must abandon the
+// insert promptly rather than hold the connection. A short ceiling also bounds
+// how long any one batch can occupy the writer.
+func (s *Store) InsertLogEntries(ctx context.Context, entries []LogEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -24,48 +41,61 @@ func (s *Store) InsertLogEntries(_ context.Context, entries []LogEntry) error {
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO log_entries (project_id, received_at, level_num, level, message, data_json)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
+	for start := 0; start < len(entries); start += logInsertChunk {
+		end := start + logInsertChunk
+		if end > len(entries) {
+			end = len(entries)
+		}
+		chunk := entries[start:end]
 
-	for _, e := range entries {
-		dataJSON := "{}"
-		if len(e.Data) > 0 {
-			b, err := json.Marshal(e.Data)
-			if err == nil {
-				dataJSON = string(b)
+		var sb strings.Builder
+		sb.WriteString(`INSERT INTO log_entries (project_id, received_at, level_num, level, message, data_json) VALUES `)
+		args := make([]any, 0, len(chunk)*6)
+		for i, e := range chunk {
+			if i > 0 {
+				sb.WriteByte(',')
 			}
+			sb.WriteString(`(?, ?, ?, ?, ?, ?)`)
+
+			dataJSON := "{}"
+			if len(e.Data) > 0 {
+				if b, err := json.Marshal(e.Data); err == nil {
+					dataJSON = string(b)
+				}
+			}
+			receivedAt := e.ReceivedAt
+			if receivedAt.IsZero() {
+				receivedAt = time.Now().UTC()
+			}
+			args = append(args, e.ProjectID, receivedAt.UTC().Format(time.RFC3339Nano), e.LevelNum, e.Level, e.Message, dataJSON)
 		}
-		receivedAt := e.ReceivedAt
-		if receivedAt.IsZero() {
-			receivedAt = time.Now().UTC()
-		}
-		if _, err := stmt.ExecContext(ctx, e.ProjectID, receivedAt.UTC().Format(time.RFC3339Nano), e.LevelNum, e.Level, e.Message, dataJSON); err != nil {
+		if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
 			return err
 		}
 	}
 
-	// Trim to 10,000 most recent entries per project when over the cap.
-	projectID := entries[0].ProjectID
-	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM log_entries WHERE project_id = ?`, projectID).Scan(&count); err != nil {
-		return err
-	}
-	if count > 10000 {
-		_, err = tx.ExecContext(ctx, `
-			DELETE FROM log_entries WHERE project_id = ? AND id <= (
-				SELECT MIN(id) FROM (
-					SELECT id FROM log_entries WHERE project_id = ? ORDER BY id DESC LIMIT 10000
-				)
-			)
-		`, projectID, projectID)
-		if err != nil {
+	// Trim to the retention cap. The COUNT + DELETE is pure overhead on every
+	// insert, so for the common case (a flood of small batches) we amortize it
+	// across logTrimInterval batches; overshooting the soft cap by a few batches
+	// between trims is harmless. A batch large enough to breach the cap on its
+	// own always trims so the cap can't be blown past in a single call.
+	if len(entries) >= logTrimInterval || s.logInsertCount.Add(1)%logTrimInterval == 0 {
+		projectID := entries[0].ProjectID
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM log_entries WHERE project_id = ?`, projectID).Scan(&count); err != nil {
 			return err
+		}
+		if count > logRetentionCap {
+			_, err = tx.ExecContext(ctx, `
+				DELETE FROM log_entries WHERE project_id = ? AND id <= (
+					SELECT MIN(id) FROM (
+						SELECT id FROM log_entries WHERE project_id = ? ORDER BY id DESC LIMIT ?
+					)
+				)
+			`, projectID, projectID, logRetentionCap)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
