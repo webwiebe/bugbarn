@@ -97,7 +97,12 @@ func sqliteDSN(path string) string {
 		Scheme: "file",
 		Path:   filepath.ToSlash(path),
 	}
-	return u.String() + "?mode=rwc&_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)"
+	// wal_autocheckpoint(0): disable SQLite's automatic PASSIVE checkpoints. They
+	// stop at the oldest reader snapshot and never TRUNCATE, so under sustained
+	// read load (the reader pods hold the WAL file open) they let the WAL grow to
+	// a high-water mark that never shrinks. The writer instead runs explicit
+	// TRUNCATE checkpoints through its single connection — see Store.checkpoint.
+	return u.String() + "?mode=rwc&_txlock=immediate&_pragma=busy_timeout(30000)&_pragma=foreign_keys(1)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)&_pragma=wal_autocheckpoint(0)"
 }
 
 func sqliteReadOnlyDSN(path string) string {
@@ -105,7 +110,7 @@ func sqliteReadOnlyDSN(path string) string {
 		Scheme: "file",
 		Path:   filepath.ToSlash(path),
 	}
-	return u.String() + "?mode=ro&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)"
+	return u.String() + "?mode=ro&_pragma=busy_timeout(30000)&_pragma=foreign_keys(1)"
 }
 
 func marshalEvent(evt event.Event) ([]byte, error) {
