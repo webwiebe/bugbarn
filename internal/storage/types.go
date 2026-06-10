@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"sync/atomic"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
@@ -13,6 +14,12 @@ type Store struct {
 	db               *sql.DB
 	roDB             *sql.DB
 	defaultProjectID int64
+
+	// logInsertCount counts log-entry insert batches so the retention trim can
+	// be amortized (run roughly once per logTrimInterval batches) instead of on
+	// every insert — the single writer is shared with event ingestion, so we
+	// keep each log write as short as possible.
+	logInsertCount atomic.Uint64
 }
 
 // Domain type aliases — storage consumers can keep using storage.Issue etc.
