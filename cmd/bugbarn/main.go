@@ -33,8 +33,10 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
+	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
+	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
@@ -142,6 +144,30 @@ func run() error {
 
 	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
 	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, &bgWg)
+
+	// Spec 007: when a Redis write queue is configured, a single consumer drains
+	// it into the DB. This decouples ingest producers (reader pods) from the
+	// writer so a slow writer can't trigger the HTTP-forward retry storm that
+	// wedged production. Connect in a goroutine so startup never blocks on Redis;
+	// the legacy file-spool worker above stays as the fallback path until
+	// producers are switched to Redis (phase 3) and it is retired (phase 5).
+	// The shared write mutex (nil for now) is wired when retention and the WAL
+	// checkpoint move under it in a later phase.
+	if cfg.RedisQueueURL != "" {
+		bgWg.Add(1)
+		go func() {
+			defer bgWg.Done()
+			writeQueue, qerr := queue.NewRedisQueueWithRetry(ctx, cfg.RedisQueueURL)
+			if qerr != nil {
+				logger.Warn("write-queue consumer not started", "error", qerr)
+				return
+			}
+			defer writeQueue.Close()
+			consumer := ingestproc.NewConsumer(writeQueue, ingestproc.NewProcessor(store, eventPub, logger), nil, logger)
+			logger.Info("redis write-queue consumer started", "url", cfg.RedisQueueURL)
+			consumer.Run(ctx)
+		}()
+	}
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
