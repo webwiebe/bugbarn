@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -57,6 +58,12 @@ func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
 		case <-time.After(time.Duration(100*(1<<attempt)) * time.Millisecond):
 		}
 	}
+	if errors.Is(err, context.Canceled) {
+		// Client disconnected mid-insert; this is not a server error worth
+		// alerting on (and selflog would otherwise capture it as one).
+		s.logger.InfoContext(ctx, "insert log entries canceled", "count", len(entries))
+		return err
+	}
 	span.SetStatus(codes.Error, err.Error())
 	s.logger.ErrorContext(ctx, "insert log entries", "count", len(entries), "error", err)
 	return err
@@ -67,6 +74,11 @@ func (s *Service) List(ctx context.Context, projectID int64, levelMin int, query
 	defer span.End()
 	entries, err := s.repo.ListLogEntries(ctx, projectID, levelMin, query, limit, beforeID)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			// Client disconnected mid-query; not a server error worth alerting on.
+			s.logger.InfoContext(ctx, "list log entries canceled", "project_id", projectID)
+			return nil, err
+		}
 		span.SetStatus(codes.Error, err.Error())
 		s.logger.ErrorContext(ctx, "list log entries", "project_id", projectID, "error", err)
 		return nil, err

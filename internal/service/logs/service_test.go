@@ -1,8 +1,11 @@
 package logs
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
@@ -61,6 +64,26 @@ func TestInsert_Error(t *testing.T) {
 	}
 	if !errors.Is(err, apperr.ErrInternal) {
 		t.Errorf("expected ErrInternal, got %v", err)
+	}
+}
+
+func TestInsert_CanceledNotLoggedAsError(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	svc := New(&fakeRepo{}, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := svc.Insert(ctx, []domain.LogEntry{{Message: "x"}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	// A client disconnect must not surface as an ERROR (selflog captures those).
+	if strings.Contains(buf.String(), `"level":"ERROR"`) {
+		t.Errorf("canceled insert logged at ERROR: %s", buf.String())
 	}
 }
 
