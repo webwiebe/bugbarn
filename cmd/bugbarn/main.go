@@ -39,6 +39,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
+	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -163,7 +164,7 @@ func run() error {
 				return
 			}
 			defer writeQueue.Close()
-			consumer := ingestproc.NewConsumer(writeQueue, ingestproc.NewProcessor(store, eventPub, logger), nil, logger)
+			consumer := ingestproc.NewConsumer(writeQueue, ingestproc.NewProcessor(store, eventPub, logger), logsvc.New(store, logger), nil, logger)
 			logger.Info("redis write-queue consumer started", "url", cfg.RedisQueueURL)
 			consumer.Run(ctx)
 		}()
@@ -286,9 +287,24 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	// The ingest spool is opt-in for readers: only enabled when BUGBARN_SPOOL_DIR
 	// is set explicitly in the environment (config.SpoolDir has a default that
 	// points at a non-writable path inside the container).
+	//
+	// Spec 007: when BUGBARN_REDIS_QUEUE_URL is set, the spool drains to the Redis
+	// write queue instead of forwarding to the writer over HTTP. The spool remains
+	// the durability anchor (cursor advances only after a successful publish), so
+	// the lazy queue client is fine — ingest keeps spooling even if Redis is down.
 	var ingestSpool *api.SpoolForwarder
 	if os.Getenv("BUGBARN_SPOOL_DIR") != "" {
-		ingestSpool, err = api.NewSpoolForwarder(cfg.SpoolDir, cfg.WriterURL, cfg.MaxBodyBytes, logger)
+		if cfg.RedisQueueURL != "" {
+			writeQueue, qerr := queue.NewRedisQueueLazy(cfg.RedisQueueURL)
+			if qerr != nil {
+				return fmt.Errorf("open write queue: %w", qerr)
+			}
+			defer writeQueue.Close()
+			ingestSpool, err = api.NewRedisSpoolForwarder(cfg.SpoolDir, writeQueue, cfg.MaxBodyBytes, logger)
+			logger.Info("ingest spool draining to redis write queue", "url", cfg.RedisQueueURL)
+		} else {
+			ingestSpool, err = api.NewSpoolForwarder(cfg.SpoolDir, cfg.WriterURL, cfg.MaxBodyBytes, logger)
+		}
 		if err != nil {
 			return fmt.Errorf("open ingest spool: %w", err)
 		}

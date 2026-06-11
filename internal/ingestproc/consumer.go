@@ -7,9 +7,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/logparse"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 )
+
+// LogInserter persists parsed log entries. Satisfied by *service/logs.Service.
+type LogInserter interface {
+	Insert(ctx context.Context, entries []domain.LogEntry) error
+}
 
 const (
 	// consumerMaxRetries bounds in-memory retries for a transient persist
@@ -26,18 +33,20 @@ const (
 type Consumer struct {
 	queue   *queue.RedisQueue
 	proc    *Processor
+	logs    LogInserter
 	logger  *slog.Logger
 	writeMu *sync.Mutex
 }
 
-// NewConsumer builds a queue consumer. writeMu may be nil; when set, the
-// consumer holds it for the DB-write phase of each batch so writes never
-// interleave with other writers competing for the SQLite write lock.
-func NewConsumer(q *queue.RedisQueue, proc *Processor, writeMu *sync.Mutex, logger *slog.Logger) *Consumer {
+// NewConsumer builds a queue consumer. logs may be nil (log items are then
+// dropped). writeMu may be nil; when set, the consumer holds it for the
+// DB-write phase of each batch so writes never interleave with other writers
+// competing for the SQLite write lock.
+func NewConsumer(q *queue.RedisQueue, proc *Processor, logs LogInserter, writeMu *sync.Mutex, logger *slog.Logger) *Consumer {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Consumer{queue: q, proc: proc, writeMu: writeMu, logger: logger.With("component", "redis-consumer")}
+	return &Consumer{queue: q, proc: proc, logs: logs, writeMu: writeMu, logger: logger.With("component", "redis-consumer")}
 }
 
 // Run loops on Consume until ctx is cancelled.
@@ -82,9 +91,7 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) {
 		case queue.KindEvent:
 			c.persistEvent(ctx, item)
 		case queue.KindLog:
-			// Log items are introduced with the reader producer in spec 007
-			// phase 3; until then nothing enqueues them.
-			c.logger.Warn("dropping unsupported log queue item", "project", item.ProjectSlug)
+			c.persistLog(ctx, item)
 		default:
 			c.logger.Warn("dropping unknown queue item kind", "kind", item.Kind)
 		}
@@ -131,4 +138,45 @@ func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) {
 		}
 	}
 	c.logger.Error("drop event after exhausting retries", "ingest_id", item.IngestID)
+}
+
+func (c *Consumer) persistLog(ctx context.Context, item queue.Item) {
+	if c.logs == nil {
+		c.logger.Warn("dropping log item: no log inserter configured", "project", item.ProjectSlug)
+		return
+	}
+	body, err := base64.StdEncoding.DecodeString(item.BodyBase64)
+	if err != nil {
+		c.logger.Error("decode log body", "project", item.ProjectSlug, "error", err)
+		return
+	}
+	projectID := c.proc.ResolveProjectID(ctx, item.ProjectSlug)
+	if projectID == 0 {
+		c.logger.Warn("dropping log item: unresolved project", "project", item.ProjectSlug)
+		return
+	}
+	entries := logparse.ParseBody(body, item.ContentType, projectID)
+	if len(entries) == 0 {
+		return
+	}
+	for attempt := 1; attempt <= consumerMaxRetries; attempt++ {
+		err := c.logs.Insert(ctx, entries)
+		if err == nil {
+			return
+		}
+		if !isTransientPersistError(err) {
+			c.logger.Error("drop logs after insert error", "project", item.ProjectSlug, "count", len(entries), "error", err)
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+	}
+	c.logger.Error("drop logs after exhausting retries", "project", item.ProjectSlug, "count", len(entries))
 }

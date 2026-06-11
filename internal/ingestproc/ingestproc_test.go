@@ -14,6 +14,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
+	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -105,7 +106,7 @@ func TestConsumerDrainsEventQueue(t *testing.T) {
 
 	proc, store := newProcessor(t)
 	var mu sync.Mutex
-	c := NewConsumer(q, proc, &mu, nil)
+	c := NewConsumer(q, proc, logsvc.New(store, nil), &mu, nil)
 
 	ctx := context.Background()
 	if err := q.Publish(ctx, []queue.Item{{
@@ -136,6 +137,58 @@ func TestConsumerDrainsEventQueue(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("consumer did not drain: queue_len=%d issues=%d", n, issueCount)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestConsumerDrainsLogQueue(t *testing.T) {
+	t.Parallel()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+	t.Cleanup(func() { q.Close() })
+
+	proc, store := newProcessor(t)
+	logs := logsvc.New(store, nil)
+	var mu sync.Mutex
+	c := NewConsumer(q, proc, logs, &mu, nil)
+
+	ctx := context.Background()
+	logBody := []byte(`{"logs":[{"level":"error","msg":"boom","reqId":"abc"}]}`)
+	if err := q.Publish(ctx, []queue.Item{{
+		Kind:        queue.KindLog,
+		ReceivedAt:  time.Now().UTC(),
+		ContentType: "application/json",
+		ProjectSlug: "test-svc",
+		BodyBase64:  base64.StdEncoding.EncodeToString(logBody),
+	}}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go c.Run(runCtx)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		n, _ := q.Len(ctx)
+		var logCount int
+		if proj, err := store.ProjectBySlug(ctx, "test-svc"); err == nil {
+			entries, _ := store.ListLogEntries(ctx, proj.ID, 0, "", 50, 0)
+			logCount = len(entries)
+		}
+		if n == 0 && logCount == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("log consumer did not drain: queue_len=%d logs=%d", n, logCount)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

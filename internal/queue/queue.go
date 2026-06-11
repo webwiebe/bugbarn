@@ -68,6 +68,18 @@ func NewRedisQueue(redisURL string) (*RedisQueue, error) {
 	return &RedisQueue{client: client}, nil
 }
 
+// NewRedisQueueLazy builds a queue client without verifying connectivity; the
+// connection is established on first use. Use where startup must not block or
+// fail on Redis being briefly unavailable — e.g. reader producers, whose local
+// spool buffers ingest until the drain can reach Redis.
+func NewRedisQueueLazy(redisURL string) (*RedisQueue, error) {
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return nil, fmt.Errorf("queue: parse redis url: %w", err)
+	}
+	return &RedisQueue{client: redis.NewClient(opts)}, nil
+}
+
 // NewRedisQueueWithRetry connects to Redis, retrying with capped exponential
 // backoff until ctx is cancelled or the connection succeeds. Used in writer
 // mode, where the Redis queue pod may start after the writer during a rolling

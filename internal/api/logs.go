@@ -10,93 +10,9 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/logparse"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
-
-var pinoLevelNames = map[int]string{
-	10: "trace",
-	20: "debug",
-	30: "info",
-	40: "warn",
-	50: "error",
-	60: "fatal",
-}
-
-var pinoLevelNums = map[string]int{
-	"trace": 10,
-	"debug": 20,
-	"info":  30,
-	"warn":  40,
-	"error": 50,
-	"fatal": 60,
-}
-
-var skipFields = map[string]bool{
-	"v":        true,
-	"pid":      true,
-	"hostname": true,
-	"msg":      true,
-	"message":  true,
-	"level":    true,
-	"time":     true,
-}
-
-func parsePinoObject(obj map[string]any, projectID int64) domain.LogEntry {
-	entry := domain.LogEntry{
-		ProjectID:  projectID,
-		ReceivedAt: time.Now().UTC(),
-		LevelNum:   30,
-		Level:      "info",
-		Data:       make(map[string]any),
-	}
-
-	if msg, ok := obj["msg"].(string); ok {
-		entry.Message = msg
-	} else if msg, ok := obj["message"].(string); ok {
-		entry.Message = msg
-	}
-
-	if lvl, ok := obj["level"]; ok {
-		switch v := lvl.(type) {
-		case float64:
-			entry.LevelNum = int(v)
-			if name, ok := pinoLevelNames[entry.LevelNum]; ok {
-				entry.Level = name
-			} else {
-				entry.Level = strconv.Itoa(entry.LevelNum)
-			}
-		case string:
-			entry.Level = strings.ToLower(v)
-			if num, ok := pinoLevelNums[entry.Level]; ok {
-				entry.LevelNum = num
-			}
-		}
-	}
-
-	if t, ok := obj["time"].(float64); ok {
-		ms := int64(t)
-		entry.ReceivedAt = time.UnixMilli(ms).UTC()
-	}
-
-	for k, v := range obj {
-		if !skipFields[k] {
-			entry.Data[k] = v
-		}
-	}
-	if len(entry.Data) == 0 {
-		entry.Data = nil
-	}
-
-	return entry
-}
-
-func levelMinFromName(name string) int {
-	name = strings.ToLower(strings.TrimSpace(name))
-	if num, ok := pinoLevelNums[name]; ok {
-		return num
-	}
-	return 0
-}
 
 func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := storage.ProjectIDFromContext(r.Context())
@@ -145,7 +61,7 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 
 	entries := make([]domain.LogEntry, 0, len(rawEntries))
 	for _, obj := range rawEntries {
-		entries = append(entries, parsePinoObject(obj, projectID))
+		entries = append(entries, logparse.ParseObject(obj, projectID))
 	}
 
 	if err := s.logs.Insert(r.Context(), entries); err != nil {
@@ -177,7 +93,7 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 
 	levelMin := 0
 	if v := r.URL.Query().Get("level"); v != "" {
-		levelMin = levelMinFromName(v)
+		levelMin = logparse.LevelMinFromName(v)
 	}
 
 	q := r.URL.Query().Get("q")

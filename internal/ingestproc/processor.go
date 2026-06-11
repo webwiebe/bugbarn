@@ -103,6 +103,21 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 	}
 }
 
+// ResolveProjectID ensures the project for slug exists and returns its ID, or 0
+// if slug is empty or the project cannot be resolved. Used by the log path,
+// which needs a project ID before parsing entries.
+func (p *Processor) ResolveProjectID(ctx context.Context, slug string) int64 {
+	if slug == "" {
+		return 0
+	}
+	proj, err := p.store.EnsureProject(ctx, slug)
+	if err != nil {
+		p.logger.Error("ensure project", "project_slug", slug, "error", err)
+		return 0
+	}
+	return proj.ID
+}
+
 // isTransientPersistError mirrors cmd/bugbarn.isTransientPersistError: a locked
 // database or a deadline is worth retrying; anything else is permanent.
 func isTransientPersistError(err error) bool {

@@ -13,9 +13,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/queue"
 )
 
 // spooledRequest is a forwardable HTTP write captured by the reader.
@@ -37,6 +40,7 @@ type spooledRequest struct {
 type SpoolForwarder struct {
 	dir         string
 	writerURL   string
+	queue       *queue.RedisQueue // spec 007: when set, drain publishes to Redis instead of HTTP
 	maxBodyByte int64
 	rotateBytes int64
 	logger      *slog.Logger
@@ -85,6 +89,36 @@ func NewSpoolForwarder(dir, writerURL string, maxBodyBytes int64, logger *slog.L
 		rotateBytes: defaultRotateBytes,
 		logger:      logger,
 		client:      &http.Client{Timeout: 5 * time.Second},
+		file:        file,
+		path:        path,
+	}, nil
+}
+
+// NewRedisSpoolForwarder is like NewSpoolForwarder but drains the spool to a
+// Redis write queue instead of forwarding to the writer over HTTP (spec 007).
+// The on-disk spool remains the durability anchor: the cursor advances only
+// after a successful publish, so a Redis outage backs the spool up without loss.
+func NewRedisSpoolForwarder(dir string, q *queue.RedisQueue, maxBodyBytes int64, logger *slog.Logger) (*SpoolForwarder, error) {
+	if dir == "" {
+		return nil, errors.New("spool dir is required")
+	}
+	if q == nil {
+		return nil, errors.New("queue is required")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create spool dir: %w", err)
+	}
+	path := filepath.Join(dir, spoolFileName)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open spool file: %w", err)
+	}
+	return &SpoolForwarder{
+		dir:         dir,
+		queue:       q,
+		maxBodyByte: maxBodyBytes,
+		rotateBytes: defaultRotateBytes,
+		logger:      logger,
 		file:        file,
 		path:        path,
 	}, nil
@@ -253,6 +287,9 @@ func (s *SpoolForwarder) DrainOnce(ctx context.Context) error {
 }
 
 func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) error {
+	if s.queue != nil {
+		return s.publishOne(ctx, rec)
+	}
 	body, err := base64.StdEncoding.DecodeString(rec.BodyBase64)
 	if err != nil {
 		// Record is corrupt — drop it so we don't get stuck.
@@ -281,6 +318,37 @@ func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) err
 		s.logger.Warn("writer rejected spooled request", "status", resp.StatusCode, "path", rec.Path)
 	}
 	return nil
+}
+
+// publishOne converts a spooled ingest request into a queue.Item and LPUSHes it.
+// Returning nil acks the record (cursor advances); returning an error retries.
+func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) error {
+	kind := kindForPath(rec.Path)
+	if kind == "" {
+		// Not an ingest path we route through the queue — drop and advance.
+		s.logger.Warn("spool record has no queue kind, dropping", "path", rec.Path)
+		return nil
+	}
+	item := queue.Item{
+		Kind:        kind,
+		ReceivedAt:  rec.ReceivedAt,
+		ContentType: rec.Headers["Content-Type"],
+		ProjectSlug: rec.Headers["X-Bugbarn-Project"],
+		BodyBase64:  rec.BodyBase64,
+	}
+	return s.queue.Publish(ctx, []queue.Item{item})
+}
+
+// kindForPath maps an ingest request path to its queue Item kind.
+func kindForPath(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/api/v1/events"):
+		return queue.KindEvent
+	case strings.HasPrefix(path, "/api/v1/logs"):
+		return queue.KindLog
+	default:
+		return ""
+	}
 }
 
 func (s *SpoolForwarder) Close() error {
