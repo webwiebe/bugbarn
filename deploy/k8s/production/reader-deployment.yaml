@@ -41,6 +41,8 @@ spec:
               value: reader
             - name: BUGBARN_WRITER_URL
               value: http://bugbarn-writer:8080
+            - name: BUGBARN_REDIS_QUEUE_URL
+              value: redis://bugbarn-redis-queue:6379/0
             - name: BUGBARN_ADDR
               value: :8080
             - name: BUGBARN_PUBLIC_URL

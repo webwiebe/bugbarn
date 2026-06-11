@@ -33,10 +33,13 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
+	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
+	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
+	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -142,6 +145,30 @@ func run() error {
 
 	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
 	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, &bgWg)
+
+	// Spec 007: when a Redis write queue is configured, a single consumer drains
+	// it into the DB. This decouples ingest producers (reader pods) from the
+	// writer so a slow writer can't trigger the HTTP-forward retry storm that
+	// wedged production. Connect in a goroutine so startup never blocks on Redis;
+	// the legacy file-spool worker above stays as the fallback path until
+	// producers are switched to Redis (phase 3) and it is retired (phase 5).
+	// The shared write mutex (nil for now) is wired when retention and the WAL
+	// checkpoint move under it in a later phase.
+	if cfg.RedisQueueURL != "" {
+		bgWg.Add(1)
+		go func() {
+			defer bgWg.Done()
+			writeQueue, qerr := queue.NewRedisQueueWithRetry(ctx, cfg.RedisQueueURL)
+			if qerr != nil {
+				logger.Warn("write-queue consumer not started", "error", qerr)
+				return
+			}
+			defer writeQueue.Close()
+			consumer := ingestproc.NewConsumer(writeQueue, ingestproc.NewProcessor(store, eventPub, logger), logsvc.New(store, logger), nil, logger)
+			logger.Info("redis write-queue consumer started", "url", cfg.RedisQueueURL)
+			consumer.Run(ctx)
+		}()
+	}
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -260,9 +287,24 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	// The ingest spool is opt-in for readers: only enabled when BUGBARN_SPOOL_DIR
 	// is set explicitly in the environment (config.SpoolDir has a default that
 	// points at a non-writable path inside the container).
+	//
+	// Spec 007: when BUGBARN_REDIS_QUEUE_URL is set, the spool drains to the Redis
+	// write queue instead of forwarding to the writer over HTTP. The spool remains
+	// the durability anchor (cursor advances only after a successful publish), so
+	// the lazy queue client is fine — ingest keeps spooling even if Redis is down.
 	var ingestSpool *api.SpoolForwarder
 	if os.Getenv("BUGBARN_SPOOL_DIR") != "" {
-		ingestSpool, err = api.NewSpoolForwarder(cfg.SpoolDir, cfg.WriterURL, cfg.MaxBodyBytes, logger)
+		if cfg.RedisQueueURL != "" {
+			writeQueue, qerr := queue.NewRedisQueueLazy(cfg.RedisQueueURL)
+			if qerr != nil {
+				return fmt.Errorf("open write queue: %w", qerr)
+			}
+			defer writeQueue.Close()
+			ingestSpool, err = api.NewRedisSpoolForwarder(cfg.SpoolDir, writeQueue, cfg.MaxBodyBytes, logger)
+			logger.Info("ingest spool draining to redis write queue", "url", cfg.RedisQueueURL)
+		} else {
+			ingestSpool, err = api.NewSpoolForwarder(cfg.SpoolDir, cfg.WriterURL, cfg.MaxBodyBytes, logger)
+		}
 		if err != nil {
 			return fmt.Errorf("open ingest spool: %w", err)
 		}

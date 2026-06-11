@@ -9,6 +9,8 @@ resources:
   - reader-deployment.yaml
   - reader-service.yaml
   - reader-hpa.yaml
+  - redis-queue-deployment.yaml
+  - redis-queue-service.yaml
   - web-deployment.yaml
   - web-service.yaml
   - ingress.yaml

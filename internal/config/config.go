@@ -42,6 +42,7 @@ type Config struct {
 	AutoApproveProjects    bool   // BUGBARN_AUTO_APPROVE_PROJECTS
 	Mode                   string // BUGBARN_MODE: "", "writer", or "reader"
 	WriterURL              string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
+	RedisQueueURL          string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
 	OIDCIssuer             string // BUGBARN_OIDC_ISSUER — when all four OIDC vars are set, OIDC login is offered alongside local auth
 	OIDCClientID           string // BUGBARN_OIDC_CLIENT_ID
 	OIDCClientSecret       string // BUGBARN_OIDC_CLIENT_SECRET
@@ -74,6 +75,7 @@ func Load() Config {
 		AutoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
 		Mode:                os.Getenv("BUGBARN_MODE"),
 		WriterURL:           os.Getenv("BUGBARN_WRITER_URL"),
+		RedisQueueURL:       os.Getenv("BUGBARN_REDIS_QUEUE_URL"),
 		OIDCIssuer:          os.Getenv("BUGBARN_OIDC_ISSUER"),
 		OIDCClientID:        os.Getenv("BUGBARN_OIDC_CLIENT_ID"),
 		OIDCClientSecret:    os.Getenv("BUGBARN_OIDC_CLIENT_SECRET"),

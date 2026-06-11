@@ -33,6 +33,8 @@ spec:
           env:
             - name: BUGBARN_MODE
               value: writer
+            - name: BUGBARN_REDIS_QUEUE_URL
+              value: redis://bugbarn-redis-queue:6379/0
             - name: BUGBARN_ADDR
               value: :8080
             - name: BUGBARN_SPOOL_DIR
