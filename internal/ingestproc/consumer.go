@@ -49,8 +49,13 @@ func NewConsumer(q *queue.RedisQueue, proc *Processor, logs LogInserter, writeMu
 	return &Consumer{queue: q, proc: proc, logs: logs, writeMu: writeMu, logger: logger.With("component", "redis-consumer")}
 }
 
+// depthLogInterval is how often the consumer logs a non-empty queue depth, for
+// rollout visibility into backlog.
+const depthLogInterval = 30 * time.Second
+
 // Run loops on Consume until ctx is cancelled.
 func (c *Consumer) Run(ctx context.Context) {
+	go c.monitorDepth(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -75,6 +80,24 @@ func (c *Consumer) Run(ctx context.Context) {
 			continue // BRPOP timed out — loop and re-check ctx.
 		}
 		c.processBatch(ctx, items)
+	}
+}
+
+// monitorDepth periodically logs the write-queue depth when it is backed up, so
+// operators can see a backlog forming during the spec 007 rollout.
+func (c *Consumer) monitorDepth(ctx context.Context) {
+	t := time.NewTicker(depthLogInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			n, err := c.queue.Len(ctx)
+			if err == nil && n > 0 {
+				c.logger.Info("write queue backlog", "entries", n)
+			}
+		}
 	}
 }
 

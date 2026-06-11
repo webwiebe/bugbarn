@@ -2,7 +2,7 @@
 
 **Feature Branch**: `007-redis-write-queue`
 **Created**: 2026-06-11
-**Status**: Draft
+**Status**: Implemented (phases 1-4); cutover (phase 5) pending production validation
 **Input**: Production writer wedged during a maintenance window (2026-06-11). Root cause was the reader→writer **HTTP write-forwarding + per-pod disk spool** coupling introduced in [006](../006-cqrs-read-write-split/spec.md).
 
 ## Problem
@@ -113,11 +113,17 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 
 ## Phased implementation plan
 
-- **Phase 1 — Foundation (no behavior change).** `internal/queue` package + `QueueItem` envelope + `BUGBARN_REDIS_QUEUE_URL` config + go-redis dependency. Unit tests with miniredis. ← *start here*
-- **Phase 2 — Writer consumer.** `RedisConsumer` + shared write mutex; writer drains Redis when `RedisQueueURL` set (in addition to its existing spool worker, behind the flag). Wire checkpoint + retention under the mutex.
-- **Phase 3 — Reader producer.** `RedisForwarder` publishes the ingest spool to Redis when configured; route reader log-ingest into the spool as `Kind:"log"`.
-- **Phase 4 — Deploy.** Redis queue manifests, secret wiring; enable in testing → staging → prod.
-- **Phase 5 — Cutover & cleanup.** Once Redis path is proven, retire the reader→writer ingest HTTP path (`SpoolForwarder` HTTP send) and the writer's inbound ingest HTTP handler; keep `WriteForwarder` for sync dashboard mutations.
+- **Phase 1 — Foundation (no behavior change).** ✅ `internal/queue` package + `Item` envelope + `BUGBARN_REDIS_QUEUE_URL` config + go-redis dependency. Unit tests with miniredis.
+- **Phase 2 — Writer consumer.** ✅ `internal/ingestproc` — `Processor.PersistRecord` (extracted event pipeline) + `Consumer` (BRPOP → dispatch). Wired into the writer's `run()` behind the flag; connects in a goroutine so startup never blocks on Redis. The shared write mutex is plumbed (nil for now) and activates when retention + the WAL checkpoint move under it (deferred — see note below).
+- **Phase 3 — Reader producer.** ✅ `SpoolForwarder` Redis drain (`NewRedisSpoolForwarder`); `internal/logparse` shared pino parsing; consumer `KindLog` path. Reader uses the Redis spool when configured.
+- **Phase 4 — Deploy.** ✅ `redis-queue-deployment.yaml`/`-service.yaml` for staging + production; `BUGBARN_REDIS_QUEUE_URL` on writer + reader; kustomizations updated. Rollout is staged by the pipeline (staging on tag, prod manual).
+- **Phase 5 — Cutover & cleanup.** ⏳ *Deferred until the Redis path is validated in production.* Then retire the reader→writer ingest HTTP path (`SpoolForwarder` HTTP send) and the writer's inbound ingest HTTP handler, and fold the file-spool worker's inline pipeline into `ingestproc`. Keep `WriteForwarder` for sync dashboard mutations. The feature flag stays as the rollback path until this happens.
+
+### Decisions made during implementation
+
+- **Consumer delivery:** plain `BRPOP` (matches spanbarn) — at-most-once on the consumer hop; a writer crash mid-batch loses that batch. Acceptable for telemetry; the reader spool covers un-published data. A `BLMOVE`-to-processing-list upgrade is the path to exactly-once if needed.
+- **Write mutex deferred:** `MaxOpenConns(1)` already serialises writes at the pool level, so the consumer passes `nil` for now. The shared mutex becomes meaningful when the app-side WAL `TRUNCATE` checkpoint is re-introduced (it needs an uncontended window) — see [project_wal_checkpoint]; that lands with phase 5 cleanup.
+- **Node hardening (ops, not in this PR):** raise `fs.inotify.max_user_instances` on the writer node — the inotify exhaustion that wedged prod on 2026-06-11 is mitigated structurally by removing the HTTP-forward churn, but the low default is worth bumping.
 
 ## Rollout & rollback
 
