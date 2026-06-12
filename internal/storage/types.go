@@ -15,12 +15,6 @@ type Store struct {
 	roDB             *sql.DB
 	defaultProjectID int64
 
-	// path is the absolute path to the SQLite database file. checkpoints reports
-	// the size of its "<path>-wal" sidecar and counts checkpoint outcomes so WAL
-	// growth and checkpoint contention are visible in telemetry (see checkpoint.go).
-	path        string
-	checkpoints *checkpointMetrics
-
 	// logInsertCount counts log-entry insert batches so the retention trim can
 	// be amortized (run roughly once per logTrimInterval batches) instead of on
 	// every insert — the single writer is shared with event ingestion, so we
