@@ -11,6 +11,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
@@ -139,6 +140,44 @@ func TestConsumerDrainsEventQueue(t *testing.T) {
 			t.Fatalf("consumer did not drain: queue_len=%d issues=%d", n, issueCount)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+type countingLogs struct {
+	calls int
+	total int
+}
+
+func (c *countingLogs) Insert(_ context.Context, entries []domain.LogEntry) error {
+	c.calls++
+	c.total += len(entries)
+	return nil
+}
+
+func TestConsumerBatchesLogInserts(t *testing.T) {
+	t.Parallel()
+	proc, _ := newProcessor(t)
+	logs := &countingLogs{}
+	c := NewConsumer(nil, proc, logs, nil, nil)
+
+	const n = 5
+	items := make([]queue.Item, n)
+	for i := range items {
+		items[i] = queue.Item{
+			Kind:        queue.KindLog,
+			ProjectSlug: "svc",
+			ContentType: "application/json",
+			BodyBase64:  base64.StdEncoding.EncodeToString([]byte(`{"logs":[{"level":"info","msg":"x"}]}`)),
+		}
+	}
+
+	c.processBatch(context.Background(), items)
+
+	if logs.calls != 1 {
+		t.Errorf("expected 1 batched Insert for %d same-project log items, got %d", n, logs.calls)
+	}
+	if logs.total != n {
+		t.Errorf("expected %d entries inserted, got %d", n, logs.total)
 	}
 }
 
