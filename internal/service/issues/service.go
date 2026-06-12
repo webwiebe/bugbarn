@@ -106,7 +106,9 @@ func (s *Service) Resolve(ctx context.Context, id string) (domain.Issue, error) 
 	issue, err := s.repo.ResolveIssue(ctx, id)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "resolve issue", "issue_id", id, "error", err)
+		if !errors.Is(err, context.Canceled) {
+			s.logger.ErrorContext(ctx, "resolve issue", "issue_id", id, "error", err)
+		}
 		return domain.Issue{}, err
 	}
 	s.logger.InfoContext(ctx, "issue resolved", "issue_id", id)
