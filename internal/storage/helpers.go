@@ -97,7 +97,15 @@ func sqliteDSN(path string) string {
 		Scheme: "file",
 		Path:   filepath.ToSlash(path),
 	}
-	return u.String() + "?mode=rwc&_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)"
+	// wal_autocheckpoint(0) disables SQLite's automatic passive checkpoints: the
+	// writer runs explicit TRUNCATE checkpoints on a fixed interval instead (see
+	// checkpoint.go). Litestream disables autocheckpoint anyway when it takes over
+	// replication, and its own checkpoint has no busy_timeout so it loses the race
+	// against the single-writer consumer under load and the WAL grows unbounded.
+	// The app-side TRUNCATE checkpoint shares this connection (MaxOpenConns(1)) and
+	// has busy_timeout(30000), so it waits for a clear write window instead of
+	// failing immediately.
+	return u.String() + "?mode=rwc&_txlock=immediate&_pragma=busy_timeout(30000)&_pragma=foreign_keys(1)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)&_pragma=wal_autocheckpoint(0)"
 }
 
 func sqliteReadOnlyDSN(path string) string {

@@ -126,7 +126,8 @@ func Open(path string) (*Store, error) {
 	}
 	roDB.SetMaxOpenConns(4)
 
-	store := &Store{db: db, roDB: roDB}
+	store := &Store{db: db, roDB: roDB, path: absPath}
+	store.checkpoints = newCheckpointMetrics(absPath + "-wal")
 	ctx := context.Background()
 	if err := store.init(ctx); err != nil {
 		roDB.Close()
@@ -146,6 +147,7 @@ func (s *Store) Close() error {
 		return nil
 	}
 	var firstErr error
+	s.checkpoints.close()
 	if s.roDB != nil {
 		if err := s.roDB.Close(); err != nil && firstErr == nil {
 			firstErr = err

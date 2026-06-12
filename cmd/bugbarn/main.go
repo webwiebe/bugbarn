@@ -146,14 +146,26 @@ func run() error {
 	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
 	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, &bgWg)
 
+	// The writer owns WAL maintenance. With wal_autocheckpoint(0) on the write
+	// DSN, nothing truncates the WAL implicitly — Litestream streams frames to S3
+	// but its own checkpoint loses the lock race under sustained load, so the WAL
+	// grew unbounded in production. This loop runs an explicit TRUNCATE checkpoint
+	// every 30s on the single write connection, serialising behind normal writes.
+	bgWg.Add(1)
+	go func() {
+		defer bgWg.Done()
+		store.RunPeriodicCheckpoint(ctx, 30*time.Second, logger.With("component", "wal-checkpoint"))
+	}()
+
 	// Spec 007: when a Redis write queue is configured, a single consumer drains
 	// it into the DB. This decouples ingest producers (reader pods) from the
 	// writer so a slow writer can't trigger the HTTP-forward retry storm that
 	// wedged production. Connect in a goroutine so startup never blocks on Redis;
 	// the legacy file-spool worker above stays as the fallback path until
 	// producers are switched to Redis (phase 3) and it is retired (phase 5).
-	// The shared write mutex (nil for now) is wired when retention and the WAL
-	// checkpoint move under it in a later phase.
+	// The shared write mutex stays nil: MaxOpenConns(1) already serialises every
+	// writer (consumer, legacy worker, analytics, and the WAL checkpoint loop)
+	// through the single write connection, so no Go-level mutex is needed.
 	if cfg.RedisQueueURL != "" {
 		bgWg.Add(1)
 		go func() {
@@ -232,6 +244,10 @@ func run() error {
 		go func() { bgWg.Wait(); close(drained) }()
 		select {
 		case <-drained:
+			// All writers have stopped; merge the WAL into the main file before
+			// Close() so a clean shutdown never strands a large WAL (Close() does
+			// not checkpoint with wal_autocheckpoint(0)).
+			store.FinalCheckpoint(logger.With("component", "wal-checkpoint"))
 		case <-shutdownCtx.Done():
 			slog.Warn("worker did not drain before shutdown deadline")
 		}
