@@ -106,12 +106,6 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) {
 		c.writeMu.Lock()
 		defer c.writeMu.Unlock()
 	}
-	// Accumulate log entries across the whole batch, grouped by project, so a
-	// flood of log items collapses into one logs.Insert per project (a single DB
-	// transaction for many lines) instead of one transaction per item. This is
-	// the throughput headroom that keeps the consumer ahead of high log volume.
-	logsByProject := make(map[int64][]domain.LogEntry)
-	projCache := make(map[string]int64)
 	for _, item := range items {
 		if ctx.Err() != nil {
 			return
@@ -120,19 +114,10 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) {
 		case queue.KindEvent:
 			c.persistEvent(ctx, item)
 		case queue.KindLog:
-			pid, entries := c.parseLogItem(ctx, item, projCache)
-			if len(entries) > 0 {
-				logsByProject[pid] = append(logsByProject[pid], entries...)
-			}
+			c.persistLog(ctx, item)
 		default:
 			c.logger.Warn("dropping unknown queue item kind", "kind", item.Kind)
 		}
-	}
-	for pid, entries := range logsByProject {
-		if ctx.Err() != nil {
-			return
-		}
-		c.insertLogs(ctx, pid, entries)
 	}
 }
 
@@ -178,40 +163,32 @@ func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) {
 	c.logger.Error("drop event after exhausting retries", "ingest_id", item.IngestID)
 }
 
-// parseLogItem decodes a log item, resolves its project (cached within the
-// batch to avoid repeat lookups), and returns the parsed entries. Returns
-// pid=0/nil when the item should be skipped.
-func (c *Consumer) parseLogItem(ctx context.Context, item queue.Item, projCache map[string]int64) (int64, []domain.LogEntry) {
+func (c *Consumer) persistLog(ctx context.Context, item queue.Item) {
 	if c.logs == nil {
 		c.logger.Warn("dropping log item: no log inserter configured", "project", item.ProjectSlug)
-		return 0, nil
+		return
 	}
 	body, err := base64.StdEncoding.DecodeString(item.BodyBase64)
 	if err != nil {
 		c.logger.Error("decode log body", "project", item.ProjectSlug, "error", err)
-		return 0, nil
+		return
 	}
-	pid, ok := projCache[item.ProjectSlug]
-	if !ok {
-		pid = c.proc.ResolveProjectID(ctx, item.ProjectSlug)
-		projCache[item.ProjectSlug] = pid
-	}
-	if pid == 0 {
+	projectID := c.proc.ResolveProjectID(ctx, item.ProjectSlug)
+	if projectID == 0 {
 		c.logger.Warn("dropping log item: unresolved project", "project", item.ProjectSlug)
-		return 0, nil
+		return
 	}
-	return pid, logparse.ParseBody(body, item.ContentType, pid)
-}
-
-// insertLogs persists a batch of log entries for one project with bounded retry.
-func (c *Consumer) insertLogs(ctx context.Context, projectID int64, entries []domain.LogEntry) {
+	entries := logparse.ParseBody(body, item.ContentType, projectID)
+	if len(entries) == 0 {
+		return
+	}
 	for attempt := 1; attempt <= consumerMaxRetries; attempt++ {
 		err := c.logs.Insert(ctx, entries)
 		if err == nil {
 			return
 		}
 		if !isTransientPersistError(err) {
-			c.logger.Error("drop logs after insert error", "project", projectID, "count", len(entries), "error", err)
+			c.logger.Error("drop logs after insert error", "project", item.ProjectSlug, "count", len(entries), "error", err)
 			return
 		}
 		if ctx.Err() != nil {
@@ -224,5 +201,5 @@ func (c *Consumer) insertLogs(ctx context.Context, projectID int64, entries []do
 		case <-time.After(backoff):
 		}
 	}
-	c.logger.Error("drop logs after exhausting retries", "project", projectID, "count", len(entries))
+	c.logger.Error("drop logs after exhausting retries", "project", item.ProjectSlug, "count", len(entries))
 }

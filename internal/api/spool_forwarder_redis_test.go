@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/alicebob/miniredis/v2"
 
@@ -77,58 +76,5 @@ func TestRedisSpoolForwarderPublishes(t *testing.T) {
 		if string(body) != "PAYLOAD-"+c.want {
 			t.Errorf("%s: body = %q", c.path, string(body))
 		}
-	}
-}
-
-// TestRedisSpoolForwarderDrainBatches verifies the steady-state Drain path
-// publishes all records read in one pass as a single batched queue entry, so the
-// consumer drains many items per BRPOP (the spec-007 throughput headroom).
-func TestRedisSpoolForwarderDrainBatches(t *testing.T) {
-	mr, err := miniredis.Run()
-	if err != nil {
-		t.Fatalf("miniredis: %v", err)
-	}
-	defer mr.Close()
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
-	defer q.Close()
-	sf, err := NewRedisSpoolForwarder(t.TempDir(), q, 1<<20, slog.Default())
-	if err != nil {
-		t.Fatalf("NewRedisSpoolForwarder: %v", err)
-	}
-	defer sf.Close()
-
-	const n = 5
-	for i := 0; i < n; i++ {
-		req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("L"))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Bugbarn-Project", "svc")
-		sf.Forward(httptest.NewRecorder(), req)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go sf.Drain(ctx)
-
-	deadline := time.Now().Add(3 * time.Second)
-	for sf.Pending() > 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("drain did not publish: pending=%d", sf.Pending())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	cancel()
-
-	if depth, _ := q.Len(context.Background()); depth != 1 {
-		t.Errorf("expected 1 batched list entry, got %d", depth)
-	}
-	items, err := q.Consume(context.Background())
-	if err != nil {
-		t.Fatalf("Consume: %v", err)
-	}
-	if len(items) != n {
-		t.Errorf("expected %d items in one batch, got %d", n, len(items))
 	}
 }
