@@ -26,6 +26,10 @@ const (
 	consumerMaxRetries = 5
 	// consumerErrBackoff is the pause after a Redis Consume error before retry.
 	consumerErrBackoff = time.Second
+	// drainMaxEntries caps how many queue entries the consumer pulls per cycle so
+	// it can batch the DB writes across them — the headroom that keeps it ahead of
+	// high-volume trickle ingest (one item per entry).
+	drainMaxEntries = 500
 )
 
 // Consumer drains the Redis write queue and persists each item through the
@@ -63,7 +67,7 @@ func (c *Consumer) Run(ctx context.Context) {
 		default:
 		}
 
-		items, err := c.queue.Consume(ctx)
+		items, err := c.queue.DrainBatch(ctx, drainMaxEntries)
 		if err != nil {
 			if ctx.Err() != nil {
 				return

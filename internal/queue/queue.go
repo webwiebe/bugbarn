@@ -132,8 +132,8 @@ func (q *RedisQueue) Publish(ctx context.Context, items []Item) error {
 	return nil
 }
 
-// Consume blocks for up to brpopTimeout waiting for a batch, then returns it.
-// Returns (nil, nil) when the timeout expires with no items — callers loop.
+// Consume blocks for up to brpopTimeout waiting for one entry, then returns its
+// items. Returns (nil, nil) when the timeout expires with no items.
 func (q *RedisQueue) Consume(ctx context.Context) ([]Item, error) {
 	result, err := q.client.BRPop(ctx, brpopTimeout, WriteQueueKey).Result()
 	if err == redis.Nil {
@@ -143,8 +143,43 @@ func (q *RedisQueue) Consume(ctx context.Context) ([]Item, error) {
 		return nil, fmt.Errorf("queue: brpop: %w", err)
 	}
 	// result[0] = key, result[1] = JSON payload.
+	return decodeItems(result[1])
+}
+
+// DrainBatch blocks for the first queued entry, then non-blocking-pops up to
+// maxEntries-1 more entries and returns all their items together. This lets the
+// consumer batch DB writes across many entries even when producers publish one
+// item per entry — the dominant case under steady trickle ingest, where
+// per-publish batching never kicks in. Returns (nil, nil) on idle timeout.
+func (q *RedisQueue) DrainBatch(ctx context.Context, maxEntries int) ([]Item, error) {
+	result, err := q.client.BRPop(ctx, brpopTimeout, WriteQueueKey).Result()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("queue: brpop: %w", err)
+	}
+	items, err := decodeItems(result[1])
+	if err != nil {
+		return nil, err
+	}
+	if maxEntries > 1 {
+		vals, rerr := q.client.RPopCount(ctx, WriteQueueKey, maxEntries-1).Result()
+		if rerr != nil && rerr != redis.Nil {
+			return items, nil // best-effort: process the first entry, retry the rest
+		}
+		for _, v := range vals {
+			if more, derr := decodeItems(v); derr == nil {
+				items = append(items, more...)
+			}
+		}
+	}
+	return items, nil
+}
+
+func decodeItems(payload string) ([]Item, error) {
 	var items []Item
-	if err := json.Unmarshal([]byte(result[1]), &items); err != nil {
+	if err := json.Unmarshal([]byte(payload), &items); err != nil {
 		return nil, fmt.Errorf("queue: unmarshal: %w", err)
 	}
 	return items, nil
