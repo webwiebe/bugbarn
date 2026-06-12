@@ -149,7 +149,7 @@ spec:
         - name: bugbarn-data
           persistentVolumeClaim:
             claimName: bugbarn-data
-            readOnly: true
         - name: ingest-spool
           emptyDir:
             sizeLimit: 512Mi
+            readOnly: true
