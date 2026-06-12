@@ -40,8 +40,6 @@ spec:
               value: http://bugbarn-writer:8080
             - name: BUGBARN_REDIS_QUEUE_URL
               value: redis://bugbarn-redis-queue:6379/0
-            - name: BUGBARN_SPOOL_DIR
-              value: /var/spool/bugbarn
             - name: BUGBARN_ADDR
               value: :8080
             - name: BUGBARN_DB_PATH
@@ -143,13 +141,8 @@ spec:
             - name: bugbarn-data
               mountPath: /var/lib/bugbarn
               readOnly: true
-            - name: ingest-spool
-              mountPath: /var/spool/bugbarn
       volumes:
         - name: bugbarn-data
           persistentVolumeClaim:
             claimName: bugbarn-data
             readOnly: true
-        - name: ingest-spool
-          emptyDir:
-            sizeLimit: 512Mi

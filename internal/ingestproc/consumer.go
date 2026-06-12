@@ -26,10 +26,6 @@ const (
 	consumerMaxRetries = 5
 	// consumerErrBackoff is the pause after a Redis Consume error before retry.
 	consumerErrBackoff = time.Second
-	// drainMaxEntries caps how many queue entries the consumer pulls per cycle so
-	// it can batch the DB writes across them — the headroom that keeps it ahead of
-	// high-volume trickle ingest (one item per entry).
-	drainMaxEntries = 500
 )
 
 // Consumer drains the Redis write queue and persists each item through the
@@ -40,6 +36,7 @@ type Consumer struct {
 	logs    LogInserter
 	logger  *slog.Logger
 	writeMu *sync.Mutex
+	metrics *consumerMetrics
 }
 
 // NewConsumer builds a queue consumer. logs may be nil (log items are then
@@ -50,7 +47,26 @@ func NewConsumer(q *queue.RedisQueue, proc *Processor, logs LogInserter, writeMu
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Consumer{queue: q, proc: proc, logs: logs, writeMu: writeMu, logger: logger.With("component", "redis-consumer")}
+	var depth func(context.Context) (int64, error)
+	if q != nil {
+		depth = q.Len
+	}
+	return &Consumer{
+		queue:   q,
+		proc:    proc,
+		logs:    logs,
+		writeMu: writeMu,
+		logger:  logger.With("component", "redis-consumer"),
+		metrics: newConsumerMetrics(depth),
+	}
+}
+
+// Close releases the consumer's telemetry registrations. Safe to call once Run
+// has returned.
+func (c *Consumer) Close() {
+	if c.metrics != nil {
+		c.metrics.close()
+	}
 }
 
 // depthLogInterval is how often the consumer logs a non-empty queue depth, for
@@ -67,7 +83,7 @@ func (c *Consumer) Run(ctx context.Context) {
 		default:
 		}
 
-		items, err := c.queue.DrainBatch(ctx, drainMaxEntries)
+		items, err := c.queue.Consume(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -110,41 +126,37 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) {
 		c.writeMu.Lock()
 		defer c.writeMu.Unlock()
 	}
-	// Accumulate log entries across the whole batch, grouped by project, so a
-	// flood of log items collapses into one logs.Insert per project (a single DB
-	// transaction for many lines) instead of one transaction per item. This is
-	// the throughput headroom that keeps the consumer ahead of high log volume.
-	logsByProject := make(map[int64][]domain.LogEntry)
-	projCache := make(map[string]int64)
 	for _, item := range items {
 		if ctx.Err() != nil {
 			return
 		}
+		start := time.Now()
+		var outcome string
 		switch item.Kind {
 		case queue.KindEvent:
-			c.persistEvent(ctx, item)
+			outcome = c.persistEvent(ctx, item)
 		case queue.KindLog:
-			pid, entries := c.parseLogItem(ctx, item, projCache)
-			if len(entries) > 0 {
-				logsByProject[pid] = append(logsByProject[pid], entries...)
-			}
+			outcome = c.persistLog(ctx, item)
 		default:
 			c.logger.Warn("dropping unknown queue item kind", "kind", item.Kind)
+			outcome = "unknown_kind"
 		}
-	}
-	for pid, entries := range logsByProject {
-		if ctx.Err() != nil {
-			return
+		kind := item.Kind
+		if kind == "" {
+			kind = "unknown"
 		}
-		c.insertLogs(ctx, pid, entries)
+		c.metrics.record(ctx, kind, outcome, float64(time.Since(start).Milliseconds()))
 	}
 }
 
-func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) {
+// persistEvent persists a single event item and returns a short outcome label
+// for telemetry (success, parse_error, persist_error, transient_drop,
+// decode_error).
+func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) string {
 	body, err := base64.StdEncoding.DecodeString(item.BodyBase64)
 	if err != nil {
 		c.logger.Error("decode event body", "ingest_id", item.IngestID, "error", err)
-		return
+		return "decode_error"
 	}
 	record := spool.Record{
 		IngestID:      item.IngestID,
@@ -159,74 +171,71 @@ func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) {
 		res := c.proc.PersistRecord(ctx, record)
 		switch res.Outcome {
 		case OutcomeSuccess:
-			return
+			return "success"
 		case OutcomeParseError:
 			c.logger.Error("drop unparseable event", "ingest_id", item.IngestID, "error", res.Err)
-			return
+			return "parse_error"
 		case OutcomePersistError:
 			c.logger.Error("drop event after persist error", "ingest_id", item.IngestID, "error", res.Err)
-			return
+			return "persist_error"
 		case OutcomeTransient:
 			if ctx.Err() != nil {
-				return
+				return "transient_drop"
 			}
 			backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
 			c.logger.Info("transient persist failure, retrying", "ingest_id", item.IngestID, "attempt", attempt, "error", res.Err)
 			select {
 			case <-ctx.Done():
-				return
+				return "transient_drop"
 			case <-time.After(backoff):
 			}
 		}
 	}
 	c.logger.Error("drop event after exhausting retries", "ingest_id", item.IngestID)
+	return "retry_exhausted"
 }
 
-// parseLogItem decodes a log item, resolves its project (cached within the
-// batch to avoid repeat lookups), and returns the parsed entries. Returns
-// pid=0/nil when the item should be skipped.
-func (c *Consumer) parseLogItem(ctx context.Context, item queue.Item, projCache map[string]int64) (int64, []domain.LogEntry) {
+// persistLog persists a single log item and returns a short outcome label for
+// telemetry (success, dropped, empty, decode_error, insert_error,
+// retry_exhausted).
+func (c *Consumer) persistLog(ctx context.Context, item queue.Item) string {
 	if c.logs == nil {
 		c.logger.Warn("dropping log item: no log inserter configured", "project", item.ProjectSlug)
-		return 0, nil
+		return "dropped"
 	}
 	body, err := base64.StdEncoding.DecodeString(item.BodyBase64)
 	if err != nil {
 		c.logger.Error("decode log body", "project", item.ProjectSlug, "error", err)
-		return 0, nil
+		return "decode_error"
 	}
-	pid, ok := projCache[item.ProjectSlug]
-	if !ok {
-		pid = c.proc.ResolveProjectID(ctx, item.ProjectSlug)
-		projCache[item.ProjectSlug] = pid
-	}
-	if pid == 0 {
+	projectID := c.proc.ResolveProjectID(ctx, item.ProjectSlug)
+	if projectID == 0 {
 		c.logger.Warn("dropping log item: unresolved project", "project", item.ProjectSlug)
-		return 0, nil
+		return "dropped"
 	}
-	return pid, logparse.ParseBody(body, item.ContentType, pid)
-}
-
-// insertLogs persists a batch of log entries for one project with bounded retry.
-func (c *Consumer) insertLogs(ctx context.Context, projectID int64, entries []domain.LogEntry) {
+	entries := logparse.ParseBody(body, item.ContentType, projectID)
+	if len(entries) == 0 {
+		return "empty"
+	}
 	for attempt := 1; attempt <= consumerMaxRetries; attempt++ {
 		err := c.logs.Insert(ctx, entries)
 		if err == nil {
-			return
+			return "success"
 		}
 		if !isTransientPersistError(err) {
-			c.logger.Error("drop logs after insert error", "project", projectID, "count", len(entries), "error", err)
-			return
+			c.logger.Error("drop logs after insert error", "project", item.ProjectSlug, "count", len(entries), "error", err)
+			return "insert_error"
 		}
 		if ctx.Err() != nil {
-			return
+			return "transient_drop"
 		}
 		backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
 		select {
 		case <-ctx.Done():
-			return
+			return "transient_drop"
 		case <-time.After(backoff):
 		}
 	}
-	c.logger.Error("drop logs after exhausting retries", "project", projectID, "count", len(entries))
+	c.logger.Error("drop logs after exhausting retries", "project", item.ProjectSlug, "count", len(entries))
+	return "retry_exhausted"
 }

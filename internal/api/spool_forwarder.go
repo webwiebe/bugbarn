@@ -231,27 +231,6 @@ func (s *SpoolForwarder) Drain(ctx context.Context) {
 			continue
 		}
 
-		// Redis mode (spec 007): publish every record read this pass in one batch
-		// so the consumer drains many items per BRPOP instead of one round-trip
-		// each — the throughput headroom that lets it keep up with high log floods.
-		if s.queue != nil {
-			if err := s.publishBatch(ctx, records); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				s.logger.Warn("spool drain publish failed", "error", err, "count", len(records))
-				sleepCtx(ctx, errBackoff)
-				continue
-			}
-			s.pending.Add(-int64(len(records)))
-			if ackedTo := records[len(records)-1].endOffset; ackedTo > offset {
-				if err := writeCursor(s.dir, ackedTo); err != nil {
-					s.logger.Error("spool drain write cursor", "error", err)
-				}
-			}
-			continue
-		}
-
 		ackedTo := offset
 		for _, r := range records {
 			if err := s.forwardOne(ctx, r.req); err != nil {
@@ -341,47 +320,23 @@ func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) err
 	return nil
 }
 
-// itemFor converts a spooled ingest request into a queue.Item. ok is false when
-// the path is not one we route through the queue (caller should skip it).
-func itemFor(rec spooledRequest) (queue.Item, bool) {
+// publishOne converts a spooled ingest request into a queue.Item and LPUSHes it.
+// Returning nil acks the record (cursor advances); returning an error retries.
+func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) error {
 	kind := kindForPath(rec.Path)
 	if kind == "" {
-		return queue.Item{}, false
+		// Not an ingest path we route through the queue — drop and advance.
+		s.logger.Warn("spool record has no queue kind, dropping", "path", rec.Path)
+		return nil
 	}
-	return queue.Item{
+	item := queue.Item{
 		Kind:        kind,
 		ReceivedAt:  rec.ReceivedAt,
 		ContentType: rec.Headers["Content-Type"],
 		ProjectSlug: rec.Headers["X-Bugbarn-Project"],
 		BodyBase64:  rec.BodyBase64,
-	}, true
-}
-
-// publishOne LPUSHes a single spooled request as a queue.Item. Used by DrainOnce
-// at shutdown; the steady-state Drain loop uses publishBatch.
-func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) error {
-	it, ok := itemFor(rec)
-	if !ok {
-		s.logger.Warn("spool record has no queue kind, dropping", "path", rec.Path)
-		return nil
 	}
-	return s.queue.Publish(ctx, []queue.Item{it})
-}
-
-// publishBatch LPUSHes all records read in one Drain pass as a single batch, so
-// the consumer processes many items per BRPOP. queue.Publish chunks internally
-// to stay under the per-entry size bound.
-func (s *SpoolForwarder) publishBatch(ctx context.Context, records []spooledRequestAt) error {
-	items := make([]queue.Item, 0, len(records))
-	for _, r := range records {
-		if it, ok := itemFor(r.req); ok {
-			items = append(items, it)
-		}
-	}
-	if len(items) == 0 {
-		return nil
-	}
-	return s.queue.Publish(ctx, items)
+	return s.queue.Publish(ctx, []queue.Item{item})
 }
 
 // kindForPath maps an ingest request path to its queue Item kind.
