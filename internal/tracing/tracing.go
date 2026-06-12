@@ -2,12 +2,14 @@ package tracing
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -29,20 +31,67 @@ func Meter() metric.Meter {
 	return otel.Meter(tracerName)
 }
 
-// Init sets up the global TracerProvider with an OTLP HTTP exporter.
-// Configuration is read from standard OTEL env vars:
-//   - OTEL_EXPORTER_OTLP_ENDPOINT (e.g. https://spanbarn.wiebe.xyz)
-//   - OTEL_EXPORTER_OTLP_HEADERS  (e.g. Authorization=Bearer <key>)
-//   - OTEL_SERVICE_NAME            (defaults to "bugbarn")
+// metricsHandler serves the Prometheus exposition of all instruments. nil until
+// Init wires the Prometheus exporter; callers must nil-check before mounting.
+var metricsHandler http.Handler
+
+// MetricsHandler returns the Prometheus /metrics handler, or nil if metrics
+// failed to initialize. Mount it outside any tracing middleware so scrapes are
+// not themselves traced.
+func MetricsHandler() http.Handler { return metricsHandler }
+
+// Init wires telemetry for the process:
 //
-// Returns a shutdown function that flushes pending spans.
+//   - Metrics: a Prometheus pull exporter, always enabled. Instruments are
+//     exposed at the handler returned by MetricsHandler() for scraping or
+//     on-demand curl. This needs no backend, which suits an environment with no
+//     OTLP metrics collector.
+//   - Traces: an OTLP HTTP exporter, enabled only when OTEL_EXPORTER_OTLP_ENDPOINT
+//     is set. Config is read from the standard OTEL env vars:
+//     OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS, OTEL_SERVICE_NAME.
+//
+// Returns a shutdown function that flushes pending telemetry. Every failure is
+// non-fatal: telemetry degrades to no-ops rather than blocking startup.
 func Init(_ context.Context, version string) (shutdown func(context.Context) error, err error) {
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {
-		return func(context.Context) error { return nil }, nil
+	res := buildResource(version)
+
+	// Metrics: Prometheus pull exporter. Registers with the default Prometheus
+	// registry; MetricsHandler() then serves that registry.
+	var mp *sdkmetric.MeterProvider
+	if promExp, perr := prometheus.New(); perr == nil {
+		mp = sdkmetric.NewMeterProvider(
+			sdkmetric.WithResource(res),
+			sdkmetric.WithReader(promExp),
+		)
+		otel.SetMeterProvider(mp)
+		metricsHandler = promhttp.Handler()
 	}
 
-	// Use a short timeout so a slow/unreachable SpanBarn never blocks startup.
-	// The OTLP HTTP client retries exports in the background regardless.
+	// Traces: OTLP HTTP, only when an endpoint is configured.
+	var tp *sdktrace.TracerProvider
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		tp = initTraces(res)
+	}
+
+	return func(ctx context.Context) error {
+		var shutErr error
+		if tp != nil {
+			shutErr = tp.Shutdown(ctx)
+		}
+		if mp != nil {
+			if e := mp.Shutdown(ctx); shutErr == nil {
+				shutErr = e
+			}
+		}
+		return shutErr
+	}, nil
+}
+
+// initTraces builds and registers the OTLP trace pipeline. Returns nil on any
+// setup error so the caller runs without tracing rather than blocking.
+func initTraces(res *resource.Resource) *sdktrace.TracerProvider {
+	// Short timeout so a slow/unreachable SpanBarn never blocks startup; the OTLP
+	// client retries exports in the background regardless.
 	initCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -51,27 +100,7 @@ func Init(_ context.Context, version string) (shutdown func(context.Context) err
 		otlptracehttp.WithTimeout(2*time.Second),
 	)
 	if err != nil {
-		// Non-fatal: run without tracing rather than block the server.
-		return func(context.Context) error { return nil }, nil
-	}
-
-	serviceName := os.Getenv("OTEL_SERVICE_NAME")
-	if serviceName == "" {
-		serviceName = "bugbarn"
-	}
-
-	attrs := []resource.Option{
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-		),
-	}
-	if version != "" {
-		attrs = append(attrs, resource.WithAttributes(semconv.ServiceVersion(version)))
-	}
-
-	res, err := resource.New(context.Background(), attrs...)
-	if err != nil {
-		return func(context.Context) error { return nil }, nil
+		return nil
 	}
 
 	batcher := sdktrace.NewBatchSpanProcessor(exporter,
@@ -88,28 +117,25 @@ func Init(_ context.Context, version string) (shutdown func(context.Context) err
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
+	return tp
+}
 
-	// Metrics pipeline, same OTLP endpoint/headers as traces. Best-effort: a
-	// failure here leaves tracing intact and metrics as no-ops rather than
-	// blocking startup.
-	var mp *sdkmetric.MeterProvider
-	if metricExp, mErr := otlpmetrichttp.New(initCtx, otlpmetrichttp.WithTimeout(5*time.Second)); mErr == nil {
-		mp = sdkmetric.NewMeterProvider(
-			sdkmetric.WithResource(res),
-			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp,
-				sdkmetric.WithInterval(30*time.Second),
-			)),
-		)
-		otel.SetMeterProvider(mp)
+// buildResource assembles the OTel resource (service name + version) shared by
+// the trace and metric providers.
+func buildResource(version string) *resource.Resource {
+	serviceName := os.Getenv("OTEL_SERVICE_NAME")
+	if serviceName == "" {
+		serviceName = "bugbarn"
 	}
-
-	return func(ctx context.Context) error {
-		tErr := tp.Shutdown(ctx)
-		if mp != nil {
-			if mErr := mp.Shutdown(ctx); tErr == nil {
-				tErr = mErr
-			}
-		}
-		return tErr
-	}, nil
+	attrs := []resource.Option{
+		resource.WithAttributes(semconv.ServiceName(serviceName)),
+	}
+	if version != "" {
+		attrs = append(attrs, resource.WithAttributes(semconv.ServiceVersion(version)))
+	}
+	res, err := resource.New(context.Background(), attrs...)
+	if err != nil {
+		return resource.Default()
+	}
+	return res
 }

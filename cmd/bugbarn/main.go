@@ -213,7 +213,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr:    cfg.Addr,
-		Handler: httpHandler,
+		Handler: withMetrics(httpHandler),
 	}
 
 	errCh := make(chan error, 1)
@@ -245,6 +245,20 @@ func run() error {
 		}
 		return err
 	}
+}
+
+// withMetrics routes GET /metrics to the Prometheus exposition handler (when
+// telemetry is enabled) and everything else to next. /metrics is mounted here,
+// outside the tracing middleware, so scrapes are not themselves traced.
+func withMetrics(next http.Handler) http.Handler {
+	mh := tracing.MetricsHandler()
+	if mh == nil {
+		return next
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", mh)
+	mux.Handle("/", next)
+	return mux
 }
 
 // runReader starts the server in read-only mode. It opens the writer's SQLite
@@ -352,7 +366,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 
 	server := &http.Server{
 		Addr:    cfg.Addr,
-		Handler: httpHandler,
+		Handler: withMetrics(httpHandler),
 	}
 
 	logger.Info("starting in reader mode", "addr", cfg.Addr, "writer_url", cfg.WriterURL, "spool_dir", cfg.SpoolDir)
