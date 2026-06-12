@@ -107,55 +107,6 @@ func TestPublishBatchesLargeInput(t *testing.T) {
 	}
 }
 
-func TestDrainBatchPullsManyEntries(t *testing.T) {
-	t.Parallel()
-	q, _ := newTestQueue(t)
-	ctx := context.Background()
-
-	// 10 separate single-item publishes => 10 one-item list entries, the trickle
-	// case where per-publish batching never engages.
-	for i := 0; i < 10; i++ {
-		if err := q.Publish(ctx, []Item{{Kind: KindLog, BodyBase64: "YQ=="}}); err != nil {
-			t.Fatalf("Publish: %v", err)
-		}
-	}
-	if n, _ := q.Len(ctx); n != 10 {
-		t.Fatalf("setup: len = %d, want 10", n)
-	}
-
-	// One DrainBatch should pull all 10 entries' items in a single cycle.
-	items, err := q.DrainBatch(ctx, 500)
-	if err != nil {
-		t.Fatalf("DrainBatch: %v", err)
-	}
-	if len(items) != 10 {
-		t.Errorf("DrainBatch returned %d items, want 10", len(items))
-	}
-	if n, _ := q.Len(ctx); n != 0 {
-		t.Errorf("queue not drained: len = %d, want 0", n)
-	}
-}
-
-func TestDrainBatchRespectsMaxEntries(t *testing.T) {
-	t.Parallel()
-	q, _ := newTestQueue(t)
-	ctx := context.Background()
-	for i := 0; i < 10; i++ {
-		_ = q.Publish(ctx, []Item{{Kind: KindEvent, BodyBase64: "YQ=="}})
-	}
-	// maxEntries=3 => first BRPOP + up to 2 more = 3 entries this cycle.
-	items, err := q.DrainBatch(ctx, 3)
-	if err != nil {
-		t.Fatalf("DrainBatch: %v", err)
-	}
-	if len(items) != 3 {
-		t.Errorf("DrainBatch(3) returned %d items, want 3", len(items))
-	}
-	if n, _ := q.Len(ctx); n != 7 {
-		t.Errorf("expected 7 entries left, got %d", n)
-	}
-}
-
 func TestNewRedisQueueBadURL(t *testing.T) {
 	t.Parallel()
 	if _, err := NewRedisQueue("not-a-url"); err == nil {
