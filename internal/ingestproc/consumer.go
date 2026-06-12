@@ -36,6 +36,7 @@ type Consumer struct {
 	logs    LogInserter
 	logger  *slog.Logger
 	writeMu *sync.Mutex
+	metrics *consumerMetrics
 }
 
 // NewConsumer builds a queue consumer. logs may be nil (log items are then
@@ -46,7 +47,26 @@ func NewConsumer(q *queue.RedisQueue, proc *Processor, logs LogInserter, writeMu
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Consumer{queue: q, proc: proc, logs: logs, writeMu: writeMu, logger: logger.With("component", "redis-consumer")}
+	var depth func(context.Context) (int64, error)
+	if q != nil {
+		depth = q.Len
+	}
+	return &Consumer{
+		queue:   q,
+		proc:    proc,
+		logs:    logs,
+		writeMu: writeMu,
+		logger:  logger.With("component", "redis-consumer"),
+		metrics: newConsumerMetrics(depth),
+	}
+}
+
+// Close releases the consumer's telemetry registrations. Safe to call once Run
+// has returned.
+func (c *Consumer) Close() {
+	if c.metrics != nil {
+		c.metrics.close()
+	}
 }
 
 // depthLogInterval is how often the consumer logs a non-empty queue depth, for
@@ -110,22 +130,33 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) {
 		if ctx.Err() != nil {
 			return
 		}
+		start := time.Now()
+		var outcome string
 		switch item.Kind {
 		case queue.KindEvent:
-			c.persistEvent(ctx, item)
+			outcome = c.persistEvent(ctx, item)
 		case queue.KindLog:
-			c.persistLog(ctx, item)
+			outcome = c.persistLog(ctx, item)
 		default:
 			c.logger.Warn("dropping unknown queue item kind", "kind", item.Kind)
+			outcome = "unknown_kind"
 		}
+		kind := item.Kind
+		if kind == "" {
+			kind = "unknown"
+		}
+		c.metrics.record(ctx, kind, outcome, float64(time.Since(start).Milliseconds()))
 	}
 }
 
-func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) {
+// persistEvent persists a single event item and returns a short outcome label
+// for telemetry (success, parse_error, persist_error, transient_drop,
+// decode_error).
+func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) string {
 	body, err := base64.StdEncoding.DecodeString(item.BodyBase64)
 	if err != nil {
 		c.logger.Error("decode event body", "ingest_id", item.IngestID, "error", err)
-		return
+		return "decode_error"
 	}
 	record := spool.Record{
 		IngestID:      item.IngestID,
@@ -140,66 +171,71 @@ func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) {
 		res := c.proc.PersistRecord(ctx, record)
 		switch res.Outcome {
 		case OutcomeSuccess:
-			return
+			return "success"
 		case OutcomeParseError:
 			c.logger.Error("drop unparseable event", "ingest_id", item.IngestID, "error", res.Err)
-			return
+			return "parse_error"
 		case OutcomePersistError:
 			c.logger.Error("drop event after persist error", "ingest_id", item.IngestID, "error", res.Err)
-			return
+			return "persist_error"
 		case OutcomeTransient:
 			if ctx.Err() != nil {
-				return
+				return "transient_drop"
 			}
 			backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
 			c.logger.Info("transient persist failure, retrying", "ingest_id", item.IngestID, "attempt", attempt, "error", res.Err)
 			select {
 			case <-ctx.Done():
-				return
+				return "transient_drop"
 			case <-time.After(backoff):
 			}
 		}
 	}
 	c.logger.Error("drop event after exhausting retries", "ingest_id", item.IngestID)
+	return "retry_exhausted"
 }
 
-func (c *Consumer) persistLog(ctx context.Context, item queue.Item) {
+// persistLog persists a single log item and returns a short outcome label for
+// telemetry (success, dropped, empty, decode_error, insert_error,
+// retry_exhausted).
+func (c *Consumer) persistLog(ctx context.Context, item queue.Item) string {
 	if c.logs == nil {
 		c.logger.Warn("dropping log item: no log inserter configured", "project", item.ProjectSlug)
-		return
+		return "dropped"
 	}
 	body, err := base64.StdEncoding.DecodeString(item.BodyBase64)
 	if err != nil {
 		c.logger.Error("decode log body", "project", item.ProjectSlug, "error", err)
-		return
+		return "decode_error"
 	}
 	projectID := c.proc.ResolveProjectID(ctx, item.ProjectSlug)
 	if projectID == 0 {
 		c.logger.Warn("dropping log item: unresolved project", "project", item.ProjectSlug)
-		return
+		return "dropped"
 	}
 	entries := logparse.ParseBody(body, item.ContentType, projectID)
 	if len(entries) == 0 {
-		return
+		return "empty"
 	}
 	for attempt := 1; attempt <= consumerMaxRetries; attempt++ {
 		err := c.logs.Insert(ctx, entries)
 		if err == nil {
-			return
+			return "success"
 		}
 		if !isTransientPersistError(err) {
 			c.logger.Error("drop logs after insert error", "project", item.ProjectSlug, "count", len(entries), "error", err)
-			return
+			return "insert_error"
 		}
 		if ctx.Err() != nil {
-			return
+			return "transient_drop"
 		}
 		backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
 		select {
 		case <-ctx.Done():
-			return
+			return "transient_drop"
 		case <-time.After(backoff):
 		}
 	}
 	c.logger.Error("drop logs after exhausting retries", "project", item.ProjectSlug, "count", len(entries))
+	return "retry_exhausted"
 }

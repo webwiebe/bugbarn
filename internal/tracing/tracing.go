@@ -6,9 +6,12 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
@@ -18,6 +21,12 @@ const tracerName = "bugbarn"
 
 func Tracer() trace.Tracer {
 	return otel.Tracer(tracerName)
+}
+
+// Meter returns the global bugbarn meter. No-op (records nowhere) until Init has
+// configured a MeterProvider, so instruments can be created unconditionally.
+func Meter() metric.Meter {
+	return otel.Meter(tracerName)
 }
 
 // Init sets up the global TracerProvider with an OTLP HTTP exporter.
@@ -80,5 +89,27 @@ func Init(_ context.Context, version string) (shutdown func(context.Context) err
 		propagation.Baggage{},
 	))
 
-	return tp.Shutdown, nil
+	// Metrics pipeline, same OTLP endpoint/headers as traces. Best-effort: a
+	// failure here leaves tracing intact and metrics as no-ops rather than
+	// blocking startup.
+	var mp *sdkmetric.MeterProvider
+	if metricExp, mErr := otlpmetrichttp.New(initCtx, otlpmetrichttp.WithTimeout(5*time.Second)); mErr == nil {
+		mp = sdkmetric.NewMeterProvider(
+			sdkmetric.WithResource(res),
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp,
+				sdkmetric.WithInterval(30*time.Second),
+			)),
+		)
+		otel.SetMeterProvider(mp)
+	}
+
+	return func(ctx context.Context) error {
+		tErr := tp.Shutdown(ctx)
+		if mp != nil {
+			if mErr := mp.Shutdown(ctx); tErr == nil {
+				tErr = mErr
+			}
+		}
+		return tErr
+	}, nil
 }
