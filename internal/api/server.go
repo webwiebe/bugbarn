@@ -200,6 +200,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.Method == http.MethodPost {
+			if s.ingestHandler != nil && !s.ingestHandler.ValidAPIKey(r) {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 			if s.ingestSpool != nil {
 				s.ingestSpool.Forward(w, r)
 				return
@@ -220,6 +224,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "content-type, x-bugbarn-api-key, x-bugbarn-project")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		if s.ingestHandler != nil && !s.ingestHandler.ValidAPIKey(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		if s.ingestSpool != nil {
 			s.ingestSpool.Forward(w, r)
 			return
@@ -367,9 +375,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			pid, scope, ok := s.ingestHandler.APIKeyProjectScope(r)
 			if ok {
 				if scope == domain.APIKeyScopeIngest {
-					s.logger.Warn("auth: ingest-only key rejected", "method", r.Method, "path", r.URL.Path)
-					http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
-					return
+					// Allow ingest keys to post release markers — the setup page
+					// uses the same key for both events and releases.
+					if r.URL.Path == "/api/v1/releases" && r.Method == http.MethodPost {
+						// fall through
+					} else {
+						s.logger.Warn("auth: ingest-only key rejected", "method", r.Method, "path", r.URL.Path)
+						http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
+						return
+					}
 				}
 				if scope == domain.APIKeyScopeRead {
 					if r.Method != http.MethodGet {
