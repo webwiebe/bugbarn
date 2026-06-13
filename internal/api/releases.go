@@ -1,11 +1,16 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/spool"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
@@ -18,6 +23,38 @@ func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"releases": releases})
 	case http.MethodPost:
+		// Fire-and-forget: when an ingest spool/worker is wired, enqueue the
+		// release marker and return immediately. Creating it synchronously here
+		// would grab the single SQLite writer connection that the background
+		// worker also holds while persisting events, so under load the create
+		// blocks for many seconds and frequently times out. Auth was already
+		// validated upstream in ServeHTTP. The worker creates the release within
+		// one tick (~1s). When no ingest handler is configured (e.g. unit tests
+		// or a writer without a worker), fall back to a synchronous create so the
+		// release is immediately listable.
+		if s.ingestHandler != nil {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.ingestHandler.MaxBodyBytes()))
+			if err != nil {
+				http.Error(w, "invalid release payload", http.StatusBadRequest)
+				return
+			}
+			projectID, _ := storage.ProjectIDFromContext(r.Context())
+			ingestID, err := s.ingestHandler.SpoolRelease(projectID, r.Header.Get("Content-Type"), r.RemoteAddr, body)
+			if err != nil {
+				if errors.Is(err, spool.ErrFull) {
+					w.Header().Set("Retry-After", "1")
+					http.Error(w, "ingest spool full", http.StatusTooManyRequests)
+					return
+				}
+				http.Error(w, "release enqueue failed", http.StatusServiceUnavailable)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true, "ingestId": ingestID})
+			return
+		}
+
 		var request struct {
 			Name        string `json:"name"`
 			Environment string `json:"environment"`

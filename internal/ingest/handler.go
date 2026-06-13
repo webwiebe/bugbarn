@@ -52,6 +52,43 @@ func (h *Handler) ValidAPIKey(r *http.Request) bool {
 	return ok
 }
 
+// RecordKindRelease marks a spool record as a release marker rather than an
+// ingest event. The worker dispatches on spool.Record.Kind.
+const RecordKindRelease = "release"
+
+// MaxBodyBytes returns the configured maximum request body size.
+func (h *Handler) MaxBodyBytes() int64 {
+	return h.maxBodyBytes
+}
+
+// SpoolRelease enqueues a release-marker payload onto the ingest spool for
+// asynchronous creation by the background worker. The raw JSON body is stored
+// verbatim and decoded by the worker; projectID is the already-resolved project
+// captured at enqueue time. Returns the generated ingest ID.
+//
+// This keeps release creation off the request path: the worker owns the single
+// SQLite writer connection, so a synchronous create contends with event
+// persistence and can block for many seconds under load.
+func (h *Handler) SpoolRelease(projectID int64, contentType, remoteAddr string, body []byte) (string, error) {
+	if h == nil || h.spool == nil {
+		return "", errors.New("ingest spool unavailable")
+	}
+	record := spool.Record{
+		IngestID:      h.idFn(),
+		ReceivedAt:    h.now().UTC(),
+		Kind:          RecordKindRelease,
+		ContentType:   contentType,
+		RemoteAddr:    remoteAddr,
+		ContentLength: int64(len(body)),
+		BodyBase64:    base64.StdEncoding.EncodeToString(body),
+		ProjectID:     projectID,
+	}
+	if err := h.spool.Append(record); err != nil {
+		return "", err
+	}
+	return record.IngestID, nil
+}
+
 // APIKeyProject validates the API key from the request and returns the
 // associated project ID. For env-var static keys, projectID=0 is returned.
 // Both full-scope and ingest-scope keys are accepted here.
