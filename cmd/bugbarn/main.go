@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -31,6 +32,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/cli"
 	"github.com/wiebe-xyz/bugbarn/internal/config"
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
@@ -528,7 +530,21 @@ func runWorkerOnce(cfg config.Config) error {
 		return err
 	}
 
-	processed, err := worker.ProcessRecords(records)
+	// Release markers share the spool with events but take a different path.
+	eventRecords := make([]spool.Record, 0, len(records))
+	releaseCount := 0
+	for _, record := range records {
+		if record.Kind == ingest.RecordKindRelease {
+			if err := persistReleaseRecord(context.Background(), persistentStore, record); err != nil {
+				return err
+			}
+			releaseCount++
+			continue
+		}
+		eventRecords = append(eventRecords, record)
+	}
+
+	processed, err := worker.ProcessRecords(eventRecords)
 	if err != nil {
 		return err
 	}
@@ -542,9 +558,10 @@ func runWorkerOnce(cfg config.Config) error {
 	}
 
 	return json.NewEncoder(os.Stdout).Encode(map[string]any{
-		"records": len(records),
-		"events":  len(processed),
-		"issues":  store.Len(),
+		"records":  len(records),
+		"events":   len(processed),
+		"releases": releaseCount,
+		"issues":   store.Len(),
 	})
 }
 
@@ -568,6 +585,48 @@ func isTransientPersistError(err error) bool {
 	return strings.Contains(msg, "SQLITE_BUSY") ||
 		strings.Contains(msg, "database is locked") ||
 		strings.Contains(msg, "database table is locked")
+}
+
+// persistReleaseRecord decodes a spooled release marker and creates it. Release
+// markers are enqueued by POST /api/v1/releases so the create stays off the
+// request path — the worker owns the single SQLite writer connection. The body
+// mirrors the JSON the API handler accepted; the resolved project is carried on
+// the record so it need not be re-resolved here.
+func persistReleaseRecord(ctx context.Context, store *storage.Store, record spool.Record) error {
+	body, err := base64.StdEncoding.DecodeString(record.BodyBase64)
+	if err != nil {
+		return fmt.Errorf("decode release body: %w", err)
+	}
+	var req struct {
+		Name        string `json:"name"`
+		Environment string `json:"environment"`
+		ObservedAt  string `json:"observedAt"`
+		Version     string `json:"version"`
+		CommitSHA   string `json:"commitSha"`
+		URL         string `json:"url"`
+		Notes       string `json:"notes"`
+		CreatedBy   string `json:"createdBy"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return fmt.Errorf("unmarshal release: %w", err)
+	}
+	release := domain.Release{
+		Name:        req.Name,
+		Environment: req.Environment,
+		Version:     req.Version,
+		CommitSHA:   req.CommitSHA,
+		URL:         req.URL,
+		Notes:       req.Notes,
+		CreatedBy:   req.CreatedBy,
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, req.ObservedAt); err == nil {
+		release.ObservedAt = parsed
+	}
+	if record.ProjectID > 0 {
+		ctx = storage.WithProjectID(ctx, record.ProjectID)
+	}
+	_, err = store.CreateRelease(ctx, release)
+	return err
 }
 
 func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.EventPublisher, selfReporting bool, ws *worker.Status) {
@@ -607,6 +666,45 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 						attribute.String("project_slug", record.ProjectSlug),
 					),
 				)
+
+				// Release markers are enqueued by POST /api/v1/releases so the
+				// create stays off the request path. Handle them here instead of
+				// the event pipeline.
+				if record.Kind == ingest.RecordKindRelease {
+					if err := persistReleaseRecord(recordCtx, store, record); err != nil {
+						recordSpan.SetStatus(codes.Error, err.Error())
+						recordSpan.End()
+						retryCounts[record.IngestID]++
+						slog.Error("worker failed to persist release", "ingest_id", record.IngestID, "attempt", retryCounts[record.IngestID], "error", err)
+						if retryCounts[record.IngestID] >= workerMaxRetries {
+							slog.Error("worker dead-lettering release record", "ingest_id", record.IngestID, "attempts", retryCounts[record.IngestID])
+							if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
+								slog.Error("worker failed to write dead letter", "ingest_id", record.IngestID, "error", dlErr)
+							}
+							delete(retryCounts, record.IngestID)
+							offset = entry.EndOffset
+							if err := spool.WriteCursor(spoolDir, offset); err != nil {
+								slog.Error("worker failed to write cursor", "error", err)
+							}
+							if ws != nil {
+								ws.RecordAdvance()
+							}
+						}
+						// Stop processing this batch; retry remaining records next tick.
+						break
+					}
+					recordSpan.End()
+					delete(retryCounts, record.IngestID)
+					offset = entry.EndOffset
+					if err := spool.WriteCursor(spoolDir, offset); err != nil {
+						slog.Error("worker failed to write cursor", "error", err)
+					}
+					if ws != nil {
+						ws.RecordAdvance()
+						ws.RecordProcessed(1)
+					}
+					continue
+				}
 
 				processed, err := worker.ProcessRecord(record)
 				if err != nil {

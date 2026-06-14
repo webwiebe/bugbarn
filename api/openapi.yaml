@@ -993,6 +993,11 @@ paths:
       operationId: createRelease
       tags: [Releases]
       summary: Create a release marker
+      description: >
+        Accepts a release marker and enqueues it for asynchronous creation by the
+        background worker, returning 202 immediately. This keeps the request off
+        the single SQLite writer connection. The marker is typically persisted
+        within ~1s and becomes visible via GET /api/v1/releases shortly after.
       requestBody:
         required: true
         content:
@@ -1000,15 +1005,17 @@ paths:
             schema:
               $ref: "#/components/schemas/ReleaseInput"
       responses:
-        "200":
-          description: Release created
+        "202":
+          description: Release marker accepted for asynchronous creation
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  release:
-                    $ref: "#/components/schemas/Release"
+                  accepted:
+                    type: boolean
+                  ingestId:
+                    type: string
 
   /api/v1/releases/{releaseId}:
     get:

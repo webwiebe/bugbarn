@@ -21,13 +21,20 @@ const deadLetterFileName = "deadletter.ndjson"
 var ErrFull = errors.New("spool is full")
 
 type Record struct {
-	IngestID      string    `json:"ingestId"`
-	ReceivedAt    time.Time `json:"receivedAt"`
-	ContentType   string    `json:"contentType,omitempty"`
-	RemoteAddr    string    `json:"remoteAddr,omitempty"`
-	ContentLength int64     `json:"contentLength,omitempty"`
-	BodyBase64    string    `json:"bodyBase64"`
-	ProjectSlug   string    `json:"projectSlug,omitempty"`
+	IngestID   string    `json:"ingestId"`
+	ReceivedAt time.Time `json:"receivedAt"`
+	// Kind discriminates the payload. An empty value means an ingest event
+	// (the historical default, so already-spooled records keep working);
+	// "release" means a release marker created via POST /api/v1/releases.
+	Kind          string `json:"kind,omitempty"`
+	ContentType   string `json:"contentType,omitempty"`
+	RemoteAddr    string `json:"remoteAddr,omitempty"`
+	ContentLength int64  `json:"contentLength,omitempty"`
+	BodyBase64    string `json:"bodyBase64"`
+	ProjectSlug   string `json:"projectSlug,omitempty"`
+	// ProjectID is the resolved project for non-event records (e.g. releases),
+	// captured at enqueue time so the worker need not re-resolve it.
+	ProjectID int64 `json:"projectId,omitempty"`
 }
 
 // cursor tracks the byte offset of the last successfully processed record.
