@@ -32,6 +32,40 @@ func spoolRecord(t *testing.T, sf *SpoolForwarder) {
 	}
 }
 
+func TestSpoolForwarder_RejectsMalformedEvent(t *testing.T) {
+	t.Parallel()
+
+	sf := newTestSpool(t, "http://localhost:0")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	sf.Forward(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("Forward status = %d, want 400", rec.Code)
+	}
+	// A rejected event must not be spooled for forwarding.
+	if sf.Pending() != 0 {
+		t.Fatalf("expected 0 pending after reject, got %d", sf.Pending())
+	}
+}
+
+func TestSpoolForwarder_DoesNotValidateNonEventPaths(t *testing.T) {
+	t.Parallel()
+
+	// Only events are validated; logs/analytics bodies are forwarded as-is so
+	// the writer (which owns their parsing) decides their fate.
+	sf := newTestSpool(t, "http://localhost:0")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/logs", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	sf.Forward(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("Forward status = %d, want 202", rec.Code)
+	}
+}
+
 func TestSpoolForwarder_DrainOnce_EmptySpool(t *testing.T) {
 	t.Parallel()
 

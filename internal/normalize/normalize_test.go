@@ -166,3 +166,39 @@ func TestNormalizeBreadcrumbCap(t *testing.T) {
 		t.Errorf("expected breadcrumbs capped at 100, got %d", len(evt.Breadcrumbs))
 	}
 }
+
+func TestValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"object", `{"message":"boom"}`, false},
+		{"empty object", `{}`, false},
+		{"null", `null`, false},
+		{"not json", `not json`, true},
+		{"empty body", ``, true},
+		{"json array", `[1,2,3]`, true},
+		{"json string", `"boom"`, true},
+		{"json number", `123`, true},
+		{"truncated", `{"message":`, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := Validate([]byte(c.raw))
+			if c.wantErr && err == nil {
+				t.Fatalf("Validate(%q) = nil, want error", c.raw)
+			}
+			if !c.wantErr && err != nil {
+				t.Fatalf("Validate(%q) = %v, want nil", c.raw, err)
+			}
+			// A body that passes Validate must also Normalize without a parse
+			// error — that is the contract that makes a 202 honest.
+			if err == nil {
+				if _, nerr := Normalize([]byte(c.raw), "id", time.Time{}); nerr != nil {
+					t.Fatalf("Validate accepted %q but Normalize rejected it: %v", c.raw, nerr)
+				}
+			}
+		})
+	}
+}

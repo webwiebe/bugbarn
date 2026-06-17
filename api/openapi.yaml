@@ -208,6 +208,20 @@ paths:
       description: |
         Accepts error events from SDKs. Uses wildcard CORS so browser SDKs can POST
         from any origin. Accepts ingest-scoped or full-scoped API keys.
+
+        The response status draws a hard line between accepted and dropped events:
+
+        - **2xx** — accepted: the event was validated and durably queued, and
+          will be processed. The body is `IngestAccepted`.
+        - **4xx (400, 401, 413)** — dropped permanently: the request is bad and
+          will never succeed as-is. Do **not** retry.
+        - **429 / 503** — dropped transiently: backpressure or a temporary
+          outage. Retry after the `Retry-After` delay.
+
+        Dropped responses carry an `IngestDropped` body whose `retryable` flag
+        restates whether retrying the identical request could succeed. Events are
+        validated synchronously, so a `202` means the event was genuinely
+        accepted rather than queued and later discarded.
       security:
         - apiKey: []
       parameters:
@@ -220,11 +234,51 @@ paths:
               $ref: "#/components/schemas/IngestEvent"
       responses:
         "202":
-          description: Event accepted for processing
+          description: Event accepted — durably queued and will be processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestAccepted"
         "400":
-          description: Invalid payload
+          description: Dropped — malformed event payload (permanent, do not retry)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
         "401":
-          description: Missing or invalid API key
+          description: Dropped — missing or invalid API key (permanent, do not retry)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "413":
+          description: Dropped — payload exceeds the size limit (permanent, do not retry)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "429":
+          description: Dropped — ingest buffer full (transient, retry after Retry-After)
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "503":
+          description: Dropped — ingest pipeline unavailable (transient, retry after Retry-After)
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
 
   /api/v1/logs:
     post:
@@ -1659,6 +1713,45 @@ components:
         ok:
           type: boolean
           example: true
+
+    IngestAccepted:
+      type: object
+      description: Returned with a 2xx when an event is durably queued for processing.
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+          const: true
+          description: Always true.
+        ingestId:
+          type: string
+          description: Server-assigned id for the accepted event (omitted on reader pods).
+
+    IngestDropped:
+      type: object
+      description: |
+        Returned with every non-2xx ingest response. `retryable` tells the SDK
+        whether retrying the identical request could ever succeed: false for
+        permanent client errors (400/401/413), true for transient backpressure
+        or outages (429/503).
+      required: [accepted, reason, retryable]
+      properties:
+        accepted:
+          type: boolean
+          const: false
+          description: Always false.
+        reason:
+          type: string
+          description: Stable, machine-readable drop reason.
+          enum:
+            - malformed_payload
+            - unauthorized
+            - payload_too_large
+            - spool_full
+            - ingest_unavailable
+        retryable:
+          type: boolean
+          description: Whether retrying the identical request could succeed.
 
     HealthResponse:
       type: object

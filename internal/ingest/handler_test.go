@@ -66,6 +66,48 @@ func TestServeHTTPAcceptedAndSpoolsBody(t *testing.T) {
 	}
 }
 
+func TestServeHTTPRejectsMalformedBody(t *testing.T) {
+	dir := t.TempDir()
+	eventSpool, err := spool.New(dir)
+	if err != nil {
+		t.Fatalf("new spool: %v", err)
+	}
+	defer eventSpool.Close()
+
+	handler := NewHandler(auth.New(""), eventSpool, 1024)
+
+	// Not a JSON object — the worker would drop this as a parse error, so the
+	// handler must reject it up front instead of returning 202 and losing it.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if accepted, ok := response["accepted"].(bool); !ok || accepted {
+		t.Fatalf("expected accepted false, got %#v", response["accepted"])
+	}
+	if retryable, ok := response["retryable"].(bool); !ok || retryable {
+		t.Fatalf("expected retryable false, got %#v", response["retryable"])
+	}
+
+	// A dropped event must never be written to the spool.
+	records, err := spool.ReadRecords(filepath.Join(dir, spool.DefaultFileName))
+	if err != nil {
+		t.Fatalf("read spool: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected malformed event not spooled, got %d records", len(records))
+	}
+}
+
 func TestServeHTTPRejectsMissingAPIKeyWhenEnabled(t *testing.T) {
 	handler := NewHandler(auth.New("secret"), mustSpool(t), 1024)
 

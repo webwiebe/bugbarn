@@ -12,6 +12,18 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/privacy"
 )
 
+// Validate reports whether raw is a structurally valid event payload: a JSON
+// object (or JSON null) that Normalize can turn into an event. It mirrors the
+// only way Normalize fails, so a body that passes Validate will not be dropped
+// later in the pipeline as a parse error. It is cheap by design — a single
+// decode, no scrubbing or fingerprinting — so the synchronous ingest path can
+// reject malformed events before durably queuing them, making a 202 mean the
+// event was genuinely accepted rather than accepted-then-silently-dropped.
+func Validate(raw []byte) error {
+	var payload map[string]any
+	return json.Unmarshal(raw, &payload)
+}
+
 func Normalize(raw []byte, ingestID string, receivedAt time.Time) (event.Event, error) {
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err != nil {
