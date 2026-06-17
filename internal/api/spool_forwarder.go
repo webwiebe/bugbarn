@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
+	"github.com/wiebe-xyz/bugbarn/internal/normalize"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 )
 
@@ -127,6 +129,11 @@ func NewRedisSpoolForwarder(dir string, q *queue.RedisQueue, maxBodyBytes int64,
 // Forward captures the request body and headers, appends to the spool, and
 // responds 202 Accepted. Returns 503 if the spool write fails — the SDK will
 // retry, which is the correct behavior for fire-and-forget telemetry.
+//
+// Event payloads are validated synchronously before spooling so a malformed
+// event is dropped here with a 400 rather than queued and silently discarded by
+// the writer. This keeps the accepted/dropped distinction honest even on reader
+// pods, which return 202 before the writer ever sees the event.
 func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	var body []byte
 	if r.Body != nil {
@@ -134,14 +141,21 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 		if s.maxBodyByte > 0 {
 			body, err = io.ReadAll(io.LimitReader(r.Body, s.maxBodyByte+1))
 			if err == nil && int64(len(body)) > s.maxBodyByte {
-				http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+				ingestresp.WriteDropped(w, ingestresp.DropTooLarge)
 				return
 			}
 		} else {
 			body, err = io.ReadAll(r.Body)
 		}
 		if err != nil {
-			http.Error(w, "read body", http.StatusBadRequest)
+			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+			return
+		}
+	}
+
+	if kindForPath(r.URL.Path) == queue.KindEvent {
+		if err := normalize.Validate(body); err != nil {
+			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 			return
 		}
 	}
@@ -163,13 +177,11 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.append(rec); err != nil {
 		s.logger.Error("spool forward append failed", "error", err)
-		http.Error(w, "spool unavailable", http.StatusServiceUnavailable)
+		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	_, _ = w.Write([]byte(`{"accepted":true}`))
+	ingestresp.WriteAccepted(w, "")
 }
 
 func (s *SpoolForwarder) append(rec spooledRequest) error {

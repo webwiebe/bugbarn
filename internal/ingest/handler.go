@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -15,6 +14,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
+	"github.com/wiebe-xyz/bugbarn/internal/normalize"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -112,7 +113,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 
 	if h == nil || h.auth == nil || h.spool == nil {
-		http.Error(w, "ingest unavailable", http.StatusServiceUnavailable)
+		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
 		return
 	}
 
@@ -126,7 +127,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !h.ValidAPIKey(r) {
 		span.SetStatus(codes.Error, "unauthorized")
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		ingestresp.WriteDropped(w, ingestresp.DropUnauthorized)
 		return
 	}
 
@@ -136,11 +137,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			ingestresp.WriteDropped(w, ingestresp.DropTooLarge)
 			return
 		}
 
-		http.Error(w, "unable to read request body", http.StatusBadRequest)
+		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+		return
+	}
+
+	// Validate synchronously so a malformed event is dropped here with a clear
+	// 400 instead of being durably queued and then silently discarded by the
+	// worker. A body that passes this check will not fail to parse downstream,
+	// so the 202 below honestly means "accepted".
+	if err := normalize.Validate(body); err != nil {
+		span.SetStatus(codes.Error, "malformed payload")
+		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 		return
 	}
 
@@ -165,21 +176,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		spoolSpan.SetStatus(codes.Error, err.Error())
 		spoolSpan.End()
 		if errors.Is(err, spool.ErrFull) {
-			w.Header().Set("Retry-After", "1")
-			http.Error(w, "ingest spool full", http.StatusTooManyRequests)
+			ingestresp.WriteDropped(w, ingestresp.DropSpoolFull)
 			return
 		}
-		http.Error(w, "ingest unavailable", http.StatusServiceUnavailable)
+		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
 		return
 	}
 	spoolSpan.End()
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"accepted": true,
-		"ingestId": record.IngestID,
-	})
+	ingestresp.WriteAccepted(w, record.IngestID)
 }
 
 func generateIngestID() string {

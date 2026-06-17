@@ -37,12 +37,15 @@ func TestRedisSpoolForwarderPublishes(t *testing.T) {
 	cases := []struct {
 		path string
 		want string
+		body string
 	}{
-		{"/api/v1/events", queue.KindEvent},
-		{"/api/v1/logs", queue.KindLog},
+		// Events are validated synchronously, so the body must be a valid event
+		// payload (a JSON object). Logs are forwarded as-is.
+		{"/api/v1/events", queue.KindEvent, `{"message":"PAYLOAD-event"}`},
+		{"/api/v1/logs", queue.KindLog, "PAYLOAD-log"},
 	}
 	for _, c := range cases {
-		req := httptest.NewRequest("POST", c.path, strings.NewReader("PAYLOAD-"+c.want))
+		req := httptest.NewRequest("POST", c.path, strings.NewReader(c.body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Bugbarn-Project", "svc")
 		rec := httptest.NewRecorder()
@@ -73,7 +76,7 @@ func TestRedisSpoolForwarderPublishes(t *testing.T) {
 			t.Errorf("%s: project = %q, want svc", c.path, got.ProjectSlug)
 		}
 		body, _ := base64.StdEncoding.DecodeString(got.BodyBase64)
-		if string(body) != "PAYLOAD-"+c.want {
+		if string(body) != c.body {
 			t.Errorf("%s: body = %q", c.path, string(body))
 		}
 	}
