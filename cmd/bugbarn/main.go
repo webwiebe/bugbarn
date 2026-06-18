@@ -38,6 +38,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
+	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
@@ -113,6 +114,12 @@ func run() error {
 	}
 	defer eventSpool.Close()
 
+	mutQueue, err := mutqueue.New(cfg.SpoolDir)
+	if err != nil {
+		return err
+	}
+	defer mutQueue.Close()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -142,7 +149,7 @@ func run() error {
 	bgWg.Add(1)
 	go func() {
 		defer bgWg.Done()
-		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus)
+		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus, mutQueue)
 	}()
 
 	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
@@ -189,6 +196,7 @@ func run() error {
 	apiServer.SetLogHub(logHub)
 	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
 	apiServer.SetDigest(cfg.Digest, store)
+	apiServer.SetMutQueue(mutQueue)
 	if len(cfg.TrustedProxies) > 0 {
 		apiServer.SetTrustedProxies(cfg.TrustedProxies)
 	}
@@ -629,7 +637,7 @@ func persistReleaseRecord(ctx context.Context, store *storage.Store, record spoo
 	return err
 }
 
-func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.EventPublisher, selfReporting bool, ws *worker.Status) {
+func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.EventPublisher, selfReporting bool, ws *worker.Status, mq *mutqueue.Queue) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -651,6 +659,14 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// Drain queued admin mutations (resolve/reopen/mute/unmute) before
+			// processing ingest events so user-initiated actions are applied first.
+			if err := mq.Drain(func(r mutqueue.Record) error {
+				return applyMutation(ctx, store, r)
+			}); err != nil {
+				slog.Error("worker failed to drain mutation queue", "error", err)
+			}
+
 			entries, err := spool.ReadRecordsFrom(spool.Path(spoolDir), offset)
 			if err != nil {
 				slog.Error("worker failed to read spool", "error", err)
@@ -854,5 +870,26 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 				slog.Error("worker failed to rotate spool", "error", err)
 			}
 		}
+	}
+}
+
+// applyMutation executes a single queued admin mutation against the store.
+func applyMutation(ctx context.Context, store *storage.Store, r mutqueue.Record) error {
+	switch r.Op {
+	case mutqueue.OpResolve:
+		_, err := store.ResolveIssue(ctx, r.IssueID)
+		return err
+	case mutqueue.OpReopen:
+		_, err := store.ReopenIssue(ctx, r.IssueID)
+		return err
+	case mutqueue.OpMute:
+		_, err := store.MuteIssue(ctx, r.IssueID, r.MuteMode)
+		return err
+	case mutqueue.OpUnmute:
+		_, err := store.UnmuteIssue(ctx, r.IssueID)
+		return err
+	default:
+		slog.Warn("mutqueue: unknown op, skipping", "op", r.Op, "issue_id", r.IssueID)
+		return nil
 	}
 }

@@ -1,13 +1,49 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
+
+const mutateTimeout = 5 * time.Second
+
+// tryMutate races fn against a 5-second deadline.
+// Returns (issue, queued=false, err) on completion, or (zero, queued=true, nil) when
+// the deadline fires and the mutation was successfully queued for async application.
+func tryMutate(ctx context.Context, q *mutqueue.Queue, rec mutqueue.Record, fn func(context.Context) (domain.Issue, error)) (domain.Issue, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
+	defer cancel()
+
+	type outcome struct {
+		issue domain.Issue
+		err   error
+	}
+	ch := make(chan outcome, 1)
+	go func() {
+		issue, err := fn(ctx)
+		ch <- outcome{issue, err}
+	}()
+
+	select {
+	case o := <-ch:
+		return o.issue, false, o.err
+	case <-ctx.Done():
+		if q != nil {
+			if err := q.Append(rec); err != nil {
+				return domain.Issue{}, false, fmt.Errorf("mutqueue: %w", err)
+			}
+		}
+		return domain.Issue{}, true, nil
+	}
+}
 
 // serveIssueRoute handles /api/v1/issues/{id} and sub-paths.
 func (s *Server) serveIssueRoute(w http.ResponseWriter, r *http.Request) {
@@ -131,22 +167,36 @@ func (s *Server) getIssue(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) resolveIssue(w http.ResponseWriter, r *http.Request) {
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/resolve")
-	item, err := s.issues.Resolve(r.Context(), issueID)
+	issue, queued, err := tryMutate(r.Context(), s.mutQueue,
+		mutqueue.Record{Op: mutqueue.OpResolve, IssueID: issueID},
+		func(ctx context.Context) (domain.Issue, error) { return s.issues.Resolve(ctx, issueID) },
+	)
+	if queued {
+		writeJSONStatus(w, http.StatusAccepted, map[string]any{"queued": true, "issue_id": issueID})
+		return
+	}
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"issue": item})
+	writeJSON(w, map[string]any{"issue": issue})
 }
 
 func (s *Server) reopenIssue(w http.ResponseWriter, r *http.Request) {
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/reopen")
-	item, err := s.issues.Reopen(r.Context(), issueID)
+	issue, queued, err := tryMutate(r.Context(), s.mutQueue,
+		mutqueue.Record{Op: mutqueue.OpReopen, IssueID: issueID},
+		func(ctx context.Context) (domain.Issue, error) { return s.issues.Reopen(ctx, issueID) },
+	)
+	if queued {
+		writeJSONStatus(w, http.StatusAccepted, map[string]any{"queued": true, "issue_id": issueID})
+		return
+	}
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"issue": item})
+	writeJSON(w, map[string]any{"issue": issue})
 }
 
 func (s *Server) muteIssue(w http.ResponseWriter, r *http.Request) {
@@ -158,20 +208,34 @@ func (s *Server) muteIssue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid mute payload", http.StatusBadRequest)
 		return
 	}
-	item, err := s.issues.Mute(r.Context(), issueID, body.MuteMode)
+	issue, queued, err := tryMutate(r.Context(), s.mutQueue,
+		mutqueue.Record{Op: mutqueue.OpMute, IssueID: issueID, MuteMode: body.MuteMode},
+		func(ctx context.Context) (domain.Issue, error) { return s.issues.Mute(ctx, issueID, body.MuteMode) },
+	)
+	if queued {
+		writeJSONStatus(w, http.StatusAccepted, map[string]any{"queued": true, "issue_id": issueID})
+		return
+	}
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"issue": item})
+	writeJSON(w, map[string]any{"issue": issue})
 }
 
 func (s *Server) unmuteIssue(w http.ResponseWriter, r *http.Request) {
 	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/unmute")
-	item, err := s.issues.Unmute(r.Context(), issueID)
+	issue, queued, err := tryMutate(r.Context(), s.mutQueue,
+		mutqueue.Record{Op: mutqueue.OpUnmute, IssueID: issueID},
+		func(ctx context.Context) (domain.Issue, error) { return s.issues.Unmute(ctx, issueID) },
+	)
+	if queued {
+		writeJSONStatus(w, http.StatusAccepted, map[string]any{"queued": true, "issue_id": issueID})
+		return
+	}
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"issue": item})
+	writeJSON(w, map[string]any{"issue": issue})
 }
