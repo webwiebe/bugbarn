@@ -14,6 +14,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
+	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	alertsvc "github.com/wiebe-xyz/bugbarn/internal/service/alerts"
 	analyticssvc "github.com/wiebe-xyz/bugbarn/internal/service/analytics"
 	issuesvc "github.com/wiebe-xyz/bugbarn/internal/service/issues"
@@ -54,12 +55,19 @@ type Server struct {
 	loginLimiter    sync.Map // map[string]*loginAttempt
 	writeForwarder  *WriteForwarder
 	ingestSpool     *SpoolForwarder
+	mutQueue        *mutqueue.Queue
 	dbPath          string
 
 	digestConfig    *digest.Config
 	digestStore     digest.Store
 
 	oidc *auth.OIDCClient
+}
+
+// SetMutQueue wires the mutation queue so that resolve/reopen/mute/unmute
+// handlers enqueue writes instead of hitting SQLite synchronously.
+func (s *Server) SetMutQueue(q *mutqueue.Queue) {
+	s.mutQueue = q
 }
 
 // SetOIDCClient wires the optional iambarn OIDC login adapter. When set, the

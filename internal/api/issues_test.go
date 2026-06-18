@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
+	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
 	alertsvc "github.com/wiebe-xyz/bugbarn/internal/service/alerts"
 	analyticssvc "github.com/wiebe-xyz/bugbarn/internal/service/analytics"
 	issuesvc "github.com/wiebe-xyz/bugbarn/internal/service/issues"
@@ -246,24 +247,43 @@ func TestListIssuesRegressedFirst(t *testing.T) {
 
 	// Create two issues with distinct fingerprints.
 	issueA := persistTestIssueWithFingerprint(t, store, "fp-regress-a", "normal error")
-	issueB := persistTestIssueWithFingerprint(t, store, "fp-regress-b", "will regress error")
+
+	// Use a real fingerprint for issueB so migrateFingerprints is a no-op and
+	// the subsequent regression PersistProcessedEvent finds the muted issue.
+	evtB := event.Event{
+		ObservedAt: time.Now().UTC(),
+		ReceivedAt: time.Now().UTC().Add(time.Second),
+		Severity:   "ERROR",
+		Message:    "will regress error",
+		Exception:  event.Exception{Type: "TestError", Message: "will regress error"},
+	}
+	fpB := fingerprint.Fingerprint(evtB)
+	snapB := fingerprint.SnapshotFor(evtB)
+	issueB, _, _, _, err := store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+		Event:               evtB,
+		Fingerprint:         fpB,
+		FingerprintMaterial: snapB.Material,
+	})
+	if err != nil {
+		t.Fatalf("persist issueB: %v", err)
+	}
 
 	// Mute issueB with until_regression, then trigger a regression.
 	if _, err := store.MuteIssue(ctx, issueB.ID, "until_regression"); err != nil {
 		t.Fatalf("mute: %v", err)
 	}
-	pe := worker.ProcessedEvent{
-		Event: event.Event{
-			ObservedAt: time.Now().UTC(),
-			ReceivedAt: time.Now().UTC().Add(time.Second),
-			Severity:   "ERROR",
-			Message:    "will regress error",
-			Exception:  event.Exception{Type: "TestError", Message: "will regress error"},
-		},
-		Fingerprint:         "fp-regress-b",
-		FingerprintMaterial: "TestError: will regress error",
+	regressEvt := event.Event{
+		ObservedAt: time.Now().UTC(),
+		ReceivedAt: time.Now().UTC().Add(time.Second),
+		Severity:   "ERROR",
+		Message:    "will regress error",
+		Exception:  event.Exception{Type: "TestError", Message: "will regress error"},
 	}
-	regressedIssue, _, _, regressed, err := store.PersistProcessedEvent(ctx, pe)
+	regressedIssue, _, _, regressed, err := store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+		Event:               regressEvt,
+		Fingerprint:         fpB,
+		FingerprintMaterial: snapB.Material,
+	})
 	if err != nil {
 		t.Fatalf("persist regression: %v", err)
 	}
