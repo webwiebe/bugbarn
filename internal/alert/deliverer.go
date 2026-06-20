@@ -7,26 +7,37 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"text/template"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
-// Deliverer sends alert webhook payloads with retry logic.
+// Deliverer sends alert notifications (webhook or email) with retry logic.
 type Deliverer struct {
-	client *http.Client
+	client   *http.Client
+	mailCfg  digest.MailConfig
 }
 
 // NewDeliverer creates a new Deliverer with a 5-second HTTP timeout.
-func NewDeliverer() *Deliverer {
+func NewDeliverer(mailCfg digest.MailConfig) *Deliverer {
 	return &Deliverer{
-		client: &http.Client{Timeout: 5 * time.Second},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		mailCfg: mailCfg,
 	}
 }
 
-// Fire sends an alert webhook for the given rule and issue. It retries up to 3 times
-// with exponential backoff (1s, 2s, 4s). Returns nil on first success, or the last error.
+// Fire sends an alert for the given rule and issue. When EmailTo is set it
+// sends an email; otherwise it posts to WebhookURL. Returns nil on first success.
 func (d *Deliverer) Fire(ctx context.Context, rule Rule, issue domain.Issue, publicURL string) error {
+	if rule.EmailTo != "" {
+		return d.fireEmail(rule, issue, publicURL)
+	}
+	return d.fireWebhook(ctx, rule, issue, publicURL)
+}
+
+func (d *Deliverer) fireWebhook(ctx context.Context, rule Rule, issue domain.Issue, publicURL string) error {
 	payload, err := d.buildPayload(rule, issue, publicURL)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
@@ -63,6 +74,89 @@ func (d *Deliverer) Fire(ctx context.Context, rule Rule, issue domain.Issue, pub
 	}
 	return lastErr
 }
+
+func (d *Deliverer) fireEmail(rule Rule, issue domain.Issue, publicURL string) error {
+	issueURL := strings.TrimRight(publicURL, "/") + "/issues/" + issue.ID
+	data := alertMailData{
+		AlertName: rule.Name,
+		Condition: conditionLabel(rule.Condition),
+		Title:     issue.Title,
+		IssueURL:  issueURL,
+		FirstSeen: issue.FirstSeen.UTC().Format("2006-01-02 15:04 UTC"),
+		Severity:  severityFromIssue(issue),
+	}
+
+	var plain, html bytes.Buffer
+	if err := alertPlainTmpl.Execute(&plain, data); err != nil {
+		return fmt.Errorf("render plain: %w", err)
+	}
+	if err := alertHTMLTmpl.Execute(&html, data); err != nil {
+		return fmt.Errorf("render html: %w", err)
+	}
+
+	subject := fmt.Sprintf("[BugBarn] %s: %s", rule.Name, issue.Title)
+	return digest.DeliverEmail(d.mailCfg, rule.EmailTo, subject, plain.String(), html.String())
+}
+
+type alertMailData struct {
+	AlertName string
+	Condition string
+	Title     string
+	IssueURL  string
+	FirstSeen string
+	Severity  string
+}
+
+func conditionLabel(condition string) string {
+	switch condition {
+	case "new_issue":
+		return "New issue created"
+	case "regression":
+		return "Issue regressed"
+	case "event_count_exceeds":
+		return "Event count exceeded"
+	case "message_contains":
+		return "Message contains match"
+	default:
+		return condition
+	}
+}
+
+var alertPlainTmpl = template.Must(template.New("alert-plain").Parse(
+	`[BugBarn] Alert: {{.AlertName}}
+
+Condition: {{.Condition}}
+Severity:  {{.Severity}}
+First seen: {{.FirstSeen}}
+
+{{.Title}}
+
+{{if .IssueURL}}View issue: {{.IssueURL}}{{end}}`))
+
+var alertHTMLTmpl = template.Must(template.New("alert-html").Parse(
+	`<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+<h2 style="color:#1a1a1a;margin-bottom:4px">[BugBarn] {{.AlertName}}</h2>
+<p style="color:#555;margin-top:0;font-size:13px">{{.Condition}}</p>
+<table style="border-collapse:collapse;width:100%;margin:16px 0;background:#f8f9fa;border-radius:4px">
+<tr>
+  <td style="padding:12px 16px;font-size:13px;color:#555;width:120px">Severity</td>
+  <td style="padding:12px 16px;font-size:13px;font-weight:bold">{{.Severity}}</td>
+</tr>
+<tr style="border-top:1px solid #eee">
+  <td style="padding:12px 16px;font-size:13px;color:#555">First seen</td>
+  <td style="padding:12px 16px;font-size:13px">{{.FirstSeen}}</td>
+</tr>
+<tr style="border-top:1px solid #eee">
+  <td style="padding:12px 16px;font-size:13px;color:#555">Issue</td>
+  <td style="padding:12px 16px;font-size:13px">{{if .IssueURL}}<a href="{{.IssueURL}}" style="color:#0066cc">{{.Title}}</a>{{else}}{{.Title}}{{end}}</td>
+</tr>
+</table>
+{{if .IssueURL}}<p><a href="{{.IssueURL}}" style="display:inline-block;padding:8px 16px;background:#0066cc;color:#fff;text-decoration:none;border-radius:4px;font-size:13px">View Issue →</a></p>{{end}}
+</body>
+</html>`))
+
 
 func (d *Deliverer) buildPayload(rule Rule, issue domain.Issue, publicURL string) ([]byte, error) {
 	issueURL := strings.TrimRight(publicURL, "/") + "/issues/" + issue.ID

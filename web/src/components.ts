@@ -691,7 +691,7 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
       </div>
       <div class="section">
         <h3>Create alert</h3>
-        <p class="muted">Alerts fire when a condition is met. Paste a Slack or Discord webhook URL and it will auto-detect the format.</p>
+        <p class="muted">Alerts fire when a condition is met. Deliver via webhook (Slack/Discord auto-detected) or email — set one or both.</p>
         <form class="form-grid" id="alert-form">
           ${renderField("Name", "name", "text", "New errors on checkout")}
           <label class="field">
@@ -712,6 +712,7 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
             <input name="param" type="text" placeholder="database error" />
           </label>
           ${renderField("Webhook URL", "webhook_url", "url", "https://hooks.slack.com/…")}
+          ${renderField("Email", "email_to", "email", "you@example.com")}
           ${renderField("Cooldown (minutes)", "cooldown_minutes", "number", "60")}
           <label class="field field-wide checkbox-field">
             <input name="enabled" type="checkbox" checked />
@@ -1194,6 +1195,7 @@ function renderAlertList(alerts: ApiAlert[]): string {
           const param = alert.param ?? "";
           const threshold = alert.threshold ?? 0;
           const webhookUrl = alert.webhook_url ?? "";
+          const emailTo = alert.email_to ?? "";
           const cooldown = alert.cooldown_minutes ?? 0;
           const enabled = Boolean(alert.enabled);
           const lastFiredAt = formatTime(alert.last_fired_at) || "never";
@@ -1206,6 +1208,7 @@ function renderAlertList(alerts: ApiAlert[]): string {
                 <span class="chip ${enabled ? "" : "bad"}">${escapeHtml(enabled ? "enabled" : "disabled")}</span>
                 ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
                 ${webhookBadge(webhookUrl)}
+                ${emailTo ? `<span class="chip">email</span>` : ""}
               </div>
               <div class="route-item-meta">
                 <span>${escapeHtml(conditionLabel(condition))}${escapeHtml(conditionDetail)}</span>
@@ -1213,6 +1216,7 @@ function renderAlertList(alerts: ApiAlert[]): string {
                 <span>last fired: ${escapeHtml(lastFiredAt)}</span>
               </div>
               ${webhookUrl ? `<div class="route-item-meta"><span class="muted url-truncate">${escapeHtml(webhookUrl)}</span></div>` : ""}
+              ${emailTo ? `<div class="route-item-meta"><span class="muted">${escapeHtml(emailTo)}</span></div>` : ""}
               <div class="link-row">
                 <button class="btn-danger btn-sm" data-action="delete-alert" data-id="${escapeAttr(id)}">Delete</button>
               </div>

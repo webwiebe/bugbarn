@@ -121,6 +121,7 @@ type Alert struct {
 	Severity        string         `json:"severity,omitempty"`
 	Rule            map[string]any `json:"rule,omitempty"`
 	WebhookURL      string         `json:"webhook_url,omitempty"`
+	EmailTo         string         `json:"email_to,omitempty"`
 	Condition       string         `json:"condition,omitempty"`
 	Param           string         `json:"param,omitempty"`
 	Threshold       int            `json:"threshold,omitempty"`

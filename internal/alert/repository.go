@@ -35,6 +35,7 @@ SELECT
 	name,
 	enabled,
 	webhook_url,
+	email_to,
 	condition,
 	param,
 	threshold,
@@ -128,6 +129,7 @@ func scanRule(scanner interface {
 		rule            Rule
 		enabled         int
 		webhookURL      string
+		emailTo         string
 		condition       string
 		param           string
 		threshold       int
@@ -141,6 +143,7 @@ func scanRule(scanner interface {
 		&rule.Name,
 		&enabled,
 		&webhookURL,
+		&emailTo,
 		&condition,
 		&param,
 		&threshold,
@@ -154,6 +157,7 @@ func scanRule(scanner interface {
 	rule.ID = formatAlertID(id)
 	rule.Enabled = enabled != 0
 	rule.WebhookURL = webhookURL
+	rule.EmailTo = emailTo
 	rule.Condition = condition
 	rule.Param = param
 	rule.Threshold = threshold

@@ -47,8 +47,13 @@ func transientSMTPError(err error) bool {
 	return false
 }
 
-// deliverEmail sends the message with up to 3 attempts, retrying only on
+// DeliverEmail sends the message with up to 3 attempts, retrying only on
 // transient failures (mirrors rapid-root email.ts retryEmailSend).
+func DeliverEmail(mc MailConfig, to, subject, plain, html string) error {
+	mc.To = to
+	return deliverEmail(mc, subject, plain, html)
+}
+
 func deliverEmail(mc MailConfig, subject, plain, html string) error {
 	from := mc.From
 	if from == "" {
