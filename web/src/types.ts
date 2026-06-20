@@ -121,6 +121,7 @@ export interface ApiAlert extends RawRecord {
   condition?: string;
   param?: string;
   webhook_url?: string;
+  email_to?: string;
   threshold?: number;
   cooldown_minutes?: number;
   last_fired_at?: string;

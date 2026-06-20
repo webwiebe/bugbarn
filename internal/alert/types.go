@@ -9,6 +9,7 @@ type Rule struct {
 	Enabled         bool
 	ProjectID       int64
 	WebhookURL      string
+	EmailTo         string
 	Condition       string // "new_issue" | "regression" | "event_count_exceeds" | "message_contains"
 	Param           string // condition-specific string parameter (e.g. substring for message_contains)
 	Threshold       int

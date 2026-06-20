@@ -126,7 +126,7 @@ func run() error {
 	// Wire the domain event bus and alert evaluator.
 	bus := &domainevents.Bus{}
 	alertRepo := alert.NewSQLiteRepository(store.DB())
-	deliverer := alert.NewDeliverer()
+	deliverer := alert.NewDeliverer(cfg.Digest.Mail)
 	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL, logger.With("component", "alert-evaluator"))
 	bus.Subscribe(evaluator.HandleEvent)
 
