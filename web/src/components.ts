@@ -1228,7 +1228,7 @@ function renderAlertList(alerts: ApiAlert[]): string {
   `;
 }
 
-function renderField(label: string, name: string, type: "text" | "number" | "url" | "datetime-local" = "text", value = ""): string {
+function renderField(label: string, name: string, type: "text" | "number" | "url" | "email" | "datetime-local" = "text", value = ""): string {
   return `
     <label class="field">
       <span>${escapeHtml(label)}</span>
