@@ -736,11 +736,12 @@ export function renderSettingsViewMarkup(
   groups: import("./types.js").ApiProjectGroup[] = [],
   aliases: import("./types.js").ApiAlias[] = [],
   tab: import("./types.js").SettingsTab = "overview",
+  systemHealth: import("./types.js").SystemHealth | null = null,
 ): string {
   const pendingProjects = projects.filter(p => (p.status ?? p.Status) === "pending");
   const activeProjects = projects.filter(p => (p.status ?? p.Status) !== "pending");
 
-  const subPageTitles: Record<string, string> = { projects: "Projects", preferences: "Preferences", keys: "API Keys" };
+  const subPageTitles: Record<string, string> = { projects: "Projects", preferences: "Preferences", keys: "API Keys", system: "System" };
   const subTitle = subPageTitles[tab] ?? "";
   const headContent = subTitle
     ? `<a href="#/settings/overview" class="back-link">← Settings</a><h2>${escapeHtml(subTitle)}${tab === "projects" && pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</h2>`
@@ -753,6 +754,8 @@ export function renderSettingsViewMarkup(
     content = renderSettingsProjects(projects, groups, aliases);
   } else if (tab === "preferences") {
     content = renderSettingsPreferences(settings);
+  } else if (tab === "system") {
+    content = renderSettingsSystem(systemHealth);
   } else {
     content = renderSettingsKeys(apiKeys);
   }
@@ -831,6 +834,11 @@ function renderSettingsOverview(
       <a href="#/settings/keys" class="settings-nav-item">
         <span class="settings-nav-label">API Keys</span>
         <span class="settings-nav-desc">View ingest and full-access API keys</span>
+        <span class="settings-nav-arrow">›</span>
+      </a>
+      <a href="#/settings/system" class="settings-nav-item">
+        <span class="settings-nav-label">System health</span>
+        <span class="settings-nav-desc">Ingest liveness, write-queue backlog, WAL size</span>
         <span class="settings-nav-arrow">›</span>
       </a>
       <button type="button" id="settings-logout" class="settings-nav-item settings-signout">
@@ -1029,6 +1037,58 @@ function renderSettingsKeys(apiKeys: ApiApiKey[]): string {
         Create keys with <code>bugbarn apikey create --scope ingest --name my-frontend</code>.
       </p>
       ${renderApiKeyTable(apiKeys)}
+    </div>`;
+}
+
+function renderSettingsSystem(health: import("./types.js").SystemHealth | null): string {
+  if (!health) {
+    return `<div class="section"><h3>System health</h3><p class="muted">Loading…</p></div>`;
+  }
+
+  const ingest = health.ingest ?? null;
+  const ok = ingest ? ingest.healthy : health.status === "ok";
+  const statusChip = ok
+    ? `<span class="chip">healthy</span>`
+    : `<span class="chip bad">unhealthy</span>`;
+
+  const fmtAge = (secs: number): string => {
+    if (!isFinite(secs) || secs < 0) return "—";
+    if (secs < 90) return `${Math.round(secs)}s ago`;
+    if (secs < 5400) return `${Math.round(secs / 60)}m ago`;
+    if (secs < 172800) return `${Math.round(secs / 3600)}h ago`;
+    return `${Math.round(secs / 86400)}d ago`;
+  };
+  const fmtBytes = (n: number): string => {
+    if (!n) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    let v = n; let i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+  };
+
+  const reasons = ingest && ingest.reasons && ingest.reasons.length
+    ? `<div class="callout callout-warn"><strong>Pipeline degraded</strong>${ingest.reasons.map(r => `<span>${escapeHtml(r)}</span>`).join("")}</div>`
+    : "";
+
+  const lastEvent = ingest
+    ? (ingest.hasEvents ? fmtAge(ingest.lastEventAgeSeconds) : "no events yet")
+    : "—";
+  const backlog = ingest && ingest.queueDepthKnown ? String(ingest.queueDepth) : "n/a";
+  const wal = ingest ? fmtBytes(ingest.walSizeBytes) : "—";
+
+  const stats = ingest ? `
+    <div class="stats-bar">
+      <div class="stat"><span class="stat-value">${escapeHtml(lastEvent)}</span><span class="stat-label">Last event ingested</span></div>
+      <div class="stat"><span class="stat-value">${escapeHtml(backlog)}</span><span class="stat-label">Write-queue backlog</span></div>
+      <div class="stat"><span class="stat-value">${escapeHtml(wal)}</span><span class="stat-label">WAL size</span></div>
+    </div>` : `<p class="muted">Ingest health is reported by reader and writer instances; no data available.</p>`;
+
+  return `
+    <div class="section">
+      <h3>Ingest pipeline ${statusChip}</h3>
+      <p class="muted">Liveness of the write path that turns received events into stored issues. A stall here is what caused the 5-day silent outage; this panel and the <code>/api/v1/health?detail=true</code> probe now surface it.</p>
+      ${reasons}
+      ${stats}
     </div>`;
 }
 

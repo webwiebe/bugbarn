@@ -1783,6 +1783,31 @@ components:
               type: string
               format: date-time
               nullable: true
+        ingest:
+          type: object
+          description: >-
+            Ingest-pipeline liveness (present when the ingest-health monitor is
+            running). status is "unhealthy" and the endpoint returns 503 when the
+            pipeline is stalled.
+          properties:
+            healthy:
+              type: boolean
+            reasons:
+              type: array
+              items:
+                type: string
+            lastEventAgeSeconds:
+              type: number
+            hasEvents:
+              type: boolean
+            queueDepth:
+              type: integer
+              format: int64
+            queueDepthKnown:
+              type: boolean
+            walSizeBytes:
+              type: integer
+              format: int64
         projects:
           type: object
           properties:

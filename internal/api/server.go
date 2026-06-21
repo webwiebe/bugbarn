@@ -13,6 +13,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
+	"github.com/wiebe-xyz/bugbarn/internal/ingesthealth"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	alertsvc "github.com/wiebe-xyz/bugbarn/internal/service/alerts"
@@ -50,6 +51,7 @@ type Server struct {
 	selfAPIKey         string
 	selfProject        string
 	workerStatus       *worker.Status
+	ingestHealth       func() ingesthealth.Snapshot
 	autoApproveProjects bool
 
 	loginLimiter    sync.Map // map[string]*loginAttempt
@@ -124,6 +126,14 @@ func (s *Server) SetSelfReportingConfig(apiKey, project string) {
 // so the health endpoint can report worker health.
 func (s *Server) SetWorkerStatus(ws *worker.Status) {
 	s.workerStatus = ws
+}
+
+// SetIngestHealth wires the ingest-liveness monitor's snapshot into the health
+// endpoint so a stalled write pipeline surfaces as a 503 — the signal that was
+// missing during the 2026-06-21 outage. Provided as a function so the API layer
+// stays decoupled from the monitor's lifecycle.
+func (s *Server) SetIngestHealth(snapshot func() ingesthealth.Snapshot) {
+	s.ingestHealth = snapshot
 }
 
 // SetAutoApproveProjects controls whether the setup endpoint auto-approves

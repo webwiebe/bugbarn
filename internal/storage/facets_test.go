@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,6 +132,102 @@ func TestPersistFacetsAndQueryAPIs(t *testing.T) {
 	if len(values) != 2 {
 		t.Fatalf("expected 2 distinct host.name values, got %d: %v", len(values), values)
 	}
+}
+
+// TestPersistFacetsExistenceChecksUseIndex is a regression guard for the
+// 2026-06-21 production outage. PersistFacets runs COUNT() existence checks on
+// (project_id, facet_key[, facet_value]) for every facet of every ingested
+// event. When no index covered those predicates beyond the project_id prefix,
+// each check scanned the project's entire event_facets partition; as the table
+// grew, ingest slowed to a crawl, the single SQLite writer connection was held
+// for minutes per event, and the whole write pipeline wedged. This test asserts
+// those queries resolve via an index search rather than a full table scan, so a
+// future schema or query change that reintroduces the scan fails loudly here
+// instead of silently in production.
+func TestPersistFacetsExistenceChecksUseIndex(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// The exact predicates issued by PersistFacets (facets.go).
+	cases := []struct {
+		name  string
+		query string
+		args  []any
+	}{
+		{
+			name:  "key existence (project_id, facet_key)",
+			query: `SELECT COUNT(*) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
+			args:  []any{int64(1), "host.name"},
+		},
+		{
+			name:  "value existence (project_id, facet_key, facet_value)",
+			query: `SELECT COUNT(*) FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`,
+			args:  []any{int64(1), "host.name", "web-01"},
+		},
+		{
+			name:  "distinct values per key (project_id, facet_key)",
+			query: `SELECT COUNT(DISTINCT facet_value) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
+			args:  []any{int64(1), "host.name"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := queryPlan(t, store, "EXPLAIN QUERY PLAN "+tc.query, tc.args...)
+			// The outage plan was "SEARCH event_facets USING COVERING INDEX
+			// idx_event_facets_issue (project_id=?)" — an index search, but
+			// constrained only by project_id, so it still scanned the whole
+			// project partition. The fix is an index that also constrains
+			// facet_key. SQLite reports the constrained columns in the plan
+			// detail, so requiring "facet_key" there proves the lookup is bound
+			// past the project prefix and not re-scanning the partition.
+			if !strings.Contains(plan, "INDEX") {
+				t.Fatalf("query plan uses no index (full table scan) — the outage condition.\nquery: %s\nplan:  %s", tc.query, plan)
+			}
+			if !strings.Contains(plan, "facet_key") {
+				t.Fatalf("query plan only constrains the project_id prefix and scans the project's whole facet partition — the outage condition.\nquery: %s\nplan:  %s", tc.query, plan)
+			}
+		})
+	}
+}
+
+// queryPlan runs an EXPLAIN QUERY PLAN statement on the read pool and returns
+// the concatenated detail of every step.
+func queryPlan(t *testing.T, store *Store, explain string, args ...any) string {
+	t.Helper()
+	rows, err := store.roDB.QueryContext(context.Background(), explain, args...)
+	if err != nil {
+		t.Fatalf("explain query plan: %v", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var details []string
+	for rows.Next() {
+		cells := make([]any, len(cols))
+		for i := range cells {
+			cells[i] = new(sql.NullString)
+		}
+		if err := rows.Scan(cells...); err != nil {
+			t.Fatal(err)
+		}
+		// The final column is the human-readable "detail" of the plan step.
+		if ns, ok := cells[len(cells)-1].(*sql.NullString); ok && ns.Valid {
+			details = append(details, ns.String)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(details, " | ")
 }
 
 func TestListIssuesFilteredByFacets(t *testing.T) {

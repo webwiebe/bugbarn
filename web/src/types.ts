@@ -213,7 +213,22 @@ export interface AnalyticsSegmentBucket extends RawRecord { value: string; pagev
 
 export type IssueSort = "last_seen" | "first_seen" | "event_count";
 export type IssueStatus = "all" | "open" | "resolved" | "muted";
-export type SettingsTab = "overview" | "projects" | "preferences" | "keys";
+export type SettingsTab = "overview" | "projects" | "preferences" | "keys" | "system";
+
+export interface IngestHealth extends RawRecord {
+  healthy: boolean;
+  reasons?: string[];
+  lastEventAgeSeconds: number;
+  hasEvents: boolean;
+  queueDepth: number;
+  queueDepthKnown: boolean;
+  walSizeBytes: number;
+}
+
+export interface SystemHealth extends RawRecord {
+  status: string;
+  ingest?: IngestHealth | null;
+}
 
 export interface AppState {
   authChecked: boolean;
@@ -240,6 +255,7 @@ export interface AppState {
   releasesEnvFilter: string;
   alerts: ApiAlert[];
   settings: ApiSettings | null;
+  systemHealth: SystemHealth | null;
   apiKeys: ApiApiKey[];
   liveEvents: ApiEvent[];
   liveError: Error | null;
