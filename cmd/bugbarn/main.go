@@ -35,6 +35,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
+	"github.com/wiebe-xyz/bugbarn/internal/ingesthealth"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
 	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
@@ -213,6 +214,7 @@ func run() error {
 	if cfg.MaxSourceMapBytes > 0 {
 		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
+	startIngestHealthMonitor(ctx, cfg, store, apiServer, logger, &bgWg)
 	apiServer.Start(ctx)
 
 	var httpHandler http.Handler = apiServer
@@ -274,6 +276,37 @@ func withMetrics(next http.Handler) http.Handler {
 // runReader starts the server in read-only mode. It opens the writer's SQLite
 // database directly (WAL mode allows concurrent readers) and forwards all
 // writes to the writer pod via HTTP.
+// startIngestHealthMonitor wires the ingest-liveness monitor and publishes its
+// snapshot into the health endpoint. It runs in both reader and writer pods: the
+// writer additionally sees the WAL, but the reader is what the external health
+// probe hits, so it must independently detect a stall (no event persisted for
+// too long, or a growing write-queue backlog) even when the writer is wedged —
+// the gap that hid the 2026-06-21 outage for five days.
+func startIngestHealthMonitor(ctx context.Context, cfg config.Config, store *storage.Store, apiServer *api.Server, logger *slog.Logger, wg *sync.WaitGroup) {
+	deps := ingesthealth.Deps{
+		LastEventAt: store.LastEventReceivedAt,
+		DBPath:      cfg.DBPath,
+	}
+	if cfg.RedisQueueURL != "" {
+		if q, err := queue.NewRedisQueueLazy(cfg.RedisQueueURL); err == nil {
+			deps.QueueDepth = q.Len
+		} else {
+			logger.Warn("ingest-health: write-queue depth unavailable", "error", err)
+		}
+	}
+	monitor := ingesthealth.New(ingesthealth.Config{}, deps, logger)
+	apiServer.SetIngestHealth(monitor.Snapshot)
+	if wg != nil {
+		wg.Add(1)
+	}
+	go func() {
+		if wg != nil {
+			defer wg.Done()
+		}
+		monitor.Start(ctx)
+	}()
+}
+
 func runReader(cfg config.Config, logHandler slog.Handler) error {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
@@ -366,6 +399,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	if cfg.MaxSourceMapBytes > 0 {
 		apiServer.SetMaxSourceMapBytes(cfg.MaxSourceMapBytes)
 	}
+	startIngestHealthMonitor(ctx, cfg, store, apiServer, logger, nil)
 	apiServer.Start(ctx)
 
 	var httpHandler http.Handler = apiServer

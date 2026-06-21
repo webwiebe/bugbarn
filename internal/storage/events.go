@@ -149,6 +149,25 @@ WHERE e.id = ?`, rowID)
 	return evt, nil
 }
 
+// LastEventReceivedAt returns the receipt time of the most recently persisted
+// event across all projects, or the zero time if no events exist. It is used by
+// the ingest-health monitor to detect a stalled write pipeline (no event
+// persisted for an unexpectedly long window) — the failure mode behind the
+// 2026-06-21 outage, which was invisible because reads kept working.
+func (s *Store) LastEventReceivedAt(ctx context.Context) (time.Time, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "storage.LastEventReceivedAt")
+	defer span.End()
+
+	var raw sql.NullString
+	if err := s.readDB().QueryRowContext(ctx, `SELECT MAX(received_at) FROM events`).Scan(&raw); err != nil {
+		return time.Time{}, wrapErr(err, "query last event time")
+	}
+	if !raw.Valid {
+		return time.Time{}, nil
+	}
+	return parseTime(raw.String)
+}
+
 func (s *Store) ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListRecentEvents")
 	defer span.End()

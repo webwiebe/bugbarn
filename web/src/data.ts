@@ -1,4 +1,4 @@
-import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, DropoutStat, PageFlowResult, ScrollDepthResult, RawRecord } from "./types.js";
+import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, DropoutStat, PageFlowResult, ScrollDepthResult, RawRecord, SystemHealth } from "./types.js";
 
 export function normalizeList<T extends RawRecord = RawRecord>(payload: unknown, key: string): T[] {
   if (!payload) {
@@ -93,6 +93,19 @@ async function apiFetchJson(url: string, project: string): Promise<unknown> {
   }
   const text = await response.text();
   return text ? JSON.parse(text) as unknown : null;
+}
+
+// fetchSystemHealth reads the detailed health endpoint. Unlike apiFetchJson it
+// does not throw on a non-2xx status: a stalled ingest pipeline deliberately
+// returns 503 with the health body, which is exactly what we want to display.
+export async function fetchSystemHealth(): Promise<SystemHealth> {
+  const response = await fetch("/api/v1/health?detail=true", {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const text = await response.text();
+  const data = (text ? JSON.parse(text) : {}) as RawRecord;
+  return data as unknown as SystemHealth;
 }
 
 export async function fetchAnalyticsOverview(project: string, start: string, end: string): Promise<AnalyticsOverview> {

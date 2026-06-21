@@ -25,13 +25,42 @@ func (s *Server) serveHealth(w http.ResponseWriter, r *http.Request) {
 		PendingSlugs []string `json:"pendingSlugs,omitempty"`
 	}
 
+	type ingestReport struct {
+		Healthy             bool     `json:"healthy"`
+		Reasons             []string `json:"reasons,omitempty"`
+		LastEventAgeSeconds float64  `json:"lastEventAgeSeconds"`
+		HasEvents           bool     `json:"hasEvents"`
+		QueueDepth          int64    `json:"queueDepth"`
+		QueueDepthKnown     bool     `json:"queueDepthKnown"`
+		WALSizeBytes        int64    `json:"walSizeBytes"`
+	}
+
 	type detailedHealth struct {
 		Status   string         `json:"status"`
 		Worker   *workerReport  `json:"worker,omitempty"`
+		Ingest   *ingestReport  `json:"ingest,omitempty"`
 		Projects projectsReport `json:"projects"`
 	}
 
 	resp := detailedHealth{Status: "ok"}
+
+	if s.ingestHealth != nil {
+		snap := s.ingestHealth()
+		if snap.Sampled {
+			resp.Ingest = &ingestReport{
+				Healthy:             snap.Healthy,
+				Reasons:             snap.Reasons,
+				LastEventAgeSeconds: snap.LastEventAgeSeconds,
+				HasEvents:           snap.HasEvents,
+				QueueDepth:          snap.QueueDepth,
+				QueueDepthKnown:     snap.QueueDepthKnown,
+				WALSizeBytes:        snap.WALSizeBytes,
+			}
+			if !snap.Healthy {
+				resp.Status = "unhealthy"
+			}
+		}
+	}
 
 	if s.workerStatus != nil {
 		snap := s.workerStatus.Snapshot()

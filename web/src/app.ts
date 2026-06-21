@@ -13,7 +13,7 @@ import {
   renderSettingsViewMarkup,
   renderSetupGuide,
 } from "./components.js";
-import { normalizeList, normalizeObject, readString } from "./data.js";
+import { normalizeList, normalizeObject, readString, fetchSystemHealth } from "./data.js";
 import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { escapeHtml, errorMessage } from "./format.js";
 import type { ApiAlert, ApiAlias, ApiApiKey, ApiEvent, ApiIssue, ApiLogEntry, ApiProject, ApiProjectGroup, ApiRelease, ApiSettings, AppElements, AppState, IssueSort, IssueStatus, RawRecord, SettingsTab } from "./types.js";
@@ -54,6 +54,7 @@ const state: AppState = {
   releasesEnvFilter: "",
   alerts: [],
   settings: null,
+  systemHealth: null,
   apiKeys: [],
   liveEvents: [],
   liveError: null,
@@ -642,9 +643,9 @@ function route(): void {
     setRouteChip("Logs");
   } else if (kind === "settings") {
     state.currentRoute = "settings";
-    const validTabs: SettingsTab[] = ["overview", "projects", "preferences", "keys"];
+    const validTabs: SettingsTab[] = ["overview", "projects", "preferences", "keys", "system"];
     state.settingsTab = (validTabs.includes(id as SettingsTab) ? id : "overview") as SettingsTab;
-    const subPageTitles: Record<string, string> = { projects: "Projects", preferences: "Preferences", keys: "API Keys" };
+    const subPageTitles: Record<string, string> = { projects: "Projects", preferences: "Preferences", keys: "API Keys", system: "System" };
     const subTitle = subPageTitles[state.settingsTab];
     setPageTitle(subTitle ? `Settings — ${subTitle}` : "Settings");
     setRouteChip(subTitle ?? "Settings");
@@ -1761,12 +1762,36 @@ function renderAlertsView(error: unknown = null): void {
   wireAlertActions();
 }
 
+let systemHealthLoading = false;
+
 function renderSettingsView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Settings";
   elements.detailBody.innerHTML = "";
-  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab);
+  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth);
   wireSettingsActions();
+  if (state.settingsTab === "system") {
+    void loadSystemHealth();
+  }
+}
+
+// loadSystemHealth fetches the detailed health endpoint and re-renders the
+// System tab. It is best-effort: a fetch failure leaves the existing snapshot in
+// place rather than blanking the panel.
+async function loadSystemHealth(): Promise<void> {
+  if (systemHealthLoading) return;
+  systemHealthLoading = true;
+  try {
+    state.systemHealth = await fetchSystemHealth();
+  } catch {
+    // Leave state.systemHealth as-is; the panel shows the last good value.
+  } finally {
+    systemHealthLoading = false;
+  }
+  if (state.currentRoute === "settings" && state.settingsTab === "system") {
+    elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, null, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth);
+    wireSettingsActions();
+  }
 }
 
 function _renderDetail(): void {
