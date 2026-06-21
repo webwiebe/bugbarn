@@ -33,6 +33,9 @@ jobs:
   preflight:
     runs-on: [self-hosted, build]
     timeout-minutes: 5
+    outputs:
+      service_digest: ${{ steps.verify.outputs.service_digest }}
+      web_digest: ${{ steps.verify.outputs.web_digest }}
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -44,7 +47,8 @@ jobs:
             exit 1
           fi
 
-      - name: Verify image exists in GHCR
+      - name: Verify image exists in GHCR and resolve digests
+        id: verify
         run: |
           set -euo pipefail
           VERSION="${{ github.event.inputs.production_version }}"
@@ -58,7 +62,16 @@ jobs:
             { echo "ERROR: ${SERVICE_IMAGE}:${VERSION} not found in GHCR"; exit 1; }
           docker manifest inspect "${WEB_IMAGE}:${VERSION}" > /dev/null || \
             { echo "ERROR: ${WEB_IMAGE}:${VERSION} not found in GHCR"; exit 1; }
-          echo "Images verified for ${VERSION}"
+
+          # Resolve immutable digests and deploy by digest: a mutable vX.Y.Z tag
+          # is cached per-node under imagePullPolicy: IfNotPresent, so if a tag
+          # was ever wrong (see the release retag race) a node would keep serving
+          # the stale image even after the tag is corrected.
+          SVC_DIGEST="$(docker buildx imagetools inspect "${SERVICE_IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}')"
+          WEB_DIGEST="$(docker buildx imagetools inspect "${WEB_IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}')"
+          echo "service_digest=${SVC_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "web_digest=${WEB_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Images verified for ${VERSION}: service@${SVC_DIGEST}, web@${WEB_DIGEST}"
 
   deploy:
     needs: preflight
@@ -109,9 +122,17 @@ jobs:
           "
 
       - name: Apply manifests and roll out
+        env:
+          SERVICE_DIGEST: ${{ needs.preflight.outputs.service_digest }}
+          WEB_DIGEST: ${{ needs.preflight.outputs.web_digest }}
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.production_version }}"
+          # Deploy by immutable digest so nodes always pull the exact image,
+          # regardless of the IfNotPresent tag cache.
+          if [ -z "${SERVICE_DIGEST}" ] || [ -z "${WEB_DIGEST}" ]; then
+            echo "ERROR: missing image digests from preflight job" >&2
+            exit 1
+          fi
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -euo pipefail
             kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/production
@@ -120,11 +141,11 @@ jobs:
             kubectl -n ${NAMESPACE} delete deployment/bugbarn --ignore-not-found=true
 
             kubectl -n ${NAMESPACE} set image deployment/bugbarn-writer \
-              bugbarn=${SERVICE_IMAGE}:${VERSION}
+              bugbarn=${SERVICE_IMAGE}@${SERVICE_DIGEST}
             kubectl -n ${NAMESPACE} set image deployment/bugbarn-reader \
-              bugbarn=${SERVICE_IMAGE}:${VERSION}
+              bugbarn=${SERVICE_IMAGE}@${SERVICE_DIGEST}
             kubectl -n ${NAMESPACE} set image deployment/bugbarn-web \
-              bugbarn-web=${WEB_IMAGE}:${VERSION}
+              bugbarn-web=${WEB_IMAGE}@${WEB_DIGEST}
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-writer --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-reader --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-web --timeout=180s
