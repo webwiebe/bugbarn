@@ -24,19 +24,23 @@ env:
 jobs:
   retag-images:
     runs-on: [self-hosted, build]
-    timeout-minutes: 15
+    timeout-minutes: 20
+    outputs:
+      service_digest: ${{ steps.retag.outputs.service_digest }}
+      web_digest: ${{ steps.retag.outputs.web_digest }}
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 20
 
       - name: Retag images to semver
+        id: retag
         run: |
           set -euo pipefail
           VERSION="${{ github.ref_name }}"
+          # The commit the tag points at — NOT whatever happens to be built.
+          SHA="${{ github.sha }}"
           DOCKER_CONFIG_DIR="${RUNNER_TEMP}/docker-config-${GITHUB_RUN_ID}"
           mkdir -p "$DOCKER_CONFIG_DIR"
           printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' \
@@ -44,22 +48,37 @@ jobs:
             > "$DOCKER_CONFIG_DIR/config.json"
           export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
 
-          # Walk back up to 20 commits to find the SHA-tagged image
-          for sha in $(git log --format='%H' -20); do
-            SHORT="${sha:0:40}"
-            if docker manifest inspect "${SERVICE_IMAGE}:${SHORT}" > /dev/null 2>&1; then
-              echo "Found image at commit ${SHORT:0:7}"
-              docker buildx imagetools create \
-                --tag "${SERVICE_IMAGE}:${VERSION}" \
-                "${SERVICE_IMAGE}:${SHORT}"
-              docker buildx imagetools create \
-                --tag "${WEB_IMAGE}:${VERSION}" \
-                "${WEB_IMAGE}:${SHORT}"
-              echo "sha=${SHORT}" >> "$GITHUB_ENV"
-              exit 0
+          # The tag push races the main-branch build that produces
+          # service:<sha> and web:<sha> for THIS commit. The old logic walked
+          # back up to 20 commits and grabbed the first image it found — so on a
+          # race it silently retagged the PREVIOUS commit's image and shipped
+          # stale code under the new version (and the loud variant: service:<sha>
+          # present but web:<sha> not yet). Instead, wait for BOTH images of the
+          # tagged commit to exist, and never fall back to another commit.
+          deadline=$(( $(date +%s) + 900 ))   # wait up to 15 minutes
+          until docker manifest inspect "${SERVICE_IMAGE}:${SHA}" >/dev/null 2>&1 \
+             && docker manifest inspect "${WEB_IMAGE}:${SHA}" >/dev/null 2>&1; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "ERROR: ${SERVICE_IMAGE}:${SHA} and/or ${WEB_IMAGE}:${SHA} not in GHCR after 15m." >&2
+              echo "The build for the tagged commit (${SHA:0:7}) must finish before release; not falling back to an earlier image." >&2
+              exit 1
             fi
+            echo "Waiting for service:${SHA:0:7} and web:${SHA:0:7} to be pushed by the build…"
+            sleep 15
           done
-          echo "ERROR: No GHCR image found in the last 20 commits" && exit 1
+          echo "Both images present for ${SHA:0:7}; retagging to ${VERSION}"
+
+          docker buildx imagetools create --tag "${SERVICE_IMAGE}:${VERSION}" "${SERVICE_IMAGE}:${SHA}"
+          docker buildx imagetools create --tag "${WEB_IMAGE}:${VERSION}"     "${WEB_IMAGE}:${SHA}"
+
+          # Resolve immutable digests so the deploy pulls the exact images by
+          # digest — mutable tags (vX.Y.Z) are cached per-node under
+          # imagePullPolicy: IfNotPresent, so a node that ever saw a wrong tag
+          # would not re-pull even after a correct retag.
+          SVC_DIGEST="$(docker buildx imagetools inspect "${SERVICE_IMAGE}:${SHA}" --format '{{.Manifest.Digest}}')"
+          WEB_DIGEST="$(docker buildx imagetools inspect "${WEB_IMAGE}:${SHA}" --format '{{.Manifest.Digest}}')"
+          echo "service_digest=${SVC_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "web_digest=${WEB_DIGEST}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: retag-images
@@ -107,9 +126,18 @@ jobs:
           "
 
       - name: Apply manifests and roll out
+        env:
+          SERVICE_DIGEST: ${{ needs.retag-images.outputs.service_digest }}
+          WEB_DIGEST: ${{ needs.retag-images.outputs.web_digest }}
         run: |
           set -euo pipefail
-          VERSION="${{ github.ref_name }}"
+          # Deploy by immutable digest (resolved from the tagged commit's images)
+          # so nodes always pull the exact build, regardless of the IfNotPresent
+          # tag cache. The vX.Y.Z tags still exist in the registry for humans.
+          if [ -z "${SERVICE_DIGEST}" ] || [ -z "${WEB_DIGEST}" ]; then
+            echo "ERROR: missing image digests from retag-images job" >&2
+            exit 1
+          fi
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -euo pipefail
             kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/staging
@@ -118,11 +146,11 @@ jobs:
             kubectl -n ${NAMESPACE} delete deployment/bugbarn --ignore-not-found=true
 
             kubectl -n ${NAMESPACE} set image deployment/bugbarn-writer \
-              bugbarn=${SERVICE_IMAGE}:${VERSION}
+              bugbarn=${SERVICE_IMAGE}@${SERVICE_DIGEST}
             kubectl -n ${NAMESPACE} set image deployment/bugbarn-reader \
-              bugbarn=${SERVICE_IMAGE}:${VERSION}
+              bugbarn=${SERVICE_IMAGE}@${SERVICE_DIGEST}
             kubectl -n ${NAMESPACE} set image deployment/bugbarn-web \
-              bugbarn-web=${WEB_IMAGE}:${VERSION}
+              bugbarn-web=${WEB_IMAGE}@${WEB_DIGEST}
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-writer --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-reader --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-web --timeout=180s
