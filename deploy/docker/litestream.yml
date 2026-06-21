@@ -10,4 +10,11 @@ dbs:
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
         retention: 24h
         snapshot-interval: 1h
-        sync-interval: 1s
+        # Litestream attempts a WAL checkpoint on every sync cycle. At 1s this
+        # hammered the SQLite write lock ~60x/min; while the single writer
+        # connection was held by a slow transaction the checkpoints failed with
+        # "database is locked" in a tight loop and the WAL never truncated
+        # (contributing to the 2026-06-21 outage). 30s cuts that pressure 30x at
+        # the cost of a <=30s replication-lag window on a hard crash. Raise
+        # toward 1m+ if checkpoint contention reappears under heavy write bursts.
+        sync-interval: 30s
