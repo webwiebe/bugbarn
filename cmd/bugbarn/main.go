@@ -164,6 +164,14 @@ func run() error {
 	// producers are switched to Redis (phase 3) and it is retired (phase 5).
 	// The shared write mutex (nil for now) is wired when retention and the WAL
 	// checkpoint move under it in a later phase.
+	// The persist pipeline and held-events replayer are shared between the Redis
+	// consumer (live ingest) and the project-approval path (backlog drain), so
+	// build them once. The replayer works without Redis — approving a pending
+	// project drains its backlog even if no consumer is running.
+	eventProc := ingestproc.NewProcessor(store, eventPub, logger, cfg.AutoApproveProjects)
+	logService := logsvc.New(store, logger)
+	heldReplayer := ingestproc.NewReplayer(store, eventProc, logService, logger)
+
 	if cfg.RedisQueueURL != "" {
 		bgWg.Add(1)
 		go func() {
@@ -174,7 +182,7 @@ func run() error {
 				return
 			}
 			defer writeQueue.Close()
-			consumer := ingestproc.NewConsumer(writeQueue, ingestproc.NewProcessor(store, eventPub, logger), logsvc.New(store, logger), nil, logger)
+			consumer := ingestproc.NewConsumer(writeQueue, eventProc, logService, nil, logger)
 			logger.Info("redis write-queue consumer started", "url", cfg.RedisQueueURL)
 			consumer.Run(ctx)
 		}()
@@ -204,6 +212,7 @@ func run() error {
 	apiServer.SetDBPath(cfg.DBPath)
 	apiServer.SetWorkerStatus(workerStatus)
 	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
+	apiServer.SetHeldReplayer(heldReplayer)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
 	if selfReporting {
 		apiServer.SetSelfReportingConfig(cfg.SelfAPIKey, cfg.SelfProject)
@@ -518,30 +527,24 @@ func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer
 	}
 	base = base.WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	if cfg.SessionSecret != "" {
-		base = base.WithSetupKeyVerifier(newSetupKeyVerifier(cfg.SessionSecret, store, cfg.AutoApproveProjects))
+		base = base.WithSetupKeyVerifier(newSetupKeyVerifier(cfg.SessionSecret))
 	}
 	return base, nil
 }
 
-func newSetupKeyVerifier(secret string, store *storage.Store, autoApprove bool) auth.SetupKeyVerifier {
-	return func(ctx context.Context, rawKey, projectSlug string) (int64, bool) {
+// newSetupKeyVerifier returns a verifier that authorizes a setup key purely by
+// its HMAC — it performs no database writes, so it is safe on the read-only
+// reader pods that serve public ingest (CQRS split). The project is created
+// (pending, awaiting approval) lazily on the writer when the forwarded event is
+// consumed; see ingestproc.Processor.EnsureProjectForIngest. ProjectID is 0
+// because the reader resolves projects by slug downstream, not at auth time.
+func newSetupKeyVerifier(secret string) auth.SetupKeyVerifier {
+	return func(_ context.Context, rawKey, projectSlug string) (int64, bool) {
 		expected := setupKey(secret, projectSlug)
 		if expected == "" || subtle.ConstantTimeCompare([]byte(rawKey), []byte(expected)) != 1 {
 			return 0, false
 		}
-		var proj storage.Project
-		var err error
-		if autoApprove {
-			proj, err = store.EnsureProject(ctx, projectSlug)
-		} else {
-			proj, err = store.EnsureProjectPending(ctx, projectSlug)
-		}
-		if err != nil {
-			return 0, false
-		}
-		keySHA := sha256Hex(rawKey)
-		_ = store.EnsureSetupAPIKey(ctx, projectSlug+"-setup", proj.ID, keySHA)
-		return proj.ID, true
+		return 0, true
 	}
 }
 
@@ -552,11 +555,6 @@ func setupKey(secret, slug string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte("setup:" + slug))
 	return hex.EncodeToString(mac.Sum(nil))[:40]
-}
-
-func sha256Hex(s string) string {
-	h := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(h[:])
 }
 
 // runWorkerOnce replays queued records into the persistent store for local maintenance.

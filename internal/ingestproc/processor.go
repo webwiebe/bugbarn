@@ -29,6 +29,9 @@ const (
 	OutcomeTransient
 	// OutcomePersistError: a non-retryable persist failure — dead-letter.
 	OutcomePersistError
+	// OutcomeHeld: the project is pending approval, so the raw payload was parked
+	// in held_events instead of persisted. It will be replayed on approval.
+	OutcomeHeld
 )
 
 // Result reports the outcome of PersistRecord.
@@ -48,14 +51,20 @@ type Processor struct {
 	store     *storage.Store
 	publisher *service.EventPublisher
 	logger    *slog.Logger
+	// autoApprove controls how a not-yet-existing project is created on first
+	// ingest: active (true) or pending admin approval (false). When pending, the
+	// payload is held instead of persisted.
+	autoApprove bool
 }
 
 // NewProcessor wires the pipeline against a writer store and event publisher.
-func NewProcessor(store *storage.Store, publisher *service.EventPublisher, logger *slog.Logger) *Processor {
+// When autoApprove is false, brand-new projects are created pending and their
+// ingest is held until approved.
+func NewProcessor(store *storage.Store, publisher *service.EventPublisher, logger *slog.Logger, autoApprove bool) *Processor {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Processor{store: store, publisher: publisher, logger: logger.With("component", "ingestproc")}
+	return &Processor{store: store, publisher: publisher, logger: logger.With("component", "ingestproc"), autoApprove: autoApprove}
 }
 
 // PersistRecord parses and persists a single ingest record. Mirrors the inline
@@ -70,10 +79,25 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 	// non-fatal: we fall through with no project context (default project).
 	persistCtx := ctx
 	if record.ProjectSlug != "" {
-		if proj, perr := p.store.EnsureProject(ctx, record.ProjectSlug); perr == nil {
+		if proj, ok := p.EnsureProjectForIngest(ctx, record.ProjectSlug); ok {
+			// Project pending admin approval: park the raw payload and stop. It
+			// replays through this same path once the project is approved.
+			if proj.Status == "pending" {
+				held := storage.HeldRecord{
+					ProjectID:   proj.ID,
+					Slug:        record.ProjectSlug,
+					Kind:        storage.HeldKindEvent,
+					IngestID:    record.IngestID,
+					ReceivedAt:  record.ReceivedAt,
+					ContentType: record.ContentType,
+					BodyBase64:  record.BodyBase64,
+				}
+				if herr := p.Hold(ctx, held); herr != nil {
+					return Result{Outcome: OutcomeTransient, Err: herr}
+				}
+				return Result{Outcome: OutcomeHeld, ProjectID: proj.ID}
+			}
 			persistCtx = storage.WithProjectID(ctx, proj.ID)
-		} else {
-			p.logger.Error("ensure project", "project_slug", record.ProjectSlug, "error", perr)
 		}
 	}
 
@@ -103,19 +127,38 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 	}
 }
 
-// ResolveProjectID ensures the project for slug exists and returns its ID, or 0
-// if slug is empty or the project cannot be resolved. Used by the log path,
-// which needs a project ID before parsing entries.
-func (p *Processor) ResolveProjectID(ctx context.Context, slug string) int64 {
+// EnsureProjectForIngest resolves (creating if needed) the project for slug,
+// returning the project and ok=false when slug is empty or the project cannot be
+// resolved. A brand-new project is created pending (or active when autoApprove is
+// set). Callers must check proj.Status == "pending" and hold the payload rather
+// than persist it.
+func (p *Processor) EnsureProjectForIngest(ctx context.Context, slug string) (storage.Project, bool) {
 	if slug == "" {
-		return 0
+		return storage.Project{}, false
 	}
-	proj, err := p.store.EnsureProject(ctx, slug)
+	var proj storage.Project
+	var err error
+	if p.autoApprove {
+		proj, err = p.store.EnsureProject(ctx, slug)
+	} else {
+		proj, err = p.store.EnsureProjectPending(ctx, slug)
+	}
 	if err != nil {
 		p.logger.Error("ensure project", "project_slug", slug, "error", err)
-		return 0
+		return storage.Project{}, false
 	}
-	return proj.ID
+	return proj, true
+}
+
+// Hold parks a raw ingest payload for a project pending admin approval. The
+// error is logged here (services are the log boundary) and returned so the
+// caller can retry.
+func (p *Processor) Hold(ctx context.Context, h storage.HeldRecord) error {
+	if err := p.store.HoldEvent(ctx, h); err != nil {
+		p.logger.Error("hold ingest for pending project", "project_id", h.ProjectID, "kind", h.Kind, "error", err)
+		return err
+	}
+	return nil
 }
 
 // isTransientPersistError mirrors cmd/bugbarn.isTransientPersistError: a locked

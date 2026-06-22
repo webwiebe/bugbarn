@@ -35,9 +35,10 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 
 	proj, err := s.projects.BySlug(r.Context(), slug)
 	if err != nil {
-		// Project doesn't exist yet or we're on a read-only replica.
-		// That's fine — the key is deterministic and the project + API key
-		// will be created lazily on the writer when the first event arrives.
+		// Project doesn't exist yet (e.g. on a read-only reader serving public
+		// ingest). That's fine — the key is deterministic and the project is
+		// created lazily, pending admin approval, on the writer when the first
+		// event arrives.
 		proj.Slug = slug
 		proj.Status = "new"
 	}
@@ -58,14 +59,14 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pendingNote := ""
-	if status == "pending" {
+	if status == "pending" || status == "new" {
 		pendingNote = fmt.Sprintf(`
 ## Pending admin approval
 
-This project was just created and is pending approval at:
+New projects are created pending approval. Send events now — they are accepted
+(HTTP 202) and queued. They are ingested into the dashboard once an admin
+approves the project at:
   %s
-
-Events are accepted immediately. The admin will review and approve.
 `, endpoint)
 	}
 

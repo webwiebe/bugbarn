@@ -11,6 +11,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/logparse"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // LogInserter persists parsed log entries. Satisfied by *service/logs.Service.
@@ -172,6 +173,8 @@ func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) string {
 		switch res.Outcome {
 		case OutcomeSuccess:
 			return "success"
+		case OutcomeHeld:
+			return "held"
 		case OutcomeParseError:
 			c.logger.Error("drop unparseable event", "ingest_id", item.IngestID, "error", res.Err)
 			return "parse_error"
@@ -208,11 +211,29 @@ func (c *Consumer) persistLog(ctx context.Context, item queue.Item) string {
 		c.logger.Error("decode log body", "project", item.ProjectSlug, "error", err)
 		return "decode_error"
 	}
-	projectID := c.proc.ResolveProjectID(ctx, item.ProjectSlug)
-	if projectID == 0 {
+	proj, ok := c.proc.EnsureProjectForIngest(ctx, item.ProjectSlug)
+	if !ok {
 		c.logger.Warn("dropping log item: unresolved project", "project", item.ProjectSlug)
 		return "dropped"
 	}
+	// Project pending admin approval: park the raw log payload for replay on
+	// approval instead of inserting it.
+	if proj.Status == "pending" {
+		held := storage.HeldRecord{
+			ProjectID:   proj.ID,
+			Slug:        item.ProjectSlug,
+			Kind:        storage.HeldKindLog,
+			IngestID:    item.IngestID,
+			ReceivedAt:  item.ReceivedAt,
+			ContentType: item.ContentType,
+			BodyBase64:  item.BodyBase64,
+		}
+		if err := c.proc.Hold(ctx, held); err != nil {
+			return "held_error"
+		}
+		return "held"
+	}
+	projectID := proj.ID
 	entries := logparse.ParseBody(body, item.ContentType, projectID)
 	if len(entries) == 0 {
 		return "empty"

@@ -148,6 +148,14 @@ func (s *Server) SetWriteForwarder(f *WriteForwarder) {
 	s.writeForwarder = f
 }
 
+// SetHeldReplayer wires the held-events replayer into the projects service so
+// approving a pending project drains its backlog. Writer-only.
+func (s *Server) SetHeldReplayer(r projectsvc.HeldReplayer) {
+	if s.projects != nil {
+		s.projects.SetHeldReplayer(r)
+	}
+}
+
 // SetIngestSpool wires a spool-backed forwarder for fire-and-forget ingest
 // endpoints (events, logs, analytics). When set, those endpoints append to
 // the on-disk spool and return 202 instead of forwarding synchronously, so
