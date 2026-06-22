@@ -29,7 +29,9 @@ func newProcessor(t *testing.T) (*Processor, *storage.Store) {
 	}
 	t.Cleanup(func() { store.Close() })
 	pub := service.NewEventPublisher(&domainevents.Bus{})
-	return NewProcessor(store, pub, nil), store
+	// autoApprove=true: brand-new projects are created active so these tests
+	// exercise the persist path. The pending/hold path is covered in held_test.go.
+	return NewProcessor(store, pub, nil, true), store
 }
 
 func eventBody(t *testing.T) string {

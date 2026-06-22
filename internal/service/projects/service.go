@@ -56,9 +56,17 @@ type Repository interface {
 	UpdateSettings(context.Context, map[string]string) error
 }
 
+// HeldReplayer drains the held-events backlog accumulated while a project was
+// pending, persisting it through the normal ingest pipeline. It is satisfied by
+// *ingestproc.Replayer and wired only on the writer.
+type HeldReplayer interface {
+	ReplayHeld(ctx context.Context, projectID int64) (int, error)
+}
+
 type Service struct {
-	repo   Repository
-	logger *slog.Logger
+	repo     Repository
+	logger   *slog.Logger
+	replayer HeldReplayer
 }
 
 func New(repo Repository, logger *slog.Logger) *Service {
@@ -66,6 +74,13 @@ func New(repo Repository, logger *slog.Logger) *Service {
 		logger = slog.Default()
 	}
 	return &Service{repo: repo, logger: logger.With("service", "projects")}
+}
+
+// SetHeldReplayer wires the held-events replayer used to drain a project's
+// backlog on approval. Called on the writer; left nil on readers (which forward
+// approvals to the writer).
+func (s *Service) SetHeldReplayer(r HeldReplayer) {
+	s.replayer = r
 }
 
 func (s *Service) List(ctx context.Context) ([]domain.Project, error) {
@@ -143,6 +158,26 @@ func (s *Service) Approve(ctx context.Context, slug string) error {
 		return err
 	}
 	s.logger.InfoContext(ctx, "project approved", "slug", slug)
+
+	// Drain any ingest that arrived while the project was pending. The status is
+	// now active, so replayed records persist instead of being re-held. A drain
+	// failure is logged but does not fail the approval — the backlog remains and
+	// is retried on the next approval call.
+	if s.replayer != nil {
+		proj, err := s.repo.ProjectBySlug(ctx, slug)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "approve: lookup project for replay", "slug", slug, "error", err)
+			return nil
+		}
+		n, err := s.replayer.ReplayHeld(ctx, proj.ID)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "approve: replay held events", "slug", slug, "replayed", n, "error", err)
+			return nil
+		}
+		if n > 0 {
+			s.logger.InfoContext(ctx, "replayed held events on approval", "slug", slug, "count", n)
+		}
+	}
 	return nil
 }
 

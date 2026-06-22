@@ -216,3 +216,56 @@ func TestApprove_NotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
+
+type fakeReplayer struct {
+	gotProjectID int64
+	calls        int
+	err          error
+}
+
+func (f *fakeReplayer) ReplayHeld(_ context.Context, projectID int64) (int, error) {
+	f.calls++
+	f.gotProjectID = projectID
+	return 0, f.err
+}
+
+func TestApprove_DrainsHeldBacklog(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepo{projects: map[string]domain.Project{
+		"svc": {ID: 42, Slug: "svc", Status: "pending"},
+	}}
+	rep := &fakeReplayer{}
+	svc := New(repo, nil)
+	svc.SetHeldReplayer(rep)
+
+	if err := svc.Approve(context.Background(), "svc"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if rep.calls != 1 {
+		t.Fatalf("replayer calls = %d, want 1", rep.calls)
+	}
+	if rep.gotProjectID != 42 {
+		t.Errorf("replayed project id = %d, want 42", rep.gotProjectID)
+	}
+}
+
+func TestApprove_ReplayFailureDoesNotFailApproval(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepo{projects: map[string]domain.Project{
+		"svc": {ID: 7, Slug: "svc", Status: "pending"},
+	}}
+	rep := &fakeReplayer{err: errors.New("boom")}
+	svc := New(repo, nil)
+	svc.SetHeldReplayer(rep)
+
+	// Approval succeeds even though the drain fails; the backlog is retried on a
+	// later approval call.
+	if err := svc.Approve(context.Background(), "svc"); err != nil {
+		t.Fatalf("approve should not fail on replay error, got %v", err)
+	}
+	if rep.calls != 1 {
+		t.Errorf("replayer calls = %d, want 1", rep.calls)
+	}
+}
