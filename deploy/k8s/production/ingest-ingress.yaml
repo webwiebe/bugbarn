@@ -150,6 +150,37 @@ spec:
                 name: bugbarn
                 port:
                   name: http
+    - host: bb.webwiebe.nl
+      http:
+        paths:
+          - path: /api/v1/events
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/logs
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/setup/
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/health
+            pathType: Exact
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
   tls:
     - hosts:
         - bb.pensioenfeest.nl
@@ -163,6 +194,9 @@ spec:
     - hosts:
         - bb.scanbarelinks.nl
       secretName: bb-scanbarelinks-nl-tls
+    - hosts:
+        - bb.webwiebe.nl
+      secretName: bb-webwiebe-nl-tls
 
 ---
 # Catch-all for bb.* domains: redirects everything not matched by the more-specific
@@ -218,6 +252,16 @@ spec:
                 name: bugbarn
                 port:
                   name: http
+    - host: bb.webwiebe.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
   tls:
     - hosts:
         - bb.pensioenfeest.nl
@@ -231,3 +275,6 @@ spec:
     - hosts:
         - bb.scanbarelinks.nl
       secretName: bb-scanbarelinks-nl-tls
+    - hosts:
+        - bb.webwiebe.nl
+      secretName: bb-webwiebe-nl-tls
