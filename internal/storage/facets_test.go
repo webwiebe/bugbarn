@@ -161,12 +161,12 @@ func TestPersistFacetsExistenceChecksUseIndex(t *testing.T) {
 	}{
 		{
 			name:  "key existence (project_id, facet_key)",
-			query: `SELECT COUNT(*) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
+			query: `SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ?)`,
 			args:  []any{int64(1), "host.name"},
 		},
 		{
 			name:  "value existence (project_id, facet_key, facet_value)",
-			query: `SELECT COUNT(*) FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`,
+			query: `SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?)`,
 			args:  []any{int64(1), "host.name", "web-01"},
 		},
 		{
