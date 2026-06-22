@@ -196,6 +196,61 @@ func TestPersistFacetsExistenceChecksUseIndex(t *testing.T) {
 	}
 }
 
+// TestFacetReadQueriesUseIndexes guards the facet read/filter paths (migration
+// 00005). The cross-project ("all projects") variants filter on facet_key with
+// no project_id; before the facet-leading index they full-scanned event_facets.
+// The project-scoped facet→issue filter needs issue_id in the index to avoid a
+// per-row table lookup.
+func TestFacetReadQueriesUseIndexes(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	cases := []struct {
+		name      string
+		query     string
+		args      []any
+		wantIndex string
+	}{
+		{
+			name:      "cross-project distinct facet keys",
+			query:     `SELECT DISTINCT facet_key FROM event_facets ORDER BY facet_key ASC`,
+			wantIndex: "idx_event_facets_facet",
+		},
+		{
+			name:      "cross-project distinct facet values for a key",
+			query:     `SELECT DISTINCT facet_value FROM event_facets WHERE facet_key = ? ORDER BY facet_value ASC`,
+			args:      []any{"host.name"},
+			wantIndex: "idx_event_facets_facet",
+		},
+		{
+			name:      "cross-project issue filter by facet",
+			query:     `SELECT DISTINCT issue_id FROM event_facets WHERE facet_key = ? AND facet_value = ?`,
+			args:      []any{"host.name", "web-01"},
+			wantIndex: "idx_event_facets_facet",
+		},
+		{
+			name:      "project-scoped issue filter by facet (covering)",
+			query:     `SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`,
+			args:      []any{int64(1), "host.name", "web-01"},
+			wantIndex: "idx_event_facets_kv_issue",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := queryPlan(t, store, "EXPLAIN QUERY PLAN "+tc.query, tc.args...)
+			if !strings.Contains(plan, tc.wantIndex) {
+				t.Fatalf("query does not use %s (likely a full table scan).\nquery: %s\nplan:  %s", tc.wantIndex, tc.query, plan)
+			}
+		})
+	}
+}
+
 // queryPlan runs an EXPLAIN QUERY PLAN statement on the read pool and returns
 // the concatenated detail of every step.
 func queryPlan(t *testing.T, store *Store, explain string, args ...any) string {
