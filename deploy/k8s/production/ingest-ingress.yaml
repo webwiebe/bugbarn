@@ -119,10 +119,44 @@ spec:
                 name: bugbarn
                 port:
                   name: http
+    - host: bb.brandtrace.net
+      http:
+        paths:
+          - path: /api/v1/events
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/logs
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/setup/
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
+          - path: /api/v1/health
+            pathType: Exact
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
   tls:
     - hosts:
         - bb.pensioenfeest.nl
       secretName: bb-pensioenfeest-nl-tls
+    - hosts:
+        - bb.brandtrace.net
+      secretName: bb-brandtrace-net-tls
     - hosts:
         - bb.scanoo.nl
       secretName: bb-scanoo-nl-tls
@@ -174,10 +208,23 @@ spec:
                 name: bugbarn
                 port:
                   name: http
+    - host: bb.brandtrace.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bugbarn
+                port:
+                  name: http
   tls:
     - hosts:
         - bb.pensioenfeest.nl
       secretName: bb-pensioenfeest-nl-tls
+    - hosts:
+        - bb.brandtrace.net
+      secretName: bb-brandtrace-net-tls
     - hosts:
         - bb.scanoo.nl
       secretName: bb-scanoo-nl-tls
