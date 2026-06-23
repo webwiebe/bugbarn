@@ -280,7 +280,10 @@ func TestConcurrentReads(t *testing.T) {
 func TestRegressedFirstOrdering(t *testing.T) {
 	t.Parallel()
 
-	store, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	// open without the background fingerprint migration: this test writes
+	// explicit fingerprints, which the migration would recompute and clobber,
+	// racing the test (flaky, surfaced under slower CI).
+	store, err := open(filepath.Join(t.TempDir(), "bugbarn.db"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
