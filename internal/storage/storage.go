@@ -100,6 +100,14 @@ func OpenReadOnly(path string) (*Store, error) {
 }
 
 func Open(path string) (*Store, error) {
+	return open(path, true)
+}
+
+// open is Open with control over the one-time background fingerprint migration.
+// Tests that set explicit fingerprints pass autoMigrate=false: the migration
+// recomputes fingerprints from event material, which would otherwise race the
+// test and clobber the explicit values it just wrote.
+func open(path string, autoMigrate bool) (*Store, error) {
 	if strings.TrimSpace(path) == "" {
 		path = defaultDBPath
 	}
@@ -133,11 +141,13 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	go func() {
-		if err := store.migrateFingerprints(context.Background()); err != nil {
-			slog.Error("fingerprint migration failed", "err", err)
-		}
-	}()
+	if autoMigrate {
+		go func() {
+			if err := store.migrateFingerprints(context.Background()); err != nil {
+				slog.Error("fingerprint migration failed", "err", err)
+			}
+		}()
+	}
 	return store, nil
 }
 
