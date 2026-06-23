@@ -32,32 +32,46 @@ jobs:
           . .ci-venv/bin/activate
           make spec-check
 
-  # One leg per Go module so the app and the SDK build/vet/test concurrently on
-  # separate runners. fail-fast cancels the siblings the moment one leg fails.
+  # Go build/vet/test runs inside BuildKit so the compile cache is shared across
+  # both build machines via a registry (GHCR) cache. The `deps` stage pre-compiles
+  # the heavy dependency closure (modernc/sqlite -> libc) into a go.sum-keyed
+  # layer; mode=max exports it, so whichever runner picks up the job starts warm
+  # instead of recompiling SQLite cold (~10 min before). Native arm64 — no QEMU.
   go:
-    strategy:
-      fail-fast: true
-      matrix:
-        module:
-          - "."
-          - "sdks/go"
     runs-on: [self-hosted, build]
+    permissions:
+      contents: read
+      packages: write
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.26.x'
-          cache: false
-      - name: Go build, vet, test (${{ matrix.module }})
-        working-directory: ${{ matrix.module }}
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v4
+      - name: GHCR auth
         shell: bash
         run: |
           set -euo pipefail
-          # build first so a compile error fails fast before the longer test run.
-          go build ./...
-          go vet ./...
-          go test ./...
+          DOCKER_CONFIG_DIR="${RUNNER_TEMP}/docker-config-${GITHUB_RUN_ID}"
+          mkdir -p "$DOCKER_CONFIG_DIR"
+          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' \
+            "$(printf '%s:%s' '${{ github.actor }}' '${{ secrets.GITHUB_TOKEN }}' | base64)" \
+            > "$DOCKER_CONFIG_DIR/config.json"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG_DIR" >> "$GITHUB_ENV"
+      - name: Go build, vet, test (registry-cached via BuildKit)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CACHE_REF="ghcr.io/webwiebe/bugbarn/buildcache"
+          docker buildx build \
+            --platform linux/arm64 \
+            --target test \
+            -f deploy/docker/service.Dockerfile \
+            --cache-from "type=registry,ref=${CACHE_REF}" \
+            --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
+            --output type=cacheonly \
+            .
 
   # One leg per Node package (dashboard, marketing site, TS SDK) so they install
   # and build in parallel instead of serially.
