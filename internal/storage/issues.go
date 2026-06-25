@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -16,7 +17,6 @@ func (s *IssueStore) ListIssues(ctx context.Context) ([]Issue, error) {
 	return s.ListIssuesFiltered(ctx, IssueFilter{})
 }
 
-//nolint:gocognit,gocyclo,funlen // dynamic filter/sort/facet query builder; tracked for refactor.
 func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter) (_ []Issue, retErr error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListIssuesFiltered")
 	defer func() {
@@ -25,27 +25,9 @@ func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter)
 		}
 		span.End()
 	}()
-	var orderBy string
-	switch filter.Sort {
-	case "first_seen":
-		orderBy = "i.first_seen DESC, i.id DESC"
-	case "event_count":
-		orderBy = "i.event_count DESC, i.id DESC"
-	default:
-		orderBy = "i.last_seen DESC, i.id DESC"
-	}
-	if filter.Status == "open" {
-		orderBy = "(CASE WHEN i.status = 'regressed' THEN 0 ELSE 1 END), " + orderBy
-	}
+	orderBy := issueOrderBy(filter)
 
-	// Collect non-empty facet filters.
-	type kv struct{ k, v string }
-	var facetFilters []kv
-	for fk, fv := range filter.Facets {
-		if strings.TrimSpace(fk) != "" && strings.TrimSpace(fv) != "" {
-			facetFilters = append(facetFilters, kv{fk, fv})
-		}
-	}
+	facetFilters := collectFacetFilters(filter)
 
 	projectID, ok := ProjectIDFromContext(ctx)
 	if !ok {
@@ -55,64 +37,30 @@ func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter)
 
 	groupIDs, hasGroupFilter := ProjectIDsFromContext(ctx)
 
-	var conditions []string
-	var whereArgs []any
-	if hasGroupFilter {
-		placeholders := make([]string, len(groupIDs))
-		for i, id := range groupIDs {
-			placeholders[i] = "?"
-			whereArgs = append(whereArgs, id)
-		}
-		conditions = append(conditions, "i.project_id IN ("+strings.Join(placeholders, ",")+")")
-	} else if !allProjects {
-		conditions = append(conditions, "i.project_id = ?")
-		whereArgs = append(whereArgs, projectID)
-	}
-
-	switch filter.Status {
-	case "open":
-		conditions = append(conditions, "i.status IN ('unresolved', 'regressed')")
-	case "muted":
-		conditions = append(conditions, "i.status = 'muted'")
-	case "resolved":
-		conditions = append(conditions, "i.status = 'resolved'")
-		// "all" or "" → no status filter
-	}
-
-	if q := strings.TrimSpace(filter.Query); q != "" {
-		conditions = append(conditions, "(i.title LIKE ? OR i.normalized_title LIKE ?)")
-		like := "%" + q + "%"
-		whereArgs = append(whereArgs, like, like)
-	}
+	conditions, whereArgs := issueWhereConditions(filter, projectID, allProjects, groupIDs, hasGroupFilter)
 
 	// fromArgs holds bindings for subquery ?-placeholders in the FROM clause.
 	// They must come before whereArgs in the final args slice.
-	var fromArgs []any
-	var fromClause string
-	if len(facetFilters) > 0 {
-		// Build an INTERSECT subquery: one branch per facet filter that returns
-		// matching issue_ids. The join enforces AND semantics across all filters.
-		var subqueries []string
-		for _, f := range facetFilters {
-			if !allProjects {
-				subqueries = append(subqueries,
-					`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
-				fromArgs = append(fromArgs, projectID, f.k, f.v)
-			} else {
-				subqueries = append(subqueries,
-					`SELECT DISTINCT issue_id FROM event_facets WHERE facet_key = ? AND facet_value = ?`)
-				fromArgs = append(fromArgs, f.k, f.v)
-			}
-		}
-		fromClause = fmt.Sprintf(`issues i INNER JOIN (%s) ef ON i.id = ef.issue_id LEFT JOIN projects p ON p.id = i.project_id`,
-			strings.Join(subqueries, " INTERSECT "))
-	} else {
-		fromClause = "issues i LEFT JOIN projects p ON p.id = i.project_id"
-	}
+	fromClause, fromArgs := buildIssueFromClause(facetFilters, projectID, allProjects)
 
 	// Combine: subquery bindings first (appear in FROM clause), then WHERE bindings.
 	args := append(fromArgs, whereArgs...)
 
+	sqlQuery := buildIssueListQuery(fromClause, conditions, orderBy, filter)
+
+	rows, err := s.readDB().QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanIssueRows(rows)
+}
+
+// buildIssueListQuery assembles the SELECT/FROM/WHERE/ORDER BY/LIMIT SQL for the
+// issue list query from the already-built FROM clause, WHERE conditions, and
+// ORDER BY expression.
+func buildIssueListQuery(fromClause string, conditions []string, orderBy string, filter IssueFilter) string {
 	sqlQuery := `
 SELECT
 	i.id,
@@ -149,13 +97,11 @@ ORDER BY ` + orderBy
 			sqlQuery += fmt.Sprintf(" OFFSET %d", filter.Offset)
 		}
 	}
+	return sqlQuery
+}
 
-	rows, err := s.readDB().QueryContext(ctx, sqlQuery, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
+// scanIssueRows materializes all rows from an issue list query into a slice.
+func scanIssueRows(rows *sql.Rows) ([]Issue, error) {
 	issues := []Issue{}
 	for rows.Next() {
 		issue, err := scanIssue(rows)
@@ -168,6 +114,100 @@ ORDER BY ` + orderBy
 		return nil, err
 	}
 	return issues, nil
+}
+
+// facetFilter is a single non-empty facet key/value constraint.
+type facetFilter struct{ k, v string }
+
+// collectFacetFilters returns the filter's non-empty facet key/value pairs.
+func collectFacetFilters(filter IssueFilter) []facetFilter {
+	var facetFilters []facetFilter
+	for fk, fv := range filter.Facets {
+		if strings.TrimSpace(fk) != "" && strings.TrimSpace(fv) != "" {
+			facetFilters = append(facetFilters, facetFilter{fk, fv})
+		}
+	}
+	return facetFilters
+}
+
+// buildIssueFromClause builds the FROM clause (and its subquery bind args) for
+// the issue list query. When facet filters are present it joins an INTERSECT
+// subquery that enforces AND semantics across all filters.
+func buildIssueFromClause(facetFilters []facetFilter, projectID int64, allProjects bool) (string, []any) {
+	if len(facetFilters) == 0 {
+		return "issues i LEFT JOIN projects p ON p.id = i.project_id", nil
+	}
+	// Build an INTERSECT subquery: one branch per facet filter that returns
+	// matching issue_ids. The join enforces AND semantics across all filters.
+	var fromArgs []any
+	var subqueries []string
+	for _, f := range facetFilters {
+		if !allProjects {
+			subqueries = append(subqueries,
+				`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
+			fromArgs = append(fromArgs, projectID, f.k, f.v)
+		} else {
+			subqueries = append(subqueries,
+				`SELECT DISTINCT issue_id FROM event_facets WHERE facet_key = ? AND facet_value = ?`)
+			fromArgs = append(fromArgs, f.k, f.v)
+		}
+	}
+	fromClause := fmt.Sprintf(`issues i INNER JOIN (%s) ef ON i.id = ef.issue_id LEFT JOIN projects p ON p.id = i.project_id`,
+		strings.Join(subqueries, " INTERSECT "))
+	return fromClause, fromArgs
+}
+
+// issueOrderBy maps the filter's sort/status to the ORDER BY clause.
+func issueOrderBy(filter IssueFilter) string {
+	var orderBy string
+	switch filter.Sort {
+	case "first_seen":
+		orderBy = "i.first_seen DESC, i.id DESC"
+	case "event_count":
+		orderBy = "i.event_count DESC, i.id DESC"
+	default:
+		orderBy = "i.last_seen DESC, i.id DESC"
+	}
+	if filter.Status == "open" {
+		orderBy = "(CASE WHEN i.status = 'regressed' THEN 0 ELSE 1 END), " + orderBy
+	}
+	return orderBy
+}
+
+// issueWhereConditions builds the WHERE conditions and their bound args from the
+// project/group scope and the filter's status/query.
+func issueWhereConditions(
+	filter IssueFilter, projectID int64, allProjects bool, groupIDs []int64, hasGroupFilter bool,
+) (conditions []string, whereArgs []any) {
+	if hasGroupFilter {
+		placeholders := make([]string, len(groupIDs))
+		for i, id := range groupIDs {
+			placeholders[i] = "?"
+			whereArgs = append(whereArgs, id)
+		}
+		conditions = append(conditions, "i.project_id IN ("+strings.Join(placeholders, ",")+")")
+	} else if !allProjects {
+		conditions = append(conditions, "i.project_id = ?")
+		whereArgs = append(whereArgs, projectID)
+	}
+
+	switch filter.Status {
+	case "open":
+		conditions = append(conditions, "i.status IN ('unresolved', 'regressed')")
+	case "muted":
+		conditions = append(conditions, "i.status = 'muted'")
+	case "resolved":
+		conditions = append(conditions, "i.status = 'resolved'")
+		// "all" or "" → no status filter
+	}
+
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		conditions = append(conditions, "(i.title LIKE ? OR i.normalized_title LIKE ?)")
+		like := "%" + q + "%"
+		whereArgs = append(whereArgs, like, like)
+	}
+
+	return conditions, whereArgs
 }
 
 func (s *IssueStore) GetIssue(ctx context.Context, issueID string) (Issue, error) {

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -27,8 +28,6 @@ const logTrimInterval = 32
 // shared with event ingestion, so if a client disconnects we must abandon the
 // insert promptly rather than hold the connection. A short ceiling also bounds
 // how long any one batch can occupy the writer.
-//
-//nolint:gocognit,gocyclo // batched log writer with amortized retention trim; tracked for refactor.
 func (s *LogStore) InsertLogEntries(ctx context.Context, entries []LogEntry) error {
 	if len(entries) == 0 {
 		return nil
@@ -48,30 +47,7 @@ func (s *LogStore) InsertLogEntries(ctx context.Context, entries []LogEntry) err
 		if end > len(entries) {
 			end = len(entries)
 		}
-		chunk := entries[start:end]
-
-		var sb strings.Builder
-		sb.WriteString(`INSERT INTO log_entries (project_id, received_at, level_num, level, message, data_json) VALUES `)
-		args := make([]any, 0, len(chunk)*6)
-		for i, e := range chunk {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteString(`(?, ?, ?, ?, ?, ?)`)
-
-			dataJSON := "{}"
-			if len(e.Data) > 0 {
-				if b, err := json.Marshal(e.Data); err == nil {
-					dataJSON = string(b)
-				}
-			}
-			receivedAt := e.ReceivedAt
-			if receivedAt.IsZero() {
-				receivedAt = time.Now().UTC()
-			}
-			args = append(args, e.ProjectID, receivedAt.UTC().Format(time.RFC3339Nano), e.LevelNum, e.Level, e.Message, dataJSON)
-		}
-		if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
+		if err := insertLogChunk(ctx, tx, entries[start:end]); err != nil {
 			return err
 		}
 	}
@@ -82,26 +58,63 @@ func (s *LogStore) InsertLogEntries(ctx context.Context, entries []LogEntry) err
 	// between trims is harmless. A batch large enough to breach the cap on its
 	// own always trims so the cap can't be blown past in a single call.
 	if len(entries) >= logTrimInterval || s.logInsertCount.Add(1)%logTrimInterval == 0 {
-		projectID := entries[0].ProjectID
-		var count int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM log_entries WHERE project_id = ?`, projectID).Scan(&count); err != nil {
+		if err := trimLogRetention(ctx, tx, entries[0].ProjectID); err != nil {
 			return err
-		}
-		if count > logRetentionCap {
-			_, err = tx.ExecContext(ctx, `
-				DELETE FROM log_entries WHERE project_id = ? AND id <= (
-					SELECT MIN(id) FROM (
-						SELECT id FROM log_entries WHERE project_id = ? ORDER BY id DESC LIMIT ?
-					)
-				)
-			`, projectID, projectID, logRetentionCap)
-			if err != nil {
-				return err
-			}
 		}
 	}
 
 	return tx.Commit()
+}
+
+// insertLogChunk writes one multi-row INSERT for a slice of log entries that is
+// already sized within the bound-parameter limit.
+func insertLogChunk(ctx context.Context, tx *sql.Tx, chunk []LogEntry) error {
+	var sb strings.Builder
+	sb.WriteString(`INSERT INTO log_entries (project_id, received_at, level_num, level, message, data_json) VALUES `)
+	args := make([]any, 0, len(chunk)*6)
+	for i, e := range chunk {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(`(?, ?, ?, ?, ?, ?)`)
+
+		dataJSON := "{}"
+		if len(e.Data) > 0 {
+			if b, err := json.Marshal(e.Data); err == nil {
+				dataJSON = string(b)
+			}
+		}
+		receivedAt := e.ReceivedAt
+		if receivedAt.IsZero() {
+			receivedAt = time.Now().UTC()
+		}
+		args = append(args, e.ProjectID, receivedAt.UTC().Format(time.RFC3339Nano), e.LevelNum, e.Level, e.Message, dataJSON)
+	}
+	if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
+		return err
+	}
+	return nil
+}
+
+// trimLogRetention deletes the oldest log entries for a project beyond the
+// retention cap.
+func trimLogRetention(ctx context.Context, tx *sql.Tx, projectID int64) error {
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM log_entries WHERE project_id = ?`, projectID).Scan(&count); err != nil {
+		return err
+	}
+	if count > logRetentionCap {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM log_entries WHERE project_id = ? AND id <= (
+				SELECT MIN(id) FROM (
+					SELECT id FROM log_entries WHERE project_id = ? ORDER BY id DESC LIMIT ?
+				)
+			)
+		`, projectID, projectID, logRetentionCap); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ListLogEntries returns up to limit entries for a project (or all projects when projectID=0), newest first.

@@ -230,8 +230,8 @@ curl -X POST %s/api/v1/logs \
 ---
 Generated %s
 `,
-		slug,                   // 1: title
-		slug,                   // 2: description slug
+		slug,                           // 1: title
+		slug,                           // 2: description slug
 		endpoint, slug, rawKey, status, // 3,4,5,6: table
 		pendingNote,            // 7: pending note block
 		endpoint, rawKey, slug, // 8,9,10: curl example
@@ -241,7 +241,7 @@ Generated %s
 		rawKey, endpoint, // 20,21: python (no project_slug param — routed by API key)
 		endpoint, rawKey, slug, // 22,23,24: release curl
 		endpoint, rawKey, slug, // 25,26,27: logs curl
-		endpoint,               // 28: view link
+		endpoint,                              // 28: view link
 		time.Now().UTC().Format(time.RFC3339), // 29: generated timestamp
 	)
 

@@ -110,8 +110,6 @@ func stringFromMap(m map[string]any, key string) string {
 
 // PersistFacets inserts extracted facet key/value pairs for a given event into
 // event_facets, enforcing per-project cardinality caps (T030).
-//
-//nolint:gocognit,gocyclo // facet upsert with per-project cardinality caps; tracked for refactor.
 func (s *core) PersistFacets(ctx context.Context, eventID int64, issueID int64, facets map[string]string) error {
 	if len(facets) == 0 {
 		return nil
@@ -141,65 +139,77 @@ func (s *core) PersistFacets(ctx context.Context, eventID int64, issueID int64, 
 		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
 			continue
 		}
-
-		// Determine whether this key is new to this project. EXISTS stops at the
-		// first matching row; the old COUNT(*) counted every row for the key,
-		// which on a high-frequency facet key meant scanning hundreds of
-		// thousands of index entries per facet per event — the dominant cost in
-		// event persistence. We only need the existence boolean.
-		var keyExists bool
-		if err := tx.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ?)`,
-			projectID, k,
-		).Scan(&keyExists); err != nil {
+		inserted, err := persistFacet(ctx, tx, projectID, eventID, issueID, k, v, keyCount)
+		if err != nil {
 			return err
 		}
-		isNewKey := !keyExists
-
-		// Cardinality guard: max 50 distinct keys per project.
-		if isNewKey && keyCount >= maxFacetKeysPerProject {
-			continue
-		}
-
-		// Determine whether this specific value is new for this key — again an
-		// existence check, not a count.
-		var valueExists bool
-		if err := tx.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?)`,
-			projectID, k, v,
-		).Scan(&valueExists); err != nil {
-			return err
-		}
-		isNewValue := !valueExists
-
-		// Cardinality guard: max 10,000 distinct values per key.
-		if isNewValue {
-			var distinctValueCount int
-			if err := tx.QueryRowContext(ctx,
-				`SELECT COUNT(DISTINCT facet_value) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
-				projectID, k,
-			).Scan(&distinctValueCount); err != nil {
-				return err
-			}
-			if distinctValueCount >= maxFacetValuesPerKey {
-				continue
-			}
-		}
-
-		section := rootSection(k)
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value) VALUES (?, ?, ?, ?, ?, ?)`,
-			projectID, eventID, issueID, section, k, v,
-		); err != nil {
-			return err
-		}
-
-		if isNewKey {
+		if inserted {
 			keyCount++
 		}
 	}
 
 	return tx.Commit()
+}
+
+// persistFacet applies the cardinality guards for a single facet key/value and
+// inserts it when allowed. It returns whether the inserted row introduced a new
+// facet key for the project (so the caller can bump its key count).
+func persistFacet(
+	ctx context.Context, tx *sql.Tx, projectID, eventID, issueID int64, k, v string, keyCount int,
+) (newKeyInserted bool, err error) {
+	// Determine whether this key is new to this project. EXISTS stops at the
+	// first matching row; the old COUNT(*) counted every row for the key,
+	// which on a high-frequency facet key meant scanning hundreds of
+	// thousands of index entries per facet per event — the dominant cost in
+	// event persistence. We only need the existence boolean.
+	var keyExists bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ?)`,
+		projectID, k,
+	).Scan(&keyExists); err != nil {
+		return false, err
+	}
+	isNewKey := !keyExists
+
+	// Cardinality guard: max 50 distinct keys per project.
+	if isNewKey && keyCount >= maxFacetKeysPerProject {
+		return false, nil
+	}
+
+	// Determine whether this specific value is new for this key — again an
+	// existence check, not a count.
+	var valueExists bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?)`,
+		projectID, k, v,
+	).Scan(&valueExists); err != nil {
+		return false, err
+	}
+	isNewValue := !valueExists
+
+	// Cardinality guard: max 10,000 distinct values per key.
+	if isNewValue {
+		var distinctValueCount int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(DISTINCT facet_value) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
+			projectID, k,
+		).Scan(&distinctValueCount); err != nil {
+			return false, err
+		}
+		if distinctValueCount >= maxFacetValuesPerKey {
+			return false, nil
+		}
+	}
+
+	section := rootSection(k)
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value) VALUES (?, ?, ?, ?, ?, ?)`,
+		projectID, eventID, issueID, section, k, v,
+	); err != nil {
+		return false, err
+	}
+
+	return isNewKey, nil
 }
 
 // ListFacetKeys returns all distinct facet keys observed for a project.
