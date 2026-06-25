@@ -110,6 +110,11 @@ jobs:
           npm run lint --if-present
           npm run test --if-present
           npm run build --if-present
+      - name: Frontend duplication (web only)
+        if: ${{ matrix.dir == 'web' }}
+        working-directory: web
+        shell: bash
+        run: npx --yes jscpd@latest .
 
   python:
     runs-on: [self-hosted, build]
@@ -154,3 +159,37 @@ jobs:
           if find tests -name '*Test.php' -print -quit 2>/dev/null | grep -q .; then
             ./vendor/bin/phpunit
           fi
+
+  # Code-quality gates. Runs on the runner (not in Docker) so golangci-lint can
+  # use full git history for diff-mode and the coverage profile can escape the
+  # build. Parallel to the Docker `go` job, which stays the source of truth for
+  # build/vet/test pass-fail.
+  quality:
+    runs-on: [self-hosted, build]
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      GOCACHE: ${{ github.workspace }}/.cache/go-build
+      GOMODCACHE: ${{ github.workspace }}/.cache/go-mod
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0          # diff-mode lint needs the merge base
+      - name: File-length gate (all languages)
+        shell: bash
+        run: sh scripts/check-file-length.sh
+      - name: golangci-lint (diff-mode, root + sdks/go)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.base_ref || 'main' }}"
+          git fetch --no-tags origin "$BASE" || true
+          golangci-lint run --new-from-rev="origin/$BASE" ./...
+          cd sdks/go && golangci-lint run --new-from-rev="origin/$BASE" ./...
+      - name: Go coverage ratchet
+        shell: bash
+        run: sh scripts/check-coverage.sh
+      - name: Duplication scan (jscpd)
+        shell: bash
+        run: npx --yes jscpd@latest .

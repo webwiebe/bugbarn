@@ -1,0 +1,20 @@
+{
+  "threshold": 1.0,
+  "reporters": ["consoleFull"],
+  "absolute": true,
+  "format": ["typescript", "javascript", "python", "php"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.venv/**",
+    "**/.ci-venv/**",
+    "**/vendor/**",
+    "**/.cache/**",
+    "**/.git/**",
+    "**/*.test.*",
+    "**/*.d.ts"
+  ],
+  "minLines": 10,
+  "minTokens": 70
+}

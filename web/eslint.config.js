@@ -22,6 +22,12 @@ export default [
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       // TypeScript handles undefined-variable checking; disable ESLint's duplicate
       'no-undef': 'off',
+      // Size/complexity budgets. Warnings (not errors) so they guide the Phase B
+      // refactor without blocking the build; the hard 500-line gate is enforced
+      // for all languages by scripts/check-file-length.sh.
+      'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true, IIFEs: true }],
+      'complexity': ['warn', 15],
     },
   },
 ]
