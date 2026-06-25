@@ -179,14 +179,27 @@ jobs:
       - name: File-length gate (all languages)
         shell: bash
         run: sh scripts/check-file-length.sh
+      - name: Ensure golangci-lint (pinned, workspace-local)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="v2.11.4"
+          DEST="${GITHUB_WORKSPACE}/.tools"
+          mkdir -p "$DEST"
+          if [ ! -x "$DEST/golangci-lint" ] || ! "$DEST/golangci-lint" version 2>/dev/null | grep -q "${VERSION#v}"; then
+            curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/${VERSION}/install.sh" \
+              | sh -s -- -b "$DEST" "$VERSION"
+          fi
+          "$DEST/golangci-lint" version
       - name: golangci-lint (diff-mode, root + sdks/go)
         shell: bash
         run: |
           set -euo pipefail
+          GCL="${GITHUB_WORKSPACE}/.tools/golangci-lint"
           BASE="${{ github.base_ref || 'main' }}"
           git fetch --no-tags origin "$BASE" || true
-          golangci-lint run --new-from-rev="origin/$BASE" ./...
-          cd sdks/go && golangci-lint run --new-from-rev="origin/$BASE" ./...
+          "$GCL" run --new-from-rev="origin/$BASE" ./...
+          cd sdks/go && "$GCL" run --new-from-rev="origin/$BASE" ./...
       - name: Go coverage ratchet
         shell: bash
         run: sh scripts/check-coverage.sh
