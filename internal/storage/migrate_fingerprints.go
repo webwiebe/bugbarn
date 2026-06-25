@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 
@@ -87,7 +88,6 @@ func (s *core) migrateFingerprints(ctx context.Context) error {
 	return nil
 }
 
-//nolint:gocognit // one-time fingerprint recompute/merge batch; tracked for refactor.
 func (s *core) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpdate) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -106,45 +106,63 @@ func (s *core) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpd
 		explanationJSON, _ := json.Marshal(u.newExplanation)
 
 		if err == nil {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE events SET issue_id = ? WHERE issue_id = ?`,
-				keeperID, u.id); err != nil {
+			if err := mergeIntoKeeper(ctx, tx, u, keeperID); err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE event_facets SET issue_id = ? WHERE issue_id = ?`,
-				keeperID, u.id); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE issues SET
-					event_count = (SELECT COUNT(*) FROM events WHERE issue_id = ?),
-					first_seen = (SELECT MIN(observed_at) FROM events WHERE issue_id = ?),
-					last_seen = (SELECT MAX(observed_at) FROM events WHERE issue_id = ?),
-					updated_at = CURRENT_TIMESTAMP
-				WHERE id = ?`,
-				keeperID, keeperID, keeperID, keeperID); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `DELETE FROM issues WHERE id = ?`, u.id); err != nil {
-				return err
-			}
-			slog.Info("merged issue", "from_id", u.id, "into_id", keeperID, "fingerprint", u.newFingerprint)
 		} else {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE issues SET fingerprint = ?, fingerprint_material = ?, fingerprint_explanation_json = ?, updated_at = CURRENT_TIMESTAMP
-				WHERE id = ?`,
-				u.newFingerprint, u.newMaterial, string(explanationJSON), u.id); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE events SET fingerprint = ?, fingerprint_material = ?
-				WHERE issue_id = ?`,
-				u.newFingerprint, u.newMaterial, u.id); err != nil {
+			if err := rewriteFingerprint(ctx, tx, u, string(explanationJSON)); err != nil {
 				return err
 			}
 		}
 	}
 
 	return tx.Commit()
+}
+
+// mergeIntoKeeper folds issue u into the existing keeper issue that already
+// carries the recomputed fingerprint, then deletes u.
+func mergeIntoKeeper(ctx context.Context, tx *sql.Tx, u fingerprintUpdate, keeperID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE events SET issue_id = ? WHERE issue_id = ?`,
+		keeperID, u.id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE event_facets SET issue_id = ? WHERE issue_id = ?`,
+		keeperID, u.id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE issues SET
+			event_count = (SELECT COUNT(*) FROM events WHERE issue_id = ?),
+			first_seen = (SELECT MIN(observed_at) FROM events WHERE issue_id = ?),
+			last_seen = (SELECT MAX(observed_at) FROM events WHERE issue_id = ?),
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		keeperID, keeperID, keeperID, keeperID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM issues WHERE id = ?`, u.id); err != nil {
+		return err
+	}
+	slog.Info("merged issue", "from_id", u.id, "into_id", keeperID, "fingerprint", u.newFingerprint)
+	return nil
+}
+
+// rewriteFingerprint updates issue u and its events in place with the
+// recomputed fingerprint when no keeper issue exists to merge into.
+func rewriteFingerprint(ctx context.Context, tx *sql.Tx, u fingerprintUpdate, explanationJSON string) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE issues SET fingerprint = ?, fingerprint_material = ?, fingerprint_explanation_json = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		u.newFingerprint, u.newMaterial, explanationJSON, u.id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE events SET fingerprint = ?, fingerprint_material = ?
+		WHERE issue_id = ?`,
+		u.newFingerprint, u.newMaterial, u.id); err != nil {
+		return err
+	}
+	return nil
 }

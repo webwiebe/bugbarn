@@ -62,8 +62,7 @@ func sameOrigin(origin, host string) bool {
 // scoping because the row ID is globally unique across all projects.
 func isIssueAction(r *http.Request) bool {
 	p := r.URL.Path
-	return strings.HasPrefix(p, "/api/v1/issues/") && (
-		strings.HasSuffix(p, "/resolve") ||
+	return strings.HasPrefix(p, "/api/v1/issues/") && (strings.HasSuffix(p, "/resolve") ||
 		strings.HasSuffix(p, "/reopen") ||
 		strings.HasSuffix(p, "/mute") ||
 		strings.HasSuffix(p, "/unmute"))

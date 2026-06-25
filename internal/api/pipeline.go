@@ -14,14 +14,11 @@ import (
 // its context. It returns the (possibly context-augmented) request and true to
 // proceed, or false after writing an error response. When user auth is not
 // configured it is a pass-through.
-//
-//nolint:gocognit,gocyclo,funlen // auth + key-scope + CSRF + project/group resolution pipeline; tracked for refactor.
 func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	// All remaining endpoints require authentication. When auth is configured, the
 	// request must carry either a valid session cookie or a valid API key. Full-scope
 	// API keys are accepted on all protected endpoints; ingest-only keys are rejected here
 	// (they may only reach the ingest endpoint handled above).
-	var resolvedProjectID int64
 	if s.users == nil || !s.users.Enabled() {
 		return r, true
 	}
@@ -32,28 +29,8 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 	if s.ingestHandler != nil {
 		pid, scope, ok := s.ingestHandler.APIKeyProjectScope(r)
 		if ok {
-			if scope == domain.APIKeyScopeIngest {
-				// Allow ingest keys to post release markers — the setup page uses
-				// the same key for both events and releases — but reject every
-				// other endpoint.
-				isReleaseMarker := r.URL.Path == "/api/v1/releases" && r.Method == http.MethodPost
-				if !isReleaseMarker {
-					s.logger.Warn("auth: ingest-only key rejected", "method", r.Method, "path", r.URL.Path)
-					http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
-					return r, false
-				}
-			}
-			if scope == domain.APIKeyScopeRead {
-				if r.Method != http.MethodGet {
-					s.logger.Warn("auth: read-only key rejected non-GET", "method", r.Method, "path", r.URL.Path)
-					http.Error(w, "forbidden: read-only key cannot modify data", http.StatusForbidden)
-					return r, false
-				}
-				if strings.HasPrefix(r.URL.Path, "/api/v1/settings") || strings.HasPrefix(r.URL.Path, "/api/v1/apikeys") {
-					s.logger.Warn("auth: read-only key rejected settings/apikeys", "method", r.Method, "path", r.URL.Path)
-					http.Error(w, "forbidden: read-only key cannot access this endpoint", http.StatusForbidden)
-					return r, false
-				}
+			if !s.checkAPIKeyScope(w, r, scope) {
+				return r, false
 			}
 			usingAPIKey = true
 			apiKeyProjectID = pid
@@ -76,9 +53,47 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Refresh the CSRF cookie on every session-authenticated response when
-	// the browser's copy is missing or stale, so the frontend always has a
-	// valid token available for state-changing requests.
+	s.refreshCSRFCookie(w, r, usingSession)
+
+	r = s.resolveProjectScope(r, usingSession, usingAPIKey, apiKeyProjectID)
+
+	return r, true
+}
+
+// checkAPIKeyScope enforces the ingest-only and read-only API key restrictions
+// for the current request. It returns false (after writing an error response)
+// when the key's scope forbids this endpoint.
+func (s *Server) checkAPIKeyScope(w http.ResponseWriter, r *http.Request, scope string) bool {
+	if scope == domain.APIKeyScopeIngest {
+		// Allow ingest keys to post release markers — the setup page uses
+		// the same key for both events and releases — but reject every
+		// other endpoint.
+		isReleaseMarker := r.URL.Path == "/api/v1/releases" && r.Method == http.MethodPost
+		if !isReleaseMarker {
+			s.logger.Warn("auth: ingest-only key rejected", "method", r.Method, "path", r.URL.Path)
+			http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
+			return false
+		}
+	}
+	if scope == domain.APIKeyScopeRead {
+		if r.Method != http.MethodGet {
+			s.logger.Warn("auth: read-only key rejected non-GET", "method", r.Method, "path", r.URL.Path)
+			http.Error(w, "forbidden: read-only key cannot modify data", http.StatusForbidden)
+			return false
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/v1/settings") || strings.HasPrefix(r.URL.Path, "/api/v1/apikeys") {
+			s.logger.Warn("auth: read-only key rejected settings/apikeys", "method", r.Method, "path", r.URL.Path)
+			http.Error(w, "forbidden: read-only key cannot access this endpoint", http.StatusForbidden)
+			return false
+		}
+	}
+	return true
+}
+
+// refreshCSRFCookie re-issues the CSRF cookie on session-authenticated requests
+// when the browser's copy is missing or stale, so the frontend always has a
+// valid token available for state-changing requests.
+func (s *Server) refreshCSRFCookie(w http.ResponseWriter, r *http.Request, usingSession bool) {
 	if usingSession && s.sessions != nil {
 		if sessionCookie, err := r.Cookie("bugbarn_session"); err == nil {
 			if csrfCookie, err := r.Cookie("bugbarn_csrf"); err != nil || csrfCookie.Value != s.sessions.CSRFToken(sessionCookie.Value) {
@@ -88,10 +103,32 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
+}
 
+// resolveProjectScope determines the request's project (or group) scope and
+// returns the request augmented with the resolved IDs in its context.
+func (s *Server) resolveProjectScope(r *http.Request, usingSession, usingAPIKey bool, apiKeyProjectID int64) *http.Request {
+	resolvedProjectID := s.resolveProjectID(r, usingSession, usingAPIKey, apiKeyProjectID)
+	r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
+
+	// Group-scoped filtering: when a GET carries X-BugBarn-Group and no
+	// specific project was selected, resolve the group to its member IDs so that
+	// storage queries use IN (...) instead of showing all projects.
+	// Works for both session and API key auth.
+	if r.Method == http.MethodGet && resolvedProjectID == 0 {
+		r = s.applyGroupScope(r)
+	}
+
+	return r
+}
+
+// resolveProjectID derives the request's effective project ID from the
+// X-BugBarn-Project header, the API key, or the session/default fallbacks.
+func (s *Server) resolveProjectID(r *http.Request, usingSession, usingAPIKey bool, apiKeyProjectID int64) int64 {
 	// Resolve project ID. X-BugBarn-Project header takes precedence for both
 	// API key and session requests — it auto-creates the project if unknown,
 	// so a single shared API key can route events to any project via the header.
+	var resolvedProjectID int64
 	if slug := r.Header.Get("X-BugBarn-Project"); slug != "" {
 		if proj, err := s.projects.Ensure(r.Context(), slug); err == nil {
 			resolvedProjectID = proj.ID
@@ -108,23 +145,20 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 	if resolvedProjectID == 0 && (!usingSession || r.Method != http.MethodGet) {
 		resolvedProjectID = s.projects.DefaultProjectID()
 	}
-	r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
+	return resolvedProjectID
+}
 
-	// Group-scoped filtering: when a GET carries X-BugBarn-Group and no
-	// specific project was selected, resolve the group to its member IDs so that
-	// storage queries use IN (...) instead of showing all projects.
-	// Works for both session and API key auth.
-	if r.Method == http.MethodGet && resolvedProjectID == 0 {
-		if groupSlug := r.Header.Get("X-BugBarn-Group"); groupSlug != "" {
-			if members, err := s.projects.ListGroupProjects(r.Context(), groupSlug); err == nil && len(members) > 0 {
-				ids := make([]int64, len(members))
-				for i, p := range members {
-					ids[i] = p.ID
-				}
-				r = r.WithContext(storage.WithProjectIDs(r.Context(), ids))
+// applyGroupScope resolves an X-BugBarn-Group header to its member project IDs
+// and stores them on the request context when the group has members.
+func (s *Server) applyGroupScope(r *http.Request) *http.Request {
+	if groupSlug := r.Header.Get("X-BugBarn-Group"); groupSlug != "" {
+		if members, err := s.projects.ListGroupProjects(r.Context(), groupSlug); err == nil && len(members) > 0 {
+			ids := make([]int64, len(members))
+			for i, p := range members {
+				ids[i] = p.ID
 			}
+			r = r.WithContext(storage.WithProjectIDs(r.Context(), ids))
 		}
 	}
-
-	return r, true
+	return r
 }

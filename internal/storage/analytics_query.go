@@ -214,8 +214,6 @@ func (s *AnalyticsStore) QuerySegments(ctx context.Context, q analytics.Query, d
 }
 
 // QueryPageFlow returns page-flow data for a given pathname.
-//
-//nolint:funlen // sequential "where users went / came from" query; tracked for a dedicated refactor.
 func (s *AnalyticsStore) QueryPageFlow(ctx context.Context, q analytics.Query, pathname string) (analytics.PageFlowResult, error) {
 	result := analytics.PageFlowResult{
 		Pathname: pathname,
@@ -223,7 +221,23 @@ func (s *AnalyticsStore) QueryPageFlow(ctx context.Context, q analytics.Query, p
 		WentTo:   []analytics.FlowEntry{},
 	}
 
-	// WentTo — aggregate exit_pathname from raw pageviews
+	wentTo, err := s.queryWentTo(ctx, q, pathname)
+	if err != nil {
+		return result, err
+	}
+	result.WentTo = wentTo
+
+	cameFrom, err := s.queryCameFrom(ctx, q, pathname)
+	if err != nil {
+		return result, err
+	}
+	result.CameFrom = cameFrom
+
+	return result, nil
+}
+
+// queryWentTo aggregates exit_pathname from raw pageviews for the given path.
+func (s *AnalyticsStore) queryWentTo(ctx context.Context, q analytics.Query, pathname string) ([]analytics.FlowEntry, error) {
 	wentToRows, err := s.readDB().QueryContext(ctx, `
 		SELECT exit_pathname, COUNT(*) as cnt, COUNT(DISTINCT session_id) as sess
 		FROM analytics_pageviews
@@ -233,30 +247,35 @@ func (s *AnalyticsStore) QueryPageFlow(ctx context.Context, q analytics.Query, p
 		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
 	)
 	if err != nil {
-		return result, err
+		return nil, err
 	}
 	defer wentToRows.Close()
 
+	wentTo := []analytics.FlowEntry{}
 	var wentToTotal int64
 	for wentToRows.Next() {
 		var e analytics.FlowEntry
 		var sess int64
 		if err := wentToRows.Scan(&e.Pathname, &e.Count, &sess); err != nil {
-			return result, err
+			return nil, err
 		}
 		wentToTotal += e.Count
-		result.WentTo = append(result.WentTo, e)
+		wentTo = append(wentTo, e)
 	}
 	if err := wentToRows.Err(); err != nil {
-		return result, err
+		return nil, err
 	}
-	for i := range result.WentTo {
+	for i := range wentTo {
 		if wentToTotal > 0 {
-			result.WentTo[i].Pct = float64(result.WentTo[i].Count) / float64(wentToTotal) * 100
+			wentTo[i].Pct = float64(wentTo[i].Count) / float64(wentToTotal) * 100
 		}
 	}
+	return wentTo, nil
+}
 
-	// CameFrom — find what page users were on just before visiting pathname in the same session
+// queryCameFrom finds what page users were on just before visiting pathname in
+// the same session.
+func (s *AnalyticsStore) queryCameFrom(ctx context.Context, q analytics.Query, pathname string) ([]analytics.FlowEntry, error) {
 	cameFromRows, err := s.readDB().QueryContext(ctx, `
 		SELECT prev.pathname, COUNT(*) as cnt
 		FROM analytics_pageviews cur
@@ -278,29 +297,29 @@ func (s *AnalyticsStore) QueryPageFlow(ctx context.Context, q analytics.Query, p
 		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
 	)
 	if err != nil {
-		return result, err
+		return nil, err
 	}
 	defer cameFromRows.Close()
 
+	cameFrom := []analytics.FlowEntry{}
 	var cameFromTotal int64
 	for cameFromRows.Next() {
 		var e analytics.FlowEntry
 		if err := cameFromRows.Scan(&e.Pathname, &e.Count); err != nil {
-			return result, err
+			return nil, err
 		}
 		cameFromTotal += e.Count
-		result.CameFrom = append(result.CameFrom, e)
+		cameFrom = append(cameFrom, e)
 	}
 	if err := cameFromRows.Err(); err != nil {
-		return result, err
+		return nil, err
 	}
-	for i := range result.CameFrom {
+	for i := range cameFrom {
 		if cameFromTotal > 0 {
-			result.CameFrom[i].Pct = float64(result.CameFrom[i].Count) / float64(cameFromTotal) * 100
+			cameFrom[i].Pct = float64(cameFrom[i].Count) / float64(cameFromTotal) * 100
 		}
 	}
-
-	return result, nil
+	return cameFrom, nil
 }
 
 // QueryScrollDepth returns scroll-depth bucket counts for a pathname.

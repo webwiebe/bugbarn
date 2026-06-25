@@ -50,17 +50,17 @@ func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 		}
 		usage, _ := s.projects.UsageAll(r.Context())
 		type projectWithUsage struct {
-			ID           int64   `json:"id"`
-			Name         string  `json:"name"`
-			Slug         string  `json:"slug"`
-			Status       string  `json:"status"`
-			IssuePrefix  string  `json:"issue_prefix"`
-			IssueCounter int     `json:"issue_counter"`
-			GroupID      *int64  `json:"group_id"`
-			CreatedAt    string  `json:"created_at"`
-			IssueCount   int     `json:"issue_count"`
-			EventCount   int     `json:"event_count"`
-			LogCount     int     `json:"log_count"`
+			ID           int64  `json:"id"`
+			Name         string `json:"name"`
+			Slug         string `json:"slug"`
+			Status       string `json:"status"`
+			IssuePrefix  string `json:"issue_prefix"`
+			IssueCounter int    `json:"issue_counter"`
+			GroupID      *int64 `json:"group_id"`
+			CreatedAt    string `json:"created_at"`
+			IssueCount   int    `json:"issue_count"`
+			EventCount   int    `json:"event_count"`
+			LogCount     int    `json:"log_count"`
 		}
 		out := make([]projectWithUsage, len(projects))
 		for i, p := range projects {

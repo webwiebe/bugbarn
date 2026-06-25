@@ -21,7 +21,7 @@ type clientSpan struct {
 	Kind         string         `json:"kind"`
 	Status       string         `json:"status"`
 	StartTime    int64          `json:"startTime"` // microseconds
-	Duration     int64          `json:"duration"`   // microseconds
+	Duration     int64          `json:"duration"`  // microseconds
 	Attributes   map[string]any `json:"attributes,omitempty"`
 }
 
