@@ -16,8 +16,6 @@ MAX_LINES=500
 # Baseline offenders (lines as of 2026-06-25). Shrink-only; refactor & remove.
 # Format: <path> <recorded_lines>
 ALLOWLIST="
-web/src/app.ts 2741
-web/src/components.ts 1913
 "
 
 fail=0
