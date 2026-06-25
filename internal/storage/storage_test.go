@@ -245,7 +245,12 @@ func processedEventForIssue(observed time.Time, message string) worker.Processed
 func TestConcurrentReads(t *testing.T) {
 	t.Parallel()
 
-	store, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	// open without the background fingerprint migration: it recomputes
+	// fingerprints and merges issues (deleting rows) concurrently with the
+	// setup inserts below, which races them into FOREIGN KEY failures under
+	// slower CI. This test writes explicit fingerprints and exercises reads,
+	// so the migration is irrelevant here.
+	store, err := open(filepath.Join(t.TempDir(), "bugbarn.db"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
