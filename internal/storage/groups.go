@@ -8,7 +8,7 @@ import (
 )
 
 // CreateGroup inserts a new project group.
-func (s *Store) CreateGroup(ctx context.Context, name, slug string) (ProjectGroup, error) {
+func (s *GroupStore) CreateGroup(ctx context.Context, name, slug string) (ProjectGroup, error) {
 	now := formatTime(time.Now().UTC())
 	res, err := s.db.ExecContext(ctx, `INSERT INTO project_groups (name, slug, created_at) VALUES (?, ?, ?)`, name, slug, now)
 	if err != nil {
@@ -19,7 +19,7 @@ func (s *Store) CreateGroup(ctx context.Context, name, slug string) (ProjectGrou
 }
 
 // ListGroups returns all project groups ordered by name.
-func (s *Store) ListGroups(ctx context.Context) ([]ProjectGroup, error) {
+func (s *GroupStore) ListGroups(ctx context.Context) ([]ProjectGroup, error) {
 	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, created_at FROM project_groups ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func (s *Store) ListGroups(ctx context.Context) ([]ProjectGroup, error) {
 }
 
 // DeleteGroup removes a project group by slug.
-func (s *Store) DeleteGroup(ctx context.Context, slug string) error {
+func (s *GroupStore) DeleteGroup(ctx context.Context, slug string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM project_groups WHERE slug = ?`, slug)
 	if err != nil {
 		return wrapErr(err, "delete group")
@@ -53,7 +53,7 @@ func (s *Store) DeleteGroup(ctx context.Context, slug string) error {
 }
 
 // AssignProjectToGroup sets the group_id on a project.
-func (s *Store) AssignProjectToGroup(ctx context.Context, projectSlug, groupSlug string) error {
+func (s *GroupStore) AssignProjectToGroup(ctx context.Context, projectSlug, groupSlug string) error {
 	var groupID int64
 	err := s.readDB().QueryRowContext(ctx, `SELECT id FROM project_groups WHERE slug = ?`, groupSlug).Scan(&groupID)
 	if err != nil {
@@ -72,7 +72,7 @@ func (s *Store) AssignProjectToGroup(ctx context.Context, projectSlug, groupSlug
 }
 
 // RemoveProjectFromGroup clears the group_id on a project.
-func (s *Store) RemoveProjectFromGroup(ctx context.Context, projectSlug string) error {
+func (s *GroupStore) RemoveProjectFromGroup(ctx context.Context, projectSlug string) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE projects SET group_id = NULL WHERE slug = ?`, projectSlug)
 	if err != nil {
 		return wrapErr(err, "remove project from group")
@@ -85,7 +85,7 @@ func (s *Store) RemoveProjectFromGroup(ctx context.Context, projectSlug string) 
 }
 
 // ListGroupProjects returns all projects belonging to a group.
-func (s *Store) ListGroupProjects(ctx context.Context, groupSlug string) ([]Project, error) {
+func (s *GroupStore) ListGroupProjects(ctx context.Context, groupSlug string) ([]Project, error) {
 	var groupID int64
 	err := s.readDB().QueryRowContext(ctx, `SELECT id FROM project_groups WHERE slug = ?`, groupSlug).Scan(&groupID)
 	if err != nil {

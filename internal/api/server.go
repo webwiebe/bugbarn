@@ -173,14 +173,16 @@ func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog
 	if logger == nil {
 		logger = slog.Default()
 	}
+	d := store.Domains()
+	issues, releases, projects := newServiceRepos(d)
 	return &Server{
 		ingestHandler:     ingestHandler,
-		issues:            issuesvc.New(store, logger),
-		projects:          projectsvc.New(store, logger),
-		releases:          releasesvc.New(store, logger),
-		alerts:            alertsvc.New(store, logger),
-		logs:              logsvc.New(store, logger),
-		analytics:         analyticssvc.New(store, logger),
+		issues:            issuesvc.New(issues, logger),
+		projects:          projectsvc.New(projects, logger),
+		releases:          releasesvc.New(releases, logger),
+		alerts:            alertsvc.New(d.Alerts, logger),
+		logs:              logsvc.New(d.Logs, logger),
+		analytics:         analyticssvc.New(d.Analytics, logger),
 		logger:            logger.With("component", "api"),
 		maxSourceMapBytes: defaultMaxSourceMapBytes,
 	}
@@ -190,14 +192,16 @@ func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, user
 	if logger == nil {
 		logger = slog.Default()
 	}
+	d := store.Domains()
+	issues, releases, projects := newServiceRepos(d)
 	s := &Server{
 		ingestHandler:     ingestHandler,
-		issues:            issuesvc.New(store, logger),
-		projects:          projectsvc.New(store, logger),
-		releases:          releasesvc.New(store, logger),
-		alerts:            alertsvc.New(store, logger),
-		logs:              logsvc.New(store, logger),
-		analytics:         analyticssvc.New(store, logger),
+		issues:            issuesvc.New(issues, logger),
+		projects:          projectsvc.New(projects, logger),
+		releases:          releasesvc.New(releases, logger),
+		alerts:            alertsvc.New(d.Alerts, logger),
+		logs:              logsvc.New(d.Logs, logger),
+		analytics:         analyticssvc.New(d.Analytics, logger),
 		logger:            logger.With("component", "api"),
 		users:             users,
 		sessions:          sessions,

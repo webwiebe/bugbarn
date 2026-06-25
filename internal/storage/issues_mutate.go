@@ -9,7 +9,7 @@ import (
 
 // MuteIssue sets an issue to muted status with the given mute mode.
 // muteMode must be one of "until_regression" or "forever".
-func (s *Store) MuteIssue(ctx context.Context, issueID string, muteMode string) (Issue, error) {
+func (s *IssueStore) MuteIssue(ctx context.Context, issueID string, muteMode string) (Issue, error) {
 	if muteMode != "until_regression" && muteMode != "forever" {
 		return Issue{}, apperr.InvalidInput(fmt.Sprintf("invalid mute_mode %q: must be 'until_regression' or 'forever'", muteMode), nil)
 	}
@@ -37,7 +37,7 @@ UPDATE issues SET status = 'muted', mute_mode = ?, updated_at = CURRENT_TIMESTAM
 }
 
 // UnmuteIssue clears mute status and sets the issue back to unresolved.
-func (s *Store) UnmuteIssue(ctx context.Context, issueID string) (Issue, error) {
+func (s *IssueStore) UnmuteIssue(ctx context.Context, issueID string) (Issue, error) {
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return Issue{}, err

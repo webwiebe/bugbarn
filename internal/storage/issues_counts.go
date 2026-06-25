@@ -9,7 +9,7 @@ import (
 // HourlyEventCounts returns 24-hour event counts per issue for the given issue row IDs.
 // The returned map keys are issue row IDs. Index 0 of [24]int is the oldest hour, index 23
 // is the most recent partial hour.
-func (s *Store) HourlyEventCounts(ctx context.Context, issueIDs []int64) (map[int64][24]int, error) {
+func (s *IssueStore) HourlyEventCounts(ctx context.Context, issueIDs []int64) (map[int64][24]int, error) {
 	if len(issueIDs) == 0 {
 		return map[int64][24]int{}, nil
 	}

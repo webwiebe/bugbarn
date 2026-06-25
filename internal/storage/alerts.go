@@ -12,7 +12,7 @@ import (
 
 const alertIDPrefix = "alert-"
 
-func (s *Store) ListAlerts(ctx context.Context) ([]Alert, error) {
+func (s *AlertStore) ListAlerts(ctx context.Context) ([]Alert, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -83,7 +83,7 @@ ORDER BY a.id DESC`
 	return alerts, rows.Err()
 }
 
-func (s *Store) GetAlert(ctx context.Context, alertID string) (Alert, error) {
+func (s *AlertStore) GetAlert(ctx context.Context, alertID string) (Alert, error) {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
 		return Alert{}, err
@@ -128,7 +128,7 @@ WHERE a.id = ?`, rowID)
 	return alert, nil
 }
 
-func (s *Store) CreateAlert(ctx context.Context, alert Alert) (Alert, error) {
+func (s *AlertStore) CreateAlert(ctx context.Context, alert Alert) (Alert, error) {
 	if strings.TrimSpace(alert.Name) == "" {
 		return Alert{}, apperr.InvalidInput("alert name is required", nil)
 	}
@@ -179,7 +179,7 @@ INSERT INTO alerts (
 	return alert, nil
 }
 
-func (s *Store) UpdateAlert(ctx context.Context, alertID string, alert Alert) (Alert, error) {
+func (s *AlertStore) UpdateAlert(ctx context.Context, alertID string, alert Alert) (Alert, error) {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
 		return Alert{}, apperr.InvalidInput("invalid alert ID", err)
@@ -218,7 +218,7 @@ WHERE project_id = ? AND id = ?`,
 	return s.GetAlert(ctx, alertID)
 }
 
-func (s *Store) DeleteAlert(ctx context.Context, alertID string) error {
+func (s *AlertStore) DeleteAlert(ctx context.Context, alertID string) error {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
 		return err

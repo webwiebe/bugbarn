@@ -6,7 +6,7 @@ import (
 )
 
 // UpsertUser creates a user or updates their password if the username already exists.
-func (s *Store) UpsertUser(ctx context.Context, username, passwordBcrypt string) error {
+func (s *UserStore) UpsertUser(ctx context.Context, username, passwordBcrypt string) error {
 	now := formatTime(time.Now().UTC())
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO users (username, password_bcrypt, created_at, updated_at)

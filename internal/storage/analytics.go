@@ -10,7 +10,7 @@ import (
 )
 
 // InsertPageView writes a single raw page-view event.
-func (s *Store) InsertPageView(ctx context.Context, pv analytics.PageView) error {
+func (s *AnalyticsStore) InsertPageView(ctx context.Context, pv analytics.PageView) error {
 	props := "{}"
 	if len(pv.Props) > 0 {
 		b, err := json.Marshal(pv.Props)
@@ -44,7 +44,7 @@ func (s *Store) InsertPageView(ctx context.Context, pv analytics.PageView) error
 
 // RollupDailyAnalytics aggregates raw pageviews for the given UTC date into
 // analytics_daily. Uses INSERT OR REPLACE so it is safe to call multiple times.
-func (s *Store) RollupDailyAnalytics(ctx context.Context, projectID int64, date time.Time) error {
+func (s *AnalyticsStore) RollupDailyAnalytics(ctx context.Context, projectID int64, date time.Time) error {
 	dateStr := date.UTC().Format("2006-01-02")
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -119,7 +119,7 @@ func (s *Store) RollupDailyAnalytics(ctx context.Context, projectID int64, date 
 }
 
 // DeleteOldPageviews removes raw rows older than cutoff.
-func (s *Store) DeleteOldPageviews(ctx context.Context, cutoff time.Time) error {
+func (s *AnalyticsStore) DeleteOldPageviews(ctx context.Context, cutoff time.Time) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM analytics_pageviews WHERE ts < ?`,
 		cutoff.Unix(),

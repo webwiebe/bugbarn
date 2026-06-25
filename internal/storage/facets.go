@@ -110,7 +110,9 @@ func stringFromMap(m map[string]any, key string) string {
 
 // PersistFacets inserts extracted facet key/value pairs for a given event into
 // event_facets, enforcing per-project cardinality caps (T030).
-func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64, facets map[string]string) error {
+//
+//nolint:gocognit,gocyclo // facet upsert with per-project cardinality caps; tracked for refactor.
+func (s *core) PersistFacets(ctx context.Context, eventID int64, issueID int64, facets map[string]string) error {
 	if len(facets) == 0 {
 		return nil
 	}
@@ -202,7 +204,7 @@ func (s *Store) PersistFacets(ctx context.Context, eventID int64, issueID int64,
 
 // ListFacetKeys returns all distinct facet keys observed for a project.
 // Pass projectID=0 to query across all projects.
-func (s *Store) ListFacetKeys(ctx context.Context, projectID int64) ([]string, error) {
+func (s *FacetStore) ListFacetKeys(ctx context.Context, projectID int64) ([]string, error) {
 	var (
 		rows *sql.Rows
 		err  error
@@ -235,7 +237,7 @@ func (s *Store) ListFacetKeys(ctx context.Context, projectID int64) ([]string, e
 
 // ListFacetValues returns all distinct values observed for a facet key in a project.
 // Pass projectID=0 to query across all projects.
-func (s *Store) ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error) {
+func (s *FacetStore) ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error) {
 	var (
 		rows *sql.Rows
 		err  error

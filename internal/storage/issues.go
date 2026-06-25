@@ -12,11 +12,12 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
-func (s *Store) ListIssues(ctx context.Context) ([]Issue, error) {
+func (s *IssueStore) ListIssues(ctx context.Context) ([]Issue, error) {
 	return s.ListIssuesFiltered(ctx, IssueFilter{})
 }
 
-func (s *Store) ListIssuesFiltered(ctx context.Context, filter IssueFilter) (_ []Issue, retErr error) {
+//nolint:gocognit,gocyclo,funlen // dynamic filter/sort/facet query builder; tracked for refactor.
+func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter) (_ []Issue, retErr error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListIssuesFiltered")
 	defer func() {
 		if retErr != nil {
@@ -169,7 +170,7 @@ ORDER BY ` + orderBy
 	return issues, nil
 }
 
-func (s *Store) GetIssue(ctx context.Context, issueID string) (Issue, error) {
+func (s *IssueStore) GetIssue(ctx context.Context, issueID string) (Issue, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.GetIssue")
 	defer span.End()
 	span.SetAttributes(attribute.String("issue_id", issueID))

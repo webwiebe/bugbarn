@@ -9,7 +9,7 @@ import (
 
 // CreateAPIKey stores an API key's SHA-256 hash and returns the resulting row.
 // scope must be APIKeyScopeFull or APIKeyScopeIngest.
-func (s *Store) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (APIKey, error) {
+func (s *APIKeyStore) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (APIKey, error) {
 	if scope != APIKeyScopeFull && scope != APIKeyScopeIngest && scope != APIKeyScopeRead {
 		scope = APIKeyScopeFull
 	}
@@ -29,7 +29,7 @@ INSERT INTO api_keys (name, project_id, key_sha256, scope, created_at) VALUES (?
 }
 
 // ListAPIKeys returns all API key rows (without the plaintext key).
-func (s *Store) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
+func (s *APIKeyStore) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
 	rows, err := s.readDB().QueryContext(ctx, `
 SELECT id, name, project_id, key_sha256, scope, created_at, last_used_at
 FROM api_keys ORDER BY id ASC`)
@@ -56,7 +56,7 @@ FROM api_keys ORDER BY id ASC`)
 }
 
 // DeleteAPIKey removes the API key with the given id.
-func (s *Store) DeleteAPIKey(ctx context.Context, id int64) error {
+func (s *APIKeyStore) DeleteAPIKey(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id)
 	if err != nil {
 		return err
@@ -72,7 +72,7 @@ func (s *Store) DeleteAPIKey(ctx context.Context, id int64) error {
 }
 
 // TouchAPIKey updates last_used_at for the key matching the given SHA-256 hex.
-func (s *Store) TouchAPIKey(ctx context.Context, keySHA256 string) error {
+func (s *APIKeyStore) TouchAPIKey(ctx context.Context, keySHA256 string) error {
 	if s.db == nil {
 		return nil
 	}
@@ -84,7 +84,7 @@ UPDATE api_keys SET last_used_at = ? WHERE key_sha256 = ?`,
 }
 
 // EnsureSetupAPIKey creates the API key if no key with the same sha256 exists yet (idempotent).
-func (s *Store) EnsureSetupAPIKey(ctx context.Context, name string, projectID int64, keySHA256 string) error {
+func (s *APIKeyStore) EnsureSetupAPIKey(ctx context.Context, name string, projectID int64, keySHA256 string) error {
 	if s.db == nil {
 		// Read-only replica — writer will lazily create the key when the
 		// first event arrives via the setup-key verifier path.
@@ -101,7 +101,7 @@ ON CONFLICT(key_sha256) DO NOTHING`,
 
 // ValidAPIKeySHA256 returns the project_id and scope for the API key matching the given SHA-256 hex digest.
 // Returns (0, "", false, nil) when no matching key exists.
-func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error) {
+func (s *APIKeyStore) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error) {
 	err = s.readDB().QueryRowContext(ctx, `SELECT project_id, scope FROM api_keys WHERE key_sha256 = ?`, keySHA256).Scan(&projectID, &scope)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, "", false, nil

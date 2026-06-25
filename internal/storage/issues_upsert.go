@@ -16,7 +16,7 @@ import (
 // event's fingerprint and applies regression/mute transitions in one tx.
 //
 //nolint:gocognit,gocyclo,funlen // legacy ingest write path; complexity is tracked for a dedicated refactor.
-func (s *Store) upsertIssue(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
+func (s *core) upsertIssue(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
 	evt := processed.Event
 	fingerprintValue := strings.TrimSpace(processed.Fingerprint)
 	if fingerprintValue == "" {

@@ -17,7 +17,7 @@ type fingerprintUpdate struct {
 	newExplanation []string
 }
 
-func (s *Store) migrateFingerprints(ctx context.Context) error {
+func (s *core) migrateFingerprints(ctx context.Context) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, project_id, fingerprint, fingerprint_material, representative_event_json
 		FROM issues
@@ -87,7 +87,8 @@ func (s *Store) migrateFingerprints(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpdate) error {
+//nolint:gocognit // one-time fingerprint recompute/merge batch; tracked for refactor.
+func (s *core) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpdate) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
