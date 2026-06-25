@@ -463,11 +463,7 @@ func scanEvent(scanner interface {
 	entry.ObservedAt = parsedObservedAt
 	entry.Regressed = regressed != 0
 	entry.ID = formatID(eventIDPrefix, id)
-	if issuePrefix != "" && issueNumber > 0 {
-		entry.IssueID = formatIssueID(issuePrefix, issueNumber)
-	} else {
-		entry.IssueID = formatID(issueIDPrefix, issueID)
-	}
+	entry.IssueID = displayIssueID(issuePrefix, issueNumber, issueID)
 	return entry, nil
 }
 

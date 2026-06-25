@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,42 @@ func NewOIDCClient(cfg OIDCConfig) *OIDCClient {
 // Config returns the static configuration. Used to expose non-secret bits
 // (login URL) via runtime-config.
 func (c *OIDCClient) Config() OIDCConfig { return c.cfg }
+
+// Issuer returns the configured issuer URL with any trailing slash trimmed.
+func (c *OIDCClient) Issuer() string { return strings.TrimRight(c.cfg.Issuer, "/") }
+
+// LogoutURL returns the issuer's RP-initiated logout endpoint with this client's
+// client_id and a post-logout redirect back to this barn's origin appended, or
+// the bare end-session URL when those parameters can't be derived. Callers get
+// exactly the URL to use without reaching into the client's configuration.
+func (c *OIDCClient) LogoutURL() string {
+	return buildEndSessionURL(c.EndSessionURL(), c.cfg)
+}
+
+// buildEndSessionURL appends the OIDC client_id and a post_logout_redirect_uri
+// pointing at this barn's origin to the issuer's end-session endpoint.
+// iambarn (and the OIDC spec) require the URI to be allowlisted on the
+// identified client; without client_id the IdP falls through to a default
+// redirect (in iambarn's case, back to its own root), stranding the user on
+// the IdP page instead of returning them here.
+func buildEndSessionURL(raw string, cfg OIDCConfig) string {
+	if raw == "" || cfg.ClientID == "" || cfg.RedirectURL == "" {
+		return raw
+	}
+	u, err := url.Parse(cfg.RedirectURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return raw
+	}
+	postLogout := u.Scheme + "://" + u.Host + "/"
+	q := url.Values{}
+	q.Set("client_id", cfg.ClientID)
+	q.Set("post_logout_redirect_uri", postLogout)
+	sep := "?"
+	if strings.Contains(raw, "?") {
+		sep = "&"
+	}
+	return raw + sep + q.Encode()
+}
 
 // AuthorizeURL builds the URL the browser should be redirected to. The caller
 // is responsible for storing state + nonce in short-lived cookies and matching

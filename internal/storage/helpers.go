@@ -40,6 +40,17 @@ func formatIssueID(prefix string, number int) string {
 	return fmt.Sprintf("%s-%d", prefix, number)
 }
 
+// displayIssueID returns the Jira-style issue ID when the project has a prefix
+// and the issue has a positive number, otherwise the legacy "issue-<rowID>"
+// form. Centralises the prefix/number-vs-legacy branch used by every issue and
+// event scan path.
+func displayIssueID(prefix string, number int, fallbackRowID int64) string {
+	if prefix != "" && number > 0 {
+		return formatIssueID(prefix, number)
+	}
+	return formatID(issueIDPrefix, fallbackRowID)
+}
+
 // parseIssueID splits a Jira-style issue ID like "BW-42" into prefix and number.
 // Also handles legacy "issue-000042" format for backward compatibility.
 func parseIssueID(value string) (prefix string, number int, err error) {

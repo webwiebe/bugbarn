@@ -2,10 +2,6 @@ package api
 
 import (
 	"net/http"
-	"net/url"
-	"strings"
-
-	"github.com/wiebe-xyz/bugbarn/internal/auth"
 )
 
 // serveRuntimeConfig returns public (non-secret) configuration that the web
@@ -65,37 +61,12 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 			Enabled:          true,
 			LoginURL:         "/api/v1/oidc/login",
 			SwitchAccountURL: "/api/v1/oidc/login?prompt=login",
-			EndSessionURL:    buildEndSessionURL(s.oidc.EndSessionURL(), s.oidc.Config()),
+			EndSessionURL:    s.oidc.LogoutURL(),
 		}
-		if issuer := strings.TrimRight(s.oidc.Config().Issuer, "/"); issuer != "" {
+		if issuer := s.oidc.Issuer(); issuer != "" {
 			cfg.IAMBarn.ProfileURL = issuer + "/admin#profile"
 		}
 	}
 
 	writeJSON(w, cfg)
-}
-
-// buildEndSessionURL appends the OIDC client_id and a post_logout_redirect_uri
-// pointing at this barn's origin to the issuer's end-session endpoint.
-// iambarn (and the OIDC spec) require the URI to be allowlisted on the
-// identified client; without client_id the IdP falls through to a default
-// redirect (in iambarn's case, back to its own root), stranding the user on
-// the IdP page instead of returning them here.
-func buildEndSessionURL(raw string, cfg auth.OIDCConfig) string {
-	if raw == "" || cfg.ClientID == "" || cfg.RedirectURL == "" {
-		return raw
-	}
-	u, err := url.Parse(cfg.RedirectURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return raw
-	}
-	postLogout := u.Scheme + "://" + u.Host + "/"
-	q := url.Values{}
-	q.Set("client_id", cfg.ClientID)
-	q.Set("post_logout_redirect_uri", postLogout)
-	sep := "?"
-	if strings.Contains(raw, "?") {
-		sep = "&"
-	}
-	return raw + sep + q.Encode()
 }
