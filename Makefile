@@ -8,7 +8,8 @@ export XDG_CACHE_HOME := $(CURDIR)/.cache
 export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod
 
-.PHONY: help setup test lint build dev docker-build spec-check
+.PHONY: help setup test lint build dev docker-build spec-check \
+	lint-go check-file-length coverage dup quality
 
 help:
 	@printf '%s\n' \
@@ -16,6 +17,11 @@ help:
 		'  setup        bootstrap local tooling when manifests exist' \
 		'  test         run spec checks plus available language tests' \
 		'  lint         run available linters and static checks' \
+		'  lint-go      run golangci-lint (complexity/dupl/size/correctness)' \
+		'  check-file-length  fail on any source file over 500 lines' \
+		'  coverage     measure Go coverage and ratchet against baseline' \
+		'  dup          scan the repo for cross-file duplication (jscpd)' \
+		'  quality      run all code-quality gates (file-length, lint, coverage, dup)' \
 		'  build        run available build checks' \
 		'  dev          start the local compose stack if available' \
 		'  docker-build build placeholder images when Dockerfiles exist' \
@@ -139,6 +145,32 @@ lint:
 		fi; \
 	done; \
 	if [ "$$found" -eq 0 ]; then echo "[lint] no code manifests found yet"; fi
+	@sh scripts/check-file-length.sh
+
+# golangci-lint for every Go module (root + SDK). Full run; CI narrows this to
+# --new-from-rev so only PR-introduced issues block the build.
+lint-go:
+	@set -eu; \
+	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
+	for mod in $$(find . $(FIND_PRUNE) -name go.mod -print 2>/dev/null); do \
+		dir=$$(dirname "$$mod"); \
+		echo "[lint-go] $$dir"; \
+		(cd "$$dir" && golangci-lint run ./...); \
+	done
+
+check-file-length:
+	@sh scripts/check-file-length.sh
+
+coverage:
+	@set -eu; \
+	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
+	sh scripts/check-coverage.sh
+
+dup:
+	@npx --yes jscpd@latest .
+
+# Umbrella gate used by CI: every code-quality check in one target.
+quality: check-file-length lint-go coverage dup
 
 build:
 	@set -eu; \

@@ -1,0 +1,66 @@
+# golangci-lint v2 configuration.
+#
+# Posture: in CI we run with --new-from-rev so only issues introduced by a PR
+# fail the build (existing debt is tolerated, new debt is blocked). Thresholds
+# are tuned to catch genuine offenders without drowning the team; tighten
+# funlen to 60/40 once the Phase B refactor pays down the backlog.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # correctness defaults
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unconvert
+    - misspell
+    - revive
+    # the complexity / size / duplication asks
+    - gocyclo      # cyclomatic complexity
+    - gocognit     # cognitive complexity
+    - funlen       # function length
+    - lll          # line length
+    - dupl         # Go duplication (jscpd owns the other languages)
+  settings:
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 20
+    funlen:
+      lines: 80
+      statements: 50
+    lll:
+      line-length: 120
+      tab-width: 1
+    dupl:
+      threshold: 150
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: exported
+        - name: unreachable-code
+        - name: empty-block
+  exclusions:
+    generated: lax
+    rules:
+      # Table-driven tests are legitimately long and repetitive.
+      - path: _test\.go
+        linters:
+          - funlen
+          - gocyclo
+          - gocognit
+          - dupl
+          - lll
+      # main() wiring is allowed to be long.
+      - path: cmd/bugbarn/main\.go
+        linters:
+          - funlen
+          - gocyclo
+          - gocognit
