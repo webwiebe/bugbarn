@@ -58,7 +58,8 @@ linters:
   exclusions:
     generated: lax
     rules:
-      # Table-driven tests are legitimately long and repetitive.
+      # Table-driven tests are legitimately long and repetitive, and routinely
+      # ignore cleanup (deferred Close) errors.
       - path: _test\.go
         linters:
           - funlen
@@ -66,9 +67,13 @@ linters:
           - gocognit
           - dupl
           - lll
-      # main() wiring is allowed to be long.
-      - path: cmd/bugbarn/main\.go
+          - errcheck
+      # Process bootstrap/orchestration wiring is allowed to be long, with
+      # long signatures/log lines and deferred resource Close() at shutdown.
+      - path: cmd/bugbarn/
         linters:
           - funlen
           - gocyclo
           - gocognit
+          - lll
+          - errcheck

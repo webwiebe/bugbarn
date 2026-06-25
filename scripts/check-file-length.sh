@@ -18,8 +18,6 @@ MAX_LINES=500
 ALLOWLIST="
 web/src/app.ts 2741
 web/src/components.ts 1913
-cmd/bugbarn/main.go 927
-internal/api/server_test.go 601
 internal/api/server.go 573
 "
 
