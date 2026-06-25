@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func (s *Store) GetSettings(ctx context.Context) (map[string]string, error) {
+func (s *SettingsStore) GetSettings(ctx context.Context) (map[string]string, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -33,7 +33,7 @@ WHERE project_id = ?`,
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateSettings(ctx context.Context, values map[string]string) error {
+func (s *SettingsStore) UpdateSettings(ctx context.Context, values map[string]string) error {
 	projectID, ok := ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID

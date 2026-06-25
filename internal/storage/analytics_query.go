@@ -11,7 +11,7 @@ import (
 
 // QueryOverview returns aggregate stats. Uses analytics_daily for the bulk of
 // the range; includes un-rolled-up rows from analytics_pageviews for today.
-func (s *Store) QueryOverview(ctx context.Context, q analytics.Query) (analytics.OverviewResult, error) {
+func (s *AnalyticsStore) QueryOverview(ctx context.Context, q analytics.Query) (analytics.OverviewResult, error) {
 	startStr := q.Start.UTC().Format("2006-01-02")
 	endStr := q.End.UTC().Format("2006-01-02")
 
@@ -62,7 +62,7 @@ func (s *Store) QueryOverview(ctx context.Context, q analytics.Query) (analytics
 }
 
 // QueryPages returns per-pathname stats ordered by pageviews DESC.
-func (s *Store) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.PageStat, error) {
+func (s *AnalyticsStore) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.PageStat, error) {
 	startStr := q.Start.UTC().Format("2006-01-02")
 	endStr := q.End.UTC().Format("2006-01-02")
 	limit := queryLimit(q)
@@ -96,7 +96,7 @@ func (s *Store) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.
 }
 
 // QueryTimeline returns bucketed time series. granularity: "day", "week", "month".
-func (s *Store) QueryTimeline(ctx context.Context, q analytics.Query, granularity string) ([]analytics.TimelineBucket, error) {
+func (s *AnalyticsStore) QueryTimeline(ctx context.Context, q analytics.Query, granularity string) ([]analytics.TimelineBucket, error) {
 	startStr := q.Start.UTC().Format("2006-01-02")
 	endStr := q.End.UTC().Format("2006-01-02")
 
@@ -139,7 +139,7 @@ func (s *Store) QueryTimeline(ctx context.Context, q analytics.Query, granularit
 }
 
 // QueryReferrers returns top referring hostnames.
-func (s *Store) QueryReferrers(ctx context.Context, q analytics.Query) ([]analytics.ReferrerStat, error) {
+func (s *AnalyticsStore) QueryReferrers(ctx context.Context, q analytics.Query) ([]analytics.ReferrerStat, error) {
 	startStr := q.Start.UTC().Format("2006-01-02")
 	endStr := q.End.UTC().Format("2006-01-02")
 	limit := queryLimit(q)
@@ -173,7 +173,7 @@ func (s *Store) QueryReferrers(ctx context.Context, q analytics.Query) ([]analyt
 
 // QuerySegments returns a breakdown by a named props key using raw pageviews.
 // We use the raw table because props are not pre-aggregated beyond referrer_host.
-func (s *Store) QuerySegments(ctx context.Context, q analytics.Query, dimKey string) ([]analytics.SegmentBucket, error) {
+func (s *AnalyticsStore) QuerySegments(ctx context.Context, q analytics.Query, dimKey string) ([]analytics.SegmentBucket, error) {
 	if strings.TrimSpace(dimKey) == "" {
 		return []analytics.SegmentBucket{}, nil
 	}
@@ -216,7 +216,7 @@ func (s *Store) QuerySegments(ctx context.Context, q analytics.Query, dimKey str
 // QueryPageFlow returns page-flow data for a given pathname.
 //
 //nolint:funlen // sequential "where users went / came from" query; tracked for a dedicated refactor.
-func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname string) (analytics.PageFlowResult, error) {
+func (s *AnalyticsStore) QueryPageFlow(ctx context.Context, q analytics.Query, pathname string) (analytics.PageFlowResult, error) {
 	result := analytics.PageFlowResult{
 		Pathname: pathname,
 		CameFrom: []analytics.FlowEntry{},
@@ -304,7 +304,7 @@ func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname s
 }
 
 // QueryScrollDepth returns scroll-depth bucket counts for a pathname.
-func (s *Store) QueryScrollDepth(ctx context.Context, q analytics.Query, pathname string) (analytics.ScrollDepthResult, error) {
+func (s *AnalyticsStore) QueryScrollDepth(ctx context.Context, q analytics.Query, pathname string) (analytics.ScrollDepthResult, error) {
 	result := analytics.ScrollDepthResult{
 		Pathname: pathname,
 		Buckets:  []analytics.ScrollBucket{},
@@ -352,7 +352,7 @@ func (s *Store) QueryScrollDepth(ctx context.Context, q analytics.Query, pathnam
 }
 
 // QueryDropout returns pages ordered by bounce (zero-interaction) sessions.
-func (s *Store) QueryDropout(ctx context.Context, q analytics.Query) ([]analytics.DropoutStat, error) {
+func (s *AnalyticsStore) QueryDropout(ctx context.Context, q analytics.Query) ([]analytics.DropoutStat, error) {
 	limit := queryLimit(q)
 
 	rows, err := s.readDB().QueryContext(ctx, `
@@ -387,7 +387,7 @@ func (s *Store) QueryDropout(ctx context.Context, q analytics.Query) ([]analytic
 }
 
 // ListProjectIDs returns all project IDs (used by the rollup worker).
-func (s *Store) ListProjectIDs(ctx context.Context) ([]int64, error) {
+func (s *AnalyticsStore) ListProjectIDs(ctx context.Context) ([]int64, error) {
 	rows, err := s.readDB().QueryContext(ctx, `SELECT id FROM projects`)
 	if err != nil {
 		return nil, err

@@ -12,7 +12,7 @@ import (
 
 const sourceMapPrefix = "sourcemap-"
 
-func (s *Store) UploadSourceMap(ctx context.Context, upload SourceMapUpload) (SourceMap, error) {
+func (s *SourceMapStore) UploadSourceMap(ctx context.Context, upload SourceMapUpload) (SourceMap, error) {
 	if strings.TrimSpace(upload.Release) == "" {
 		return SourceMap{}, apperr.InvalidInput("source map release is required", nil)
 	}
@@ -65,7 +65,7 @@ INSERT INTO source_maps (
 
 // FindSourceMap looks up the raw source map blob for the given release, dist, and bundleURL.
 // Returns nil, nil if no matching row is found.
-func (s *Store) FindSourceMap(ctx context.Context, release, dist, bundleURL string) ([]byte, error) {
+func (s *SourceMapStore) FindSourceMap(ctx context.Context, release, dist, bundleURL string) ([]byte, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -92,7 +92,7 @@ LIMIT 1`,
 }
 
 // ListSourceMaps returns metadata for all source maps in the project (no blob).
-func (s *Store) ListSourceMaps(ctx context.Context) ([]SourceMapMeta, error) {
+func (s *SourceMapStore) ListSourceMaps(ctx context.Context) ([]SourceMapMeta, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID

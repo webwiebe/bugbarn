@@ -68,7 +68,6 @@ func tracedDriver() string {
 	return registeredDriver
 }
 
-
 // OpenReadOnly opens a read-only connection to an existing SQLite database.
 // The returned Store has no write connection (db is nil) and skips schema
 // initialisation and migrations — the database must already be set up.
@@ -96,7 +95,7 @@ func OpenReadOnly(path string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{db: nil, roDB: roDB}, nil
+	return newStore(&core{db: nil, roDB: roDB}), nil
 }
 
 func Open(path string) (*Store, error) {
@@ -134,24 +133,24 @@ func open(path string, autoMigrate bool) (*Store, error) {
 	}
 	roDB.SetMaxOpenConns(4)
 
-	store := &Store{db: db, roDB: roDB}
+	c := &core{db: db, roDB: roDB}
 	ctx := context.Background()
-	if err := store.init(ctx); err != nil {
+	if err := c.init(ctx); err != nil {
 		roDB.Close()
 		db.Close()
 		return nil, err
 	}
 	if autoMigrate {
 		go func() {
-			if err := store.migrateFingerprints(context.Background()); err != nil {
+			if err := c.migrateFingerprints(context.Background()); err != nil {
 				slog.Error("fingerprint migration failed", "err", err)
 			}
 		}()
 	}
-	return store, nil
+	return newStore(c), nil
 }
 
-func (s *Store) Close() error {
+func (s *core) Close() error {
 	if s == nil {
 		return nil
 	}
@@ -169,7 +168,7 @@ func (s *Store) Close() error {
 	return firstErr
 }
 
-func (s *Store) readDB() *sql.DB {
+func (s *core) readDB() *sql.DB {
 	if s.roDB != nil {
 		return s.roDB
 	}
@@ -177,19 +176,19 @@ func (s *Store) readDB() *sql.DB {
 }
 
 // DefaultProjectID returns the numeric ID of the default project.
-func (s *Store) DefaultProjectID() int64 {
+func (s *core) DefaultProjectID() int64 {
 	return s.defaultProjectID
 }
 
 // DB returns the underlying *sql.DB. Use sparingly — prefer Store methods.
-func (s *Store) DB() *sql.DB {
+func (s *core) DB() *sql.DB {
 	return s.db
 }
 
 // PersistProcessedEvent stores a processed event and upserts the related issue.
 // It returns the upserted issue, the stored event, a flag indicating whether this
 // was a brand-new issue, a flag indicating whether the issue regressed, and any error.
-func (s *Store) PersistProcessedEvent(ctx context.Context, processed worker.ProcessedEvent) (Issue, Event, bool, bool, error) {
+func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.ProcessedEvent) (Issue, Event, bool, bool, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.PersistProcessedEvent",
 		trace.WithAttributes(attribute.String("fingerprint", processed.Fingerprint)),
 	)

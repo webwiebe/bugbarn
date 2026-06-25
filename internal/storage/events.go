@@ -16,7 +16,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
-func (s *Store) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]Event, bool, error) {
+func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]Event, bool, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListIssueEvents")
 	defer span.End()
 	span.SetAttributes(attribute.String("issue_id", issueID), attribute.Int("limit", limit))
@@ -100,7 +100,7 @@ ORDER BY e.id DESC LIMIT ?`,
 	return events, hasMore, nil
 }
 
-func (s *Store) GetEvent(ctx context.Context, eventID string) (Event, error) {
+func (s *EventStore) GetEvent(ctx context.Context, eventID string) (Event, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.GetEvent")
 	defer span.End()
 	span.SetAttributes(attribute.String("event_id", eventID))
@@ -154,7 +154,7 @@ WHERE e.id = ?`, rowID)
 // the ingest-health monitor to detect a stalled write pipeline (no event
 // persisted for an unexpectedly long window) — the failure mode behind the
 // 2026-06-21 outage, which was invisible because reads kept working.
-func (s *Store) LastEventReceivedAt(ctx context.Context) (time.Time, error) {
+func (s *EventStore) LastEventReceivedAt(ctx context.Context) (time.Time, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.LastEventReceivedAt")
 	defer span.End()
 
@@ -168,7 +168,7 @@ func (s *Store) LastEventReceivedAt(ctx context.Context) (time.Time, error) {
 	return parseTime(raw.String)
 }
 
-func (s *Store) ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {
+func (s *EventStore) ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListRecentEvents")
 	defer span.End()
 	if limit <= 0 || limit > 100 {
@@ -236,7 +236,10 @@ LIMIT ?`, sinceStr, limit)
 	return events, nil
 }
 
-func (s *Store) insertEvent(ctx context.Context, projectID int64, issueID int64, issueDisplayID string, regressed bool, processed worker.ProcessedEvent) (Event, int64, error) {
+func (s *core) insertEvent(
+	ctx context.Context, projectID int64, issueID int64, issueDisplayID string,
+	regressed bool, processed worker.ProcessedEvent,
+) (Event, int64, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {
 		return Event{}, 0, err
@@ -304,7 +307,7 @@ INSERT INTO events (
 	}, eventRowID, nil
 }
 
-func (s *Store) insertFacets(ctx context.Context, projectID int64, issueID, eventID int64, processed event.Event) error {
+func (s *core) insertFacets(ctx context.Context, projectID int64, issueID, eventID int64, processed event.Event) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

@@ -5,15 +5,15 @@ import (
 	"time"
 )
 
-func (s *Store) ResolveIssue(ctx context.Context, issueID string) (Issue, error) {
+func (s *IssueStore) ResolveIssue(ctx context.Context, issueID string) (Issue, error) {
 	return s.setIssueStatus(ctx, issueID, "resolved")
 }
 
-func (s *Store) ReopenIssue(ctx context.Context, issueID string) (Issue, error) {
+func (s *IssueStore) ReopenIssue(ctx context.Context, issueID string) (Issue, error) {
 	return s.setIssueStatus(ctx, issueID, "unresolved")
 }
 
-func (s *Store) setIssueStatus(ctx context.Context, issueID, status string) (Issue, error) {
+func (s *IssueStore) setIssueStatus(ctx context.Context, issueID, status string) (Issue, error) {
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
 		return Issue{}, err

@@ -10,7 +10,7 @@ import (
 
 const releaseIDPrefix = "release-"
 
-func (s *Store) ListReleases(ctx context.Context) ([]Release, error) {
+func (s *ReleaseStore) ListReleases(ctx context.Context) ([]Release, error) {
 	projectID, ok := ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -49,7 +49,7 @@ ORDER BY observed_at DESC, id DESC`,
 	return releases, rows.Err()
 }
 
-func (s *Store) GetRelease(ctx context.Context, releaseID string) (Release, error) {
+func (s *ReleaseStore) GetRelease(ctx context.Context, releaseID string) (Release, error) {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
 		return Release{}, apperr.InvalidInput("invalid release ID", err)
@@ -84,7 +84,7 @@ WHERE project_id = ? AND id = ?`,
 	return release, nil
 }
 
-func (s *Store) CreateRelease(ctx context.Context, release Release) (Release, error) {
+func (s *ReleaseStore) CreateRelease(ctx context.Context, release Release) (Release, error) {
 	if strings.TrimSpace(release.Name) == "" {
 		return Release{}, apperr.InvalidInput("release name is required", nil)
 	}
@@ -131,7 +131,7 @@ INSERT INTO releases (
 	return release, nil
 }
 
-func (s *Store) UpdateRelease(ctx context.Context, releaseID string, release Release) (Release, error) {
+func (s *ReleaseStore) UpdateRelease(ctx context.Context, releaseID string, release Release) (Release, error) {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
 		return Release{}, apperr.InvalidInput("invalid release ID", err)
@@ -169,7 +169,7 @@ WHERE project_id = ? AND id = ?`,
 	return s.GetRelease(ctx, releaseID)
 }
 
-func (s *Store) DeleteRelease(ctx context.Context, releaseID string) error {
+func (s *ReleaseStore) DeleteRelease(ctx context.Context, releaseID string) error {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
 		return err

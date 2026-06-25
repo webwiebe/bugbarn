@@ -30,7 +30,7 @@ type HeldRecord struct {
 
 // HoldEvent parks a raw ingest payload for a pending project. It is a write and
 // fails on a read-only store (readers never hold — they forward to the writer).
-func (s *Store) HoldEvent(ctx context.Context, h HeldRecord) error {
+func (s *HeldEventStore) HoldEvent(ctx context.Context, h HeldRecord) error {
 	if s == nil || s.db == nil {
 		return errors.New("storage is read-only")
 	}
@@ -48,7 +48,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 
 // ListHeldByProject returns up to limit held records for a project, oldest
 // first, so the backlog replays in arrival order.
-func (s *Store) ListHeldByProject(ctx context.Context, projectID int64, limit int) ([]HeldRecord, error) {
+func (s *HeldEventStore) ListHeldByProject(ctx context.Context, projectID int64, limit int) ([]HeldRecord, error) {
 	if limit <= 0 {
 		limit = 500
 	}
@@ -75,7 +75,7 @@ FROM held_events WHERE project_id = ? ORDER BY id ASC LIMIT ?`, projectID, limit
 }
 
 // DeleteHeldEvent removes a single held record once it has been replayed.
-func (s *Store) DeleteHeldEvent(ctx context.Context, id int64) error {
+func (s *HeldEventStore) DeleteHeldEvent(ctx context.Context, id int64) error {
 	if s == nil || s.db == nil {
 		return errors.New("storage is read-only")
 	}
@@ -84,7 +84,7 @@ func (s *Store) DeleteHeldEvent(ctx context.Context, id int64) error {
 }
 
 // CountHeldByProject returns how many records are currently held for a project.
-func (s *Store) CountHeldByProject(ctx context.Context, projectID int64) (int, error) {
+func (s *HeldEventStore) CountHeldByProject(ctx context.Context, projectID int64) (int, error) {
 	var n int
 	err := s.readDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM held_events WHERE project_id = ?`, projectID).Scan(&n)
 	return n, err

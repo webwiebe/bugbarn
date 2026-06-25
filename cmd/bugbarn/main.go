@@ -155,7 +155,7 @@ func run() error {
 	// build them once. The replayer works without Redis — approving a pending
 	// project drains its backlog even if no consumer is running.
 	eventProc := ingestproc.NewProcessor(store, eventPub, logger, cfg.AutoApproveProjects)
-	logService := logsvc.New(store, logger)
+	logService := logsvc.New(store.LogStore, logger)
 	heldReplayer := ingestproc.NewReplayer(store, eventProc, logService, logger)
 
 	if cfg.RedisQueueURL != "" {

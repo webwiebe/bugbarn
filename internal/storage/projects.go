@@ -10,7 +10,7 @@ import (
 )
 
 // CreateProject inserts a new project row; returns an error if the slug already exists.
-func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, error) {
+func (s *ProjectStore) CreateProject(ctx context.Context, name, slug string) (Project, error) {
 	prefix, err := s.uniqueIssuePrefix(ctx, slug)
 	if err != nil {
 		return Project{}, err
@@ -31,7 +31,7 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 }
 
 // ListProjects returns all projects ordered alphabetically by name.
-func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
+func (s *ProjectStore) ListProjects(ctx context.Context) ([]Project, error) {
 	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 }
 
 // ProjectBySlug returns the project with the given slug.
-func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
+func (s *ProjectStore) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
 	var p Project
 	var createdAt string
 	err := s.readDB().QueryRowContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at FROM projects WHERE slug = ?`, slug).
@@ -67,7 +67,7 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error)
 // EnsureProject returns the project with the given slug, creating it if it does not exist.
 // If the slug matches a project alias, it returns the target project.
 // In read-only mode (db is nil), it returns an error instead of attempting creation.
-func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error) {
+func (s *ProjectStore) EnsureProject(ctx context.Context, slug string) (Project, error) {
 	p, err := s.ProjectBySlug(ctx, slug)
 	if err == nil {
 		return p, nil
@@ -86,7 +86,7 @@ func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error)
 // EnsureProjectPending returns the project with the given slug, creating it
 // with status=pending if it does not exist. If the slug matches a project alias,
 // it returns the target project.
-func (s *Store) EnsureProjectPending(ctx context.Context, slug string) (Project, error) {
+func (s *ProjectStore) EnsureProjectPending(ctx context.Context, slug string) (Project, error) {
 	p, err := s.ProjectBySlug(ctx, slug)
 	if err == nil {
 		return p, nil
@@ -103,7 +103,7 @@ func (s *Store) EnsureProjectPending(ctx context.Context, slug string) (Project,
 }
 
 // CreateProjectPending inserts a new project with status=pending.
-func (s *Store) CreateProjectPending(ctx context.Context, slug string) (Project, error) {
+func (s *ProjectStore) CreateProjectPending(ctx context.Context, slug string) (Project, error) {
 	prefix, err := s.uniqueIssuePrefix(ctx, slug)
 	if err != nil {
 		return Project{}, err
@@ -126,7 +126,7 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 // DeleteProject removes the project and all related rows. Child rows are
 // deleted explicitly in batches to avoid a single massive CASCADE transaction
 // that can fail on projects with large amounts of data.
-func (s *Store) DeleteProject(_ context.Context, slug string) error {
+func (s *ProjectStore) DeleteProject(_ context.Context, slug string) error {
 	// Use a background context so client disconnects don't abort the
 	// multi-step deletion and leave orphaned child rows.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -186,7 +186,7 @@ func deleteInBatches(ctx context.Context, db *sql.DB, table string, projectID in
 }
 
 // ApproveProject sets status='active' for the project with the given slug.
-func (s *Store) ApproveProject(ctx context.Context, slug string) error {
+func (s *ProjectStore) ApproveProject(ctx context.Context, slug string) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE projects SET status='active' WHERE slug=?`, slug)
 	if err != nil {
 		return err
@@ -200,7 +200,7 @@ func (s *Store) ApproveProject(ctx context.Context, slug string) error {
 
 // uniqueIssuePrefix derives a unique issue prefix from the slug, appending a
 // numeric suffix if the derived prefix is already taken.
-func (s *Store) uniqueIssuePrefix(ctx context.Context, slug string) (string, error) {
+func (s *ProjectStore) uniqueIssuePrefix(ctx context.Context, slug string) (string, error) {
 	prefix := deriveIssuePrefix(slug)
 	base := prefix
 	for i := 2; ; i++ {
@@ -219,7 +219,7 @@ func (s *Store) uniqueIssuePrefix(ctx context.Context, slug string) (string, err
 
 // IssueRowIDByDisplayID resolves a Jira-style issue ID (e.g. "BW-42") to the
 // database row ID. Falls back to legacy "issue-NNNNNN" format.
-func (s *Store) IssueRowIDByDisplayID(ctx context.Context, displayID string) (int64, error) {
+func (s *core) IssueRowIDByDisplayID(ctx context.Context, displayID string) (int64, error) {
 	prefix, number, err := parseIssueID(displayID)
 	if err != nil {
 		return 0, err
@@ -240,7 +240,7 @@ WHERE p.issue_prefix = ? AND i.issue_number = ?`, prefix, number).Scan(&rowID)
 }
 
 // projectByID returns a project by its numeric ID.
-func (s *Store) projectByID(ctx context.Context, id int64) (Project, error) {
+func (s *ProjectStore) projectByID(ctx context.Context, id int64) (Project, error) {
 	var p Project
 	var createdAt string
 	err := s.readDB().QueryRowContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at FROM projects WHERE id = ?`, id).
@@ -261,7 +261,7 @@ type ProjectUsage struct {
 }
 
 // ProjectUsageAll returns issue, event, and log counts for every project.
-func (s *Store) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUsage, error) {
+func (s *ProjectStore) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUsage, error) {
 	usage := make(map[int64]ProjectUsage)
 
 	rows, err := s.readDB().QueryContext(ctx, `
@@ -291,7 +291,7 @@ func (s *Store) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUsage, er
 // --- Alias operations ---
 
 // CreateAlias creates a slug alias pointing to the given project ID.
-func (s *Store) CreateAlias(ctx context.Context, aliasSlug string, projectID int64) error {
+func (s *ProjectStore) CreateAlias(ctx context.Context, aliasSlug string, projectID int64) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO project_aliases (alias_slug, project_id) VALUES (?, ?)`, aliasSlug, projectID)
 	if err != nil {
 		return wrapErr(err, "create alias")
@@ -300,7 +300,7 @@ func (s *Store) CreateAlias(ctx context.Context, aliasSlug string, projectID int
 }
 
 // DeleteAlias removes a slug alias.
-func (s *Store) DeleteAlias(ctx context.Context, aliasSlug string) error {
+func (s *ProjectStore) DeleteAlias(ctx context.Context, aliasSlug string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM project_aliases WHERE alias_slug = ?`, aliasSlug)
 	if err != nil {
 		return wrapErr(err, "delete alias")
@@ -313,7 +313,7 @@ func (s *Store) DeleteAlias(ctx context.Context, aliasSlug string) error {
 }
 
 // ResolveAlias returns the target project_id for an alias slug.
-func (s *Store) ResolveAlias(ctx context.Context, slug string) (int64, error) {
+func (s *ProjectStore) ResolveAlias(ctx context.Context, slug string) (int64, error) {
 	var projectID int64
 	err := s.readDB().QueryRowContext(ctx, `SELECT project_id FROM project_aliases WHERE alias_slug = ?`, slug).Scan(&projectID)
 	if err != nil {
@@ -323,7 +323,7 @@ func (s *Store) ResolveAlias(ctx context.Context, slug string) (int64, error) {
 }
 
 // ListAliases returns all project aliases with their target project slug.
-func (s *Store) ListAliases(ctx context.Context) ([]ProjectAlias, error) {
+func (s *ProjectStore) ListAliases(ctx context.Context) ([]ProjectAlias, error) {
 	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT pa.alias_slug, pa.project_id, p.slug
 		FROM project_aliases pa
@@ -347,7 +347,7 @@ func (s *Store) ListAliases(ctx context.Context) ([]ProjectAlias, error) {
 // --- Rename and Merge ---
 
 // RenameProject updates the project's slug and name, creating an alias from the old slug.
-func (s *Store) RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error {
+func (s *ProjectStore) RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -375,7 +375,7 @@ func (s *Store) RenameProject(ctx context.Context, oldSlug, newSlug, newName str
 
 // MergeProjects moves all data from the source project to the target project,
 // creates an alias from the source slug, and deletes the source project.
-func (s *Store) MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error {
+func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

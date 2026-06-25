@@ -27,7 +27,9 @@ const logTrimInterval = 32
 // shared with event ingestion, so if a client disconnects we must abandon the
 // insert promptly rather than hold the connection. A short ceiling also bounds
 // how long any one batch can occupy the writer.
-func (s *Store) InsertLogEntries(ctx context.Context, entries []LogEntry) error {
+//
+//nolint:gocognit,gocyclo // batched log writer with amortized retention trim; tracked for refactor.
+func (s *LogStore) InsertLogEntries(ctx context.Context, entries []LogEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -105,7 +107,9 @@ func (s *Store) InsertLogEntries(ctx context.Context, entries []LogEntry) error 
 // ListLogEntries returns up to limit entries for a project (or all projects when projectID=0), newest first.
 // Optional filters: levelMin (numeric pino level, 0 = no filter), q (substring match on message),
 // beforeID (cursor, 0 = no cursor).
-func (s *Store) ListLogEntries(ctx context.Context, projectID int64, levelMin int, q string, limit int, beforeID int64) ([]LogEntry, error) {
+func (s *LogStore) ListLogEntries(
+	ctx context.Context, projectID int64, levelMin int, q string, limit int, beforeID int64,
+) ([]LogEntry, error) {
 	var args []any
 	var conditions []string
 
