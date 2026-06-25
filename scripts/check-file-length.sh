@@ -19,11 +19,8 @@ ALLOWLIST="
 web/src/app.ts 2741
 web/src/components.ts 1913
 cmd/bugbarn/main.go 927
-internal/storage/issues.go 760
-internal/storage/admin.go 750
 internal/api/server_test.go 601
 internal/api/server.go 573
-internal/storage/analytics.go 533
 "
 
 fail=0
