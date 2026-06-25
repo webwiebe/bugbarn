@@ -18,7 +18,6 @@ MAX_LINES=500
 ALLOWLIST="
 web/src/app.ts 2741
 web/src/components.ts 1913
-internal/api/server.go 577
 "
 
 fail=0
