@@ -42,7 +42,7 @@ func formatIssueID(prefix string, number int) string {
 
 // displayIssueID returns the Jira-style issue ID when the project has a prefix
 // and the issue has a positive number, otherwise the legacy "issue-<rowID>"
-// form. Centralises the prefix/number-vs-legacy branch used by every issue and
+// form. Centralizes the prefix/number-vs-legacy branch used by every issue and
 // event scan path.
 func displayIssueID(prefix string, number int, fallbackRowID int64) string {
 	if prefix != "" && number > 0 {

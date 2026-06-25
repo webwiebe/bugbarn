@@ -214,6 +214,8 @@ func (s *Store) QuerySegments(ctx context.Context, q analytics.Query, dimKey str
 }
 
 // QueryPageFlow returns page-flow data for a given pathname.
+//
+//nolint:funlen // sequential "where users went / came from" query; tracked for a dedicated refactor.
 func (s *Store) QueryPageFlow(ctx context.Context, q analytics.Query, pathname string) (analytics.PageFlowResult, error) {
 	result := analytics.PageFlowResult{
 		Pathname: pathname,

@@ -12,6 +12,10 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
+// upsertIssue is the ingest write path: it finds-or-creates the issue for an
+// event's fingerprint and applies regression/mute transitions in one tx.
+//
+//nolint:gocognit,gocyclo,funlen // legacy ingest write path; complexity is tracked for a dedicated refactor.
 func (s *Store) upsertIssue(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
 	evt := processed.Event
 	fingerprintValue := strings.TrimSpace(processed.Fingerprint)
