@@ -29,19 +29,19 @@ linters:
     - dupl         # Go duplication (jscpd owns the other languages)
   settings:
     gocyclo:
-      min-complexity: 15
+      min-complexity: 12
     gocognit:
-      min-complexity: 20
+      min-complexity: 18
     funlen:
-      lines: 80
-      statements: 50
+      lines: 60
+      statements: 40
     lll:
-      # 140 fits this codebase's inline SQL and OTel-style signatures while
-      # still catching runaway lines; tighten toward 120 as files are reworked.
-      line-length: 140
+      # 135 still accommodates inline SQL and OTel-style signatures while
+      # catching runaway lines.
+      line-length: 135
       tab-width: 1
     dupl:
-      threshold: 150
+      threshold: 120
     misspell:
       locale: US
     errcheck:

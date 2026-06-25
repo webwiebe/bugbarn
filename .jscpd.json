@@ -1,5 +1,5 @@
 {
-  "threshold": 1.0,
+  "threshold": 0.8,
   "reporters": ["consoleFull"],
   "absolute": true,
   "format": ["typescript", "javascript", "python", "php"],
