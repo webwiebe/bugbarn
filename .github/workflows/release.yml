@@ -151,7 +151,9 @@ jobs:
               bugbarn=${SERVICE_IMAGE}@${SERVICE_DIGEST}
             kubectl -n ${NAMESPACE} set image deployment/bugbarn-web \
               bugbarn-web=${WEB_IMAGE}@${WEB_DIGEST}
-            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-writer --timeout=180s
+            # Writer runs migrations on startup (gated by its startupProbe), so
+            # allow more time than the stateless reader/web.
+            kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-writer --timeout=600s
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-reader --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-web --timeout=180s
           "
