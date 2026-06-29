@@ -8,7 +8,7 @@ on:
 jobs:
   validate-semver:
     name: Validate semver tag
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     steps:
       - name: Check tag format
         run: |
