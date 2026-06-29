@@ -121,7 +121,11 @@ jobs:
           cache: true
 
       - name: Install nfpm
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        env:
+          # The self-hosted runner pins GOTOOLCHAIN=local and ships go1.26.2;
+          # nfpm's pinned release needs a newer toolchain. Allow Go to fetch it.
+          GOTOOLCHAIN: auto
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
 
       - name: Build binaries
         env:
@@ -478,68 +482,3 @@ jobs:
             git commit -m "Update formula to ${VERSION}"
             git push
           fi
-
-  # ---------------------------------------------------------------------------
-  # TypeScript SDK — publish to npm
-  # ---------------------------------------------------------------------------
-  publish-npm:
-    needs: [tag]
-    runs-on: [self-hosted, build]
-    defaults:
-      run:
-        working-directory: sdks/typescript
-    steps:
-      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
-        shell: bash
-        run: |
-          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
-            [ -d "$c" ] || continue
-            chmod -R u+w "$c" 2>/dev/null || true
-            rm -rf "$c" 2>/dev/null || true
-          done
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  # ---------------------------------------------------------------------------
-  # Python SDK — publish to PyPI
-  # ---------------------------------------------------------------------------
-  publish-pypi:
-    needs: [tag]
-    runs-on: [self-hosted, build]
-    defaults:
-      run:
-        working-directory: sdks/python
-    steps:
-      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
-        shell: bash
-        run: |
-          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
-            [ -d "$c" ] || continue
-            chmod -R u+w "$c" 2>/dev/null || true
-            rm -rf "$c" 2>/dev/null || true
-          done
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Install build tools
-        run: pip install build twine
-      - name: Build
-        run: python -m build
-      - name: Test before publish
-        run: pip install -e ".[dev]" && python -m pytest tests/ -v
-      - name: Publish to PyPI
-        run: twine upload dist/*
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
