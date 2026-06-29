@@ -9,7 +9,8 @@ export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod
 
 .PHONY: help setup test lint build dev docker-build spec-check \
-	lint-go check-file-length coverage dup quality
+	lint-go check-file-length coverage dup quality \
+	woodpecker-secrets-edit woodpecker-secrets-sync
 
 help:
 	@printf '%s\n' \
@@ -25,7 +26,11 @@ help:
 		'  build        run available build checks' \
 		'  dev          start the local compose stack if available' \
 		'  docker-build build placeholder images when Dockerfiles exist' \
-		'  spec-check   verify the current spec-first scaffolding'
+		'  spec-check   verify the current spec-first scaffolding' \
+		'' \
+		'Woodpecker CI:' \
+		'  woodpecker-secrets-edit  edit the SOPS-encrypted Woodpecker secrets' \
+		'  woodpecker-secrets-sync  push secrets into the Woodpecker server'
 
 setup:
 	@set -eu; \
@@ -227,3 +232,40 @@ docker-build:
 		docker build -f deploy/docker/web.Dockerfile -t bugbarn/web:local .; \
 	fi; \
 	if [ "$$found" -eq 0 ]; then echo "[docker-build] no Dockerfiles found yet"; fi
+
+# ── Woodpecker CI secrets ─────────────────────────────────────────────────────
+# Source of truth for the Woodpecker secrets, encrypted at rest with SOPS/age.
+# `sync` pushes them into the Woodpecker server. The three sops_age_key_* secrets
+# are injected from the local age key file (not stored in the repo).
+WOODPECKER_REPO          ?= webwiebe/bugbarn
+WOODPECKER_SECRETS_FILE  := deploy/woodpecker-secrets.yaml
+WOODPECKER_SECRET_EVENTS := --event push --event tag --event manual
+SOPS_AGE_KEY_FILE        ?= $(HOME)/Library/Application Support/sops/age/keys.txt
+export SOPS_AGE_KEY_FILE
+
+woodpecker-secrets-edit:
+	sops "$(WOODPECKER_SECRETS_FILE)"
+
+woodpecker-secrets-sync:
+	@command -v woodpecker-cli >/dev/null 2>&1 || { echo "woodpecker-cli not installed (brew install woodpecker-cli)"; exit 1; }
+	@command -v sops >/dev/null 2>&1 || { echo "sops not installed"; exit 1; }
+	@test -n "$$WOODPECKER_SERVER" || { echo "set WOODPECKER_SERVER (e.g. https://woodpecker.nijmegen.wiebe.xyz)"; exit 1; }
+	@test -n "$$WOODPECKER_TOKEN"  || { echo "set WOODPECKER_TOKEN (run: woodpecker-cli setup)"; exit 1; }
+	@set -eu; \
+	get() { sops -d --extract "[\"$$1\"]" "$(WOODPECKER_SECRETS_FILE)"; }; \
+	put() { \
+		case "$$2" in REPLACE_ME|"") echo "ERROR: secret '$$1' is unset — run 'make woodpecker-secrets-edit'"; exit 1;; esac; \
+		woodpecker-cli repo secret add    --repository "$(WOODPECKER_REPO)" --name "$$1" --value "$$2" $(WOODPECKER_SECRET_EVENTS) >/dev/null 2>&1 \
+		|| woodpecker-cli repo secret update --repository "$(WOODPECKER_REPO)" --name "$$1" --value "$$2" $(WOODPECKER_SECRET_EVENTS) >/dev/null; \
+		echo "  synced $$1"; \
+	}; \
+	AGE_KEY=$$(grep -E 'AGE-SECRET-KEY' "$$SOPS_AGE_KEY_FILE" | head -1); \
+	test -n "$$AGE_KEY" || { echo "no AGE-SECRET-KEY in $$SOPS_AGE_KEY_FILE"; exit 1; }; \
+	echo "Syncing Woodpecker secrets to $(WOODPECKER_REPO)…"; \
+	put ghcr_token            "$$(get ghcr_token)"; \
+	put ghcr_pull_pat         "$$(get ghcr_pull_pat)"; \
+	put bugbarn_api_key       "$$(get bugbarn_api_key)"; \
+	put sops_age_key_testing    "$$AGE_KEY"; \
+	put sops_age_key_staging    "$$AGE_KEY"; \
+	put sops_age_key_production  "$$AGE_KEY"; \
+	echo "Done."
