@@ -185,6 +185,15 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+          # The writer runs DB migrations before opening :8080. A slow migration
+          # (e.g. building an index on a large table) must not trip liveness, so
+          # gate liveness behind a startupProbe that allows up to 10m of startup.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 60
           livenessProbe:
             httpGet:
               path: /api/v1/health
