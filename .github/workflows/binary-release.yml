@@ -33,11 +33,19 @@ permissions:
 jobs:
   tag:
     name: Create Release Tag
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     outputs:
       version: ${{ steps.next_version.outputs.version }}
       version_num: ${{ steps.next_version.outputs.version_num }}
     steps:
+      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -89,12 +97,20 @@ jobs:
   # ---------------------------------------------------------------------------
   build-debs:
     name: Build .deb Packages (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: tag
     strategy:
       matrix:
         arch: [amd64, arm64]
     steps:
+      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - name: Checkout code
         uses: actions/checkout@v6
 
@@ -149,12 +165,20 @@ jobs:
   # ---------------------------------------------------------------------------
   build-darwin-tarballs:
     name: Build macOS Tarballs (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: tag
     strategy:
       matrix:
         arch: [amd64, arm64]
     steps:
+      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - name: Checkout code
         uses: actions/checkout@v6
 
@@ -198,7 +222,7 @@ jobs:
   # ---------------------------------------------------------------------------
   attach-debs-to-release:
     name: Attach .deb to Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: [tag, build-debs]
     steps:
       - name: Download all .deb artifacts
@@ -233,7 +257,7 @@ jobs:
 
   attach-tarballs-to-release:
     name: Attach macOS Tarballs to Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: [tag, build-darwin-tarballs]
     steps:
       - name: Download all darwin artifacts
@@ -261,7 +285,7 @@ jobs:
   # ---------------------------------------------------------------------------
   update-brew-repo:
     name: Update Homebrew Tap (MinIO)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: [tag, build-darwin-tarballs]
     steps:
       - name: Download all darwin artifacts
@@ -344,6 +368,10 @@ jobs:
           AWS_ENDPOINT_URL: ${{ secrets.MINIO_ENDPOINT }}
           MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
         run: |
+          # The self-hosted runner's Homebrew Python is PEP-668 externally-managed,
+          # so install awscli into a throwaway venv rather than the global env.
+          python3 -m venv .ci-venv
+          . .ci-venv/bin/activate
           pip install awscli
           # Use cp per-file instead of sync to avoid the LIST operation
           # that consistently times out against the MinIO endpoint from
@@ -359,7 +387,7 @@ jobs:
 
   update-homebrew-tap:
     name: Update GitHub Tap Repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: [tag, update-brew-repo]
     steps:
       - name: Download darwin artifacts for checksums
@@ -456,11 +484,19 @@ jobs:
   # ---------------------------------------------------------------------------
   publish-npm:
     needs: [tag]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     defaults:
       run:
         working-directory: sdks/typescript
     steps:
+      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
@@ -479,11 +515,19 @@ jobs:
   # ---------------------------------------------------------------------------
   publish-pypi:
     needs: [tag]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     defaults:
       run:
         working-directory: sdks/python
     steps:
+      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:

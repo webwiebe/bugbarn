@@ -20,8 +20,16 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     steps:
+      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
@@ -51,7 +59,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
