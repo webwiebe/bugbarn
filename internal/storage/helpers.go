@@ -112,7 +112,16 @@ func sqliteDSN(path string) string {
 	// Litestream is the SOLE checkpointer. With both active they race for the
 	// write lock and spam "database is locked"; the writer owns writes,
 	// Litestream owns checkpointing.
-	return u.String() + "?mode=rwc&_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=journal_mode(wal)&_pragma=wal_autocheckpoint(0)&_pragma=synchronous(normal)"
+	params := strings.Join([]string{
+		"mode=rwc",
+		"_txlock=immediate",
+		"_pragma=busy_timeout(10000)",
+		"_pragma=foreign_keys(1)",
+		"_pragma=journal_mode(wal)",
+		"_pragma=wal_autocheckpoint(0)",
+		"_pragma=synchronous(normal)",
+	}, "&")
+	return u.String() + "?" + params
 }
 
 func sqliteReadOnlyDSN(path string) string {
