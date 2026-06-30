@@ -114,7 +114,7 @@ func run() error {
 	bus := &domainevents.Bus{}
 	alertRepo := alert.NewSQLiteRepository(store.DB())
 	deliverer := alert.NewDeliverer(cfg.Digest.Mail)
-	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL, logger.With("component", "alert-evaluator"))
+	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL, cfg.AdminAlertEmail, logger.With("component", "alert-evaluator"))
 	bus.Subscribe(evaluator.HandleEvent)
 
 	eventPub := service.NewEventPublisher(bus)

@@ -57,6 +57,11 @@ BUGBARN_SPOOL_DIR=/var/lib/bugbarn/spool
 # Webhook URL to POST digest JSON to (optional)
 #BUGBARN_DIGEST_WEBHOOK_URL=
 
+# Global admin alert recipient: emailed on EVERY new issue and regression,
+# across all projects (no per-project alert rule needed). Requires SMTP below
+# plus BUGBARN_DIGEST_ENABLED=true. Defaults to BUGBARN_DIGEST_TO when unset.
+#BUGBARN_ADMIN_ALERT_EMAIL=you@example.com
+
 # SMTP settings for email delivery
 #SMTP_HOST=smtp.example.com
 #SMTP_PORT=587
