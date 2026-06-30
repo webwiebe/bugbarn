@@ -11,9 +11,11 @@
 # Secrets: github_token (release_tag_pat — GitHub releases/tap/dispatch/tag),
 # gitea_token (push the bump tag to Gitea -> triggers release.yaml staging deploy),
 # minio_access_key/minio_secret_key/minio_endpoint/minio_bucket.
-# NOTE: manual-only until validated. Switch to `event: push, branch: main` to
-# restore release-on-every-main-push (the old GitHub behavior).
+# Release on every push to main (validated on Woodpecker; the GitHub
+# binary-release workflow is disabled). Also runnable manually.
 when:
+  - event: push
+    branch: main
   - event: manual
 
 labels:
