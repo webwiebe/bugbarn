@@ -132,9 +132,10 @@ steps:
         BASE="$${CI_COMMIT_TARGET_BRANCH:-main}"
         # Create the origin/$BASE remote-tracking ref (a plain `git fetch origin main`
         # only updates FETCH_HEAD), with enough depth for the diff base. Without this
-        # golangci-lint's --new-from-rev treats the whole tree as new.
-        git fetch --no-tags --depth=300 origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" 2>/dev/null \
-          || git fetch --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
+        # golangci-lint's --new-from-rev treats the whole tree as new. (A colon
+        # refspec breaks Woodpecker's variable parser, so use update-ref.)
+        git fetch --no-tags --depth=300 origin "$BASE" 2>/dev/null || git fetch --no-tags origin "$BASE" || true
+        git update-ref "refs/remotes/origin/$BASE" FETCH_HEAD || true
         "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./...
         ( cd sdks/go && "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./... )
         sh scripts/check-coverage.sh
