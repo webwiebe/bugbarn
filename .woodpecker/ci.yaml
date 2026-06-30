@@ -144,8 +144,9 @@ steps:
         # masked Woodpecker secret.
         git remote set-url origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
         git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
-        git fetch --no-tags --unshallow origin 2>/dev/null || git fetch --no-tags --depth=2000 origin 2>/dev/null || true
-        "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./...
-        ( cd sdks/go && "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./... )
+        git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=2000 origin || true
+        git rev-parse --is-shallow-repository; git rev-parse "origin/$BASE" >/dev/null && echo "origin/$BASE OK"
+        "$DEST/golangci-lint" run --new-from-merge-base="origin/$BASE" ./...
+        ( cd sdks/go && "$DEST/golangci-lint" run --new-from-merge-base="origin/$BASE" ./... )
         sh scripts/check-coverage.sh
         npx --yes jscpd@latest .
