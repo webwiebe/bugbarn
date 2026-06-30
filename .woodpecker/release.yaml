@@ -27,11 +27,14 @@ steps:
         DOCKER_CONFIG_DIR="$(mktemp -d)"
         printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
         export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
-        # Wait for BOTH images of the tagged commit; never fall back to another commit.
-        deadline=$(expr $(date +%s) + 900)
+        # Wait (<=15m: 60 x 15s) for BOTH images of the tagged commit; never fall
+        # back to another commit. Plain counter — Woodpecker's parser rejects
+        # $(( and nested $( $( ) ).
+        i=0
         until docker manifest inspect "$SERVICE_IMAGE:$SHA" >/dev/null 2>&1 \
            && docker manifest inspect "$WEB_IMAGE:$SHA" >/dev/null 2>&1; do
-          if [ "$(date +%s)" -ge "$deadline" ]; then
+          i=$(expr $i + 1)
+          if [ "$i" -ge 60 ]; then
             echo "ERROR: $SERVICE_IMAGE:$SHA and/or $WEB_IMAGE:$SHA not in GHCR after 15m." >&2
             exit 1
           fi
