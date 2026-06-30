@@ -142,8 +142,9 @@ steps:
         # Fetch the diff base over an authenticated URL — Apple git here won't use
         # ~/.netrc and the osxkeychain helper is unreachable headless. Token is a
         # masked Woodpecker secret.
-        git fetch --no-tags --depth=300 "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git" "$BASE" || true
-        git update-ref "refs/remotes/origin/$BASE" FETCH_HEAD || true
+        git remote set-url origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+        git fetch --no-tags --unshallow origin 2>/dev/null || git fetch --no-tags --depth=2000 origin 2>/dev/null || true
         "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./...
         ( cd sdks/go && "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./... )
         sh scripts/check-coverage.sh
