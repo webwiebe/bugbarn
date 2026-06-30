@@ -28,7 +28,7 @@ steps:
         printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
         export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
         # Wait for BOTH images of the tagged commit; never fall back to another commit.
-        deadline=$$(( $(date +%s) + 900 ))
+        deadline=$(expr $(date +%s) + 900)
         until docker manifest inspect "$SERVICE_IMAGE:$SHA" >/dev/null 2>&1 \
            && docker manifest inspect "$WEB_IMAGE:$SHA" >/dev/null 2>&1; do
           if [ "$(date +%s)" -ge "$deadline" ]; then
