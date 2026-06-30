@@ -120,6 +120,9 @@ steps:
   # history for diff-mode and the coverage profile can escape.
   - name: quality
     image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
     commands:
       - |
         set -euo pipefail
@@ -136,9 +139,10 @@ steps:
         # only updates FETCH_HEAD), with enough depth for the diff base. Without this
         # golangci-lint's --new-from-rev treats the whole tree as new. (A colon
         # refspec breaks Woodpecker's variable parser, so use update-ref.)
-        # credential.helper= disables the global osxkeychain helper (unreachable
-        # headless) so git falls back to ~/.netrc for the private Gitea fetch.
-        git -c credential.helper= fetch --no-tags --depth=300 origin "$BASE" || git -c credential.helper= fetch --no-tags origin "$BASE" || true
+        # Fetch the diff base over an authenticated URL — Apple git here won't use
+        # ~/.netrc and the osxkeychain helper is unreachable headless. Token is a
+        # masked Woodpecker secret.
+        git fetch --no-tags --depth=300 "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git" "$BASE" || true
         git update-ref "refs/remotes/origin/$BASE" FETCH_HEAD || true
         "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./...
         ( cd sdks/go && "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./... )
