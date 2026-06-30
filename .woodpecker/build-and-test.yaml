@@ -26,8 +26,8 @@ steps:
         DOCKER_CONFIG_DIR="$(mktemp -d)"
         printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
         export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
-        docker buildx build --platform linux/amd64 --push -f deploy/docker/service.Dockerfile -t "${SERVICE_IMAGE}:${CI_COMMIT_SHA}" .
-        docker buildx build --platform linux/amd64 --push -f deploy/docker/web.Dockerfile -t "${WEB_IMAGE}:${CI_COMMIT_SHA}" .
+        docker buildx build --platform linux/amd64 --push -f deploy/docker/service.Dockerfile -t "$SERVICE_IMAGE:$CI_COMMIT_SHA" .
+        docker buildx build --platform linux/amd64 --push -f deploy/docker/web.Dockerfile -t "$WEB_IMAGE:$CI_COMMIT_SHA" .
 
   - name: deploy-testing
     image: bash
@@ -48,22 +48,22 @@ steps:
       - |
         set -euo pipefail
         SSH="ssh -o StrictHostKeyChecking=no"
-        $SSH "${K3S_USER}@${K3S_HOST}" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
-        scp -o StrictHostKeyChecking=no -r deploy "${K3S_USER}@${K3S_HOST}:/tmp/bugbarn-deploy/deploy"
-        $SSH "${K3S_USER}@${K3S_HOST}" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/testing/namespace.yaml"
-        sops -d deploy/k8s/testing/secret.yaml | $SSH "${K3S_USER}@${K3S_HOST}" "kubectl apply -f -"
-        $SSH "${K3S_USER}@${K3S_HOST}" "kubectl create secret docker-registry ghcr-secret --docker-server=ghcr.io --docker-username='webwiebe' --docker-password='${GHCR_PULL_PAT}' --namespace=${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
-        $SSH "${K3S_USER}@${K3S_HOST}" "
+        $SSH "$K3S_USER@$K3S_HOST" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
+        scp -o StrictHostKeyChecking=no -r deploy "$K3S_USER@$K3S_HOST:/tmp/bugbarn-deploy/deploy"
+        $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/testing/namespace.yaml"
+        sops -d deploy/k8s/testing/secret.yaml | $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f -"
+        $SSH "$K3S_USER@$K3S_HOST" "kubectl create secret docker-registry ghcr-secret --docker-server=ghcr.io --docker-username='webwiebe' --docker-password='$GHCR_PULL_PAT' --namespace=$NAMESPACE --dry-run=client -o yaml | kubectl apply -f -"
+        $SSH "$K3S_USER@$K3S_HOST" "
           set -euo pipefail
           kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/testing
-          kubectl -n ${NAMESPACE} set image deployment/bugbarn bugbarn=${SERVICE_IMAGE}:${CI_COMMIT_SHA}
-          kubectl -n ${NAMESPACE} set image deployment/bugbarn-web bugbarn-web=${WEB_IMAGE}:${CI_COMMIT_SHA}
-          kubectl -n ${NAMESPACE} rollout status deployment/bugbarn --timeout=180s
-          kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-web --timeout=180s
+          kubectl -n $NAMESPACE set image deployment/bugbarn bugbarn=$SERVICE_IMAGE:$CI_COMMIT_SHA
+          kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=$WEB_IMAGE:$CI_COMMIT_SHA
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn --timeout=180s
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-web --timeout=180s
         "
-        curl -sf -X POST "${BUGBARN_ENDPOINT}/api/v1/releases" \
+        curl -sf -X POST "$BUGBARN_ENDPOINT/api/v1/releases" \
           -H "Content-Type: application/json" \
-          -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
+          -H "X-BugBarn-Api-Key: $BUGBARN_API_KEY" \
           -H "X-BugBarn-Project: bugbarn-service" \
           -d "{\"name\":\"$(echo ${CI_COMMIT_SHA} | cut -c1-7)\",\"environment\":\"testing\",\"version\":\"${CI_COMMIT_SHA}\",\"url\":\"${CI_REPO_URL}/commit/${CI_COMMIT_SHA}\",\"notes\":\"Deployed by Woodpecker #${CI_PIPELINE_NUMBER}\"}" \
           || echo "WARN: BugBarn release marker failed"
