@@ -4,8 +4,9 @@
 # Trigger manually and add two custom pipeline variables:
 #   PRODUCTION_VERSION = vX.Y.Z   (must already be on staging)
 #   CONFIRMED          = true     (validated on staging)
-# NB: local backend = one shell per `commands` entry, and Woodpecker eats ${...};
-# so each step is ONE block and all vars use $VAR (no braces).
+# NB: local backend = one shell per `commands` entry, and Woodpecker pre-
+# substitutes braced variables; so each step is ONE block and all vars use $VAR
+# (no braces). Avoid brace-vars even in comments — Woodpecker parses them.
 when:
   - event: manual
 

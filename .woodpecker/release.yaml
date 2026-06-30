@@ -2,7 +2,8 @@
 # deploy to staging by immutable digest. Ported from .github/workflows/release.yml.
 # Steps share the workspace (.digests file passes the digests between them).
 # NB: local backend runs each `commands` entry in its own shell and Woodpecker
-# eats ${...}; so each step is ONE block and shell vars use $VAR (no braces).
+# pre-substitutes braced variables; so each step is ONE block and shell vars use
+# $VAR (no braces). Avoid brace-vars even in comments — Woodpecker parses them.
 when:
   - event: tag
     ref: refs/tags/v*
