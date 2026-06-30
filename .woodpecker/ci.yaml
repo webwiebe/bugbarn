@@ -46,8 +46,12 @@ steps:
       - DOCKER_CONFIG_DIR="$(mktemp -d)"
       - printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
       - export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
-      # Reuse the persistent builder if present; create it once otherwise.
-      - docker buildx inspect bugbarn-ci >/dev/null 2>&1 || docker buildx create --name bugbarn-ci --driver docker-container
+      # DOCKER_CONFIG is a throwaway dir (for keychain-free auth), so point buildx
+      # at the host's persistent builder store; otherwise it can't see/reuse the
+      # bugbarn-ci builder and recreates it every run.
+      - export BUILDX_CONFIG="$HOME/.docker/buildx"
+      # Reuse the persistent docker-container builder if present; create+bootstrap once.
+      - docker buildx inspect bugbarn-ci >/dev/null 2>&1 || docker buildx create --name bugbarn-ci --driver docker-container --bootstrap
       - CACHE_REF="ghcr.io/webwiebe/bugbarn/buildcache"
       - |
         docker buildx build \
