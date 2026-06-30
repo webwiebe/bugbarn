@@ -1,6 +1,8 @@
 # Build + deploy to testing on every push to main.
 # Ported from .github/workflows/build-and-test.yml. Mac Mini build agent (local
 # backend): cross-builds amd64 via binfmt, SSHes to k3s1 with the host's keys.
+# NB: local backend runs each `commands` entry in its own shell (only exported
+# env carries over), so each step keeps its logic in ONE block.
 when:
   - event: push
     branch: main
@@ -19,13 +21,13 @@ steps:
       SERVICE_IMAGE: ghcr.io/webwiebe/bugbarn/service
       WEB_IMAGE: ghcr.io/webwiebe/bugbarn/web
     commands:
-      - set -euo pipefail
-      # Keychain-free DOCKER_CONFIG (inline ghcr.io auth, no credsStore).
-      - DOCKER_CONFIG_DIR="$(mktemp -d)"
-      - printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
-      - export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
-      - docker buildx build --platform linux/amd64 --push -f deploy/docker/service.Dockerfile -t "${SERVICE_IMAGE}:${CI_COMMIT_SHA}" .
-      - docker buildx build --platform linux/amd64 --push -f deploy/docker/web.Dockerfile -t "${WEB_IMAGE}:${CI_COMMIT_SHA}" .
+      - |
+        set -euo pipefail
+        DOCKER_CONFIG_DIR="$(mktemp -d)"
+        printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
+        export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+        docker buildx build --platform linux/amd64 --push -f deploy/docker/service.Dockerfile -t "${SERVICE_IMAGE}:${CI_COMMIT_SHA}" .
+        docker buildx build --platform linux/amd64 --push -f deploy/docker/web.Dockerfile -t "${WEB_IMAGE}:${CI_COMMIT_SHA}" .
 
   - name: deploy-testing
     image: bash
@@ -43,15 +45,14 @@ steps:
         from_secret: bugbarn_api_key
       BUGBARN_ENDPOINT: https://bugbarn.wiebe.xyz
     commands:
-      - set -euo pipefail
-      - SSH="ssh -o StrictHostKeyChecking=no"
-      - $SSH "${K3S_USER}@${K3S_HOST}" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
-      - scp -o StrictHostKeyChecking=no -r deploy "${K3S_USER}@${K3S_HOST}:/tmp/bugbarn-deploy/deploy"
-      - $SSH "${K3S_USER}@${K3S_HOST}" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/testing/namespace.yaml"
-      - export SOPS_AGE_KEY
-      - sops -d deploy/k8s/testing/secret.yaml | $SSH "${K3S_USER}@${K3S_HOST}" "kubectl apply -f -"
-      - $SSH "${K3S_USER}@${K3S_HOST}" "kubectl create secret docker-registry ghcr-secret --docker-server=ghcr.io --docker-username='webwiebe' --docker-password='${GHCR_PULL_PAT}' --namespace=${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
       - |
+        set -euo pipefail
+        SSH="ssh -o StrictHostKeyChecking=no"
+        $SSH "${K3S_USER}@${K3S_HOST}" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
+        scp -o StrictHostKeyChecking=no -r deploy "${K3S_USER}@${K3S_HOST}:/tmp/bugbarn-deploy/deploy"
+        $SSH "${K3S_USER}@${K3S_HOST}" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/testing/namespace.yaml"
+        sops -d deploy/k8s/testing/secret.yaml | $SSH "${K3S_USER}@${K3S_HOST}" "kubectl apply -f -"
+        $SSH "${K3S_USER}@${K3S_HOST}" "kubectl create secret docker-registry ghcr-secret --docker-server=ghcr.io --docker-username='webwiebe' --docker-password='${GHCR_PULL_PAT}' --namespace=${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
         $SSH "${K3S_USER}@${K3S_HOST}" "
           set -euo pipefail
           kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/testing
@@ -60,7 +61,6 @@ steps:
           kubectl -n ${NAMESPACE} rollout status deployment/bugbarn --timeout=180s
           kubectl -n ${NAMESPACE} rollout status deployment/bugbarn-web --timeout=180s
         "
-      - |
         curl -sf -X POST "${BUGBARN_ENDPOINT}/api/v1/releases" \
           -H "Content-Type: application/json" \
           -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \

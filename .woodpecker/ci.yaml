@@ -50,8 +50,8 @@ steps:
           --platform linux/arm64 \
           --target test \
           -f deploy/docker/service.Dockerfile \
-          --cache-from "type=registry,ref=${CACHE_REF}" \
-          --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
+          --cache-from "type=registry,ref=$CACHE_REF" \
+          --cache-to "type=registry,ref=$CACHE_REF,mode=max" \
           --output type=cacheonly \
           .
 
@@ -125,11 +125,11 @@ steps:
         VERSION="v2.11.4"
         DEST="$(pwd)/.tools"
         mkdir -p "$DEST"
-        if [ ! -x "$DEST/golangci-lint" ] || ! "$DEST/golangci-lint" version 2>/dev/null | grep -q "${VERSION#v}"; then
-          curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/${VERSION}/install.sh" | sh -s -- -b "$DEST" "$VERSION"
+        if [ ! -x "$DEST/golangci-lint" ] || ! "$DEST/golangci-lint" version 2>/dev/null | grep -q "$${VERSION#v}"; then
+          curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/$VERSION/install.sh" | sh -s -- -b "$DEST" "$VERSION"
         fi
         "$DEST/golangci-lint" version
-        BASE="${CI_COMMIT_TARGET_BRANCH:-main}"
+        BASE="$${CI_COMMIT_TARGET_BRANCH:-main}"
         git fetch --unshallow --no-tags origin "$BASE" 2>/dev/null || git fetch --no-tags origin "$BASE" || true
         "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./...
         ( cd sdks/go && "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./... )
