@@ -43,7 +43,9 @@ steps:
         # DOCKER_CONFIG is throwaway; point buildx at the host's builder store so
         # the bugbarn-ci docker-container builder is reused across runs.
         export BUILDX_CONFIG="$HOME/.docker/buildx"
-        docker buildx inspect bugbarn-ci >/dev/null 2>&1 || docker buildx create --name bugbarn-ci --driver docker-container --bootstrap
+        # Ensure a working docker-container builder: bootstrap it if it exists but
+        # is stopped; recreate if its container is gone/wedged.
+        docker buildx inspect bugbarn-ci --bootstrap >/dev/null 2>&1 || { docker buildx rm bugbarn-ci >/dev/null 2>&1 || true; docker buildx create --name bugbarn-ci --driver docker-container --bootstrap >/dev/null; }
         CACHE_REF="ghcr.io/webwiebe/bugbarn/buildcache"
         docker buildx build \
           --builder bugbarn-ci \
