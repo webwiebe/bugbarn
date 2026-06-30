@@ -1,0 +1,174 @@
+# Binary release — ported from .github/workflows/binary-release.yml to Woodpecker.
+# Auto-bumps a patch tag, builds linux .debs + macOS tarballs, and publishes to
+# GitHub Releases, the rapid-root APT repo, MinIO (brew CDN) and the Homebrew tap.
+#
+# The 7 GitHub jobs (which passed files via upload/download-artifact) are collapsed
+# into ONE workflow whose steps share the workspace. Mac Mini build agent (local
+# backend): one shell per step, only exported env carries over, and Woodpecker
+# pre-substitutes braced variables — so each step is ONE block and shell vars use
+# $VAR (no braces); brace-expansion is escaped as $$. Avoid brace-vars in comments.
+#
+# Secrets: github_token (release_tag_pat — GitHub releases/tap/dispatch/tag),
+# gitea_token (push the bump tag to Gitea -> triggers release.yaml staging deploy),
+# minio_access_key/minio_secret_key/minio_endpoint/minio_bucket.
+# NOTE: manual-only until validated. Switch to `event: push, branch: main` to
+# restore release-on-every-main-push (the old GitHub behavior).
+when:
+  - event: manual
+
+labels:
+  type: build
+
+steps:
+  - name: version-and-tag
+    image: bash
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+      GITEA_TOKEN:
+        from_secret: gitea_token
+    commands:
+      - |
+        set -euo pipefail
+        # Full history + tags (clone is shallow; authenticate via token URL).
+        git remote set-url origin "https://wiebe:$GITEA_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+        git fetch --tags --unshallow origin 2>/dev/null || git fetch --tags --depth=2000 origin || true
+        LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
+        VER=$${LATEST#v}
+        MAJOR=$(echo "$VER" | cut -d. -f1); MINOR=$(echo "$VER" | cut -d. -f2); PATCH=$(echo "$VER" | cut -d. -f3)
+        PATCH=$(expr "$PATCH" + 1)
+        NEW="v$MAJOR.$MINOR.$PATCH"
+        while git tag | grep -q "^$NEW$"; do PATCH=$(expr "$PATCH" + 1); NEW="v$MAJOR.$MINOR.$PATCH"; done
+        echo "Next version: $NEW"
+        printf 'VERSION=%s\nVERSION_NUM=%s.%s.%s\n' "$NEW" "$MAJOR" "$MINOR" "$PATCH" > .relver
+        cat .relver
+        git config user.name woodpecker
+        git config user.email ci@wiebe.xyz
+        git tag -a "$NEW" -m "Release $NEW"
+        # Push tag to Gitea (triggers release.yaml staging deploy) and to GitHub (for the Release).
+        git push origin "$NEW"
+        git push "https://x-access-token:$GITHUB_TOKEN@github.com/webwiebe/bugbarn.git" "$NEW"
+
+  - name: build-linux-debs
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        . ./.relver
+        export GOTOOLCHAIN=auto
+        command -v nfpm >/dev/null 2>&1 || go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+        export PATH="$PATH:$(go env GOPATH)/bin"
+        BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        mkdir -p dist debs
+        for A in amd64 arm64; do
+          GOOS=linux GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.BuildTime=$BUILD_TIME" -o "dist/bugbarn-linux-$A" ./cmd/bugbarn
+          GOOS=linux GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.BuildTime=$BUILD_TIME" -o "dist/bb-linux-$A" ./cmd/bb
+          VERSION="$VERSION_NUM" GOARCH="$A" envsubst < nfpm-bugbarn.yaml > nfpm-bugbarn-processed.yaml
+          nfpm package --config nfpm-bugbarn-processed.yaml --packager deb --target debs/
+          VERSION="$VERSION_NUM" GOARCH="$A" envsubst < nfpm-bb.yaml > nfpm-bb-processed.yaml
+          nfpm package --config nfpm-bb-processed.yaml --packager deb --target debs/
+        done
+        ls -la debs/
+
+  - name: build-darwin-tarballs
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        . ./.relver
+        BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        mkdir -p dist
+        for A in amd64 arm64; do
+          GOOS=darwin GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.BuildTime=$BUILD_TIME" -o dist/bugbarn ./cmd/bugbarn
+          GOOS=darwin GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.BuildTime=$BUILD_TIME" -o dist/bb ./cmd/bb
+          tar -czvf "dist/bugbarn-darwin-$A-$VERSION_NUM.tar.gz" -C dist bugbarn
+          tar -czvf "dist/bb-darwin-$A-$VERSION_NUM.tar.gz" -C dist bb
+          rm dist/bugbarn dist/bb
+        done
+        ( cd dist && for f in *.tar.gz; do sha256sum "$f" > "$f.sha256"; done )
+        ls -la dist/
+
+  - name: github-release
+    image: bash
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - |
+        set -euo pipefail
+        . ./.relver
+        export GH_TOKEN="$GITHUB_TOKEN"
+        mkdir -p release
+        find debs -name '*.deb' -exec cp {} release/ \;
+        cp dist/*.tar.gz dist/*.sha256 release/ 2>/dev/null || true
+        ( cd release && sha256sum *.deb > checksums-deb.txt )
+        gh release create "$VERSION" -R webwiebe/bugbarn --title "$VERSION" --notes "Automated release $VERSION" release/* \
+          || gh release upload "$VERSION" -R webwiebe/bugbarn --clobber release/*
+
+  - name: apt-dispatch
+    image: bash
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - |
+        set -euo pipefail
+        . ./.relver
+        export GH_TOKEN="$GITHUB_TOKEN"
+        gh api repos/wiebe-xyz/rapid-root/dispatches --method POST \
+          --field event_type=apt-package-update \
+          --field 'client_payload[repo]=webwiebe/bugbarn' \
+          --field "client_payload[tag]=$VERSION" \
+          --field 'client_payload[asset_pattern]=*.deb'
+
+  - name: minio-brew-cdn
+    image: bash
+    environment:
+      AWS_ACCESS_KEY_ID:
+        from_secret: minio_access_key
+      AWS_SECRET_ACCESS_KEY:
+        from_secret: minio_secret_key
+      AWS_ENDPOINT_URL:
+        from_secret: minio_endpoint
+      MINIO_BUCKET:
+        from_secret: minio_bucket
+    commands:
+      - |
+        set -euo pipefail
+        . ./.relver
+        V="$VERSION_NUM"
+        mkdir -p brew-repo/Formula
+        cp dist/*.tar.gz dist/*.sha256 brew-repo/
+        AMD64_SHA=$(awk '{print $1}' "brew-repo/bugbarn-darwin-amd64-$V.tar.gz.sha256")
+        ARM64_SHA=$(awk '{print $1}' "brew-repo/bugbarn-darwin-arm64-$V.tar.gz.sha256")
+        BB_AMD64_SHA=$(awk '{print $1}' "brew-repo/bb-darwin-amd64-$V.tar.gz.sha256")
+        BB_ARM64_SHA=$(awk '{print $1}' "brew-repo/bb-darwin-arm64-$V.tar.gz.sha256")
+        gen_formula() { CLASS=$1; BIN=$2; PREFIX=$3; A=$4; R=$5;
+          printf 'class %s < Formula\n  desc "BugBarn"\n  homepage "https://github.com/wiebe-xyz/bugbarn"\n  version "%s"\n  license "MIT"\n\n  on_macos do\n    if Hardware::CPU.intel?\n      url "https://webwiebe.nl/brew/%s-darwin-amd64-%s.tar.gz"\n      sha256 "%s"\n    elsif Hardware::CPU.arm?\n      url "https://webwiebe.nl/brew/%s-darwin-arm64-%s.tar.gz"\n      sha256 "%s"\n    end\n  end\n\n  def install\n    bin.install "%s"\n  end\nend\n' "$CLASS" "$V" "$PREFIX" "$V" "$A" "$PREFIX" "$V" "$R" "$BIN" > "brew-repo/Formula/$BIN.rb"; }
+        gen_formula Bugbarn bugbarn bugbarn "$AMD64_SHA" "$ARM64_SHA"
+        gen_formula Bb bb bb "$BB_AMD64_SHA" "$BB_ARM64_SHA"
+        python3 -m venv .ci-venv && . .ci-venv/bin/activate && pip install -q awscli
+        find brew-repo -type f | while read -r f; do
+          KEY=$${f#brew-repo/}
+          aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "$f" "s3://$MINIO_BUCKET/brew/$KEY" --cache-control "public, max-age=3600, must-revalidate"
+        done
+
+  - name: homebrew-tap
+    image: bash
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - |
+        set -euo pipefail
+        . ./.relver
+        rm -rf tap-repo
+        git clone "https://x-access-token:$GITHUB_TOKEN@github.com/webwiebe/homebrew-bugbarn.git" tap-repo
+        mkdir -p tap-repo/Formula
+        cp brew-repo/Formula/bugbarn.rb brew-repo/Formula/bb.rb tap-repo/Formula/
+        cd tap-repo
+        git config user.name woodpecker
+        git config user.email ci@wiebe.xyz
+        git add Formula/bugbarn.rb Formula/bb.rb
+        if git diff --staged --quiet; then echo "no formula changes"; else git commit -m "Update formula to $VERSION_NUM"; git push; fi
