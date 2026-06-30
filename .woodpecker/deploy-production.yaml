@@ -1,0 +1,108 @@
+# Production deploy — manual trigger. Ported from
+# .github/workflows/deploy-production.yml.
+#
+# Trigger manually and add two custom pipeline variables:
+#   PRODUCTION_VERSION = vX.Y.Z   (must already be on staging)
+#   CONFIRMED          = true     (validated on staging)
+# NB: local backend = one shell per `commands` entry, and Woodpecker pre-
+# substitutes braced variables; so each step is ONE block and all vars use $VAR
+# (no braces). Avoid brace-vars even in comments — Woodpecker parses them.
+when:
+  - event: manual
+
+labels:
+  type: build
+
+steps:
+  - name: preflight
+    image: bash
+    environment:
+      GHCR_USER: webwiebe
+      GHCR_TOKEN:
+        from_secret: ghcr_token
+      SERVICE_IMAGE: ghcr.io/webwiebe/bugbarn/service
+      WEB_IMAGE: ghcr.io/webwiebe/bugbarn/web
+    commands:
+      - |
+        set -euo pipefail
+        test "$CONFIRMED" = "true" || { echo "ERROR: set CONFIRMED=true to proceed"; exit 1; }
+        test -n "$PRODUCTION_VERSION" || { echo "ERROR: set PRODUCTION_VERSION=vX.Y.Z"; exit 1; }
+        VERSION="$PRODUCTION_VERSION"
+        DOCKER_CONFIG_DIR="$(mktemp -d)"
+        printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
+        export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+        docker manifest inspect "$SERVICE_IMAGE:$VERSION" >/dev/null || { echo "ERROR: service $VERSION not in GHCR"; exit 1; }
+        docker manifest inspect "$WEB_IMAGE:$VERSION" >/dev/null || { echo "ERROR: web $VERSION not in GHCR"; exit 1; }
+        SVC_DIGEST="$(docker buildx imagetools inspect "$SERVICE_IMAGE:$VERSION" --format '{{.Manifest.Digest}}')"
+        WEB_DIGEST="$(docker buildx imagetools inspect "$WEB_IMAGE:$VERSION" --format '{{.Manifest.Digest}}')"
+        printf 'SERVICE_DIGEST=%s\nWEB_DIGEST=%s\n' "$SVC_DIGEST" "$WEB_DIGEST" > .digests
+        echo "Verified $VERSION service@$SVC_DIGEST web@$WEB_DIGEST"
+
+  - name: deploy
+    image: bash
+    environment:
+      SERVICE_IMAGE: ghcr.io/webwiebe/bugbarn/service
+      WEB_IMAGE: ghcr.io/webwiebe/bugbarn/web
+      K3S_HOST: layer7.wiebe.xyz
+      K3S_USER: deployer
+      NAMESPACE: bugbarn-production
+      SOPS_AGE_KEY:
+        from_secret: sops_age_key_production
+      GHCR_PULL_PAT:
+        from_secret: ghcr_pull_pat
+    commands:
+      - |
+        set -euo pipefail
+        . ./.digests
+        test -n "$SERVICE_DIGEST" && test -n "$WEB_DIGEST" || { echo "ERROR: missing digests"; exit 1; }
+        SSH="ssh -o StrictHostKeyChecking=no"
+        $SSH "$K3S_USER@$K3S_HOST" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
+        scp -o StrictHostKeyChecking=no -r deploy "$K3S_USER@$K3S_HOST:/tmp/bugbarn-deploy/deploy"
+        $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/production/namespace.yaml"
+        sops -d deploy/k8s/production/secret.yaml | $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f -"
+        sops -d deploy/k8s/production/smtp-secret.yaml | $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f -"
+        $SSH "$K3S_USER@$K3S_HOST" "kubectl create secret docker-registry ghcr-secret --docker-server=ghcr.io --docker-username='webwiebe' --docker-password='$GHCR_PULL_PAT' --namespace=$NAMESPACE --dry-run=client -o yaml | kubectl apply -f -"
+        $SSH "$K3S_USER@$K3S_HOST" "
+          set -euo pipefail
+          kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/production
+          kubectl -n $NAMESPACE delete deployment/bugbarn --ignore-not-found=true
+          kubectl -n $NAMESPACE set image deployment/bugbarn-writer bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
+          kubectl -n $NAMESPACE set image deployment/bugbarn-reader bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
+          kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=$WEB_IMAGE@$WEB_DIGEST
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-writer --timeout=180s
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-reader --timeout=180s
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-web --timeout=180s
+        "
+
+  - name: rollback-on-failure
+    image: bash
+    when:
+      - status: [ failure ]
+    environment:
+      K3S_HOST: layer7.wiebe.xyz
+      K3S_USER: deployer
+      NAMESPACE: bugbarn-production
+    commands:
+      - |
+        ssh -o StrictHostKeyChecking=no "$K3S_USER@$K3S_HOST" "
+          kubectl -n $NAMESPACE rollout undo deployment/bugbarn-writer || true
+          kubectl -n $NAMESPACE rollout undo deployment/bugbarn-reader || true
+          kubectl -n $NAMESPACE rollout undo deployment/bugbarn-web || true
+          echo 'Rollback triggered'
+        " || true
+
+  - name: release-marker
+    image: bash
+    environment:
+      BUGBARN_API_KEY:
+        from_secret: bugbarn_api_key
+      BUGBARN_ENDPOINT: https://bugbarn.wiebe.xyz
+    commands:
+      - |
+        curl -sf -X POST "$BUGBARN_ENDPOINT/api/v1/releases" \
+          -H "Content-Type: application/json" \
+          -H "X-BugBarn-Api-Key: $BUGBARN_API_KEY" \
+          -H "X-BugBarn-Project: bugbarn-service" \
+          -d "{\"name\":\"$PRODUCTION_VERSION\",\"environment\":\"production\",\"version\":\"$PRODUCTION_VERSION\",\"commitSha\":\"$CI_COMMIT_SHA\",\"url\":\"$CI_REPO_URL/releases/tag/$PRODUCTION_VERSION\",\"notes\":\"Deployed by Woodpecker #$CI_PIPELINE_NUMBER\"}" \
+          || echo "WARN: BugBarn release marker failed"
+        echo "Production deploy complete: $PRODUCTION_VERSION -> https://bugbarn.wiebe.xyz"

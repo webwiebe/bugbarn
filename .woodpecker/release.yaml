@@ -1,0 +1,93 @@
+# Release: on a vX.Y.Z tag, retag the tagged commit's images to semver and
+# deploy to staging by immutable digest. Ported from .github/workflows/release.yml.
+# Steps share the workspace (.digests file passes the digests between them).
+# NB: local backend runs each `commands` entry in its own shell and Woodpecker
+# pre-substitutes braced variables; so each step is ONE block and shell vars use
+# $VAR (no braces). Avoid brace-vars even in comments — Woodpecker parses them.
+when:
+  - event: tag
+    ref: refs/tags/v*
+
+labels:
+  type: build
+
+steps:
+  - name: retag-images
+    image: bash
+    environment:
+      GHCR_USER: webwiebe
+      GHCR_TOKEN:
+        from_secret: ghcr_token
+      SERVICE_IMAGE: ghcr.io/webwiebe/bugbarn/service
+      WEB_IMAGE: ghcr.io/webwiebe/bugbarn/web
+    commands:
+      - |
+        set -euo pipefail
+        VERSION="$CI_COMMIT_TAG"
+        SHA="$CI_COMMIT_SHA"
+        DOCKER_CONFIG_DIR="$(mktemp -d)"
+        printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
+        export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+        # Wait (<=15m: 60 x 15s) for BOTH images of the tagged commit; never fall
+        # back to another commit. Plain counter — Woodpecker's parser rejects
+        # $(( and nested $( $( ) ).
+        i=0
+        until docker manifest inspect "$SERVICE_IMAGE:$SHA" >/dev/null 2>&1 \
+           && docker manifest inspect "$WEB_IMAGE:$SHA" >/dev/null 2>&1; do
+          i=$(expr $i + 1)
+          if [ "$i" -ge 60 ]; then
+            echo "ERROR: $SERVICE_IMAGE:$SHA and/or $WEB_IMAGE:$SHA not in GHCR after 15m." >&2
+            exit 1
+          fi
+          echo "Waiting for service/web :$SHA to be pushed by the build..."; sleep 15
+        done
+        docker buildx imagetools create --tag "$SERVICE_IMAGE:$VERSION" "$SERVICE_IMAGE:$SHA"
+        docker buildx imagetools create --tag "$WEB_IMAGE:$VERSION" "$WEB_IMAGE:$SHA"
+        SVC_DIGEST="$(docker buildx imagetools inspect "$SERVICE_IMAGE:$SHA" --format '{{.Manifest.Digest}}')"
+        WEB_DIGEST="$(docker buildx imagetools inspect "$WEB_IMAGE:$SHA" --format '{{.Manifest.Digest}}')"
+        printf 'SERVICE_DIGEST=%s\nWEB_DIGEST=%s\n' "$SVC_DIGEST" "$WEB_DIGEST" > .digests
+        cat .digests
+
+  - name: deploy-staging
+    image: bash
+    environment:
+      SERVICE_IMAGE: ghcr.io/webwiebe/bugbarn/service
+      WEB_IMAGE: ghcr.io/webwiebe/bugbarn/web
+      K3S_HOST: k3s1.nijmegen.wiebe.xyz
+      K3S_USER: root
+      NAMESPACE: bugbarn-staging
+      SOPS_AGE_KEY:
+        from_secret: sops_age_key_staging
+      GHCR_PULL_PAT:
+        from_secret: ghcr_pull_pat
+      BUGBARN_API_KEY:
+        from_secret: bugbarn_api_key
+      BUGBARN_ENDPOINT: https://bugbarn.wiebe.xyz
+    commands:
+      - |
+        set -euo pipefail
+        . ./.digests
+        test -n "$SERVICE_DIGEST" && test -n "$WEB_DIGEST" || { echo "ERROR: missing digests"; exit 1; }
+        SSH="ssh -o StrictHostKeyChecking=no"
+        $SSH "$K3S_USER@$K3S_HOST" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
+        scp -o StrictHostKeyChecking=no -r deploy "$K3S_USER@$K3S_HOST:/tmp/bugbarn-deploy/deploy"
+        $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/staging/namespace.yaml"
+        sops -d deploy/k8s/staging/secret.yaml | $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f -"
+        $SSH "$K3S_USER@$K3S_HOST" "kubectl create secret docker-registry ghcr-secret --docker-server=ghcr.io --docker-username='webwiebe' --docker-password='$GHCR_PULL_PAT' --namespace=$NAMESPACE --dry-run=client -o yaml | kubectl apply -f -"
+        $SSH "$K3S_USER@$K3S_HOST" "
+          set -euo pipefail
+          kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/staging
+          kubectl -n $NAMESPACE delete deployment/bugbarn --ignore-not-found=true
+          kubectl -n $NAMESPACE set image deployment/bugbarn-writer bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
+          kubectl -n $NAMESPACE set image deployment/bugbarn-reader bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
+          kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=$WEB_IMAGE@$WEB_DIGEST
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-writer --timeout=180s
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-reader --timeout=180s
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-web --timeout=180s
+        "
+        curl -sf -X POST "$BUGBARN_ENDPOINT/api/v1/releases" \
+          -H "Content-Type: application/json" \
+          -H "X-BugBarn-Api-Key: $BUGBARN_API_KEY" \
+          -H "X-BugBarn-Project: bugbarn-service" \
+          -d "{\"name\":\"$CI_COMMIT_TAG\",\"environment\":\"staging\",\"version\":\"$CI_COMMIT_TAG\",\"url\":\"$CI_REPO_URL/releases/tag/$CI_COMMIT_TAG\",\"notes\":\"Deployed by Woodpecker #$CI_PIPELINE_NUMBER\"}" \
+          || echo "WARN: BugBarn release marker failed"

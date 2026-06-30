@@ -1,0 +1,152 @@
+# CI — lint/build/test gates on every push to main and every PR.
+# Ported from .github/workflows/ci.yml. Runs on the Mac Mini build agent
+# (local backend): host docker/buildx, node, python, php and the persistent
+# bugbarn-ci buildx builder all work as on the GitHub self-hosted runner.
+#
+# NB: the local backend runs each `commands` ENTRY in its own shell (only
+# exported env carries over), so each step keeps all its logic in ONE block.
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+  - event: manual
+
+labels:
+  type: build
+
+steps:
+  - name: spec
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        python3 -m venv .ci-venv
+        . .ci-venv/bin/activate
+        python -m pip install PyYAML
+        make spec-check
+
+  # Go build/vet/test inside BuildKit, registry-cached via GHCR (shared across
+  # machines). Native arm64.
+  - name: go
+    image: bash
+    environment:
+      GHCR_USER: webwiebe
+      GHCR_TOKEN:
+        from_secret: ghcr_token
+    commands:
+      - |
+        set -euo pipefail
+        # Keychain-free DOCKER_CONFIG: inline ghcr.io auth, no credsStore.
+        DOCKER_CONFIG_DIR="$(mktemp -d)"
+        printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
+        export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+        # DOCKER_CONFIG is throwaway; point buildx at the host's builder store so
+        # the bugbarn-ci docker-container builder is reused across runs.
+        export BUILDX_CONFIG="$HOME/.docker/buildx"
+        # Ensure a working docker-container builder: bootstrap it if it exists but
+        # is stopped; recreate if its container is gone/wedged.
+        docker buildx inspect bugbarn-ci --bootstrap >/dev/null 2>&1 || { docker buildx rm bugbarn-ci >/dev/null 2>&1 || true; docker buildx create --name bugbarn-ci --driver docker-container --bootstrap >/dev/null; }
+        CACHE_REF="ghcr.io/webwiebe/bugbarn/buildcache"
+        docker buildx build \
+          --builder bugbarn-ci \
+          --platform linux/arm64 \
+          --target test \
+          -f deploy/docker/service.Dockerfile \
+          --cache-from "type=registry,ref=$CACHE_REF" \
+          --cache-to "type=registry,ref=$CACHE_REF,mode=max" \
+          --output type=cacheonly \
+          .
+
+  - name: node-web
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        cd web
+        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        npm run lint --if-present
+        npm run test --if-present
+        npm run build --if-present
+        npx --yes jscpd@latest .
+
+  - name: node-site
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        cd site
+        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        npm run lint --if-present
+        npm run test --if-present
+        npm run build --if-present
+
+  - name: node-sdk-ts
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        cd sdks/typescript
+        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        npm run lint --if-present
+        npm run test --if-present
+        npm run build --if-present
+
+  - name: python
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        cd sdks/python
+        python3 -m venv .ci-venv
+        . .ci-venv/bin/activate
+        python -m pip install --upgrade pip
+        python -m pip install build pytest ruff
+        if [ -f pyproject.toml ]; then python -m pip install -e .; fi
+        if find . \( -name 'test_*.py' -o -name '*_test.py' -o -path '*/tests/*.py' \) -print -quit | grep -q .; then PYTHONPATH=src python -m pytest; fi
+        if find . -name '*.py' -print -quit | grep -q .; then python -m ruff check .; fi
+        if [ -f pyproject.toml ]; then python -m build; fi
+
+  - name: php
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        cd sdks/php
+        if ! command -v php >/dev/null 2>&1 || ! command -v composer >/dev/null 2>&1; then echo "php/composer not available; skipping"; exit 0; fi
+        composer install --no-interaction --prefer-dist
+        if find tests -name '*Test.php' -print -quit 2>/dev/null | grep -q .; then ./vendor/bin/phpunit; fi
+
+  # Quality gates run directly on the host so golangci-lint can use full git
+  # history for diff-mode and the coverage profile can escape.
+  - name: quality
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+    commands:
+      - |
+        set -euo pipefail
+        sh scripts/check-file-length.sh
+        VERSION="v2.11.4"
+        DEST="$(pwd)/.tools"
+        mkdir -p "$DEST"
+        if [ ! -x "$DEST/golangci-lint" ] || ! "$DEST/golangci-lint" version 2>/dev/null | grep -q "$${VERSION#v}"; then
+          curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/$VERSION/install.sh" | sh -s -- -b "$DEST" "$VERSION"
+        fi
+        "$DEST/golangci-lint" version
+        BASE="$${CI_COMMIT_TARGET_BRANCH:-main}"
+        # Create the origin/$BASE remote-tracking ref (a plain `git fetch origin main`
+        # only updates FETCH_HEAD), with enough depth for the diff base. Without this
+        # golangci-lint's --new-from-rev treats the whole tree as new. (A colon
+        # refspec breaks Woodpecker's variable parser, so use update-ref.)
+        # Fetch the diff base over an authenticated URL — Apple git here won't use
+        # ~/.netrc and the osxkeychain helper is unreachable headless. Token is a
+        # masked Woodpecker secret.
+        git remote set-url origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+        git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=2000 origin || true
+        git rev-parse --is-shallow-repository; git rev-parse "origin/$BASE" >/dev/null && echo "origin/$BASE OK"
+        "$DEST/golangci-lint" run --new-from-merge-base="origin/$BASE" ./...
+        ( cd sdks/go && "$DEST/golangci-lint" run --new-from-merge-base="origin/$BASE" ./... )
+        sh scripts/check-coverage.sh
+        npx --yes jscpd@latest .

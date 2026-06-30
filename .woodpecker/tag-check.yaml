@@ -1,0 +1,22 @@
+# Tag format guard — reject any non-semver tag. Ported from
+# .github/workflows/tag-check.yml.
+when:
+  - event: tag
+
+labels:
+  type: build
+
+steps:
+  - name: validate-semver
+    image: bash
+    commands:
+      - |
+        TAG="${CI_COMMIT_TAG}"
+        echo "Validating tag: ${TAG}"
+        SEMVER='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*))?$'
+        if [[ ! "${TAG}" =~ ${SEMVER} ]]; then
+          echo "Tag '${TAG}' does not match semver vX.Y.Z[-prerelease][+build]"
+          echo "Valid examples: v1.2.3, v1.2.3-rc.1, v1.2.3+build.5"
+          exit 1
+        fi
+        echo "Tag '${TAG}' is valid semver"
