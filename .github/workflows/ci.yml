@@ -247,8 +247,12 @@ jobs:
           GCL="${GITHUB_WORKSPACE}/.tools/golangci-lint"
           BASE="${{ github.base_ref || 'main' }}"
           git fetch --no-tags origin "$BASE" || true
-          "$GCL" run --new-from-rev="origin/$BASE" ./...
-          cd sdks/go && "$GCL" run --new-from-rev="origin/$BASE" ./...
+          # --allow-parallel-runners: the self-hosted runners share $HOME, so
+          # golangci-lint's machine-global lock collides when two CI jobs lint
+          # concurrently ("parallel golangci-lint is running"). This flag skips
+          # that lock so concurrent runs no longer flake.
+          "$GCL" run --allow-parallel-runners --new-from-rev="origin/$BASE" ./...
+          cd sdks/go && "$GCL" run --allow-parallel-runners --new-from-rev="origin/$BASE" ./...
       - name: Go coverage ratchet
         shell: bash
         run: sh scripts/check-coverage.sh
