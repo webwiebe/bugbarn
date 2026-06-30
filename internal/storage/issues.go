@@ -41,7 +41,7 @@ func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter)
 
 	// fromArgs holds bindings for subquery ?-placeholders in the FROM clause.
 	// They must come before whereArgs in the final args slice.
-	fromClause, fromArgs := buildIssueFromClause(facetFilters, projectID, allProjects)
+	fromClause, fromArgs := buildIssueFromClause(facetFilters, projectID)
 
 	// Combine: subquery bindings first (appear in FROM clause), then WHERE bindings.
 	args := append(fromArgs, whereArgs...)
@@ -133,24 +133,21 @@ func collectFacetFilters(filter IssueFilter) []facetFilter {
 // buildIssueFromClause builds the FROM clause (and its subquery bind args) for
 // the issue list query. When facet filters are present it joins an INTERSECT
 // subquery that enforces AND semantics across all filters.
-func buildIssueFromClause(facetFilters []facetFilter, projectID int64, allProjects bool) (string, []any) {
+func buildIssueFromClause(facetFilters []facetFilter, projectID int64) (string, []any) {
 	if len(facetFilters) == 0 {
 		return "issues i LEFT JOIN projects p ON p.id = i.project_id", nil
 	}
 	// Build an INTERSECT subquery: one branch per facet filter that returns
 	// matching issue_ids. The join enforces AND semantics across all filters.
+	// Always project-scoped — facet filtering across all projects is intentionally
+	// unsupported (no backing index, no caller needs it). With projectID==0 the
+	// subquery matches nothing rather than full-scanning every project's facets.
 	var fromArgs []any
 	var subqueries []string
 	for _, f := range facetFilters {
-		if !allProjects {
-			subqueries = append(subqueries,
-				`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
-			fromArgs = append(fromArgs, projectID, f.k, f.v)
-		} else {
-			subqueries = append(subqueries,
-				`SELECT DISTINCT issue_id FROM event_facets WHERE facet_key = ? AND facet_value = ?`)
-			fromArgs = append(fromArgs, f.k, f.v)
-		}
+		subqueries = append(subqueries,
+			`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
+		fromArgs = append(fromArgs, projectID, f.k, f.v)
 	}
 	fromClause := fmt.Sprintf(`issues i INNER JOIN (%s) ef ON i.id = ef.issue_id LEFT JOIN projects p ON p.id = i.project_id`,
 		strings.Join(subqueries, " INTERSECT "))

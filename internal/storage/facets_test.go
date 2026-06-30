@@ -196,11 +196,11 @@ func TestPersistFacetsExistenceChecksUseIndex(t *testing.T) {
 	}
 }
 
-// TestFacetReadQueriesUseIndexes guards the facet read/filter paths (migration
-// 00005). The cross-project ("all projects") variants filter on facet_key with
-// no project_id; before the facet-leading index they full-scanned event_facets.
-// The project-scoped facet→issue filter needs issue_id in the index to avoid a
-// per-row table lookup.
+// TestFacetReadQueriesUseIndexes guards the project-scoped facet→issue filter:
+// it needs issue_id in idx_event_facets_kv_issue to stay covering and avoid a
+// per-row table lookup. Cross-project facet querying is intentionally not
+// supported (migration 00009 dropped idx_event_facets_facet and the code paths),
+// so there are no cross-project cases here.
 func TestFacetReadQueriesUseIndexes(t *testing.T) {
 	t.Parallel()
 
@@ -216,23 +216,6 @@ func TestFacetReadQueriesUseIndexes(t *testing.T) {
 		args      []any
 		wantIndex string
 	}{
-		{
-			name:      "cross-project distinct facet keys",
-			query:     `SELECT DISTINCT facet_key FROM event_facets ORDER BY facet_key ASC`,
-			wantIndex: "idx_event_facets_facet",
-		},
-		{
-			name:      "cross-project distinct facet values for a key",
-			query:     `SELECT DISTINCT facet_value FROM event_facets WHERE facet_key = ? ORDER BY facet_value ASC`,
-			args:      []any{"host.name"},
-			wantIndex: "idx_event_facets_facet",
-		},
-		{
-			name:      "cross-project issue filter by facet",
-			query:     `SELECT DISTINCT issue_id FROM event_facets WHERE facet_key = ? AND facet_value = ?`,
-			args:      []any{"host.name", "web-01"},
-			wantIndex: "idx_event_facets_facet",
-		},
 		{
 			name:      "project-scoped issue filter by facet (covering)",
 			query:     `SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`,

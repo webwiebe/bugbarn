@@ -212,23 +212,14 @@ func persistFacet(
 	return isNewKey, nil
 }
 
-// ListFacetKeys returns all distinct facet keys observed for a project.
-// Pass projectID=0 to query across all projects.
+// ListFacetKeys returns all distinct facet keys observed for a project. It is
+// always project-scoped: cross-project facet listing is intentionally not
+// supported (no index backs it, and no caller needs it).
 func (s *FacetStore) ListFacetKeys(ctx context.Context, projectID int64) ([]string, error) {
-	var (
-		rows *sql.Rows
-		err  error
+	rows, err := s.readDB().QueryContext(ctx,
+		`SELECT DISTINCT facet_key FROM event_facets WHERE project_id = ? ORDER BY facet_key ASC`,
+		projectID,
 	)
-	if projectID != 0 {
-		rows, err = s.readDB().QueryContext(ctx,
-			`SELECT DISTINCT facet_key FROM event_facets WHERE project_id = ? ORDER BY facet_key ASC`,
-			projectID,
-		)
-	} else {
-		rows, err = s.readDB().QueryContext(ctx,
-			`SELECT DISTINCT facet_key FROM event_facets ORDER BY facet_key ASC`,
-		)
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -245,24 +236,14 @@ func (s *FacetStore) ListFacetKeys(ctx context.Context, projectID int64) ([]stri
 	return keys, rows.Err()
 }
 
-// ListFacetValues returns all distinct values observed for a facet key in a project.
-// Pass projectID=0 to query across all projects.
+// ListFacetValues returns all distinct values observed for a facet key in a
+// project. It is always project-scoped: cross-project facet listing is
+// intentionally not supported (no index backs it, and no caller needs it).
 func (s *FacetStore) ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error) {
-	var (
-		rows *sql.Rows
-		err  error
+	rows, err := s.readDB().QueryContext(ctx,
+		`SELECT DISTINCT facet_value FROM event_facets WHERE project_id = ? AND facet_key = ? ORDER BY facet_value ASC`,
+		projectID, key,
 	)
-	if projectID != 0 {
-		rows, err = s.readDB().QueryContext(ctx,
-			`SELECT DISTINCT facet_value FROM event_facets WHERE project_id = ? AND facet_key = ? ORDER BY facet_value ASC`,
-			projectID, key,
-		)
-	} else {
-		rows, err = s.readDB().QueryContext(ctx,
-			`SELECT DISTINCT facet_value FROM event_facets WHERE facet_key = ? ORDER BY facet_value ASC`,
-			key,
-		)
-	}
 	if err != nil {
 		return nil, err
 	}
