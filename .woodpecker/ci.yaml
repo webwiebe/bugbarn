@@ -136,7 +136,9 @@ steps:
         # only updates FETCH_HEAD), with enough depth for the diff base. Without this
         # golangci-lint's --new-from-rev treats the whole tree as new. (A colon
         # refspec breaks Woodpecker's variable parser, so use update-ref.)
-        git fetch --no-tags --depth=300 origin "$BASE" 2>/dev/null || git fetch --no-tags origin "$BASE" || true
+        # credential.helper= disables the global osxkeychain helper (unreachable
+        # headless) so git falls back to ~/.netrc for the private Gitea fetch.
+        git -c credential.helper= fetch --no-tags --depth=300 origin "$BASE" || git -c credential.helper= fetch --no-tags origin "$BASE" || true
         git update-ref "refs/remotes/origin/$BASE" FETCH_HEAD || true
         "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./...
         ( cd sdks/go && "$DEST/golangci-lint" run --new-from-rev="origin/$BASE" ./... )
