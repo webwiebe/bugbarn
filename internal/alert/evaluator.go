@@ -10,18 +10,28 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 )
 
+// notifier delivers alert notifications. *Deliverer is the production
+// implementation; tests substitute a fake.
+type notifier interface {
+	Fire(ctx context.Context, rule Rule, issue domain.Issue, publicURL string) error
+	EmailConfigured() bool
+}
+
 // Evaluator subscribes to the domain event bus and fires alert webhooks when
 // configured conditions are met.
 type Evaluator struct {
-	repo      Repository
-	deliverer *Deliverer
-	publicURL string
-	log       *slog.Logger
+	repo       Repository
+	deliverer  notifier
+	publicURL  string
+	adminEmail string
+	log        *slog.Logger
 }
 
 // NewEvaluator creates an Evaluator wired to the given repository and deliverer.
-func NewEvaluator(repo Repository, deliverer *Deliverer, publicURL string, log *slog.Logger) *Evaluator {
-	return &Evaluator{repo: repo, deliverer: deliverer, publicURL: publicURL, log: log}
+// When adminEmail is set and SMTP is configured, every new issue and regression
+// is emailed to that address regardless of per-project alert rules.
+func NewEvaluator(repo Repository, deliverer notifier, publicURL, adminEmail string, log *slog.Logger) *Evaluator {
+	return &Evaluator{repo: repo, deliverer: deliverer, publicURL: publicURL, adminEmail: adminEmail, log: log}
 }
 
 // HandleEvent receives a domain event and dispatches to condition evaluation.
@@ -32,12 +42,48 @@ func (e *Evaluator) HandleEvent(evt any) {
 	case domainevents.IssueCreated:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "new_issue")
 		e.evaluate(ctx, v.ProjectID, v.Issue, "message_contains")
+		e.notifyAdmin(v.Issue, "new_issue")
 	case domainevents.IssueRegressed:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "regression")
 		e.evaluate(ctx, v.ProjectID, v.Issue, "message_contains")
+		e.notifyAdmin(v.Issue, "regression")
 	case domainevents.IssueEventRecorded:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "event_count_exceeds")
 	}
+}
+
+// notifyAdmin emails the configured admin address for every new issue and
+// regression, across all projects. It is independent of per-project alert rules
+// so newly created projects are covered automatically. No-op when no admin
+// address is configured or SMTP is not set up.
+func (e *Evaluator) notifyAdmin(issue domain.Issue, conditionType string) {
+	if e.adminEmail == "" || !e.deliverer.EmailConfigured() {
+		return
+	}
+
+	rule := Rule{
+		ID:        "admin-" + conditionType,
+		Name:      "Admin notifications",
+		Enabled:   true,
+		EmailTo:   e.adminEmail,
+		Condition: conditionType,
+	}
+	iss := issue
+
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				e.log.Error("admin alert delivery panic", "issue_id", iss.ID, "condition", conditionType, "panic", p)
+			}
+		}()
+
+		fireCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := e.deliverer.Fire(fireCtx, rule, iss, e.publicURL); err != nil {
+			e.log.Error("failed to fire admin alert", "issue_id", iss.ID, "condition", conditionType, "error", err)
+		}
+	}()
 }
 
 func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.Issue, conditionType string) {

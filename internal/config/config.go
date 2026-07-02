@@ -16,26 +16,27 @@ import (
 
 // Config holds all runtime configuration for the BugBarn server.
 type Config struct {
-	Addr                string
-	APIKey              string
-	APIKeySHA256        string
-	AdminUsername        string
-	AdminPassword       string
-	AdminPasswordBcrypt string
-	SessionSecret       string
-	SessionTTL          time.Duration
-	AllowedOrigins      []string
-	TrustedProxies      []*net.IPNet
-	SpoolDir            string
-	DBPath              string
-	MaxBodyBytes        int64
-	MaxSpoolBytes       int64
-	MaxSourceMapBytes   int64
-	PublicURL           string
-	SelfEndpoint        string
-	SelfAPIKey          string
-	SelfProject         string
-	Digest              digest.Config
+	Addr                   string
+	APIKey                 string
+	APIKeySHA256           string
+	AdminUsername          string
+	AdminPassword          string
+	AdminPasswordBcrypt    string
+	SessionSecret          string
+	SessionTTL             time.Duration
+	AllowedOrigins         []string
+	TrustedProxies         []*net.IPNet
+	SpoolDir               string
+	DBPath                 string
+	MaxBodyBytes           int64
+	MaxSpoolBytes          int64
+	MaxSourceMapBytes      int64
+	PublicURL              string
+	AdminAlertEmail        string // BUGBARN_ADMIN_ALERT_EMAIL; per new issue/regression; defaults to BUGBARN_DIGEST_TO
+	SelfEndpoint           string
+	SelfAPIKey             string
+	SelfProject            string
+	Digest                 digest.Config
 	AnalyticsRetentionDays int
 	FunnelBarnEndpoint     string // BUGBARN_FUNNELBARN_ENDPOINT
 	FunnelBarnAPIKey       string // BUGBARN_FUNNELBARN_API_KEY
@@ -165,6 +166,14 @@ func Load() Config {
 			From:    os.Getenv("SMTP_FROM"),
 			To:      os.Getenv("BUGBARN_DIGEST_TO"),
 		},
+	}
+
+	// Global admin alert recipient. Every new issue and regression across all
+	// projects is emailed here. Falls back to the weekly-digest recipient so a
+	// single SMTP setup covers both without extra config.
+	cfg.AdminAlertEmail = os.Getenv("BUGBARN_ADMIN_ALERT_EMAIL")
+	if cfg.AdminAlertEmail == "" {
+		cfg.AdminAlertEmail = cfg.Digest.Mail.To
 	}
 
 	// Validate CQRS mode.

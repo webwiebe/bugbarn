@@ -16,8 +16,8 @@ import (
 
 // Deliverer sends alert notifications (webhook or email) with retry logic.
 type Deliverer struct {
-	client   *http.Client
-	mailCfg  digest.MailConfig
+	client  *http.Client
+	mailCfg digest.MailConfig
 }
 
 // NewDeliverer creates a new Deliverer with a 5-second HTTP timeout.
@@ -26,6 +26,12 @@ func NewDeliverer(mailCfg digest.MailConfig) *Deliverer {
 		client:  &http.Client{Timeout: 5 * time.Second},
 		mailCfg: mailCfg,
 	}
+}
+
+// EmailConfigured reports whether SMTP delivery is set up (enabled with a host),
+// independent of any per-message recipient. Used to gate the global admin alert.
+func (d *Deliverer) EmailConfigured() bool {
+	return d.mailCfg.Enabled && d.mailCfg.Host != ""
 }
 
 // Fire sends an alert for the given rule and issue. When EmailTo is set it
@@ -157,7 +163,6 @@ var alertHTMLTmpl = template.Must(template.New("alert-html").Parse(
 </body>
 </html>`))
 
-
 func (d *Deliverer) buildPayload(rule Rule, issue domain.Issue, publicURL string) ([]byte, error) {
 	issueURL := strings.TrimRight(publicURL, "/") + "/issues/" + issue.ID
 
@@ -177,12 +182,12 @@ func (d *Deliverer) genericPayload(rule Rule, issue domain.Issue, issueURL strin
 		"condition": rule.Condition,
 		"project":   fmt.Sprintf("%d", rule.ProjectID),
 		"issue": map[string]any{
-			"id":         issue.ID,
-			"title":      issue.Title,
-			"url":        issueURL,
-			"first_seen": issue.FirstSeen.Format(time.RFC3339),
+			"id":          issue.ID,
+			"title":       issue.Title,
+			"url":         issueURL,
+			"first_seen":  issue.FirstSeen.Format(time.RFC3339),
 			"event_count": issue.EventCount,
-			"severity":   severityFromIssue(issue),
+			"severity":    severityFromIssue(issue),
 		},
 	}
 	return json.Marshal(payload)
