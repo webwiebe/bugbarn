@@ -46,13 +46,16 @@ pipelines can't read them.
 SSH keys are **not** secrets — they're already on the Mac Mini host (`~/.ssh`),
 reused by the local backend. `BUGBARN_ENDPOINT` is hardcoded (`https://bugbarn.wiebe.xyz`).
 
-## Production deploy (manual params)
+## Production deploy (automatic)
 
-Woodpecker has no typed `workflow_dispatch` inputs. Trigger `deploy-production`
-manually and add two custom pipeline variables:
-
-- `PRODUCTION_VERSION` = `vX.Y.Z` (must already be on staging)
-- `CONFIRMED` = `true`
+Production deploys **automatically** on every `vX.Y.Z` tag, in the same tag
+pipeline as `release`. `deploy-production` declares `depends_on: [release]`, so
+it only runs after the staging rollout succeeds; if staging fails, prod is
+skipped. It reads the version from `CI_COMMIT_TAG`, preflights that the semver
+images exist in GHCR, deploys by immutable digest, and rolls back on failure —
+no manual variables or trigger. End-to-end: push to `main` → `binary-release`
+auto-bumps a patch tag → `release` deploys staging → `deploy-production` deploys
+prod.
 
 ## Migration steps (run once, when the Woodpecker server is live)
 

@@ -24,7 +24,10 @@ steps:
       - |
         set -euo pipefail
         VERSION="$CI_COMMIT_TAG"
-        SHA="$CI_COMMIT_SHA"
+        # Resolve the tag to its COMMIT sha (works for lightweight and annotated
+        # tags). CI_COMMIT_SHA is the tag-object sha for annotated tags, which
+        # would not match the commit-sha the images were built under.
+        SHA="$(git rev-parse "$CI_COMMIT_TAG^{commit}")"
         DOCKER_CONFIG_DIR="$(mktemp -d)"
         printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
         export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"

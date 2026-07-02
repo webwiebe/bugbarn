@@ -1,14 +1,17 @@
-# Production deploy — manual trigger. Ported from
-# .github/workflows/deploy-production.yml.
-#
-# Trigger manually and add two custom pipeline variables:
-#   PRODUCTION_VERSION = vX.Y.Z   (must already be on staging)
-#   CONFIRMED          = true     (validated on staging)
+# Production deploy — AUTOMATIC on a vX.Y.Z tag, gated on the staging deploy.
+# Runs in the same tag pipeline as release.yaml and `depends_on` it, so prod
+# only deploys after staging has rolled out successfully. Fully hands-off:
+# push to main -> auto patch-tag -> staging -> production (no manual step).
+# Preflight (image must exist in GHCR) + rollback-on-failure remain the safety net.
 # NB: local backend = one shell per `commands` entry, and Woodpecker pre-
 # substitutes braced variables; so each step is ONE block and all vars use $VAR
 # (no braces). Avoid brace-vars even in comments — Woodpecker parses them.
 when:
-  - event: manual
+  - event: tag
+    ref: refs/tags/v*
+
+depends_on:
+  - release
 
 labels:
   type: build
@@ -25,9 +28,8 @@ steps:
     commands:
       - |
         set -euo pipefail
-        test "$CONFIRMED" = "true" || { echo "ERROR: set CONFIRMED=true to proceed"; exit 1; }
-        test -n "$PRODUCTION_VERSION" || { echo "ERROR: set PRODUCTION_VERSION=vX.Y.Z"; exit 1; }
-        VERSION="$PRODUCTION_VERSION"
+        VERSION="$CI_COMMIT_TAG"
+        test -n "$VERSION" || { echo "ERROR: no tag on this pipeline"; exit 1; }
         DOCKER_CONFIG_DIR="$(mktemp -d)"
         printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
         export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
@@ -103,6 +105,6 @@ steps:
           -H "Content-Type: application/json" \
           -H "X-BugBarn-Api-Key: $BUGBARN_API_KEY" \
           -H "X-BugBarn-Project: bugbarn-service" \
-          -d "{\"name\":\"$PRODUCTION_VERSION\",\"environment\":\"production\",\"version\":\"$PRODUCTION_VERSION\",\"commitSha\":\"$CI_COMMIT_SHA\",\"url\":\"$CI_REPO_URL/releases/tag/$PRODUCTION_VERSION\",\"notes\":\"Deployed by Woodpecker #$CI_PIPELINE_NUMBER\"}" \
+          -d "{\"name\":\"$CI_COMMIT_TAG\",\"environment\":\"production\",\"version\":\"$CI_COMMIT_TAG\",\"commitSha\":\"$CI_COMMIT_SHA\",\"url\":\"$CI_REPO_URL/releases/tag/$CI_COMMIT_TAG\",\"notes\":\"Deployed by Woodpecker #$CI_PIPELINE_NUMBER\"}" \
           || echo "WARN: BugBarn release marker failed"
-        echo "Production deploy complete: $PRODUCTION_VERSION -> https://bugbarn.wiebe.xyz"
+        echo "Production deploy complete: $CI_COMMIT_TAG -> https://bugbarn.wiebe.xyz"

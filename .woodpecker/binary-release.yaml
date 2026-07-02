@@ -47,7 +47,10 @@ steps:
         cat .relver
         git config user.name woodpecker
         git config user.email ci@wiebe.xyz
-        git tag -a "$NEW" -m "Release $NEW"
+        # Lightweight tag (NOT -a): an annotated tag makes Woodpecker report the
+        # tag-object sha as CI_COMMIT_SHA, which then mismatches the commit-sha
+        # the images are built under and breaks release.yaml's retag.
+        git tag "$NEW"
         # Push tag to Gitea (triggers release.yaml staging deploy) and to GitHub (for the Release).
         git push origin "$NEW"
         git push "https://x-access-token:$GITHUB_TOKEN@github.com/webwiebe/bugbarn.git" "$NEW"
