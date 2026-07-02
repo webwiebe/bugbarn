@@ -56,24 +56,23 @@ Rules:
 | Environment | Host | Namespace | Trigger |
 |---|---|---|---|
 | Testing | k3s1.nijmegen.wiebe.xyz | bugbarn-testing | Push to main (auto) |
-| Staging | k3s1.nijmegen.wiebe.xyz | bugbarn-staging | Push tag `v*` (auto) |
-| Production | layer7.wiebe.xyz | bugbarn-production | Manual workflow dispatch |
+| Staging | k3s1.nijmegen.wiebe.xyz | bugbarn-staging | Version tag `v*` (auto) |
+| Production | layer7.wiebe.xyz | bugbarn-production | Version tag `v*`, after staging (auto) |
 
-### Deployment Steps
+CI/CD runs on **Woodpecker** (`.woodpecker/`), triggered from Gitea. The whole
+chain is automatic — no manual steps.
 
-1. Push to `main` → CI runs tests, builds Docker images tagged with commit SHA, deploys to testing
-2. Tag with `vX.Y.Z` → "Release and Deploy Staging" retags images to the version, deploys to staging
-3. Production deploy (manual):
-   ```
-   gh workflow run "Deploy Production" --ref vX.Y.Z \
-     -f production_version=vX.Y.Z -f confirmed=true
-   ```
-   Preflight verifies the image exists in GHCR, then deploys to production with automatic rollback on failure.
+### Deployment Steps (fully automated)
+
+1. Push to `main` → `ci` (tests) + `build-and-test` (builds SHA-tagged images, deploys **testing**) + `binary-release` (auto-bumps a patch `vX.Y.Z` tag)
+2. The tag fires the tag pipeline: `release` retags the images to semver and deploys **staging** by digest
+3. `deploy-production` (`depends_on: release`) runs in that same tag pipeline: it deploys **production** only after staging rolls out successfully — preflight verifies the semver images are in GHCR, deploys by immutable digest, and rolls back automatically on failure
 
 ### Important
 
 - Images are tagged by commit SHA during CI, then retagged to semver on release
-- Production requires `confirmed=true` as a safety gate
+- Production auto-deploys on the version tag; the safety gate is `depends_on: release` (staging must succeed first) plus preflight + automatic rollback — no manual confirmation
+- Version tags MUST be lightweight (`binary-release` creates them that way); an annotated tag makes Woodpecker report the tag-object sha as `CI_COMMIT_SHA` and breaks the retag
 - Secrets are SOPS-encrypted in `deploy/k8s/*/secret.yaml` — never commit plaintext secrets
 - After updating any K8s secret, always `kubectl rollout restart` the affected deployment
 - Production posts a release marker to BugBarn's own API after deploy
