@@ -146,7 +146,9 @@ steps:
         git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
         git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=2000 origin || true
         git rev-parse --is-shallow-repository; git rev-parse "origin/$BASE" >/dev/null && echo "origin/$BASE OK"
-        "$DEST/golangci-lint" run --new-from-merge-base="origin/$BASE" ./...
-        ( cd sdks/go && "$DEST/golangci-lint" run --new-from-merge-base="origin/$BASE" ./... )
+        # --timeout well above the 1m default: the shared mac runners are often
+        # loaded by concurrent deploys, and a cold-cache run of ./... can exceed 1m.
+        "$DEST/golangci-lint" run --timeout=10m --new-from-merge-base="origin/$BASE" ./...
+        ( cd sdks/go && "$DEST/golangci-lint" run --timeout=10m --new-from-merge-base="origin/$BASE" ./... )
         sh scripts/check-coverage.sh
         npx --yes jscpd@latest .
