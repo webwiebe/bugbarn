@@ -69,7 +69,7 @@ func buildSection(cfg Config, slug string, data domain.DigestData) ProjectSectio
 			Status:     iss.Status,
 		}
 		if cfg.PublicURL != "" {
-			ib.URL = fmt.Sprintf("%s/#/issues/%s", cfg.PublicURL, iss.ID)
+			ib.URL = fmt.Sprintf("%s/app/#/issues/%s", cfg.PublicURL, iss.ID)
 		}
 		sec.TopIssues = append(sec.TopIssues, ib)
 	}
