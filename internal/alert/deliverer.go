@@ -82,7 +82,7 @@ func (d *Deliverer) fireWebhook(ctx context.Context, rule Rule, issue domain.Iss
 }
 
 func (d *Deliverer) fireEmail(rule Rule, issue domain.Issue, publicURL string) error {
-	issueURL := strings.TrimRight(publicURL, "/") + "/issues/" + issue.ID
+	issueURL := strings.TrimRight(publicURL, "/") + "/app/#/issues/" + issue.ID
 	data := alertMailData{
 		AlertName: rule.Name,
 		Condition: conditionLabel(rule.Condition),
@@ -164,7 +164,7 @@ var alertHTMLTmpl = template.Must(template.New("alert-html").Parse(
 </html>`))
 
 func (d *Deliverer) buildPayload(rule Rule, issue domain.Issue, publicURL string) ([]byte, error) {
-	issueURL := strings.TrimRight(publicURL, "/") + "/issues/" + issue.ID
+	issueURL := strings.TrimRight(publicURL, "/") + "/app/#/issues/" + issue.ID
 
 	switch {
 	case strings.Contains(rule.WebhookURL, "hooks.slack.com"):
