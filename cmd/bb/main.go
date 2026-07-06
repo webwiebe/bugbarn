@@ -39,6 +39,8 @@ func main() {
 		err = cmdIssue(os.Args[2:])
 	case "events":
 		err = cmdEvents(os.Args[2:])
+	case "vibe":
+		err = cmdVibe(os.Args[2:])
 	case "resolve":
 		err = cmdResolve(os.Args[2:])
 	case "reopen":
@@ -88,6 +90,7 @@ Commands:
   logs        Fetch or live-tail structured logs
   issue       Get issue detail
   events      List events for an issue
+  vibe        Start a Claude Code session for an issue (own worktree)
   resolve     Resolve an issue
   reopen      Reopen a resolved issue
   mute        Mute an issue
@@ -111,6 +114,7 @@ Examples:
   bb issues --status all --query OOM # search all issues
   bb issue issue-000042              # get issue detail
   bb events issue-000042             # list events for issue
+  bb vibe issue-000042               # open a Claude Code session for the issue
   bb resolve issue-000042            # resolve an issue
   bb projects --create "My App"      # create a new project
   bb groups                          # list project groups

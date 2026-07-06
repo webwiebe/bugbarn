@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -58,6 +59,17 @@ type detailMsg struct {
 }
 
 type actionMsg struct {
+	err error
+}
+
+// vibeMsg carries a prepared Claude command to hand off to tea.ExecProcess.
+type vibeMsg struct {
+	cmd *exec.Cmd
+	err error
+}
+
+// vibeDoneMsg fires when the suspended Claude session returns to the TUI.
+type vibeDoneMsg struct {
 	err error
 }
 
@@ -120,6 +132,15 @@ func (m model) fetchDetail(id string) tea.Cmd {
 	}
 }
 
+// prepareVibe fetches issue context and builds the Claude command off the UI
+// thread; the resulting vibeMsg is handed to tea.ExecProcess in Update.
+func (m model) prepareVibe(id string) tea.Cmd {
+	return func() tea.Msg {
+		cmd, err := prepareVibeCommand(m.client, id)
+		return vibeMsg{cmd: cmd, err: err}
+	}
+}
+
 func (m model) resolveIssue(id string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.client.post("/api/v1/issues/"+id+"/resolve", nil)
@@ -173,6 +194,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.view = viewList
 		m.loading = true
 		return m, m.fetchIssues()
+	case vibeMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		// Suspend the TUI, hand the terminal to Claude, resume when it exits.
+		return m, tea.ExecProcess(msg.cmd, func(err error) tea.Msg {
+			return vibeDoneMsg{err: err}
+		})
+	case vibeDoneMsg:
+		// A non-zero exit just means the Claude session ended — not an error.
+		if _, ok := msg.err.(*exec.ExitError); !ok && msg.err != nil {
+			m.err = msg.err
+		}
+		return m, nil
 	}
 	if m.view == viewDetail {
 		var cmd tea.Cmd
@@ -199,6 +236,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case viewList:
 		return m.handleListKey(msg)
 	case viewDetail:
+		if msg.String() == "v" && m.detail.ID != "" {
+			m.loading = true
+			return m, m.prepareVibe(m.detail.ID)
+		}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
@@ -220,6 +261,11 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.issues) > 0 {
 			m.loading = true
 			return m, m.fetchDetail(m.issues[m.cursor].ID)
+		}
+	case "v":
+		if len(m.issues) > 0 {
+			m.loading = true
+			return m, m.prepareVibe(m.issues[m.cursor].ID)
 		}
 	case "r":
 		if len(m.issues) > 0 {
@@ -305,6 +351,7 @@ func (m model) viewList() string {
 	footer := footerStyle.Width(m.width).Render(
 		helpItem("↑/↓", "navigate") + "  " +
 			helpItem("enter", "detail") + "  " +
+			helpItem("v", "vibe") + "  " +
 			helpItem("r", "resolve/reopen") + "  " +
 			helpItem("R", "refresh") + "  " +
 			helpItem("q", "quit"))
@@ -323,6 +370,7 @@ func (m model) viewDetail() string {
 	footer := footerStyle.Width(m.width).Render(
 		helpItem("esc", "back") + "  " +
 			helpItem("↑/↓", "scroll") + "  " +
+			helpItem("v", "vibe") + "  " +
 			helpItem("q", "quit"))
 
 	m.viewport.Width = m.width
