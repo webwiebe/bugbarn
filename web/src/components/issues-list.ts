@@ -195,7 +195,7 @@ export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null
       <button class="item" type="button" data-live-event-id="${escapeAttr(id)}">
         <div class="item-title">
           <span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity)}</span>
-          ${escapeHtml(title)}
+          <span class="item-title-text">${escapeHtml(title)}</span>
         </div>
         <div class="item-meta">
           <span>${escapeHtml(String(issueId || "No issue"))}</span>
