@@ -743,6 +743,20 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+  min-width: 0;
+}
+
+.item-title > .chip {
+  flex: 0 0 auto;
+}
+
+/* Ellipsis needs its own box: text-overflow doesn't apply to a flex
+   container's anonymous text child, so wrap the title in a shrinkable span. */
+.item-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .issue-link {
