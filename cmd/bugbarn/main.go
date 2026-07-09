@@ -114,6 +114,7 @@ func run() error {
 	bus := &domainevents.Bus{}
 	alertRepo := alert.NewSQLiteRepository(store.DB())
 	deliverer := alert.NewDeliverer(cfg.Digest.Mail)
+	deliverer.SetEventVolumeSource(issueVolumeSource{store: store})
 	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL, cfg.AdminAlertEmail, logger.With("component", "alert-evaluator"))
 	bus.Subscribe(evaluator.HandleEvent)
 
@@ -277,3 +278,22 @@ func withMetrics(next http.Handler) http.Handler {
 // probe hits, so it must independently detect a stall (no event persisted for
 // too long, or a growing write-queue backlog) even when the writer is wedged —
 // the gap that hid the 2026-06-21 outage for five days.
+
+// issueVolumeSource adapts the storage layer to alert.EventVolumeSource. It
+// resolves a Jira-style issue ID to its row ID and returns the 24h hourly
+// event-count array used to render the regression email's sparkline.
+type issueVolumeSource struct {
+	store *storage.Store
+}
+
+func (s issueVolumeSource) HourlyEventCounts(ctx context.Context, issueID string) ([24]int, error) {
+	rowID, err := s.store.IssueStore.IssueRowIDByDisplayID(ctx, issueID)
+	if err != nil {
+		return [24]int{}, err
+	}
+	counts, err := s.store.IssueStore.HourlyEventCounts(ctx, []int64{rowID})
+	if err != nil {
+		return [24]int{}, err
+	}
+	return counts[rowID], nil
+}
