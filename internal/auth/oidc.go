@@ -67,6 +67,30 @@ func (c *OIDCClient) LogoutURL() string {
 	return buildEndSessionURL(c.EndSessionURL(), c.cfg)
 }
 
+// PostLogoutRedirectURI returns the absolute URL the IdP should send the browser
+// back to after an RP-initiated logout. It points at this barn's own
+// /api/v1/oidc/logged-out endpoint (derived from the configured redirect URL's
+// origin), which clears the local session before returning the user to the app.
+// Returns "" when the redirect URL can't be parsed. This URI must be registered
+// on the OIDC client's post-logout allowlist. Used both by the hosted IAMBarn
+// widgets (via runtime-config) and by buildEndSessionURL.
+func (c *OIDCClient) PostLogoutRedirectURI() string {
+	origin := originOf(c.cfg.RedirectURL)
+	if origin == "" {
+		return ""
+	}
+	return origin + "/api/v1/oidc/logged-out"
+}
+
+// originOf returns scheme://host for a URL, or "" if it can't be parsed.
+func originOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
 // buildEndSessionURL appends the OIDC client_id and a post_logout_redirect_uri
 // pointing at this barn's origin to the issuer's end-session endpoint.
 // iambarn (and the OIDC spec) require the URI to be allowlisted on the
@@ -77,11 +101,11 @@ func buildEndSessionURL(raw string, cfg OIDCConfig) string {
 	if raw == "" || cfg.ClientID == "" || cfg.RedirectURL == "" {
 		return raw
 	}
-	u, err := url.Parse(cfg.RedirectURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	origin := originOf(cfg.RedirectURL)
+	if origin == "" {
 		return raw
 	}
-	postLogout := u.Scheme + "://" + u.Host + "/"
+	postLogout := origin + "/"
 	q := url.Values{}
 	q.Set("client_id", cfg.ClientID)
 	q.Set("post_logout_redirect_uri", postLogout)

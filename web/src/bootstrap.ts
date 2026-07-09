@@ -25,9 +25,9 @@ import {
   state,
   updateBBMenuUser,
   userAvatarBtn,
-  type OIDCRuntime,
 } from "./core.js";
 import { login, loadSession, logout, renderLogin } from "./http.js";
+import { initIAMBarnWidgets } from "./iambarn.js";
 import { requestNotificationPermission, stopLiveStream } from "./live.js";
 import { refreshAll, route } from "./router.js";
 import {
@@ -188,7 +188,7 @@ void start();
 async function start(): Promise<void> {
   void initFunnelBarn();
   void initSelfReporting();
-  void initIAMBarnLinks();
+  void initIAMBarnWidgets();
 
   await loadSession();
   updateBBMenuUser();
@@ -324,33 +324,6 @@ function parseStack(stack?: string): Array<{ file: string; line: number; column:
     frames.push(f);
   }
   return frames.length > 0 ? frames : undefined;
-}
-
-async function initIAMBarnLinks(): Promise<void> {
-  // Only show IAMBarn links when the session was established via OIDC.
-  if (!document.cookie.split("; ").some((c) => c.startsWith("bugbarn_auth_method=oidc"))) {
-    return;
-  }
-  let cfg: { iambarn?: { profileURL?: string }; oidc?: OIDCRuntime } = {};
-  try {
-    const res = await fetch("/api/v1/runtime-config");
-    if (!res.ok) return;
-    cfg = await res.json() as typeof cfg;
-  } catch {
-    return;
-  }
-  const profileLink = document.getElementById("bb-iambarn-profile") as HTMLAnchorElement | null;
-  if (profileLink && cfg.iambarn?.profileURL) {
-    profileLink.href = cfg.iambarn.profileURL;
-    profileLink.removeAttribute("hidden");
-  }
-  const logoutLink = document.getElementById("bb-iambarn-logout") as HTMLAnchorElement | null;
-  if (logoutLink && cfg.oidc?.endSessionURL) {
-    const ret = `${window.location.origin}/`;
-    const sep = cfg.oidc.endSessionURL.includes("?") ? "&" : "?";
-    logoutLink.href = `${cfg.oidc.endSessionURL}${sep}post_logout_redirect_uri=${encodeURIComponent(ret)}`;
-    logoutLink.removeAttribute("hidden");
-  }
 }
 
 async function initSelfReporting(): Promise<void> {

@@ -17,6 +17,7 @@ import { loadReleaseDetail, loadReleases, renderReleasesView } from "./views-rel
 import { loadAlerts, renderAlertsView } from "./views-alerts.js";
 import { connectLogSSE, disconnectLogSSE, loadLogs, renderLogsView } from "./views-logs.js";
 import { loadSdkInfo, loadSettings, renderSettingsView } from "./views-settings.js";
+import { renderAccountView } from "./views-account.js";
 
 export function route(): void {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
@@ -52,6 +53,10 @@ export function route(): void {
     state.currentRoute = "logs";
     setPageTitle("Logs");
     setRouteChip("Logs");
+  } else if (kind === "account") {
+    state.currentRoute = "account";
+    setPageTitle("Account");
+    setRouteChip("Account");
   } else if (kind === "settings") {
     state.currentRoute = "settings";
     const validTabs: SettingsTab[] = ["overview", "projects", "preferences", "keys", "system"];
@@ -82,6 +87,8 @@ export function setRouteStatus(): void {
     setStatus("Log stream connected.");
   } else if (state.currentRoute === "settings") {
     setStatus("Settings loaded.");
+  } else if (state.currentRoute === "account") {
+    setStatus("Account.");
   }
 }
 
@@ -98,6 +105,8 @@ function renderCurrentRoute(): void {
     renderLogsView();
   } else if (state.currentRoute === "settings") {
     renderSettingsView();
+  } else if (state.currentRoute === "account") {
+    renderAccountView();
   } else if (state.selectedEventId) {
     setDetailLoading(`Event ${state.selectedEventId}`);
   } else if (state.selectedIssueId) {
@@ -152,6 +161,11 @@ async function loadCurrentRouteData(): Promise<void> {
   if (state.currentRoute === "settings") {
     await loadSettings();
     loadSdkInfo();
+    setRouteStatus();
+    return;
+  }
+  if (state.currentRoute === "account") {
+    // The hosted <iambarn-profile> element loads its own data; nothing to fetch.
     setRouteStatus();
     return;
   }

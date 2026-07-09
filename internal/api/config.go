@@ -30,8 +30,14 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 		EndSessionURL    string `json:"endSessionURL,omitempty"`
 	}
 
+	// iambarnConfig carries the non-secret values the hosted IAMBarn web
+	// components need to render the signed-in user's menu and profile editor.
+	// The SPA loads {serverURL}/widget/iambarn-widget.iife.js and mounts the
+	// <iambarn-user-menu>/<iambarn-profile> elements with these attributes.
 	type iambarnConfig struct {
-		ProfileURL string `json:"profileURL,omitempty"`
+		ServerURL             string `json:"serverURL,omitempty"`
+		ClientID              string `json:"clientID,omitempty"`
+		PostLogoutRedirectURI string `json:"postLogoutRedirectURI,omitempty"`
 	}
 
 	type runtimeConfig struct {
@@ -63,8 +69,10 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 			SwitchAccountURL: "/api/v1/oidc/login?prompt=login",
 			EndSessionURL:    s.oidc.LogoutURL(),
 		}
-		if issuer := s.oidc.Issuer(); issuer != "" {
-			cfg.IAMBarn.ProfileURL = issuer + "/admin#profile"
+		cfg.IAMBarn = iambarnConfig{
+			ServerURL:             s.oidc.Issuer(),
+			ClientID:              s.oidc.Config().ClientID,
+			PostLogoutRedirectURI: s.oidc.PostLogoutRedirectURI(),
 		}
 	}
 
