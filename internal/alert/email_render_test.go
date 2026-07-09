@@ -84,6 +84,38 @@ func TestHTMLTmpl_EscapesUntrustedFields(t *testing.T) {
 	}
 }
 
+func TestBugbarnTag(t *testing.T) {
+	t.Parallel()
+	if got := bugbarnTag(""); got != "[BugBarn]" {
+		t.Errorf("empty env: got %q", got)
+	}
+	if got := bugbarnTag("  "); got != "[BugBarn]" {
+		t.Errorf("blank env: got %q", got)
+	}
+	if got := bugbarnTag("staging"); got != "[BugBarn · staging]" {
+		t.Errorf("staging: got %q", got)
+	}
+}
+
+func TestHTMLTmpl_ShowsOrigin(t *testing.T) {
+	t.Parallel()
+	data := alertMailData{AlertName: "Admin notifications", Origin: "staging", Title: "boom", Severity: "error"}
+	var buf bytes.Buffer
+	if err := alertHTMLTmpl.Execute(&buf, data.escaped()); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[BugBarn · staging]") {
+		t.Errorf("expected env-labeled header, got:\n%s", out)
+	}
+	// No origin -> plain tag, no badge.
+	var buf2 bytes.Buffer
+	_ = alertHTMLTmpl.Execute(&buf2, (alertMailData{AlertName: "x", Title: "y"}).escaped())
+	if !strings.Contains(buf2.String(), "[BugBarn]") || strings.Contains(buf2.String(), "·") {
+		t.Errorf("expected plain [BugBarn] when origin unset")
+	}
+}
+
 func TestBuildSparkline(t *testing.T) {
 	t.Parallel()
 	bars := buildSparkline([24]int{})
@@ -154,6 +186,7 @@ func TestGenerateEmailPreview(t *testing.T) {
 	}
 	base := alertMailData{
 		AlertName:   "Admin notifications",
+		Origin:      "staging",
 		Title:       "E2EFailure: e2e: full-app-discovery-analytics.spec.ts › Discovery Page › can remove a competitor before applying [webkit]",
 		IssueURL:    "https://bugbarn.wiebe.xyz/app/#/issues/GEO-107",
 		Severity:    "error",

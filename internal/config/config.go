@@ -32,6 +32,7 @@ type Config struct {
 	MaxSpoolBytes          int64
 	MaxSourceMapBytes      int64
 	PublicURL              string
+	Environment            string // BUGBARN_ENV: this instance's environment (production/staging/testing); labels outgoing alert emails
 	AdminAlertEmail        string // BUGBARN_ADMIN_ALERT_EMAIL; per new issue/regression; defaults to BUGBARN_DIGEST_TO
 	SelfEndpoint           string
 	SelfAPIKey             string
@@ -68,6 +69,7 @@ func Load() Config {
 		DBPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
 		MaxBodyBytes:        1 << 20,
 		PublicURL:           os.Getenv("BUGBARN_PUBLIC_URL"),
+		Environment:         os.Getenv("BUGBARN_ENV"),
 		SelfEndpoint:        os.Getenv("BUGBARN_SELF_ENDPOINT"),
 		SelfAPIKey:          os.Getenv("BUGBARN_SELF_API_KEY"),
 		SelfProject:         os.Getenv("BUGBARN_SELF_PROJECT"),
