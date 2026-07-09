@@ -44,6 +44,8 @@ spec:
               value: :8080
             - name: BUGBARN_PUBLIC_URL
               value: https://bugbarn.staging.wiebe.xyz
+            - name: BUGBARN_ENV
+              value: staging
             - name: BUGBARN_DB_PATH
               value: /var/lib/bugbarn/bugbarn.db
             - name: BUGBARN_SESSION_TTL_SECONDS

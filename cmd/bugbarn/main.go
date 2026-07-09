@@ -115,6 +115,7 @@ func run() error {
 	alertRepo := alert.NewSQLiteRepository(store.DB())
 	deliverer := alert.NewDeliverer(cfg.Digest.Mail)
 	deliverer.SetEventVolumeSource(issueVolumeSource{store: store})
+	deliverer.SetEnvironment(cfg.Environment)
 	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL, cfg.AdminAlertEmail, logger.With("component", "alert-evaluator"))
 	bus.Subscribe(evaluator.HandleEvent)
 

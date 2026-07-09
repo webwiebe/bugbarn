@@ -13,7 +13,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
 // EventVolumeSource provides recent per-issue event volume for sparklines.
@@ -27,6 +26,7 @@ type Deliverer struct {
 	client  *http.Client
 	mailCfg digest.MailConfig
 	vol     EventVolumeSource
+	env     string // this BugBarn instance's environment (production/staging/testing), labels emails
 }
 
 // NewDeliverer creates a new Deliverer with a 5-second HTTP timeout.
@@ -41,6 +41,12 @@ func NewDeliverer(mailCfg digest.MailConfig) *Deliverer {
 // sparkline on regression emails. When nil, the sparkline is omitted.
 func (d *Deliverer) SetEventVolumeSource(src EventVolumeSource) {
 	d.vol = src
+}
+
+// SetEnvironment records which BugBarn instance (production/staging/testing) is
+// sending, so alert emails identify their origin. Empty leaves emails unlabeled.
+func (d *Deliverer) SetEnvironment(env string) {
+	d.env = strings.TrimSpace(env)
 }
 
 // EmailConfigured reports whether SMTP delivery is set up (enabled with a host),
@@ -100,6 +106,7 @@ func (d *Deliverer) fireEmail(ctx context.Context, rule Rule, issue domain.Issue
 	ev := issue.RepresentativeEvent
 	data := alertMailData{
 		AlertName:       rule.Name,
+		Origin:          d.env,
 		Condition:       conditionLabel(rule.Condition),
 		Title:           issue.Title,
 		IssueURL:        issueURL(publicURL, issue.ID),
@@ -129,12 +136,13 @@ func (d *Deliverer) fireEmail(ctx context.Context, rule Rule, issue domain.Issue
 		return fmt.Errorf("render html: %w", err)
 	}
 
-	subject := fmt.Sprintf("[BugBarn] %s: %s", rule.Name, issue.Title)
+	subject := fmt.Sprintf("%s %s: %s", bugbarnTag(d.env), rule.Name, issue.Title)
 	return digest.DeliverEmail(d.mailCfg, rule.EmailTo, subject, plain.String(), htmlBuf.String())
 }
 
 type alertMailData struct {
 	AlertName       string
+	Origin          string
 	Condition       string
 	Title           string
 	IssueURL        string
@@ -159,6 +167,7 @@ type alertMailData struct {
 func (d alertMailData) escaped() alertMailData {
 	e := d
 	e.AlertName = html.EscapeString(d.AlertName)
+	e.Origin = html.EscapeString(d.Origin)
 	e.Title = html.EscapeString(d.Title)
 	e.Project = html.EscapeString(d.Project)
 	e.Message = html.EscapeString(d.Message)
@@ -167,110 +176,6 @@ func (d alertMailData) escaped() alertMailData {
 	e.Release = html.EscapeString(d.Release)
 	// IssueURL is a server-built absolute URL (scheme + host + issue ID); leave as-is.
 	return e
-}
-
-// sparkBar is a single hourly bar in the 24h event-volume sparkline.
-type sparkBar struct {
-	Height int  // pixel height, 2..40
-	Count  int  // events in this hour
-	Zero   bool // true when Count == 0 (rendered faint)
-}
-
-// issueURL builds the absolute dashboard URL for an issue. It returns "" when
-// no public URL is configured (so callers omit the link rather than emit a
-// relative href that mail clients mis-resolve, e.g. to x-webdoc://). A bare
-// host without a scheme is upgraded to https://.
-func issueURL(publicURL, issueID string) string {
-	base := strings.TrimRight(strings.TrimSpace(publicURL), "/")
-	if base == "" {
-		return ""
-	}
-	if !strings.Contains(base, "://") {
-		base = "https://" + base
-	}
-	return base + "/app/#/issues/" + issueID
-}
-
-// buildSparkline scales a 24h hourly count array to fixed-height bars.
-func buildSparkline(counts [24]int) []sparkBar {
-	max := 0
-	for _, c := range counts {
-		if c > max {
-			max = c
-		}
-	}
-	bars := make([]sparkBar, len(counts))
-	for i, c := range counts {
-		b := sparkBar{Count: c, Zero: c == 0}
-		switch {
-		case c == 0:
-			b.Height = 2
-		case max <= 0:
-			b.Height = 2
-		default:
-			b.Height = 4 + (c*36)/max // 4..40px
-		}
-		bars[i] = b
-	}
-	return bars
-}
-
-// messageOf returns the most descriptive error message available on an event.
-func messageOf(ev event.Event) string {
-	if m := strings.TrimSpace(ev.Exception.Message); m != "" {
-		return m
-	}
-	return strings.TrimSpace(ev.Message)
-}
-
-// locationOf returns a "function (file:line)" culprit from the top stack frame.
-func locationOf(ev event.Event) string {
-	for _, f := range ev.Exception.Stacktrace {
-		fn := strings.TrimSpace(f.Function)
-		file := strings.TrimSpace(f.File)
-		if fn == "" && file == "" {
-			continue
-		}
-		switch {
-		case file == "":
-			return fn
-		case f.Line > 0:
-			loc := fmt.Sprintf("%s:%d", file, f.Line)
-			if fn != "" {
-				return fn + " (" + loc + ")"
-			}
-			return loc
-		default:
-			if fn != "" {
-				return fn + " (" + file + ")"
-			}
-			return file
-		}
-	}
-	return ""
-}
-
-// firstAttr returns the first non-empty value found across an event's
-// attributes and resource maps for any of the candidate keys.
-func firstAttr(ev event.Event, keys ...string) string {
-	for _, m := range []map[string]any{ev.Attributes, ev.Resource} {
-		for _, k := range keys {
-			if v, ok := m[k]; ok {
-				if s := strings.TrimSpace(fmt.Sprintf("%v", v)); s != "" && s != "<nil>" {
-					return s
-				}
-			}
-		}
-	}
-	return ""
-}
-
-// formatWhen renders a timestamp for display, or "" if it is the zero value.
-func formatWhen(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.UTC().Format("2006-01-02 15:04 UTC")
 }
 
 func conditionLabel(condition string) string {
@@ -289,8 +194,9 @@ func conditionLabel(condition string) string {
 }
 
 var alertPlainTmpl = template.Must(template.New("alert-plain").Parse(
-	`[BugBarn] Alert: {{.AlertName}}
+	`[BugBarn{{if .Origin}} · {{.Origin}}{{end}}] Alert: {{.AlertName}}
 
+Environment: {{if .Origin}}{{.Origin}}{{else}}(unset){{end}}
 Condition:  {{.Condition}}
 Severity:   {{.Severity}}
 {{if .Project}}Project:    {{.Project}}
@@ -313,8 +219,10 @@ var alertHTMLTmpl = template.Must(template.New("alert-html").Parse(
 	`<!DOCTYPE html>
 <html>
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-<h2 style="color:#1a1a1a;margin-bottom:4px">[BugBarn] {{.AlertName}}</h2>
-<p style="color:#555;margin-top:0;font-size:13px">{{.Condition}}</p>
+<h2 style="color:#1a1a1a;margin-bottom:4px">[BugBarn{{if .Origin}} · {{.Origin}}{{end}}] {{.AlertName}}</h2>
+<p style="color:#555;margin-top:0;font-size:13px">{{.Condition}}{{if .Origin}}
+  <span style="display:inline-block;margin-left:6px;padding:2px 8px;background:#eef2ff;color:#3538cd;
+  border-radius:10px;font-size:11px;font-weight:bold;text-transform:uppercase">{{.Origin}}</span>{{end}}</p>
 <table style="border-collapse:collapse;width:100%;margin:16px 0;background:#f8f9fa;border-radius:4px">
 <tr>
   <td style="padding:10px 16px;font-size:13px;color:#555;width:120px">Severity</td>
