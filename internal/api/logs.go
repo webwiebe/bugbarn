@@ -3,7 +3,9 @@ package api
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +15,24 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/logparse"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
+
+// Bounds for the log-ingest endpoint. maxLogsBodyBytes falls back to this when
+// the ingest handler (which owns the shared body cap) is not wired in.
+const (
+	defaultMaxLogsBodyBytes = 1 << 20 // 1 MiB
+	maxLogEntries           = 10000
+)
+
+// maxLogsBodyBytes returns the request-body cap for log ingest, reusing the
+// ingest handler's configured cap when available so both ingest paths agree.
+func (s *Server) maxLogsBodyBytes() int64 {
+	if s.ingestHandler != nil {
+		if n := s.ingestHandler.MaxBodyBytes(); n > 0 {
+			return n
+		}
+	}
+	return defaultMaxLogsBodyBytes
+}
 
 func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := storage.ProjectIDFromContext(r.Context())
@@ -26,32 +46,13 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 		ct = strings.TrimSpace(ct[:idx])
 	}
 
-	var rawEntries []map[string]any
+	// Bound the request: cap total body size and the number of entries so a
+	// single caller cannot force unbounded heap growth on the shared writer.
+	body := http.MaxBytesReader(w, r.Body, s.maxLogsBodyBytes())
 
-	switch ct {
-	case "application/x-ndjson":
-		scanner := bufio.NewScanner(r.Body)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
-			}
-			var obj map[string]any
-			if err := json.Unmarshal([]byte(line), &obj); err != nil {
-				continue
-			}
-			rawEntries = append(rawEntries, obj)
-		}
-	default:
-		var payload struct {
-			Logs []map[string]any `json:"logs"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			s.logger.Warn("logs: invalid JSON payload", "error", err)
-			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
-			return
-		}
-		rawEntries = payload.Logs
+	rawEntries, ok := s.readLogEntries(w, body, ct)
+	if !ok {
+		return
 	}
 
 	if len(rawEntries) == 0 {
@@ -76,6 +77,67 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// readLogEntries parses the (already size-capped) body into raw log-entry maps
+// per content type, enforcing the entry-count cap. ok is false when it has
+// already written an error response.
+func (s *Server) readLogEntries(w http.ResponseWriter, body io.Reader, contentType string) ([]map[string]any, bool) {
+	if contentType == "application/x-ndjson" {
+		return s.readNDJSONLogs(w, body)
+	}
+	return s.readJSONLogs(w, body)
+}
+
+func (s *Server) readNDJSONLogs(w http.ResponseWriter, body io.Reader) ([]map[string]any, bool) {
+	var rawEntries []map[string]any
+	scanner := bufio.NewScanner(body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			continue
+		}
+		rawEntries = append(rawEntries, obj)
+		if len(rawEntries) > maxLogEntries {
+			http.Error(w, "too many log entries", http.StatusRequestEntityTooLarge)
+			return nil, false
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, s.writeLogReadError(w, err)
+	}
+	return rawEntries, true
+}
+
+func (s *Server) readJSONLogs(w http.ResponseWriter, body io.Reader) ([]map[string]any, bool) {
+	var payload struct {
+		Logs []map[string]any `json:"logs"`
+	}
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
+		return nil, s.writeLogReadError(w, err)
+	}
+	if len(payload.Logs) > maxLogEntries {
+		http.Error(w, "too many log entries", http.StatusRequestEntityTooLarge)
+		return nil, false
+	}
+	return payload.Logs, true
+}
+
+// writeLogReadError maps a body read/decode failure to 413 (over the size cap)
+// or 400, and always reports false so the caller stops.
+func (s *Server) writeLogReadError(w http.ResponseWriter, err error) bool {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		http.Error(w, "log payload too large", http.StatusRequestEntityTooLarge)
+		return false
+	}
+	s.logger.Warn("logs: invalid payload", "error", err)
+	http.Error(w, "invalid log payload", http.StatusBadRequest)
+	return false
 }
 
 func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {

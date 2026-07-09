@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) setupKey(slug string) string {
@@ -19,11 +21,55 @@ func (s *Server) setupKey(slug string) string {
 	return hex.EncodeToString(mac.Sum(nil))[:40]
 }
 
+// resolveSetupProject looks up the project for a setup request and enforces the
+// active-project gate: brand-new/pending slugs onboard freely, but an existing
+// active project's deterministic key requires an admin session (else an anonymous
+// caller could forge events into an established stream). ok is false when a
+// response was already written.
+func (s *Server) resolveSetupProject(w http.ResponseWriter, r *http.Request, slug string) (domain.Project, bool) {
+	proj, err := s.projects.BySlug(r.Context(), slug)
+	if err != nil {
+		// Unknown slug: legitimate self-service onboarding — the project is created
+		// lazily, pending admin approval, on the writer when the first event arrives.
+		proj.Slug = slug
+		proj.Status = "new"
+		return proj, true
+	}
+	if projectIsActive(proj.Status) && s.users != nil && s.users.Enabled() {
+		if _, ok := s.sessionUser(r); !ok {
+			http.Error(w, "setup key for an active project requires an authenticated admin session", http.StatusForbidden)
+			return proj, false
+		}
+	}
+	return proj, true
+}
+
+// projectIsActive reports whether a project is past the pending-approval stage.
+// An empty status is treated as active, mirroring the display default below.
+func projectIsActive(status string) bool {
+	switch status {
+	case "pending", "new":
+		return false
+	default:
+		return true
+	}
+}
+
 func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimPrefix(r.URL.Path, "/api/v1/setup/")
 	slug = strings.TrimSuffix(slug, "/")
 	if slug == "" || strings.Contains(slug, "/") {
 		http.Error(w, "invalid slug", http.StatusBadRequest)
+		return
+	}
+
+	// Rate-limit per IP: the setup page hands out a working ingest key, so cap how
+	// fast an anonymous caller can mint keys / spawn pending projects.
+	ip := s.clientIP(r)
+	if s.overRateLimit(&s.setupLimiter, ip, setupRateLimit) {
+		s.logger.Warn("setup: rate-limited", "ip", ip, "slug", slug)
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "too many setup requests", http.StatusTooManyRequests)
 		return
 	}
 
@@ -33,14 +79,9 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proj, err := s.projects.BySlug(r.Context(), slug)
-	if err != nil {
-		// Project doesn't exist yet (e.g. on a read-only reader serving public
-		// ingest). That's fine — the key is deterministic and the project is
-		// created lazily, pending admin approval, on the writer when the first
-		// event arrives.
-		proj.Slug = slug
-		proj.Status = "new"
+	proj, ok := s.resolveSetupProject(w, r, slug)
+	if !ok {
+		return
 	}
 
 	keySHA := hex.EncodeToString(sha256Sum(rawKey))

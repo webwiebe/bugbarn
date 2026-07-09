@@ -160,7 +160,7 @@ func (s *LogStore) ListLogEntries(
 
 	rows, err := s.readDB().QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list log entries")
 	}
 	defer rows.Close()
 
@@ -170,7 +170,7 @@ func (s *LogStore) ListLogEntries(
 		var receivedAt string
 		var dataJSON string
 		if err := rows.Scan(&e.ID, &e.ProjectID, &receivedAt, &e.LevelNum, &e.Level, &e.Message, &dataJSON, &e.ProjectSlug); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "scan log entry")
 		}
 		if t, err := time.Parse(time.RFC3339Nano, receivedAt); err == nil {
 			e.ReceivedAt = t
@@ -186,7 +186,7 @@ func (s *LogStore) ListLogEntries(
 		entries = append(entries, e)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list log entries")
 	}
 	return entries, nil
 }

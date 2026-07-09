@@ -171,12 +171,6 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request) boo
 		return true
 	}
 
-	// Internal endpoint — used by reader pods for DB backup fallback.
-	if r.URL.Path == "/internal/v1/db-backup" && r.Method == http.MethodGet {
-		s.serveDBBackup(w, r)
-		return true
-	}
-
 	// Public endpoints — no authentication required.
 	switch {
 	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:
@@ -375,6 +369,8 @@ func (s *Server) dispatchMiscRoutes(w http.ResponseWriter, r *http.Request) bool
 		s.serveClientError(w, r)
 	case r.URL.Path == "/api/v1/admin/digest" && r.Method == http.MethodPost:
 		s.serveDigestTrigger(w, r)
+	case r.URL.Path == "/internal/v1/db-backup" && r.Method == http.MethodGet:
+		s.serveDBBackup(w, r)
 	default:
 		return false
 	}

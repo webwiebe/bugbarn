@@ -30,7 +30,7 @@ func (s *AnalyticsStore) QueryOverview(ctx context.Context, q analytics.Query) (
 	)
 	var res analytics.OverviewResult
 	if err := row.Scan(&res.Pageviews, &res.Sessions, &res.PagesCount); err != nil {
-		return res, err
+		return res, wrapErr(err, "query analytics")
 	}
 
 	// Add today's un-rolled-up raw rows
@@ -50,7 +50,7 @@ func (s *AnalyticsStore) QueryOverview(ctx context.Context, q analytics.Query) (
 	var rawPV, rawSess, rawPages int64
 	var rawAvgDur float64
 	if err := raw.Scan(&rawPV, &rawSess, &rawPages, &rawAvgDur); err != nil {
-		return res, err
+		return res, wrapErr(err, "query analytics")
 	}
 	res.Pageviews += rawPV
 	res.Sessions += rawSess
@@ -80,7 +80,7 @@ func (s *AnalyticsStore) QueryPages(ctx context.Context, q analytics.Query) ([]a
 		q.ProjectID, startStr, endStr, limit,
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	defer rows.Close()
 
@@ -88,7 +88,7 @@ func (s *AnalyticsStore) QueryPages(ctx context.Context, q analytics.Query) ([]a
 	for rows.Next() {
 		var p analytics.PageStat
 		if err := rows.Scan(&p.Pathname, &p.Pageviews, &p.Sessions); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "query analytics")
 		}
 		out = append(out, p)
 	}
@@ -123,7 +123,7 @@ func (s *AnalyticsStore) QueryTimeline(ctx context.Context, q analytics.Query, g
 	)
 	rows, err := s.readDB().QueryContext(ctx, query, q.ProjectID, startStr, endStr)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	defer rows.Close()
 
@@ -131,7 +131,7 @@ func (s *AnalyticsStore) QueryTimeline(ctx context.Context, q analytics.Query, g
 	for rows.Next() {
 		var b analytics.TimelineBucket
 		if err := rows.Scan(&b.Date, &b.Pageviews, &b.Sessions); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "query analytics")
 		}
 		out = append(out, b)
 	}
@@ -156,7 +156,7 @@ func (s *AnalyticsStore) QueryReferrers(ctx context.Context, q analytics.Query) 
 		q.ProjectID, startStr, endStr, limit,
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	defer rows.Close()
 
@@ -164,7 +164,7 @@ func (s *AnalyticsStore) QueryReferrers(ctx context.Context, q analytics.Query) 
 	for rows.Next() {
 		var r analytics.ReferrerStat
 		if err := rows.Scan(&r.Host, &r.Pageviews, &r.Sessions); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "query analytics")
 		}
 		out = append(out, r)
 	}
@@ -198,7 +198,7 @@ func (s *AnalyticsStore) QuerySegments(ctx context.Context, q analytics.Query, d
 		limit,
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	defer rows.Close()
 
@@ -206,7 +206,7 @@ func (s *AnalyticsStore) QuerySegments(ctx context.Context, q analytics.Query, d
 	for rows.Next() {
 		var b analytics.SegmentBucket
 		if err := rows.Scan(&b.Value, &b.Pageviews, &b.Sessions); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "query analytics")
 		}
 		out = append(out, b)
 	}
@@ -223,13 +223,13 @@ func (s *AnalyticsStore) QueryPageFlow(ctx context.Context, q analytics.Query, p
 
 	wentTo, err := s.queryWentTo(ctx, q, pathname)
 	if err != nil {
-		return result, err
+		return result, wrapErr(err, "query analytics")
 	}
 	result.WentTo = wentTo
 
 	cameFrom, err := s.queryCameFrom(ctx, q, pathname)
 	if err != nil {
-		return result, err
+		return result, wrapErr(err, "query analytics")
 	}
 	result.CameFrom = cameFrom
 
@@ -247,7 +247,7 @@ func (s *AnalyticsStore) queryWentTo(ctx context.Context, q analytics.Query, pat
 		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	defer wentToRows.Close()
 
@@ -257,13 +257,13 @@ func (s *AnalyticsStore) queryWentTo(ctx context.Context, q analytics.Query, pat
 		var e analytics.FlowEntry
 		var sess int64
 		if err := wentToRows.Scan(&e.Pathname, &e.Count, &sess); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "query analytics")
 		}
 		wentToTotal += e.Count
 		wentTo = append(wentTo, e)
 	}
 	if err := wentToRows.Err(); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	for i := range wentTo {
 		if wentToTotal > 0 {
@@ -297,7 +297,7 @@ func (s *AnalyticsStore) queryCameFrom(ctx context.Context, q analytics.Query, p
 		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	defer cameFromRows.Close()
 
@@ -306,13 +306,13 @@ func (s *AnalyticsStore) queryCameFrom(ctx context.Context, q analytics.Query, p
 	for cameFromRows.Next() {
 		var e analytics.FlowEntry
 		if err := cameFromRows.Scan(&e.Pathname, &e.Count); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "query analytics")
 		}
 		cameFromTotal += e.Count
 		cameFrom = append(cameFrom, e)
 	}
 	if err := cameFromRows.Err(); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	for i := range cameFrom {
 		if cameFromTotal > 0 {
@@ -345,7 +345,7 @@ func (s *AnalyticsStore) QueryScrollDepth(ctx context.Context, q analytics.Query
 		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
 	)
 	if err != nil {
-		return result, err
+		return result, wrapErr(err, "query analytics")
 	}
 	defer rows.Close()
 
@@ -353,13 +353,13 @@ func (s *AnalyticsStore) QueryScrollDepth(ctx context.Context, q analytics.Query
 	for rows.Next() {
 		var b analytics.ScrollBucket
 		if err := rows.Scan(&b.Label, &b.Count); err != nil {
-			return result, err
+			return result, wrapErr(err, "query analytics")
 		}
 		total += b.Count
 		result.Buckets = append(result.Buckets, b)
 	}
 	if err := rows.Err(); err != nil {
-		return result, err
+		return result, wrapErr(err, "query analytics")
 	}
 	for i := range result.Buckets {
 		if total > 0 {
@@ -387,7 +387,7 @@ func (s *AnalyticsStore) QueryDropout(ctx context.Context, q analytics.Query) ([
 		q.ProjectID, q.Start.Unix(), q.End.Unix(), limit,
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	defer rows.Close()
 
@@ -395,7 +395,7 @@ func (s *AnalyticsStore) QueryDropout(ctx context.Context, q analytics.Query) ([
 	for rows.Next() {
 		var s analytics.DropoutStat
 		if err := rows.Scan(&s.Pathname, &s.Pageviews, &s.BouncedSessions); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "query analytics")
 		}
 		if s.Pageviews > 0 {
 			s.BounceRate = float64(s.BouncedSessions) / float64(s.Pageviews)
@@ -409,14 +409,14 @@ func (s *AnalyticsStore) QueryDropout(ctx context.Context, q analytics.Query) ([
 func (s *AnalyticsStore) ListProjectIDs(ctx context.Context) ([]int64, error) {
 	rows, err := s.readDB().QueryContext(ctx, `SELECT id FROM projects`)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "query analytics")
 	}
 	defer rows.Close()
 	var ids []int64
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "query analytics")
 		}
 		ids = append(ids, id)
 	}

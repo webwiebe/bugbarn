@@ -113,12 +113,15 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	// IAMBarn profile link) only for sessions that actually came from
 	// iambarn. Same expiry as the session.
 	http.SetCookie(w, &http.Cookie{
-		Name:     "bugbarn_auth_method",
-		Value:    "oidc",
-		Path:     "/",
-		Expires:  expires,
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
+		Name:    "bugbarn_auth_method",
+		Value:   "oidc",
+		Path:    "/",
+		Expires: expires,
+		Secure:  secure,
+		// Strict matches the session/CSRF cookies. The short-lived OIDC
+		// state/nonce cookies below intentionally stay Lax because they must
+		// survive the cross-site top-level redirect back from the IdP.
+		SameSite: http.SameSiteStrictMode,
 	})
 	// Clear the short-lived state/nonce cookies.
 	http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))

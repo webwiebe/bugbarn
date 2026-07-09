@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,28 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	filter, requestedLimit := buildIssueFilter(q)
+	issues, err := s.issues.ListFiltered(r.Context(), filter)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	// Ensure non-nil slice so JSON serializes as [] instead of null.
+	if issues == nil {
+		issues = []domain.Issue{}
+	}
+
+	hasMore := len(issues) > requestedLimit
+	if hasMore {
+		issues = issues[:requestedLimit]
+	}
+	writeJSON(w, map[string]any{"issues": issues, "hasMore": hasMore})
+}
+
+// buildIssueFilter parses the issue-list query params. It returns the filter
+// (with Limit set to requestedLimit+1 so the caller can detect a next page) and
+// the caller-requested page size.
+func buildIssueFilter(q url.Values) (domain.IssueFilter, int) {
 	filter := domain.IssueFilter{
 		Sort:   q.Get("sort"),
 		Status: q.Get("status"),
@@ -94,31 +117,25 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	requestedLimit := filter.Limit
 	filter.Limit = requestedLimit + 1
+	filter.Facets = parseIssueFacets(q)
+	return filter, requestedLimit
+}
+
+// parseIssueFacets treats any query param that isn't a known pagination/sort key
+// as a facet filter (facet_key=value).
+func parseIssueFacets(q url.Values) map[string]string {
 	knownParams := map[string]bool{"sort": true, "status": true, "q": true, "limit": true, "offset": true, "project_slug": true}
+	var facets map[string]string
 	for key, vals := range q {
 		if knownParams[key] || len(vals) == 0 || strings.TrimSpace(vals[0]) == "" {
 			continue
 		}
-		if filter.Facets == nil {
-			filter.Facets = make(map[string]string)
+		if facets == nil {
+			facets = make(map[string]string)
 		}
-		filter.Facets[key] = vals[0]
+		facets[key] = vals[0]
 	}
-	issues, err := s.issues.ListFiltered(r.Context(), filter)
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	// Ensure non-nil slice so JSON serializes as [] instead of null.
-	if issues == nil {
-		issues = []domain.Issue{}
-	}
-
-	hasMore := len(issues) > requestedLimit
-	if hasMore {
-		issues = issues[:requestedLimit]
-	}
-	writeJSON(w, map[string]any{"issues": issues, "hasMore": hasMore})
+	return facets
 }
 
 func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {

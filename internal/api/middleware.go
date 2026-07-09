@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/hmac"
 	"net/http"
 	"strings"
 )
@@ -90,8 +91,11 @@ func (s *Server) validCSRF(r *http.Request) bool {
 	}
 	expected := s.sessions.CSRFToken(sessionCookie.Value)
 	provided := r.Header.Get("X-BugBarn-CSRF")
-	if provided != expected {
-		s.logger.Debug("csrf: token mismatch", "expected_prefix", expected[:8], "provided_prefix", provided[:min(8, len(provided))], "session_len", len(sessionCookie.Value))
+	// Constant-time comparison to avoid leaking the expected token via timing.
+	// Don't log token contents — a mismatch only records that one occurred.
+	if !hmac.Equal([]byte(provided), []byte(expected)) {
+		s.logger.Debug("csrf: token mismatch", "provided_present", provided != "")
+		return false
 	}
-	return provided == expected
+	return true
 }

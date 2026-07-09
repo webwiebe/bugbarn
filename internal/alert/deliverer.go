@@ -168,6 +168,8 @@ func (d alertMailData) escaped() alertMailData {
 	e := d
 	e.AlertName = html.EscapeString(d.AlertName)
 	e.Origin = html.EscapeString(d.Origin)
+	e.Condition = html.EscapeString(d.Condition)
+	e.Severity = html.EscapeString(d.Severity)
 	e.Title = html.EscapeString(d.Title)
 	e.Project = html.EscapeString(d.Project)
 	e.Message = html.EscapeString(d.Message)
@@ -175,6 +177,8 @@ func (d alertMailData) escaped() alertMailData {
 	e.Environment = html.EscapeString(d.Environment)
 	e.Release = html.EscapeString(d.Release)
 	// IssueURL is a server-built absolute URL (scheme + host + issue ID); leave as-is.
+	// Numeric (EventCount, RegressionCount), server-formatted (FirstSeen, LastSeen)
+	// and Sparkline fields are not attacker-influenced free text and stay as-is.
 	return e
 }
 
