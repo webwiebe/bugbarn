@@ -291,7 +291,7 @@ func (s issueVolumeSource) HourlyEventCounts(ctx context.Context, issueID string
 	if err != nil {
 		return [24]int{}, err
 	}
-	counts, err := s.store.IssueStore.HourlyEventCounts(ctx, []int64{rowID})
+	counts, err := s.store.HourlyEventCounts(ctx, []int64{rowID})
 	if err != nil {
 		return [24]int{}, err
 	}
