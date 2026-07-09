@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -91,6 +92,13 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
 	if err != nil {
 		return err
+	}
+	// Readers only exist in a multi-process (CQRS) deployment and validate
+	// sessions minted by the writer. Without a shared BUGBARN_SESSION_SECRET each
+	// process signs with a different random key, so every writer-issued session is
+	// rejected here. Fail fast instead of shipping a login loop.
+	if userAuth.Enabled() && strings.TrimSpace(cfg.SessionSecret) == "" {
+		return errors.New("reader mode requires BUGBARN_SESSION_SECRET (must match the writer) when authentication is enabled")
 	}
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
 

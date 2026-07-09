@@ -86,7 +86,8 @@ func run() error {
 	}
 
 	if cfg.SessionSecret == "" {
-		logger.Warn("BUGBARN_SESSION_SECRET is not set; sessions will not persist across restarts")
+		logger.Warn("BUGBARN_SESSION_SECRET is not set; a random per-process secret will be used — " +
+			"sessions will not survive a restart and will be rejected by any reader/replica. Set it in any multi-process deployment.")
 	}
 
 	store, err := storage.Open(cfg.DBPath)

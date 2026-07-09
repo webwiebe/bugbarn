@@ -57,118 +57,41 @@ func Load() Config {
 	loadConfigFiles()
 
 	cfg := Config{
-		Addr:                getenv("BUGBARN_ADDR", ":8080"),
-		APIKey:              os.Getenv("BUGBARN_API_KEY"),
-		APIKeySHA256:        os.Getenv("BUGBARN_API_KEY_SHA256"),
-		AdminUsername:       os.Getenv("BUGBARN_ADMIN_USERNAME"),
-		AdminPassword:       os.Getenv("BUGBARN_ADMIN_PASSWORD"),
-		AdminPasswordBcrypt: os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT"),
-		SessionSecret:       os.Getenv("BUGBARN_SESSION_SECRET"),
-		SessionTTL:          12 * time.Hour,
-		SpoolDir:            getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
-		DBPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
-		MaxBodyBytes:        1 << 20,
-		PublicURL:           os.Getenv("BUGBARN_PUBLIC_URL"),
-		Environment:         os.Getenv("BUGBARN_ENV"),
-		SelfEndpoint:        os.Getenv("BUGBARN_SELF_ENDPOINT"),
-		SelfAPIKey:          os.Getenv("BUGBARN_SELF_API_KEY"),
-		SelfProject:         os.Getenv("BUGBARN_SELF_PROJECT"),
-		FunnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
-		FunnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
-		AutoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
-		Mode:                os.Getenv("BUGBARN_MODE"),
-		WriterURL:           os.Getenv("BUGBARN_WRITER_URL"),
-		RedisQueueURL:       os.Getenv("BUGBARN_REDIS_QUEUE_URL"),
-		OIDCIssuer:          os.Getenv("BUGBARN_OIDC_ISSUER"),
-		OIDCClientID:        os.Getenv("BUGBARN_OIDC_CLIENT_ID"),
-		OIDCClientSecret:    os.Getenv("BUGBARN_OIDC_CLIENT_SECRET"),
-		OIDCRedirectURL:     os.Getenv("BUGBARN_OIDC_REDIRECT_URL"),
-		OIDCRequiredGroup:   getenv("BUGBARN_OIDC_REQUIRED_GROUP", "bugbarn-users"),
+		Addr:                   getenv("BUGBARN_ADDR", ":8080"),
+		APIKey:                 os.Getenv("BUGBARN_API_KEY"),
+		APIKeySHA256:           os.Getenv("BUGBARN_API_KEY_SHA256"),
+		AdminUsername:          os.Getenv("BUGBARN_ADMIN_USERNAME"),
+		AdminPassword:          os.Getenv("BUGBARN_ADMIN_PASSWORD"),
+		AdminPasswordBcrypt:    os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT"),
+		SessionSecret:          os.Getenv("BUGBARN_SESSION_SECRET"),
+		AllowedOrigins:         parseCSVEnv("BUGBARN_ALLOWED_ORIGINS"),
+		TrustedProxies:         parseTrustedProxies(os.Getenv("BUGBARN_TRUSTED_PROXIES")),
+		SpoolDir:               getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
+		DBPath:                 getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
+		MaxBodyBytes:           envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
+		MaxSpoolBytes:          envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
+		MaxSourceMapBytes:      envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),
+		SessionTTL:             envDurationSeconds("BUGBARN_SESSION_TTL_SECONDS", 12*time.Hour),
+		AnalyticsRetentionDays: envIntPositive("BUGBARN_ANALYTICS_RETENTION_DAYS", 90),
+		PublicURL:              os.Getenv("BUGBARN_PUBLIC_URL"),
+		Environment:            os.Getenv("BUGBARN_ENV"),
+		SelfEndpoint:           os.Getenv("BUGBARN_SELF_ENDPOINT"),
+		SelfAPIKey:             os.Getenv("BUGBARN_SELF_API_KEY"),
+		SelfProject:            os.Getenv("BUGBARN_SELF_PROJECT"),
+		FunnelBarnEndpoint:     os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
+		FunnelBarnAPIKey:       os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
+		AutoApproveProjects:    strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
+		Mode:                   os.Getenv("BUGBARN_MODE"),
+		WriterURL:              os.Getenv("BUGBARN_WRITER_URL"),
+		RedisQueueURL:          os.Getenv("BUGBARN_REDIS_QUEUE_URL"),
+		OIDCIssuer:             os.Getenv("BUGBARN_OIDC_ISSUER"),
+		OIDCClientID:           os.Getenv("BUGBARN_OIDC_CLIENT_ID"),
+		OIDCClientSecret:       os.Getenv("BUGBARN_OIDC_CLIENT_SECRET"),
+		OIDCRedirectURL:        os.Getenv("BUGBARN_OIDC_REDIRECT_URL"),
+		OIDCRequiredGroup:      getenv("BUGBARN_OIDC_REQUIRED_GROUP", "bugbarn-users"),
 	}
 
-	if raw := os.Getenv("BUGBARN_ALLOWED_ORIGINS"); raw != "" {
-		for _, o := range strings.Split(raw, ",") {
-			if trimmed := strings.TrimSpace(o); trimmed != "" {
-				cfg.AllowedOrigins = append(cfg.AllowedOrigins, trimmed)
-			}
-		}
-	}
-	if raw := os.Getenv("BUGBARN_TRUSTED_PROXIES"); raw != "" {
-		for _, cidr := range strings.Split(raw, ",") {
-			cidr = strings.TrimSpace(cidr)
-			if cidr == "" {
-				continue
-			}
-			if !strings.Contains(cidr, "/") {
-				cidr += "/32"
-			}
-			if _, network, err := net.ParseCIDR(cidr); err == nil {
-				cfg.TrustedProxies = append(cfg.TrustedProxies, network)
-			}
-		}
-	}
-	if raw := os.Getenv("BUGBARN_MAX_BODY_BYTES"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.MaxBodyBytes = parsed
-		}
-	}
-	if raw := os.Getenv("BUGBARN_MAX_SPOOL_BYTES"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.MaxSpoolBytes = parsed
-		}
-	}
-	if raw := os.Getenv("BUGBARN_MAX_SOURCE_MAP_BYTES"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.MaxSourceMapBytes = parsed
-		}
-	}
-	if raw := os.Getenv("BUGBARN_SESSION_TTL_SECONDS"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.SessionTTL = time.Duration(parsed) * time.Second
-		}
-	}
-	cfg.AnalyticsRetentionDays = 90
-	if raw := os.Getenv("BUGBARN_ANALYTICS_RETENTION_DAYS"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			cfg.AnalyticsRetentionDays = parsed
-		}
-	}
-
-	// Digest config — SMTP vars use the same names as rapid-root (no BUGBARN_ prefix).
-	// Toggle email with BUGBARN_DIGEST_ENABLED=true|false independent of credentials.
-	smtpPort := 587
-	if raw := os.Getenv("SMTP_PORT"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			smtpPort = parsed
-		}
-	}
-	digestDay := 0
-	if raw := os.Getenv("BUGBARN_DIGEST_DAY"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 6 {
-			digestDay = parsed
-		}
-	}
-	digestHour := 8
-	if raw := os.Getenv("BUGBARN_DIGEST_HOUR"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 23 {
-			digestHour = parsed
-		}
-	}
-	cfg.Digest = digest.Config{
-		Day:        digestDay,
-		Hour:       digestHour,
-		WebhookURL: os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
-		PublicURL:  cfg.PublicURL,
-		Mail: digest.MailConfig{
-			Enabled: os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
-			Host:    os.Getenv("SMTP_HOST"),
-			Port:    smtpPort,
-			User:    os.Getenv("SMTP_USER"),
-			Pass:    os.Getenv("SMTP_PASS"),
-			From:    os.Getenv("SMTP_FROM"),
-			To:      os.Getenv("BUGBARN_DIGEST_TO"),
-		},
-	}
+	cfg.Digest = parseDigestConfig(cfg.PublicURL)
 
 	// Global admin alert recipient. Every new issue and regression across all
 	// projects is emailed here. Falls back to the weekly-digest recipient so a
@@ -178,7 +101,34 @@ func Load() Config {
 		cfg.AdminAlertEmail = cfg.Digest.Mail.To
 	}
 
-	// Validate CQRS mode.
+	validateMode(cfg)
+	return cfg
+}
+
+// parseDigestConfig builds the weekly-digest configuration from env. SMTP vars
+// use the same unprefixed names as rapid-root; BUGBARN_DIGEST_ENABLED toggles
+// email independent of credentials.
+func parseDigestConfig(publicURL string) digest.Config {
+	return digest.Config{
+		Day:        envIntInRange("BUGBARN_DIGEST_DAY", 0, 0, 6),
+		Hour:       envIntInRange("BUGBARN_DIGEST_HOUR", 8, 0, 23),
+		WebhookURL: os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
+		PublicURL:  publicURL,
+		Mail: digest.MailConfig{
+			Enabled: os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
+			Host:    os.Getenv("SMTP_HOST"),
+			Port:    envIntPositive("SMTP_PORT", 587),
+			User:    os.Getenv("SMTP_USER"),
+			Pass:    os.Getenv("SMTP_PASS"),
+			From:    os.Getenv("SMTP_FROM"),
+			To:      os.Getenv("BUGBARN_DIGEST_TO"),
+		},
+	}
+}
+
+// validateMode enforces the allowed CQRS modes; it aborts the process on a
+// misconfiguration, matching the original fail-fast behavior at startup.
+func validateMode(cfg Config) {
 	switch cfg.Mode {
 	case "", "writer", "reader":
 	default:
@@ -187,8 +137,82 @@ func Load() Config {
 	if cfg.Mode == "reader" && cfg.WriterURL == "" {
 		log.Fatalf("BUGBARN_WRITER_URL is required when BUGBARN_MODE is \"reader\"")
 	}
+}
 
-	return cfg
+// parseCSVEnv splits a comma-separated env var into trimmed, non-empty values.
+func parseCSVEnv(key string) []string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, v := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+// parseTrustedProxies parses a comma-separated list of CIDRs (a bare IP is
+// treated as /32), skipping unparseable entries.
+func parseTrustedProxies(raw string) []*net.IPNet {
+	if raw == "" {
+		return nil
+	}
+	var out []*net.IPNet
+	for _, cidr := range strings.Split(raw, ",") {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		if !strings.Contains(cidr, "/") {
+			cidr += "/32"
+		}
+		if _, network, err := net.ParseCIDR(cidr); err == nil {
+			out = append(out, network)
+		}
+	}
+	return out
+}
+
+// envInt64Positive returns the parsed positive int64 at key, or fallback.
+func envInt64Positive(key string, fallback int64) int64 {
+	if raw := os.Getenv(key); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// envIntPositive returns the parsed positive int at key, or fallback.
+func envIntPositive(key string, fallback int) int {
+	if raw := os.Getenv(key); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// envIntInRange returns the parsed int at key when within [lo,hi], else fallback.
+func envIntInRange(key string, fallback, lo, hi int) int {
+	if raw := os.Getenv(key); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= lo && parsed <= hi {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// envDurationSeconds returns a duration from a positive seconds value at key, or
+// fallback.
+func envDurationSeconds(key string, fallback time.Duration) time.Duration {
+	if s := envInt64Positive(key, 0); s > 0 {
+		return time.Duration(s) * time.Second
+	}
+	return fallback
 }
 
 func getenv(key, fallback string) string {

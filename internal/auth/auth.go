@@ -307,6 +307,8 @@ func (m *SessionManager) CSRFToken(sessionToken string) string {
 
 // CSRFCookie returns the companion CSRF cookie for a session token.
 // HttpOnly=false so JavaScript can read and attach it as X-BugBarn-CSRF.
+// SameSite=Strict matches the session cookie: this is a same-origin double-submit
+// token that is never needed on a cross-site navigation.
 func (m *SessionManager) CSRFCookie(sessionToken string, expires time.Time, secure bool) *http.Cookie {
 	return &http.Cookie{
 		Name:     "bugbarn_csrf",
@@ -314,7 +316,7 @@ func (m *SessionManager) CSRFCookie(sessionToken string, expires time.Time, secu
 		Path:     "/",
 		Expires:  expires,
 		HttpOnly: false,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   secure,
 	}
 }
@@ -327,7 +329,7 @@ func ClearCSRFCookie(secure bool) *http.Cookie {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: false,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   secure,
 	}
 }
@@ -341,7 +343,10 @@ func sign(secret, payload []byte) []byte {
 func randomSecret() string {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
-		return time.Now().UTC().Format(time.RFC3339Nano)
+		// crypto/rand failing is catastrophic and unrecoverable. Fail closed
+		// rather than fall back to a predictable value (a timestamp) that would
+		// let an attacker forge session tokens / nonces.
+		panic("auth: crypto/rand unavailable: " + err.Error())
 	}
 	return base64.RawURLEncoding.EncodeToString(raw[:])
 }

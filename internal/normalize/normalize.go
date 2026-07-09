@@ -44,7 +44,7 @@ func Normalize(raw []byte, ingestID string, receivedAt time.Time) (event.Event, 
 		IngestID:    ingestID,
 		ReceivedAt:  receivedAt,
 		ObservedAt:  observedAt,
-		Severity:    firstString(payload, "severityText", "level"),
+		Severity:    normalizeSeverity(firstString(payload, "severityText", "level")),
 		Message:     stringValue(payload["body"]),
 		Resource:    objectValue(scrubbed["resource"]),
 		Attributes:  mergeAttributes(scrubbed),
@@ -78,6 +78,57 @@ func Normalize(raw []byte, ingestID string, receivedAt time.Time) (event.Event, 
 	evt.Breadcrumbs = normalizeBreadcrumbs(payload["breadcrumbs"])
 
 	return evt, nil
+}
+
+// knownSeverities is the set of severity levels we render verbatim. Anything
+// else is treated as untrusted free text.
+var knownSeverities = map[string]string{
+	"TRACE": "TRACE", "DEBUG": "DEBUG", "INFO": "INFO", "NOTICE": "NOTICE",
+	"WARN": "WARN", "WARNING": "WARNING", "ERROR": "ERROR",
+	"CRITICAL": "CRITICAL", "FATAL": "FATAL", "ALERT": "ALERT", "EMERGENCY": "EMERGENCY",
+}
+
+// normalizeSeverity canonicalizes a reporter-supplied severity/level string.
+// Recognized levels are upper-cased to a canonical name; unrecognized input is
+// kept (SDKs use custom levels) but stripped of characters that have no place in
+// a severity label and bounded in length, so a hostile reporter cannot smuggle
+// markup or control characters downstream into alert emails and the UI. Empty
+// input returns "" so the caller's default ("ERROR") still applies.
+func normalizeSeverity(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if canonical, ok := knownSeverities[strings.ToUpper(trimmed)]; ok {
+		return canonical
+	}
+	// Unknown level: keep it but sanitize so a hostile reporter can't smuggle
+	// markup/control characters downstream. Fall back to ERROR if nothing remains.
+	if cleaned := sanitizeLabel(trimmed, 32); cleaned != "" {
+		return cleaned
+	}
+	return "ERROR"
+}
+
+// sanitizeLabel keeps only characters that legitimately appear in a short label
+// (letters, digits, and a few separators), trims surrounding space, and bounds
+// the result to maxLen bytes.
+func sanitizeLabel(s string, maxLen int) string {
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return r
+		case r == '_' || r == '-' || r == '.' || r == ' ':
+			return r
+		default:
+			return -1
+		}
+	}, s)
+	cleaned = strings.TrimSpace(cleaned)
+	if len(cleaned) > maxLen {
+		cleaned = cleaned[:maxLen]
+	}
+	return cleaned
 }
 
 func normalizeUser(value any) event.UserContext {

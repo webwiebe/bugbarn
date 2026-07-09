@@ -52,6 +52,7 @@ type Server struct {
 	autoApproveProjects bool
 
 	loginLimiter   sync.Map // map[string]*loginAttempt
+	setupLimiter   sync.Map // map[string]*loginAttempt — per-IP limiter for the setup endpoint
 	writeForwarder *WriteForwarder
 	ingestSpool    *SpoolForwarder
 	mutQueue       *mutqueue.Queue

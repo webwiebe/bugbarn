@@ -73,14 +73,22 @@ func TestHTMLTmpl_EscapesUntrustedFields(t *testing.T) {
 		AlertName: "Admin notifications",
 		Title:     `<script>alert(1)</script>`,
 		Message:   `<img src=x onerror=alert(2)>`,
-		Severity:  "error",
+		// Severity is reporter-controlled (from the ingested event's level) and
+		// Condition can carry a raw rule string; both must be HTML-escaped.
+		Severity:  `<img src=x onerror=alert(3)>`,
+		Condition: `<svg onload=alert(4)>`,
 	}
 	var buf bytes.Buffer
 	if err := alertHTMLTmpl.Execute(&buf, data.escaped()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	if strings.Contains(buf.String(), "<script>") || strings.Contains(buf.String(), "<img") {
-		t.Errorf("untrusted fields not escaped:\n%s", buf.String())
+	out := buf.String()
+	if strings.Contains(out, "<script>") || strings.Contains(out, "<img") || strings.Contains(out, "<svg") {
+		t.Errorf("untrusted fields not escaped:\n%s", out)
+	}
+	// The escaped, harmless representation must still be present.
+	if !strings.Contains(out, "&lt;img src=x onerror=alert(3)&gt;") {
+		t.Errorf("expected escaped severity in output:\n%s", out)
 	}
 }
 

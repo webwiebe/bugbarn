@@ -50,7 +50,7 @@ func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter)
 
 	rows, err := s.readDB().QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list issues")
 	}
 	defer rows.Close()
 
@@ -106,12 +106,12 @@ func scanIssueRows(rows *sql.Rows) ([]Issue, error) {
 	for rows.Next() {
 		issue, err := scanIssue(rows)
 		if err != nil {
-			return nil, err
+			return nil, wrapErr(err, "scan issue")
 		}
 		issues = append(issues, issue)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list issues")
 	}
 	return issues, nil
 }

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) listIssueEvents(w http.ResponseWriter, r *http.Request) {
@@ -70,15 +72,6 @@ func (s *Server) listRecentEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
-	since := time.Now().UTC().Add(-15 * time.Minute)
-	if raw := r.URL.Query().Get("since"); raw != "" {
-		if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-			since = parsed.UTC()
-		} else if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-			since = parsed.UTC()
-		}
-	}
-
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -97,7 +90,7 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 	defer pollTicker.Stop()
 	defer keepaliveTicker.Stop()
 
-	cursor := since
+	cursor := streamSince(r)
 
 	for {
 		select {
@@ -113,27 +106,54 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			for i := len(events) - 1; i >= 0; i-- {
-				ev := events[i]
-				ts := ev.ReceivedAt
-				if ev.ObservedAt.After(ts) {
-					ts = ev.ObservedAt
-				}
-				if !ts.After(cursor) {
-					continue
-				}
-				data, err := json.Marshal(ev)
-				if err != nil {
-					continue
-				}
-				if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
-					return
-				}
-				if ts.After(cursor) {
-					cursor = ts
-				}
+			next, ok := writeLiveEvents(w, events, cursor)
+			if !ok {
+				return
 			}
+			cursor = next
 			flusher.Flush()
 		}
 	}
+}
+
+// streamSince parses the ?since query param (RFC3339 or RFC3339Nano), defaulting
+// to 15 minutes ago.
+func streamSince(r *http.Request) time.Time {
+	since := time.Now().UTC().Add(-15 * time.Minute)
+	raw := r.URL.Query().Get("since")
+	if raw == "" {
+		return since
+	}
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return parsed.UTC()
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return parsed.UTC()
+	}
+	return since
+}
+
+// writeLiveEvents writes each event newer than cursor as an SSE data frame
+// (oldest first) and returns the advanced cursor. ok is false when writing to
+// the client failed and the stream should terminate.
+func writeLiveEvents(w http.ResponseWriter, events []domain.Event, cursor time.Time) (time.Time, bool) {
+	for i := len(events) - 1; i >= 0; i-- {
+		ev := events[i]
+		ts := ev.ReceivedAt
+		if ev.ObservedAt.After(ts) {
+			ts = ev.ObservedAt
+		}
+		if !ts.After(cursor) {
+			continue
+		}
+		data, err := json.Marshal(ev)
+		if err != nil {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+			return cursor, false
+		}
+		cursor = ts
+	}
+	return cursor, true
 }

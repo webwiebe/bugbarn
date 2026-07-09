@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
@@ -18,27 +19,47 @@ type loginAttempt struct {
 }
 
 const (
-	loginRateLimit   = 10              // max attempts per window
-	loginRateWindow  = time.Minute     // window duration
+	loginRateLimit   = 10              // max login attempts per window
+	setupRateLimit   = 20              // max setup-key requests per window
+	loginRateWindow  = time.Minute     // window duration (shared)
 	loginCleanupFreq = 5 * time.Minute // how often to purge stale entries
 )
 
-// cleanupLoginLimiter periodically removes stale IP entries from the login limiter.
+// overRateLimit records one hit for ip against the given limiter and reports
+// whether the caller has now exceeded limit within the current window. Shared by
+// the login and setup endpoints.
+func (s *Server) overRateLimit(limiter *sync.Map, ip string, limit int) bool {
+	now := time.Now()
+	val, _ := limiter.LoadOrStore(ip, &loginAttempt{windowStart: now})
+	attempt := val.(*loginAttempt)
+	if now.Sub(attempt.windowStart) >= loginRateWindow {
+		attempt.count = 0
+		attempt.windowStart = now
+	}
+	attempt.count++
+	return attempt.count > limit
+}
+
+// cleanupLoginLimiter periodically removes stale IP entries from the rate limiters.
 func (s *Server) cleanupLoginLimiter(ctx context.Context) {
 	ticker := time.NewTicker(loginCleanupFreq)
 	defer ticker.Stop()
+	purge := func(limiter *sync.Map, cutoff time.Time) {
+		limiter.Range(func(key, value any) bool {
+			if a, ok := value.(*loginAttempt); ok && a.windowStart.Before(cutoff) {
+				limiter.Delete(key)
+			}
+			return true
+		})
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			cutoff := time.Now().Add(-loginRateWindow)
-			s.loginLimiter.Range(func(key, value any) bool {
-				if a, ok := value.(*loginAttempt); ok && a.windowStart.Before(cutoff) {
-					s.loginLimiter.Delete(key)
-				}
-				return true
-			})
+			purge(&s.loginLimiter, cutoff)
+			purge(&s.setupLimiter, cutoff)
 		}
 	}
 }
@@ -51,17 +72,8 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 	// Rate-limit by client IP.
 	ip := s.clientIP(r)
-	now := time.Now()
-	val, _ := s.loginLimiter.LoadOrStore(ip, &loginAttempt{windowStart: now})
-	attempt := val.(*loginAttempt)
-	if now.Sub(attempt.windowStart) >= loginRateWindow {
-		// Window has expired; reset.
-		attempt.count = 0
-		attempt.windowStart = now
-	}
-	attempt.count++
-	if attempt.count > loginRateLimit {
-		s.logger.Warn("auth: rate-limited login", "ip", ip, "attempt", attempt.count)
+	if s.overRateLimit(&s.loginLimiter, ip, loginRateLimit) {
+		s.logger.Warn("auth: rate-limited login", "ip", ip)
 		w.Header().Set("Retry-After", "60")
 		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
 		return

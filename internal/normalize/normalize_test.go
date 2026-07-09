@@ -39,6 +39,25 @@ func TestNormalizeOpenTelemetryShapedEvent(t *testing.T) {
 	}
 }
 
+func TestNormalizeSeverity(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{"error", "ERROR"},
+		{"  Warning ", "WARNING"},
+		{"FATAL", "FATAL"},
+		{"", ""}, // caller applies the ERROR default
+		{"custom-level", "custom-level"},
+		{`<img src=x onerror=alert(1)>`, "img srcx onerroralert1"}, // markup chars stripped
+		{"<<<>>>", "ERROR"}, // nothing salvageable -> default
+		{"a-very-long-severity-label-that-keeps-going-way-past-limit", "a-very-long-severity-label-that-"},
+	}
+	for _, c := range cases {
+		if got := normalizeSeverity(c.in); got != c.want {
+			t.Errorf("normalizeSeverity(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestNormalizeSDKStyleEvent(t *testing.T) {
 	raw := []byte(`{
 		"message": "failed for user@example.com",

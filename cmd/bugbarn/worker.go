@@ -139,239 +139,274 @@ func persistReleaseRecord(ctx context.Context, store *storage.Store, record spoo
 	return err
 }
 
+// spoolWorker carries the shared state for the background ingest loop so the
+// per-record processing steps read as small methods instead of one deeply nested
+// function. retryCounts and offset are process-lifetime mutable state; the rest
+// is configuration wired once at construction.
+type spoolWorker struct {
+	eventSpool    *spool.Spool
+	spoolDir      string
+	store         *storage.Store
+	svc           *service.EventPublisher
+	selfReporting bool
+	ws            *worker.Status
+	mq            *mutqueue.Queue
+	tracer        trace.Tracer
+
+	retryCounts map[string]int // per-ingest-ID failure counts within this process
+	offset      int64          // spool cursor
+	stallWarned bool
+}
+
 func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.EventPublisher, selfReporting bool, ws *worker.Status, mq *mutqueue.Queue) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	tracer := tracing.Tracer()
-
 	// Restore cursor position from disk so we never re-process already-handled records.
 	offset, err := spool.ReadCursor(spoolDir)
 	if err != nil {
 		slog.Error("worker failed to read cursor, starting from 0", "error", err)
 		offset = 0
 	}
+	w := &spoolWorker{
+		eventSpool:    eventSpool,
+		spoolDir:      spoolDir,
+		store:         store,
+		svc:           svc,
+		selfReporting: selfReporting,
+		ws:            ws,
+		mq:            mq,
+		tracer:        tracing.Tracer(),
+		retryCounts:   make(map[string]int),
+		offset:        offset,
+	}
+	w.run(ctx)
+}
 
-	// retryCounts tracks per-ingest-ID failure counts within this process lifetime.
-	retryCounts := make(map[string]int)
-	var stallWarned bool
-
+func (w *spoolWorker) run(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Drain queued admin mutations (resolve/reopen/mute/unmute) before
-			// processing ingest events so user-initiated actions are applied first.
-			if err := mq.Drain(func(r mutqueue.Record) error {
-				return applyMutation(ctx, store, r)
-			}); err != nil {
-				slog.Error("worker failed to drain mutation queue", "error", err)
-			}
-
-			entries, err := spool.ReadRecordsFrom(spool.Path(spoolDir), offset)
-			if err != nil {
-				slog.Error("worker failed to read spool", "error", err)
-				continue
-			}
-
-			for _, entry := range entries {
-				record := entry.Record
-
-				recordCtx, recordSpan := tracer.Start(ctx, "worker.ProcessRecord",
-					trace.WithAttributes(
-						attribute.String("ingest_id", record.IngestID),
-						attribute.String("project_slug", record.ProjectSlug),
-					),
-				)
-
-				// Release markers are enqueued by POST /api/v1/releases so the
-				// create stays off the request path. Handle them here instead of
-				// the event pipeline.
-				if record.Kind == ingest.RecordKindRelease {
-					if err := persistReleaseRecord(recordCtx, store, record); err != nil {
-						recordSpan.SetStatus(codes.Error, err.Error())
-						recordSpan.End()
-						retryCounts[record.IngestID]++
-						slog.Error("worker failed to persist release", "ingest_id", record.IngestID, "attempt", retryCounts[record.IngestID], "error", err)
-						if retryCounts[record.IngestID] >= workerMaxRetries {
-							slog.Error("worker dead-lettering release record", "ingest_id", record.IngestID, "attempts", retryCounts[record.IngestID])
-							if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
-								slog.Error("worker failed to write dead letter", "ingest_id", record.IngestID, "error", dlErr)
-							}
-							delete(retryCounts, record.IngestID)
-							offset = entry.EndOffset
-							if err := spool.WriteCursor(spoolDir, offset); err != nil {
-								slog.Error("worker failed to write cursor", "error", err)
-							}
-							if ws != nil {
-								ws.RecordAdvance()
-							}
-						}
-						// Stop processing this batch; retry remaining records next tick.
-						break
-					}
-					recordSpan.End()
-					delete(retryCounts, record.IngestID)
-					offset = entry.EndOffset
-					if err := spool.WriteCursor(spoolDir, offset); err != nil {
-						slog.Error("worker failed to write cursor", "error", err)
-					}
-					if ws != nil {
-						ws.RecordAdvance()
-						ws.RecordProcessed(1)
-					}
-					continue
-				}
-
-				processed, err := worker.ProcessRecord(record)
-				if err != nil {
-					recordSpan.SetStatus(codes.Error, err.Error())
-					recordSpan.End()
-					retryCounts[record.IngestID]++
-					slog.Error("worker failed to process record", "ingest_id", record.IngestID, "attempt", retryCounts[record.IngestID], "error", err)
-					if retryCounts[record.IngestID] >= workerMaxRetries {
-						slog.Error("worker dead-lettering record", "ingest_id", record.IngestID, "attempts", retryCounts[record.IngestID])
-						if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
-							slog.Error("worker failed to write dead letter", "ingest_id", record.IngestID, "error", dlErr)
-						}
-						if selfReporting {
-							bb.CaptureMessage(fmt.Sprintf("dead-letter: ingest %s: %v", record.IngestID, err))
-						}
-						if ws != nil {
-							ws.RecordDeadLetter()
-						}
-						delete(retryCounts, record.IngestID)
-						// Advance cursor past this dead-lettered record.
-						offset = entry.EndOffset
-						if err := spool.WriteCursor(spoolDir, offset); err != nil {
-							slog.Error("worker failed to write cursor", "error", err)
-						}
-						if ws != nil {
-							ws.RecordAdvance()
-						}
-					}
-					// Stop processing this batch; retry remaining records next tick.
-					break
-				}
-
-				recordSpan.SetAttributes(
-					attribute.String("fingerprint", processed.Fingerprint),
-					attribute.String("event.severity", processed.Event.Severity),
-				)
-
-				// Resolve project from the slug stored in the spool record.
-				persistCtx := recordCtx
-				if record.ProjectSlug != "" {
-					_, resolveSpan := tracer.Start(recordCtx, "worker.ResolveProject",
-						trace.WithAttributes(attribute.String("project_slug", record.ProjectSlug)),
-					)
-					if proj, err := store.EnsureProject(recordCtx, record.ProjectSlug); err == nil {
-						persistCtx = storage.WithProjectID(recordCtx, proj.ID)
-						resolveSpan.SetAttributes(attribute.Int64("project_id", proj.ID))
-					} else {
-						slog.Error("worker failed to ensure project", "project_slug", record.ProjectSlug, "error", err)
-						resolveSpan.SetStatus(codes.Error, err.Error())
-					}
-					resolveSpan.End()
-				}
-
-				// Annotate JS stack frames with original positions from stored source maps.
-				_, symSpan := tracer.Start(persistCtx, "worker.Symbolicate")
-				processed.Event = worker.SymbolicateEvent(persistCtx, processed.Event, store)
-				symSpan.End()
-
-				_, persistSpan := tracer.Start(persistCtx, "worker.Persist")
-				issue, _, isNew, isRegressed, persistErr := store.PersistProcessedEvent(persistCtx, processed)
-				if persistErr != nil {
-					persistSpan.SetStatus(codes.Error, persistErr.Error())
-					persistSpan.End()
-					recordSpan.SetStatus(codes.Error, persistErr.Error())
-					recordSpan.End()
-					if isTransientPersistError(persistErr) {
-						slog.Warn("worker transient persist failure, will retry", "ingest_id", record.IngestID, "error", persistErr)
-						break
-					}
-					retryCounts[record.IngestID]++
-					slog.Error("worker failed to persist record", "ingest_id", record.IngestID, "attempt", retryCounts[record.IngestID], "error", persistErr)
-					if retryCounts[record.IngestID] >= workerMaxRetries {
-						slog.Error("worker dead-lettering record after persist failures", "ingest_id", record.IngestID, "attempts", retryCounts[record.IngestID])
-						if dlErr := spool.AppendDeadLetter(spoolDir, record); dlErr != nil {
-							slog.Error("worker failed to write dead letter", "ingest_id", record.IngestID, "error", dlErr)
-						}
-						if selfReporting {
-							bb.CaptureMessage(fmt.Sprintf("dead-letter persist: ingest %s: %v", record.IngestID, persistErr))
-						}
-						if ws != nil {
-							ws.RecordDeadLetter()
-						}
-						delete(retryCounts, record.IngestID)
-						// Advance cursor past this dead-lettered record.
-						offset = entry.EndOffset
-						if err := spool.WriteCursor(spoolDir, offset); err != nil {
-							slog.Error("worker failed to write cursor", "error", err)
-						}
-						if ws != nil {
-							ws.RecordAdvance()
-						}
-					}
-					// Stop processing this batch; retry remaining records next tick.
-					break
-				}
-				persistSpan.SetAttributes(
-					attribute.Bool("is_new", isNew),
-					attribute.Bool("is_regressed", isRegressed),
-					attribute.String("issue_id", issue.ID),
-				)
-				persistSpan.End()
-
-				// Publish domain events after successful persistence.
-				var projectID int64
-				if pid, ok := storage.ProjectIDFromContext(persistCtx); ok {
-					projectID = pid
-				}
-				svc.PublishIssueEvent(issue, projectID, isNew, isRegressed)
-
-				recordSpan.End()
-
-				delete(retryCounts, record.IngestID)
-				// Advance cursor after each successfully processed record.
-				offset = entry.EndOffset
-				if err := spool.WriteCursor(spoolDir, offset); err != nil {
-					slog.Error("worker failed to write cursor", "error", err)
-				}
-				if ws != nil {
-					ws.RecordAdvance()
-					ws.RecordProcessed(1)
-				}
-			}
-
-			if ws != nil {
-				remaining, _ := spool.ReadRecordsFrom(spool.Path(spoolDir), offset)
-				ws.SetPendingRecords(int64(len(remaining)))
-				snap := ws.Snapshot()
-				if !snap.Healthy && !stallWarned {
-					slog.Info("worker stall detected", "pending_records", snap.PendingRecords, "level", snap.Level, "last_advance", snap.LastAdvance)
-					if selfReporting {
-						bb.CaptureMessage("worker stall: records not advancing",
-							bb.WithAttributes(map[string]any{
-								"pending_records": snap.PendingRecords,
-								"level":           string(snap.Level),
-							}),
-						)
-					}
-					stallWarned = true
-				} else if snap.Healthy {
-					stallWarned = false
-				}
-			}
-
-			// Rotate the active spool file once it exceeds the threshold, so old
-			// segments can eventually be archived or deleted.
-			if err := eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
-				slog.Error("worker failed to rotate spool", "error", err)
-			}
+			w.tick(ctx)
 		}
+	}
+}
+
+// tick performs one drain/process/report cycle.
+func (w *spoolWorker) tick(ctx context.Context) {
+	// Drain queued admin mutations (resolve/reopen/mute/unmute) before processing
+	// ingest events so user-initiated actions are applied first.
+	if err := w.mq.Drain(func(r mutqueue.Record) error {
+		return applyMutation(ctx, w.store, r)
+	}); err != nil {
+		slog.Error("worker failed to drain mutation queue", "error", err)
+	}
+
+	entries, err := spool.ReadRecordsFrom(spool.Path(w.spoolDir), w.offset)
+	if err != nil {
+		slog.Error("worker failed to read spool", "error", err)
+		return
+	}
+
+	for _, entry := range entries {
+		// A record that fails stops the batch; remaining records retry next tick.
+		if w.processEntry(ctx, entry) {
+			break
+		}
+	}
+
+	w.reportStatus()
+
+	// Rotate the active spool file once it exceeds the threshold, so old segments
+	// can eventually be archived or deleted.
+	if err := w.eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
+		slog.Error("worker failed to rotate spool", "error", err)
+	}
+}
+
+// processEntry handles one spooled record, returning true when the caller should
+// stop draining the current batch (a failure to retry on the next tick).
+func (w *spoolWorker) processEntry(ctx context.Context, entry spool.RecordAtOffset) (stop bool) {
+	record := entry.Record
+	ctx, span := w.tracer.Start(ctx, "worker.ProcessRecord",
+		trace.WithAttributes(
+			attribute.String("ingest_id", record.IngestID),
+			attribute.String("project_slug", record.ProjectSlug),
+		),
+	)
+
+	// Release markers are enqueued by POST /api/v1/releases so the create stays
+	// off the request path. Handle them here instead of the event pipeline.
+	if record.Kind == ingest.RecordKindRelease {
+		return w.processReleaseEntry(ctx, span, entry)
+	}
+	return w.processEventEntry(ctx, span, entry)
+}
+
+func (w *spoolWorker) processReleaseEntry(ctx context.Context, span trace.Span, entry spool.RecordAtOffset) (stop bool) {
+	record := entry.Record
+	if err := persistReleaseRecord(ctx, w.store, record); err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		span.End()
+		// Release dead-letters are not self-reported (they predate self-reporting).
+		w.failRecord(record, entry.EndOffset, "persist release", err, false)
+		return true
+	}
+	span.End()
+	w.markProcessed(record, entry.EndOffset)
+	return false
+}
+
+func (w *spoolWorker) processEventEntry(ctx context.Context, span trace.Span, entry spool.RecordAtOffset) (stop bool) {
+	record := entry.Record
+
+	processed, err := worker.ProcessRecord(record)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		span.End()
+		w.failRecord(record, entry.EndOffset, "process record", err, true)
+		return true
+	}
+
+	span.SetAttributes(
+		attribute.String("fingerprint", processed.Fingerprint),
+		attribute.String("event.severity", processed.Event.Severity),
+	)
+
+	persistCtx := w.resolveProject(ctx, record)
+
+	// Annotate JS stack frames with original positions from stored source maps.
+	_, symSpan := w.tracer.Start(persistCtx, "worker.Symbolicate")
+	processed.Event = worker.SymbolicateEvent(persistCtx, processed.Event, w.store)
+	symSpan.End()
+
+	_, persistSpan := w.tracer.Start(persistCtx, "worker.Persist")
+	issue, _, isNew, isRegressed, persistErr := w.store.PersistProcessedEvent(persistCtx, processed)
+	if persistErr != nil {
+		persistSpan.SetStatus(codes.Error, persistErr.Error())
+		persistSpan.End()
+		span.SetStatus(codes.Error, persistErr.Error())
+		span.End()
+		if isTransientPersistError(persistErr) {
+			// Environmental (lock contention); retry forever, don't burn the budget.
+			slog.Warn("worker transient persist failure, will retry", "ingest_id", record.IngestID, "error", persistErr)
+			return true
+		}
+		w.failRecord(record, entry.EndOffset, "persist record", persistErr, true)
+		return true
+	}
+	persistSpan.SetAttributes(
+		attribute.Bool("is_new", isNew),
+		attribute.Bool("is_regressed", isRegressed),
+		attribute.String("issue_id", issue.ID),
+	)
+	persistSpan.End()
+
+	// Publish domain events after successful persistence.
+	var projectID int64
+	if pid, ok := storage.ProjectIDFromContext(persistCtx); ok {
+		projectID = pid
+	}
+	w.svc.PublishIssueEvent(issue, projectID, isNew, isRegressed)
+
+	span.End()
+	w.markProcessed(record, entry.EndOffset)
+	return false
+}
+
+// resolveProject resolves the record's project slug to a project-scoped context,
+// falling back to ctx unchanged when there's no slug or resolution fails.
+func (w *spoolWorker) resolveProject(ctx context.Context, record spool.Record) context.Context {
+	if record.ProjectSlug == "" {
+		return ctx
+	}
+	_, resolveSpan := w.tracer.Start(ctx, "worker.ResolveProject",
+		trace.WithAttributes(attribute.String("project_slug", record.ProjectSlug)),
+	)
+	defer resolveSpan.End()
+	proj, err := w.store.EnsureProject(ctx, record.ProjectSlug)
+	if err != nil {
+		slog.Error("worker failed to ensure project", "project_slug", record.ProjectSlug, "error", err)
+		resolveSpan.SetStatus(codes.Error, err.Error())
+		return ctx
+	}
+	resolveSpan.SetAttributes(attribute.Int64("project_id", proj.ID))
+	return storage.WithProjectID(ctx, proj.ID)
+}
+
+// markProcessed clears retry state and advances the cursor past a record that was
+// handled successfully.
+func (w *spoolWorker) markProcessed(record spool.Record, endOffset int64) {
+	delete(w.retryCounts, record.IngestID)
+	w.advanceCursor(endOffset)
+	if w.ws != nil {
+		w.ws.RecordProcessed(1)
+	}
+}
+
+// advanceCursor persists the new spool offset and records the advance.
+func (w *spoolWorker) advanceCursor(endOffset int64) {
+	w.offset = endOffset
+	if err := spool.WriteCursor(w.spoolDir, w.offset); err != nil {
+		slog.Error("worker failed to write cursor", "error", err)
+	}
+	if w.ws != nil {
+		w.ws.RecordAdvance()
+	}
+}
+
+// failRecord records a failure for one record. It increments the retry counter
+// and, once the retry budget is exhausted, dead-letters the record and advances
+// the cursor past it. report controls whether the dead-letter is surfaced via
+// self-reporting and the worker's dead-letter metric.
+func (w *spoolWorker) failRecord(record spool.Record, endOffset int64, stage string, cause error, report bool) {
+	w.retryCounts[record.IngestID]++
+	attempt := w.retryCounts[record.IngestID]
+	slog.Error("worker failed to "+stage, "ingest_id", record.IngestID, "attempt", attempt, "error", cause)
+	if attempt < workerMaxRetries {
+		return
+	}
+
+	slog.Error("worker dead-lettering record", "stage", stage, "ingest_id", record.IngestID, "attempts", attempt)
+	if dlErr := spool.AppendDeadLetter(w.spoolDir, record); dlErr != nil {
+		slog.Error("worker failed to write dead letter", "ingest_id", record.IngestID, "error", dlErr)
+	}
+	if report {
+		if w.selfReporting {
+			bb.CaptureMessage(fmt.Sprintf("dead-letter %s: ingest %s: %v", stage, record.IngestID, cause))
+		}
+		if w.ws != nil {
+			w.ws.RecordDeadLetter()
+		}
+	}
+	delete(w.retryCounts, record.IngestID)
+	w.advanceCursor(endOffset)
+}
+
+// reportStatus refreshes the pending-record gauge and emits a one-shot stall
+// warning when the worker stops advancing.
+func (w *spoolWorker) reportStatus() {
+	if w.ws == nil {
+		return
+	}
+	remaining, _ := spool.ReadRecordsFrom(spool.Path(w.spoolDir), w.offset)
+	w.ws.SetPendingRecords(int64(len(remaining)))
+	snap := w.ws.Snapshot()
+	switch {
+	case !snap.Healthy && !w.stallWarned:
+		slog.Info("worker stall detected", "pending_records", snap.PendingRecords, "level", snap.Level, "last_advance", snap.LastAdvance)
+		if w.selfReporting {
+			bb.CaptureMessage("worker stall: records not advancing",
+				bb.WithAttributes(map[string]any{
+					"pending_records": snap.PendingRecords,
+					"level":           string(snap.Level),
+				}),
+			)
+		}
+		w.stallWarned = true
+	case snap.Healthy:
+		w.stallWarned = false
 	}
 }
 

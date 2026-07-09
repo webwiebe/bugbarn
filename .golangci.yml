@@ -68,12 +68,18 @@ linters:
           - dupl
           - lll
           - errcheck
-      # Process bootstrap/orchestration wiring is allowed to be long, with
-      # long signatures/log lines and deferred resource Close() at shutdown.
-      - path: cmd/bugbarn/
+      # Complexity of the process entrypoints is tolerated (bootstrap wiring that
+      # doesn't decompose cleanly). Scoped to main.go/reader.go only, so the rest
+      # of cmd/bugbarn — notably worker.go's hot loop — is gated like any other
+      # package and its complexity can't silently regrow.
+      - path: cmd/bugbarn/(main|reader)\.go$
         linters:
           - funlen
           - gocyclo
           - gocognit
+      # Long signatures/log lines and deferred resource Close() at shutdown are
+      # idiomatic across all of cmd/bugbarn's process wiring.
+      - path: cmd/bugbarn/
+        linters:
           - lll
           - errcheck
