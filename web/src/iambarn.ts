@@ -76,6 +76,19 @@ export async function initIAMBarnWidgets(): Promise<void> {
   const host = document.getElementById("iambarn-user-menu-host");
   if (!host) return;
 
+  // The hosted <iambarn-user-menu> renders nothing unless the *browser* has a
+  // live IAMBarn session — and that can be absent or expired even while this
+  // app's own (server-side OIDC) session is still valid. Confirm the session
+  // ourselves with the same credentialed /api/v1/me call the widget makes, and
+  // only then retire BugBarn's own avatar menu. Otherwise we'd swap a working
+  // menu for a blank one, leaving a dead sidebar. Any failure keeps the fallback.
+  try {
+    const me = await fetch(`${serverURL}/api/v1/me`, { credentials: "include" });
+    if (!me.ok) return;
+  } catch {
+    return;
+  }
+
   try {
     await ensureBundle();
   } catch {
