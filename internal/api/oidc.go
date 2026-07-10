@@ -129,6 +129,28 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+// oidcLoggedOut is the landing endpoint for the IdP's RP-initiated logout
+// redirect (the post_logout_redirect_uri registered on the OIDC client and
+// handed to the hosted IAMBarn widgets). The hosted "Log out" ends the IAMBarn
+// session but never touches this barn's own cookies, so we clear the local
+// session/CSRF/auth-method cookies here before returning the user to the app.
+// No auth is required — the session may already be gone.
+func (s *Server) oidcLoggedOut(w http.ResponseWriter, r *http.Request) {
+	secure := secureCookie(r)
+	http.SetCookie(w, auth.ClearSessionCookie(secure))
+	http.SetCookie(w, auth.ClearCSRFCookie(secure))
+	// Clear the auth-method hint set by the OIDC callback (mirrors logout()).
+	http.SetCookie(w, &http.Cookie{
+		Name:     "bugbarn_auth_method",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
 func oidcShortLivedCookie(name, value string, secure bool) *http.Cookie {
 	maxAge := int(oidcCookieTTL.Seconds())
 	if value == "" {

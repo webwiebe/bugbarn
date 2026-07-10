@@ -202,6 +202,9 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request) boo
 	case r.URL.Path == "/api/v1/oidc/callback" && r.Method == http.MethodGet:
 		s.oidcCallback(w, r)
 		return true
+	case r.URL.Path == "/api/v1/oidc/logged-out" && r.Method == http.MethodGet:
+		s.oidcLoggedOut(w, r)
+		return true
 	}
 
 	return false

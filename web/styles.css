@@ -2490,3 +2490,31 @@ button.settings-nav-item:last-child {
   outline: none;
 }
 .scope-sheet-filter::placeholder { color: var(--muted); }
+
+/* IAMBarn hosted web components — map the widget's theme tokens onto BugBarn's
+   dark palette so <iambarn-user-menu> and <iambarn-profile> match the shell. */
+#iambarn-user-menu-host,
+#iambarn-profile-host {
+  --iambarn-accent: var(--accent);
+  --iambarn-accent-hover: var(--accent-warm);
+  --iambarn-bg: var(--bg);
+  --iambarn-surface: var(--panel);
+  --iambarn-text: var(--text);
+  --iambarn-muted: var(--muted);
+  --iambarn-border: var(--line);
+  --iambarn-danger: var(--danger);
+  --iambarn-radius: var(--radius);
+  --iambarn-font: inherit;
+}
+
+/* The user menu lives in the collapsed-by-default sidebar; keep it from spilling. */
+#iambarn-user-menu-host {
+  min-width: 0;
+  --iambarn-width: var(--sidebar-expanded);
+}
+
+/* The account editor gets a comfortable readable column in the main panel. */
+.account-profile-host {
+  --iambarn-width: 640px;
+  max-width: 640px;
+}

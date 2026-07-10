@@ -54,6 +54,27 @@ func TestOIDCConfigEnabled(t *testing.T) {
 	}
 }
 
+func TestOIDCClientPostLogoutRedirectURI(t *testing.T) {
+	cases := []struct {
+		name        string
+		redirectURL string
+		want        string
+	}{
+		{"https origin", "https://bugbarn.example.com/api/v1/oidc/callback", "https://bugbarn.example.com/api/v1/oidc/logged-out"},
+		{"host with port", "http://localhost:8080/api/v1/oidc/callback", "http://localhost:8080/api/v1/oidc/logged-out"},
+		{"unparseable", "://nope", ""},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cli := NewOIDCClient(OIDCConfig{RedirectURL: tc.redirectURL})
+			if got := cli.PostLogoutRedirectURI(); got != tc.want {
+				t.Errorf("PostLogoutRedirectURI() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestClaimsPreferredName(t *testing.T) {
 	cases := []struct {
 		claims Claims

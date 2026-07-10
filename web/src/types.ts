@@ -242,7 +242,7 @@ export interface AppState {
   currentGroup: string | null;
   settingsTab: SettingsTab;
   currentEnv: string;
-  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs";
+  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs" | "account";
   issues: ApiIssue[];
   issueQuery: string;
   issueSort: IssueSort;
