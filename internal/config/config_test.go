@@ -84,7 +84,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.MaxBodyBytes != 1<<20 {
 		t.Errorf("MaxBodyBytes default = %d", cfg.MaxBodyBytes)
 	}
-	if cfg.SessionTTL != 12*time.Hour {
+	if cfg.SessionTTL != time.Hour {
 		t.Errorf("SessionTTL default = %v", cfg.SessionTTL)
 	}
 	if cfg.AnalyticsRetentionDays != 90 {
