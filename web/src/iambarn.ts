@@ -120,9 +120,29 @@ function mountMenu(): void {
   menu.setAttribute("show-email", "");
   host.replaceChildren(menu);
   host.removeAttribute("hidden");
+  flipDropdownUpward(menu);
   // The hosted menu now owns the signed-in-user affordance; retire the custom one.
   document.getElementById("user-avatar-wrap")?.setAttribute("hidden", "");
   menuMounted = true;
+}
+
+// flipDropdownUpward makes the hosted user-menu open its dropdown ABOVE the
+// avatar. The widget hardcodes the dropdown to open downward (top: 100%), but we
+// mount it at the bottom of the sidebar, so downward would clip off the bottom of
+// the viewport. The element uses an open shadow root, so we inject a scoped style
+// override that opens it upward into the empty sidebar space instead.
+function flipDropdownUpward(menu: HTMLElement): void {
+  const inject = (): void => {
+    const root = menu.shadowRoot;
+    if (!root || root.getElementById("bb-menu-placement")) return;
+    const style = document.createElement("style");
+    style.id = "bb-menu-placement";
+    style.textContent = ".menu-dropdown{top:auto !important;bottom:calc(100% + 6px) !important;}";
+    root.appendChild(style);
+  };
+  inject();
+  // The shadow root may not be attached on the same tick the element upgrades.
+  if (!menu.shadowRoot) requestAnimationFrame(inject);
 }
 
 function unmountMenu(): void {
