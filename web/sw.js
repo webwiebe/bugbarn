@@ -1,12 +1,14 @@
-// Cache version is stamped at Docker build time from a hash of the compiled
-// assets. Any change to dist/app.js or styles.css produces a new hash, which
-// makes the browser treat this as a new service worker, triggering install →
-// activate → old cache deletion. Never edit __BUILD_HASH__ by hand.
+// Cache version + precache shell are templated by build.mjs from the content
+// hash of the compiled bundle. Any source change produces new hashed asset
+// filenames and a new version, so the browser treats this as a new service
+// worker (install → activate → old cache deletion) and the precached shell
+// points at the immutable, content-hashed assets. Never edit the placeholders
+// by hand — build.mjs fills them.
 const CACHE_VERSION = '__BUILD_HASH__';
 const CACHE_NAME = `bugbarn-${CACHE_VERSION}`;
 const API_CACHE = `bugbarn-api-${CACHE_VERSION}`;
 
-const APP_SHELL = ['/', '/dist/app.js', '/styles.css', '/manifest.json'];
+const APP_SHELL = __APP_SHELL__;
 
 const CACHEABLE_API = [
   '/api/v1/projects',
