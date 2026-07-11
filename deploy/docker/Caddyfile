@@ -10,6 +10,19 @@
     handle /app* {
         uri strip_prefix /app
         root * /srv/app
+
+        # Content-hashed bundle + stylesheet under /dist/ never change for a given
+        # URL, so cache them forever. A new build ships new filenames. NOTE: the
+        # header directive runs before `uri strip_prefix`, so match the original
+        # /app/-prefixed paths, not the stripped ones.
+        @assets path /app/dist/*
+        header @assets Cache-Control "public, max-age=31536000, immutable"
+
+        # The shell (HTML entry + service worker + manifest) must always be
+        # revalidated so a new deploy's hashed asset references are picked up.
+        @shell path /app/ /app/index.html /app/sw.js /app/manifest.json
+        header @shell Cache-Control "no-cache"
+
         try_files {path} /index.html
         file_server
     }

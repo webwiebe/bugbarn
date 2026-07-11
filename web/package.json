@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
     "lint": "npm run lint:tsc && npm run lint:eslint",
     "lint:tsc": "tsc --noEmit",
     "lint:eslint": "eslint src/",
@@ -18,6 +18,7 @@
     "@typescript-eslint/eslint-plugin": "^8.32.0",
     "@typescript-eslint/parser": "^8.32.0",
     "dotenv": "^17.4.2",
+    "esbuild": "^0.28.1",
     "eslint": "^9.27.0",
     "globals": "^16.1.0",
     "typescript": "^5.8.3"

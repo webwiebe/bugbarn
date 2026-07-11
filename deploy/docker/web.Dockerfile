@@ -37,12 +37,16 @@ FROM caddy:2.8-alpine
 
 WORKDIR /srv
 
-# Dashboard SPA under /app/
-COPY --from=web-build /app/web/dist /srv/app/dist
-COPY web/index.html /srv/app/index.html
-COPY web/styles.css /srv/app/styles.css
+# Dashboard SPA under /app/. build.mjs emits content-hashed, immutable assets
+# (app-<hash>.js + styles-<hash>.css) plus a templated index.html/sw.js that
+# reference them by their hashed names. The Caddyfile serves the hashed assets
+# immutable and the shell no-cache, so a new deploy is picked up immediately with
+# no CDN purge and no stale bare-module URLs.
+COPY --from=web-build /app/web/dist/app-*.js* /srv/app/dist/
+COPY --from=web-build /app/web/dist/styles-*.css /srv/app/dist/
+COPY --from=web-build /app/web/dist/index.html /srv/app/index.html
+COPY --from=web-build /app/web/dist/sw.js /srv/app/sw.js
 COPY web/manifest.json /srv/app/manifest.json
-COPY web/sw.js /srv/app/sw.js
 COPY web/icons/ /srv/app/icons/
 
 # Marketing site at root
@@ -51,11 +55,6 @@ COPY --from=site-build /app/site/dist /srv/site
 # Stage the SDK tarball under /tmp so the entrypoint can copy it to the
 # persistent /srv/packages volume on startup, preserving previous versions.
 COPY --from=sdk-build /app/sdks/typescript/bugbarn-typescript-*.tgz /tmp/sdk-package/
-
-# Stamp the service worker with a hash of the compiled assets. Any change to
-# dist/ produces a new hash → browser detects a new SW → old caches purged.
-RUN BUILD_HASH=$(find /srv/app/dist /srv/app/styles.css /srv/app/index.html -type f | sort | xargs sha256sum | sha256sum | cut -c1-12) && \
-    sed -i "s/__BUILD_HASH__/${BUILD_HASH}/g" /srv/app/sw.js /srv/app/index.html
 
 COPY deploy/docker/Caddyfile /etc/caddy/Caddyfile
 COPY deploy/docker/web-entrypoint.sh /usr/local/bin/entrypoint.sh
