@@ -37,8 +37,9 @@ BUGBARN_SPOOL_DIR=/var/lib/bugbarn/spool
 # Maximum spool size in bytes; 0 = unlimited (default: 0)
 #BUGBARN_MAX_SPOOL_BYTES=0
 
-# Session TTL in seconds (default: 43200 = 12 hours)
-#BUGBARN_SESSION_TTL_SECONDS=43200
+# Session TTL in seconds (default: 3600 = 1 hour). Kept short so a disabled
+# IAMBarn user's residual BugBarn access is bounded; re-login re-checks IAMBarn.
+#BUGBARN_SESSION_TTL_SECONDS=3600
 
 # --- Digest / alert delivery ---
 

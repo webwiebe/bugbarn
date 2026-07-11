@@ -71,7 +71,7 @@ func Load() Config {
 		MaxBodyBytes:           envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
 		MaxSpoolBytes:          envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
 		MaxSourceMapBytes:      envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),
-		SessionTTL:             envDurationSeconds("BUGBARN_SESSION_TTL_SECONDS", 12*time.Hour),
+		SessionTTL:             envDurationSeconds("BUGBARN_SESSION_TTL_SECONDS", time.Hour),
 		AnalyticsRetentionDays: envIntPositive("BUGBARN_ANALYTICS_RETENTION_DAYS", 90),
 		PublicURL:              os.Getenv("BUGBARN_PUBLIC_URL"),
 		Environment:            os.Getenv("BUGBARN_ENV"),

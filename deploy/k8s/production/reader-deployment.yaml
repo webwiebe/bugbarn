@@ -54,7 +54,7 @@ spec:
             - name: BUGBARN_SPOOL_DIR
               value: /var/spool/bugbarn
             - name: BUGBARN_SESSION_TTL_SECONDS
-              value: "86400"
+              value: "3600"
             - name: BUGBARN_SELF_ENDPOINT
               value: https://bugbarn.wiebe.xyz
             - name: BUGBARN_SELF_API_KEY
