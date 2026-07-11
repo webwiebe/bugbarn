@@ -5,16 +5,49 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 )
 
 const (
-	oidcStateCookie = "bugbarn_oidc_state"
-	oidcNonceCookie = "bugbarn_oidc_nonce"
-	oidcCookieTTL   = 10 * time.Minute
+	oidcStateCookie  = "bugbarn_oidc_state"
+	oidcNonceCookie  = "bugbarn_oidc_nonce"
+	oidcReturnCookie = "bugbarn_oidc_return"
+	oidcCookieTTL    = 10 * time.Minute
 )
+
+// sanitizeReturnTo constrains a caller-supplied post-login redirect to a safe,
+// same-origin relative path so it can't be turned into an open redirect or a
+// header-injection vector. Anything that isn't a plain "/…" path (absolute URLs,
+// protocol-relative "//host", CR/LF, or over-long values) collapses to "/".
+func sanitizeReturnTo(raw string) string {
+	if raw == "" || len(raw) > 512 {
+		return "/"
+	}
+	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+		return "/"
+	}
+	if strings.Contains(raw, "://") || strings.ContainsAny(raw, "\r\n") {
+		return "/"
+	}
+	return raw
+}
+
+// readReturnTo recovers the post-login redirect stashed by oidcLogin, defaulting
+// to "/" and re-sanitizing defensively.
+func (s *Server) readReturnTo(r *http.Request) string {
+	c, err := r.Cookie(oidcReturnCookie)
+	if err != nil || c.Value == "" {
+		return "/"
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(c.Value)
+	if err != nil {
+		return "/"
+	}
+	return sanitizeReturnTo(string(decoded))
+}
 
 // oidcLogin starts the OIDC authorization-code flow by redirecting the browser
 // to the iambarn authorize endpoint. State + nonce are stored in short-lived,
@@ -35,7 +68,14 @@ func (s *Server) oidcLogin(w http.ResponseWriter, r *http.Request) {
 		prompt = "login"
 	case "select_account":
 		prompt = "select_account"
+	case "none":
+		// Silent re-auth for the widget "reconnect" flow: iambarn issues a code
+		// without UI when the SSO session is still alive, or returns
+		// error=login_required — which the callback escalates to an interactive
+		// login so the user's on-demand reconnect still completes.
+		prompt = "none"
 	}
+	returnTo := sanitizeReturnTo(r.URL.Query().Get("return_to"))
 	authURL, err := s.oidc.AuthorizeURL(state, nonce, prompt)
 	if err != nil {
 		s.logger.Warn("oidc: build authorize url", "error", err)
@@ -45,6 +85,8 @@ func (s *Server) oidcLogin(w http.ResponseWriter, r *http.Request) {
 	secure := secureCookie(r)
 	http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, state, secure))
 	http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, nonce, secure))
+	http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie,
+		base64.RawURLEncoding.EncodeToString([]byte(returnTo)), secure))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -59,6 +101,28 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil || stateCookie.Value == "" || stateCookie.Value != r.URL.Query().Get("state") {
 		s.logger.Warn("oidc: state mismatch")
 		http.Error(w, "oidc state mismatch", http.StatusBadRequest)
+		return
+	}
+	// A prompt=none silent re-auth that found no live IAMBarn session comes back
+	// with an error and no code. For the interaction-required family, escalate to
+	// an interactive login (preserving return_to) so the reconnect completes; any
+	// other error returns the user to the app root with a marker.
+	if oidcErr := r.URL.Query().Get("error"); oidcErr != "" {
+		secure := secureCookie(r)
+		http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
+		http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
+		switch oidcErr {
+		case "login_required", "interaction_required", "consent_required", "account_selection_required":
+			q := url.Values{}
+			if rt := s.readReturnTo(r); rt != "/" {
+				q.Set("return_to", rt)
+			}
+			http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
+			http.Redirect(w, r, "/api/v1/oidc/login?"+q.Encode(), http.StatusFound)
+		default:
+			http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
+			http.Redirect(w, r, "/?oidc_error="+url.QueryEscape(oidcErr), http.StatusFound)
+		}
 		return
 	}
 	nonceCookie, err := r.Cookie(oidcNonceCookie)
@@ -85,6 +149,7 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		secure := secureCookie(r)
 		http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
 		http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
+		http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
 		q := url.Values{}
 		q.Set("oidc_error", "access_denied")
 		if id := claims.PreferredName(); id != "" {
@@ -123,10 +188,14 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		// survive the cross-site top-level redirect back from the IdP.
 		SameSite: http.SameSiteStrictMode,
 	})
-	// Clear the short-lived state/nonce cookies.
+	// Return the browser where it started the flow (e.g. #/account for a widget
+	// reconnect), defaulting to the app root.
+	returnTo := s.readReturnTo(r)
+	// Clear the short-lived state/nonce/return cookies.
 	http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
 	http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
+	http.Redirect(w, r, returnTo, http.StatusFound)
 }
 
 // oidcLoggedOut is the landing endpoint for the IdP's RP-initiated logout
