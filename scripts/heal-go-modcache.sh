@@ -1,49 +1,32 @@
 #!/bin/sh
-# Evicts corrupted modules from the Go module cache.
+# Heals a corrupted Go module cache on the shared self-hosted runners.
 #
-# The self-hosted runners share a persistent GOMODCACHE in $HOME. A disk-full
-# incident can truncate files inside an extracted module dir, after which
-# every host-side typecheck fails with "expected 'package', found 'EOF'".
-# Evicting only the extracted dir is NOT enough: re-extraction trusts the
-# locally cached zip + ziphash pair without re-checking go.sum, so a
-# truncated download reproduces the same corruption. Evict the download
-# cache entry too — the next build re-downloads the module and verifies it
-# against go.sum.
+# The runners keep a persistent GOMODCACHE in $HOME. A disk-full incident can
+# truncate files in there — both extracted module dirs AND the downloaded
+# zips. Go re-extracts from the local zip without re-checking go.sum (it only
+# trusts the sibling ziphash written at download time), so a truncated zip
+# keeps reproducing "expected 'package', found 'EOF'" typecheck failures on
+# every host-side build until the cache entry is destroyed.
 #
-# Detection: a valid .go file can never be empty (it needs a package clause),
-# so any zero-byte .go file outside testdata marks its module as corrupt.
+# `go mod verify` recomputes the hashes of every dependency's cached zip and
+# extracted dir, so it detects exactly this class of damage. When it fails,
+# nuking the module cache is the only reliable recovery: the next download
+# re-fetches everything and verifies it against go.sum. That costs one cold
+# `go mod download` (~a minute on these runners) and only happens after an
+# actual corruption event.
 set -eu
 
-modcache="$(go env GOMODCACHE)"
-if [ ! -d "$modcache" ]; then
-	echo "heal-go-modcache: no module cache at $modcache"
+# Fill any gaps first so verify sees a complete cache; fresh downloads are
+# verified against go.sum on the way in.
+go mod download
+
+if go mod verify; then
+	echo "heal-go-modcache: module cache OK"
 	exit 0
 fi
 
-find "$modcache" -path "$modcache/cache" -prune -o \
-	-name '*.go' -size 0 -not -path '*/testdata/*' -print 2>/dev/null |
-	sed -E 's|(@[^/]*)/.*|\1|' | sort -u | while read -r dir; do
-	case "$dir" in
-	"$modcache"/*@*) ;;
-	*) continue ;;
-	esac
-	echo "heal-go-modcache: evicting corrupted module $dir"
-	chmod -R u+w "$dir" 2>/dev/null || true
-	rm -rf "$dir"
-	# Matching download-cache entry (module path is already escaped in the
-	# extracted dir name): drop the zip/ziphash/info/mod so the module is
-	# re-fetched and re-verified against go.sum instead of re-extracted
-	# from a possibly-truncated local zip.
-	rel="${dir#"$modcache"/}"
-	mod="${rel%@*}"
-	ver="${rel##*@}"
-	dl="$modcache/cache/download/$mod/@v"
-	if [ -d "$dl" ]; then
-		echo "heal-go-modcache: evicting download cache $dl/$ver.*"
-		chmod -R u+w "$dl" 2>/dev/null || true
-		for f in "$dl/$ver".zip "$dl/$ver".ziphash "$dl/$ver".info "$dl/$ver".mod; do
-			rm -f "$f"
-		done
-	fi
-done
-echo "heal-go-modcache: OK"
+echo "heal-go-modcache: corruption detected — rebuilding the module cache"
+go clean -modcache
+go mod download
+go mod verify
+echo "heal-go-modcache: module cache rebuilt"
