@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
@@ -19,6 +21,7 @@ import (
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
+	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
@@ -51,17 +54,32 @@ type Server struct {
 	ingestHealth        func() ingesthealth.Snapshot
 	autoApproveProjects bool
 
-	loginLimiter   sync.Map // map[string]*loginAttempt
-	setupLimiter   sync.Map // map[string]*loginAttempt — per-IP limiter for the setup endpoint
-	writeForwarder *WriteForwarder
-	ingestSpool    *SpoolForwarder
-	mutQueue       *mutqueue.Queue
-	dbPath         string
+	loginLimiter       sync.Map // map[string]*loginAttempt
+	setupLimiter       sync.Map // map[string]*loginAttempt — per-IP limiter for the setup endpoint
+	backchannelLimiter sync.Map // map[string]*loginAttempt — per-IP limiter for back-channel logout
+	writeForwarder     *WriteForwarder
+	ingestSpool        *SpoolForwarder
+	mutQueue           *mutqueue.Queue
+	dbPath             string
 
 	digestConfig *digest.Config
 	digestStore  digest.Store
 
 	oidc *auth.OIDCClient
+
+	// sessionStore owns the server-side web sessions behind the opaque cookie.
+	// Direct (SQLite) in single-process/writer mode, Remote (writer-internal
+	// HTTP) on the CQRS readers.
+	sessionStore sessionstore.Store
+	// oidcRefreshGrace bounds how long a session survives on stale tokens
+	// while the IdP is unreachable (never applies to invalid_grant).
+	oidcRefreshGrace time.Duration
+	// environment ("production", "staging", …, or "" for local dev) drives
+	// fail-closed defaults such as Secure cookies.
+	environment string
+	// internalSessionSecret enables the writer-internal /internal/v1/sessions/*
+	// endpoints (HMAC over the request body with the shared session secret).
+	internalSessionSecret []byte
 }
 
 // SetMutQueue wires the mutation queue so that resolve/reopen/mute/unmute
@@ -75,6 +93,44 @@ func (s *Server) SetMutQueue(q *mutqueue.Queue) {
 // /api/v1/oidc/login on the login screen. Local single-user login still works.
 func (s *Server) SetOIDCClient(c *auth.OIDCClient) {
 	s.oidc = c
+	// The default Direct session store refreshes via the same OIDC client.
+	if direct, ok := s.sessionStore.(*sessionstore.Direct); ok && direct != nil {
+		direct.SetRefresher(c)
+	}
+}
+
+// SetSessionStore overrides the session store (reader mode wires the Remote
+// implementation pointing at the writer's internal endpoints).
+func (s *Server) SetSessionStore(store sessionstore.Store) {
+	s.sessionStore = store
+	if direct, ok := store.(*sessionstore.Direct); ok && direct != nil && s.oidc != nil {
+		direct.SetRefresher(s.oidc)
+	}
+}
+
+// SetAuthEnvironment records the deployment environment ("production",
+// "staging", "testing", or "" for local dev) so cookie/security defaults can
+// fail closed outside dev.
+func (s *Server) SetAuthEnvironment(env string) {
+	s.environment = strings.TrimSpace(env)
+}
+
+// SetOIDCRefreshGrace bounds how long sessions are served on stale tokens
+// during an IdP outage. Zero keeps the 1h default.
+func (s *Server) SetOIDCRefreshGrace(d time.Duration) {
+	if d > 0 {
+		s.oidcRefreshGrace = d
+	}
+}
+
+// SetInternalSessionSecret enables the writer-internal session endpoints,
+// authenticated by an HMAC over the request body with this shared secret.
+// Writer/single-process only.
+func (s *Server) SetInternalSessionSecret(secret string) {
+	secret = strings.TrimSpace(secret)
+	if secret != "" {
+		s.internalSessionSecret = []byte(secret)
+	}
 }
 
 // SetTrustedProxies sets the CIDRs from which X-Forwarded-For is trusted.
@@ -205,6 +261,8 @@ func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, user
 		sessions:          sessions,
 		allowedOrigins:    allowedOrigins,
 		maxSourceMapBytes: defaultMaxSourceMapBytes,
+		sessionStore:      sessionstore.NewDirect(store, nil),
+		oidcRefreshGrace:  time.Hour,
 	}
 	return s
 }

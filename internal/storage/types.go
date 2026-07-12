@@ -28,21 +28,22 @@ type core struct {
 // only one domain model's operations. Services depend on these (or interfaces
 // satisfied by them), not on the whole storage surface.
 type (
-	IssueStore     struct{ *core }
-	EventStore     struct{ *core }
-	ProjectStore   struct{ *core }
-	GroupStore     struct{ *core }
-	AlertStore     struct{ *core }
-	ReleaseStore   struct{ *core }
-	AnalyticsStore struct{ *core }
-	LogStore       struct{ *core }
-	SettingsStore  struct{ *core }
-	SourceMapStore struct{ *core }
-	APIKeyStore    struct{ *core }
-	FacetStore     struct{ *core }
-	HeldEventStore struct{ *core }
-	UserStore      struct{ *core }
-	DigestStore    struct{ *core }
+	IssueStore      struct{ *core }
+	EventStore      struct{ *core }
+	ProjectStore    struct{ *core }
+	GroupStore      struct{ *core }
+	AlertStore      struct{ *core }
+	ReleaseStore    struct{ *core }
+	AnalyticsStore  struct{ *core }
+	LogStore        struct{ *core }
+	SettingsStore   struct{ *core }
+	SourceMapStore  struct{ *core }
+	APIKeyStore     struct{ *core }
+	FacetStore      struct{ *core }
+	HeldEventStore  struct{ *core }
+	UserStore       struct{ *core }
+	DigestStore     struct{ *core }
+	WebSessionStore struct{ *core }
 )
 
 // Store is a thin facade that composes every domain store over one core. Its
@@ -67,6 +68,7 @@ type Store struct {
 	*HeldEventStore
 	*UserStore
 	*DigestStore
+	*WebSessionStore
 }
 
 // Stores exposes the individual domain stores by name for dependency wiring.
@@ -91,22 +93,23 @@ type Stores struct {
 // newStore builds the facade and every domain store over a single shared core.
 func newStore(c *core) *Store {
 	return &Store{
-		core:           c,
-		IssueStore:     &IssueStore{c},
-		EventStore:     &EventStore{c},
-		ProjectStore:   &ProjectStore{c},
-		GroupStore:     &GroupStore{c},
-		AlertStore:     &AlertStore{c},
-		ReleaseStore:   &ReleaseStore{c},
-		AnalyticsStore: &AnalyticsStore{c},
-		LogStore:       &LogStore{c},
-		SettingsStore:  &SettingsStore{c},
-		SourceMapStore: &SourceMapStore{c},
-		APIKeyStore:    &APIKeyStore{c},
-		FacetStore:     &FacetStore{c},
-		HeldEventStore: &HeldEventStore{c},
-		UserStore:      &UserStore{c},
-		DigestStore:    &DigestStore{c},
+		core:            c,
+		IssueStore:      &IssueStore{c},
+		EventStore:      &EventStore{c},
+		ProjectStore:    &ProjectStore{c},
+		GroupStore:      &GroupStore{c},
+		AlertStore:      &AlertStore{c},
+		ReleaseStore:    &ReleaseStore{c},
+		AnalyticsStore:  &AnalyticsStore{c},
+		LogStore:        &LogStore{c},
+		SettingsStore:   &SettingsStore{c},
+		SourceMapStore:  &SourceMapStore{c},
+		APIKeyStore:     &APIKeyStore{c},
+		FacetStore:      &FacetStore{c},
+		HeldEventStore:  &HeldEventStore{c},
+		UserStore:       &UserStore{c},
+		DigestStore:     &DigestStore{c},
+		WebSessionStore: &WebSessionStore{c},
 	}
 }
 

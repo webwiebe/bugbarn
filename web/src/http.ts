@@ -53,15 +53,28 @@ export async function logout(): Promise<void> {
   // login screen would auto-redirect back into iambarn, iambarn would reuse
   // its still-valid session, and the user would bounce straight back in.
   const wasOIDC = document.cookie.split("; ").some((c) => c.startsWith("bugbarn_auth_method=oidc"));
+  let serverLogoutURL = "";
   try {
-    await fetch(apiUrl("/api/v1/logout"), { method: "POST", credentials: "include" });
+    const res = await fetch(apiUrl("/api/v1/logout"), { method: "POST", credentials: "include" });
+    if (res.ok) {
+      const payload = normalizeObject<RawRecord>(await res.json());
+      serverLogoutURL = readString(payload, ["logout_url"]);
+    }
   } catch {
     // ignore network errors on logout
   }
   state.authenticated = false;
   state.username = "";
   stopLiveStream();
+  // Server-driven RP-initiated logout: the backend revoked our tokens and
+  // built the end-session URL (with id_token_hint) — follow it so the
+  // iambarn session ends too, without any confirmation prompt.
+  if (serverLogoutURL) {
+    window.location.assign(serverLogoutURL);
+    return;
+  }
   if (wasOIDC) {
+    // Fallback for older servers that don't return logout_url.
     const endURL = await fetchIAMBarnEndSessionURL();
     if (endURL) {
       window.location.assign(endURL);

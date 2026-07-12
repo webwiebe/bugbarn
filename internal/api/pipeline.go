@@ -12,14 +12,16 @@ import (
 // authenticateAndResolve enforces authentication, API-key scope, and CSRF for
 // the protected endpoints, then resolves the request's project/group scope into
 // its context. It returns the (possibly context-augmented) request and true to
-// proceed, or false after writing an error response. When user auth is not
-// configured it is a pass-through.
+// proceed, or false after writing an error response. Only when NO browser-auth
+// mechanism is configured (neither local users nor OIDC) is it a pass-through.
 func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	// All remaining endpoints require authentication. When auth is configured, the
 	// request must carry either a valid session cookie or a valid API key. Full-scope
 	// API keys are accepted on all protected endpoints; ingest-only keys are rejected here
-	// (they may only reach the ingest endpoint handled above).
-	if s.users == nil || !s.users.Enabled() {
+	// (they may only reach the ingest endpoint handled above). The gate engages for
+	// local users OR OIDC — gating on local users alone left OIDC-only deployments
+	// wide open (fail-open bug).
+	if !s.authEnabled() {
 		return r, true
 	}
 
@@ -97,7 +99,7 @@ func (s *Server) refreshCSRFCookie(w http.ResponseWriter, r *http.Request, using
 	if usingSession && s.sessions != nil {
 		if sessionCookie, err := r.Cookie("bugbarn_session"); err == nil {
 			if csrfCookie, err := r.Cookie("bugbarn_csrf"); err != nil || csrfCookie.Value != s.sessions.CSRFToken(sessionCookie.Value) {
-				secure := secureCookie(r)
+				secure := s.secureCookie(r)
 				expires := time.Now().Add(12 * time.Hour)
 				http.SetCookie(w, s.sessions.CSRFCookie(sessionCookie.Value, expires, secure))
 			}

@@ -30,6 +30,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
+	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -181,6 +182,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if err := ensureProductionAPIKeyAuth(cfg, apiAuthorizer); err != nil {
+		return err
+	}
 	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
 	if err != nil {
 		return err
@@ -193,6 +197,13 @@ func run() error {
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
 	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
+	apiServer.SetAuthEnvironment(cfg.Environment)
+	apiServer.SetOIDCRefreshGrace(cfg.OIDCRefreshGrace)
+	// Writer-internal session endpoints for the CQRS readers. Registering them
+	// in single-process mode too is harmless — they answer only to requests
+	// HMAC-signed with the shared session secret.
+	apiServer.SetInternalSessionSecret(cfg.SessionSecret)
+	sessionstore.StartPruner(ctx, store, logger, &bgWg)
 	apiServer.SetDigest(cfg.Digest, store)
 	apiServer.SetMutQueue(mutQueue)
 	if len(cfg.TrustedProxies) > 0 {

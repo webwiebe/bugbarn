@@ -5,7 +5,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -41,6 +40,10 @@ type OIDCClient struct {
 	provider *oidcv3.Provider
 	verifier *oidcv3.IDTokenVerifier
 	oauth    *oauth2.Config
+	// Optional endpoints from discovery, with conventional iambarn fallbacks
+	// when the discovery document omits them.
+	revocationEndpoint string
+	endSessionEndpoint string
 }
 
 // NewOIDCClient returns a client. Discovery is deferred to the first call so
@@ -65,6 +68,31 @@ func (c *OIDCClient) Issuer() string { return strings.TrimRight(c.cfg.Issuer, "/
 // exactly the URL to use without reaching into the client's configuration.
 func (c *OIDCClient) LogoutURL() string {
 	return buildEndSessionURL(c.EndSessionURL(), c.cfg)
+}
+
+// LogoutURLWithIDTokenHint builds the RP-initiated logout URL for a specific
+// session: id_token_hint identifies the IdP session to end without any
+// interactive confirmation, client_id + post_logout_redirect_uri bring the
+// browser back to this barn's /api/v1/oidc/logged-out landing (which clears
+// the local cookies). Returns "" when the issuer can't be reached.
+func (c *OIDCClient) LogoutURLWithIDTokenHint(idTokenHint string) string {
+	endSession := c.EndSessionURL()
+	if endSession == "" {
+		return ""
+	}
+	q := url.Values{}
+	if idTokenHint != "" {
+		q.Set("id_token_hint", idTokenHint)
+	}
+	q.Set("client_id", c.cfg.ClientID)
+	if postLogout := c.PostLogoutRedirectURI(); postLogout != "" {
+		q.Set("post_logout_redirect_uri", postLogout)
+	}
+	sep := "?"
+	if strings.Contains(endSession, "?") {
+		sep = "&"
+	}
+	return endSession + sep + q.Encode()
 }
 
 // PostLogoutRedirectURI returns the absolute URL the IdP should send the browser
@@ -117,11 +145,14 @@ func buildEndSessionURL(raw string, cfg OIDCConfig) string {
 }
 
 // AuthorizeURL builds the URL the browser should be redirected to. The caller
-// is responsible for storing state + nonce in short-lived cookies and matching
-// them on callback. If prompt is non-empty (e.g. "login", "select_account"),
-// it is forwarded to the IdP so the user is re-prompted instead of silently
-// reusing an existing IdP session.
-func (c *OIDCClient) AuthorizeURL(state, nonce, prompt string) (string, error) {
+// is responsible for storing state + nonce (and the PKCE verifier) in
+// short-lived cookies and matching them on callback. If prompt is non-empty
+// (e.g. "login", "select_account"), it is forwarded to the IdP so the user is
+// re-prompted instead of silently reusing an existing IdP session. verifier is
+// the PKCE code_verifier from oauth2.GenerateVerifier; its S256 challenge is
+// sent with the authorization request even though BugBarn is a confidential
+// client (PKCE-everywhere hardens against code injection at zero cost).
+func (c *OIDCClient) AuthorizeURL(state, nonce, prompt, verifier string) (string, error) {
 	if err := c.ensureReady(context.Background()); err != nil {
 		return "", err
 	}
@@ -129,53 +160,19 @@ func (c *OIDCClient) AuthorizeURL(state, nonce, prompt string) (string, error) {
 	if prompt != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("prompt", prompt))
 	}
+	if verifier != "" {
+		opts = append(opts, oauth2.S256ChallengeOption(verifier))
+	}
 	return c.oauth.AuthCodeURL(state, opts...), nil
 }
 
 // EndSessionURL returns the issuer's RP-initiated logout endpoint, or "" if
-// the issuer's discovery document doesn't advertise one.
+// the issuer can't be reached for discovery.
 func (c *OIDCClient) EndSessionURL() string {
 	if err := c.ensureReady(context.Background()); err != nil {
 		return ""
 	}
-	var meta struct {
-		EndSessionEndpoint string `json:"end_session_endpoint"`
-	}
-	if err := c.provider.Claims(&meta); err != nil {
-		return ""
-	}
-	return meta.EndSessionEndpoint
-}
-
-// Exchange swaps an authorization code for tokens and verifies the ID token's
-// signature + audience + nonce. Returns the parsed ID-token claims on success.
-func (c *OIDCClient) Exchange(ctx context.Context, code, nonce string) (Claims, error) {
-	if err := c.ensureReady(ctx); err != nil {
-		return Claims{}, err
-	}
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-
-	tok, err := c.oauth.Exchange(ctx, code)
-	if err != nil {
-		return Claims{}, fmt.Errorf("oidc: token exchange: %w", err)
-	}
-	rawID, ok := tok.Extra("id_token").(string)
-	if !ok || rawID == "" {
-		return Claims{}, errors.New("oidc: token response missing id_token")
-	}
-	idToken, err := c.verifier.Verify(ctx, rawID)
-	if err != nil {
-		return Claims{}, fmt.Errorf("oidc: verify id_token: %w", err)
-	}
-	if idToken.Nonce != nonce {
-		return Claims{}, errors.New("oidc: nonce mismatch")
-	}
-	var claims Claims
-	if err := idToken.Claims(&claims); err != nil {
-		return Claims{}, fmt.Errorf("oidc: decode claims: %w", err)
-	}
-	return claims, nil
+	return c.endSessionEndpoint
 }
 
 // Allowed returns true if the claims grant access to this barn.
@@ -210,13 +207,33 @@ func (c *OIDCClient) ensureReady(ctx context.Context) error {
 		return fmt.Errorf("oidc: discover issuer %q: %w", c.cfg.Issuer, err)
 	}
 	c.provider = prov
+	// Revocation + end-session endpoints are optional discovery fields; fall
+	// back to iambarn's conventional paths when the document omits them.
+	issuer := strings.TrimRight(c.cfg.Issuer, "/")
+	var extra struct {
+		RevocationEndpoint string `json:"revocation_endpoint"`
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+	_ = prov.Claims(&extra)
+	c.revocationEndpoint = extra.RevocationEndpoint
+	if c.revocationEndpoint == "" {
+		c.revocationEndpoint = issuer + "/oauth2/revoke"
+	}
+	c.endSessionEndpoint = extra.EndSessionEndpoint
+	if c.endSessionEndpoint == "" {
+		c.endSessionEndpoint = issuer + "/oauth2/end-session"
+	}
 	c.verifier = prov.Verifier(&oidcv3.Config{ClientID: c.cfg.ClientID})
 	c.oauth = &oauth2.Config{
 		ClientID:     c.cfg.ClientID,
 		ClientSecret: c.cfg.ClientSecret,
 		Endpoint:     prov.Endpoint(),
 		RedirectURL:  c.cfg.RedirectURL,
-		Scopes:       []string{oidcv3.ScopeOpenID, "profile", "email"},
+		// offline_access asks iambarn for a refresh_token alongside the
+		// short-lived access_token so the session can be renewed silently.
+		// It must be requested explicitly — iambarn only grants what is both
+		// allowed on the client record AND present in the request.
+		Scopes: []string{oidcv3.ScopeOpenID, "profile", "email", "offline_access"},
 	}
 	return nil
 }
@@ -224,6 +241,7 @@ func (c *OIDCClient) ensureReady(ctx context.Context) error {
 // Claims is the subset of ID-token claims this barn cares about.
 type Claims struct {
 	Subject           string   `json:"sub"`
+	SessionID         string   `json:"sid"` // IdP session id; keys back-channel logout
 	Email             string   `json:"email"`
 	PreferredUsername string   `json:"preferred_username"`
 	Name              string   `json:"name"`

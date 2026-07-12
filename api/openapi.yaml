@@ -161,6 +161,12 @@ paths:
       operationId: logout
       tags: [Auth]
       summary: Clear session
+      description: |
+        Deletes the server-side session. For OIDC sessions the refresh token
+        is also revoked at the identity provider (best-effort) and the
+        response carries `logout_url` — the IdP end-session URL (with
+        `id_token_hint`) the frontend should navigate to so the IdP session
+        ends too.
       security: []
       responses:
         "200":
@@ -173,6 +179,39 @@ paths:
                   authenticated:
                     type: boolean
                     example: false
+                  logout_url:
+                    type: string
+                    description: IdP end-session URL to follow (empty for local sessions)
+
+  /api/v1/oidc/backchannel-logout:
+    post:
+      operationId: oidcBackchannelLogout
+      tags: [Auth]
+      summary: OIDC Back-Channel Logout 1.0 endpoint
+      description: |
+        Called server-to-server by the identity provider when a user's IdP
+        session ends (logout, admin revocation, suspension). The signed
+        `logout_token` is verified against the issuer's JWKS; matching local
+        sessions (by `sid`, else by `sub`) are deleted immediately.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [logout_token]
+              properties:
+                logout_token:
+                  type: string
+                  description: Signed JWT logout token minted by the IdP
+      responses:
+        "200":
+          description: Matching sessions terminated (also returned when none matched)
+        "400":
+          description: Invalid logout token
+        "429":
+          description: Rate limited
 
   /api/v1/me:
     get:
@@ -194,6 +233,9 @@ paths:
                     type: boolean
                   username:
                     type: string
+                  authMethod:
+                    type: string
+                    enum: [oidc, local]
         "401":
           description: Not authenticated
 

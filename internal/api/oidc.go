@@ -3,12 +3,16 @@ package api
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 const (
@@ -59,6 +63,9 @@ func (s *Server) oidcLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	state := randomToken()
 	nonce := randomToken()
+	// PKCE also on this confidential client: the S256 challenge binds the
+	// authorization code to this flow, hardening against code injection.
+	verifier := oauth2.GenerateVerifier()
 	// Allow the SPA to ask iambarn to re-prompt (e.g. after we rejected the
 	// previous identity for not having access). Only the two standard OIDC
 	// values are accepted.
@@ -76,18 +83,27 @@ func (s *Server) oidcLogin(w http.ResponseWriter, r *http.Request) {
 		prompt = "none"
 	}
 	returnTo := sanitizeReturnTo(r.URL.Query().Get("return_to"))
-	authURL, err := s.oidc.AuthorizeURL(state, nonce, prompt)
+	authURL, err := s.oidc.AuthorizeURL(state, nonce, prompt, verifier)
 	if err != nil {
 		s.logger.Warn("oidc: build authorize url", "error", err)
 		http.Error(w, "oidc unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	secure := secureCookie(r)
-	http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, state, secure))
+	secure := s.secureCookie(r)
+	// The state cookie carries the PKCE verifier alongside the state value;
+	// both are matched/consumed on the callback.
+	http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, state+"|"+verifier, secure))
 	http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, nonce, secure))
 	http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie,
 		base64.RawURLEncoding.EncodeToString([]byte(returnTo)), secure))
 	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+// splitStateCookie separates the state value and PKCE verifier stored
+// together in the state cookie ("state|verifier").
+func splitStateCookie(value string) (state, verifier string) {
+	state, verifier, _ = strings.Cut(value, "|")
+	return state, verifier
 }
 
 // oidcCallback handles the redirect back from iambarn. On success it issues a
@@ -98,7 +114,11 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stateCookie, err := r.Cookie(oidcStateCookie)
-	if err != nil || stateCookie.Value == "" || stateCookie.Value != r.URL.Query().Get("state") {
+	var cookieState, verifier string
+	if err == nil {
+		cookieState, verifier = splitStateCookie(stateCookie.Value)
+	}
+	if err != nil || cookieState == "" || cookieState != r.URL.Query().Get("state") {
 		s.logger.Warn("oidc: state mismatch")
 		http.Error(w, "oidc state mismatch", http.StatusBadRequest)
 		return
@@ -108,7 +128,7 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	// an interactive login (preserving return_to) so the reconnect completes; any
 	// other error returns the user to the app root with a marker.
 	if oidcErr := r.URL.Query().Get("error"); oidcErr != "" {
-		secure := secureCookie(r)
+		secure := s.secureCookie(r)
 		http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
 		http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
 		switch oidcErr {
@@ -135,18 +155,19 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "oidc code missing", http.StatusBadRequest)
 		return
 	}
-	claims, err := s.oidc.Exchange(r.Context(), code, nonceCookie.Value)
+	result, err := s.oidc.ExchangeFull(r.Context(), code, nonceCookie.Value, verifier)
 	if err != nil {
 		s.logger.Warn("oidc: exchange failed", "error", err)
 		http.Error(w, "oidc exchange failed", http.StatusUnauthorized)
 		return
 	}
+	claims := result.Claims
 	if !s.oidc.Allowed(claims) {
 		s.logger.Warn("oidc: access denied",
 			"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
 		// Clear the short-lived state/nonce cookies before redirecting so the
 		// SPA's "Switch account" button starts a clean flow.
-		secure := secureCookie(r)
+		secure := s.secureCookie(r)
 		http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
 		http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
 		http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
@@ -166,14 +187,28 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	if username == "" {
 		username = "oidc-user"
 	}
-	token, expires, err := s.sessions.Create(username)
+	// Persist the tokens + claims snapshot server-side; the cookie is only an
+	// opaque handle. On a CQRS reader this Create is delegated to the writer.
+	claimsJSON, _ := json.Marshal(claims)
+	handle, expires, err := s.createWebSession(r.Context(), storage.WebSession{
+		Username:        username,
+		AuthMethod:      storage.WebSessionAuthOIDC,
+		IdpSub:          claims.Subject,
+		IdpSid:          claims.SessionID,
+		IDToken:         result.IDToken,
+		AccessToken:     result.AccessToken,
+		RefreshToken:    result.RefreshToken,
+		AccessExpiresAt: result.ExpiresAt.UTC(),
+		ClaimsJSON:      string(claimsJSON),
+	})
 	if err != nil {
+		s.logger.Error("oidc: create session failed", "error", err)
 		http.Error(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	secure := secureCookie(r)
-	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
-	http.SetCookie(w, s.sessions.CSRFCookie(token, expires, secure))
+	secure := s.secureCookie(r)
+	http.SetCookie(w, auth.SessionCookie(handle, expires, secure))
+	http.SetCookie(w, s.sessions.CSRFCookie(handle, expires, secure))
 	// Non-HttpOnly hint so the SPA can show OIDC-specific UI (e.g. the
 	// IAMBarn profile link) only for sessions that actually came from
 	// iambarn. Same expiry as the session.
@@ -205,7 +240,12 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 // session/CSRF/auth-method cookies here before returning the user to the app.
 // No auth is required — the session may already be gone.
 func (s *Server) oidcLoggedOut(w http.ResponseWriter, r *http.Request) {
-	secure := secureCookie(r)
+	secure := s.secureCookie(r)
+	// Delete the server-side row too (best-effort): the IdP session is dead,
+	// so the local session must not outlive it.
+	if cookie, err := r.Cookie("bugbarn_session"); err == nil && cookie.Value != "" && s.sessionStore != nil {
+		s.deleteSessionRow(r.Context(), auth.HashSessionHandle(cookie.Value))
+	}
 	http.SetCookie(w, auth.ClearSessionCookie(secure))
 	http.SetCookie(w, auth.ClearCSRFCookie(secure))
 	// Clear the auth-method hint set by the OIDC callback (mirrors logout()).

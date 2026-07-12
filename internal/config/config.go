@@ -16,23 +16,26 @@ import (
 
 // Config holds all runtime configuration for the BugBarn server.
 type Config struct {
-	Addr                   string
-	APIKey                 string
-	APIKeySHA256           string
-	AdminUsername          string
-	AdminPassword          string
-	AdminPasswordBcrypt    string
-	SessionSecret          string
-	SessionTTL             time.Duration
-	AllowedOrigins         []string
-	TrustedProxies         []*net.IPNet
-	SpoolDir               string
-	DBPath                 string
-	MaxBodyBytes           int64
-	MaxSpoolBytes          int64
-	MaxSourceMapBytes      int64
-	PublicURL              string
-	Environment            string // BUGBARN_ENV: this instance's environment (production/staging/testing); labels outgoing alert emails
+	Addr                string
+	APIKey              string
+	APIKeySHA256        string
+	AdminUsername       string
+	AdminPassword       string
+	AdminPasswordBcrypt string
+	SessionSecret       string
+	SessionTTL          time.Duration
+	AllowedOrigins      []string
+	TrustedProxies      []*net.IPNet
+	SpoolDir            string
+	DBPath              string
+	MaxBodyBytes        int64
+	MaxSpoolBytes       int64
+	MaxSourceMapBytes   int64
+	PublicURL           string
+	// Environment is BUGBARN_ENVIRONMENT (falls back to BUGBARN_ENV):
+	// production/staging/testing. Drives fail-closed defaults and labels
+	// outgoing alert emails.
+	Environment            string
 	AdminAlertEmail        string // BUGBARN_ADMIN_ALERT_EMAIL; per new issue/regression; defaults to BUGBARN_DIGEST_TO
 	SelfEndpoint           string
 	SelfAPIKey             string
@@ -45,11 +48,19 @@ type Config struct {
 	Mode                   string // BUGBARN_MODE: "", "writer", or "reader"
 	WriterURL              string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
 	RedisQueueURL          string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
-	OIDCIssuer             string // BUGBARN_OIDC_ISSUER — when all four OIDC vars are set, OIDC login is offered alongside local auth
-	OIDCClientID           string // BUGBARN_OIDC_CLIENT_ID
-	OIDCClientSecret       string // BUGBARN_OIDC_CLIENT_SECRET
-	OIDCRedirectURL        string // BUGBARN_OIDC_REDIRECT_URL
-	OIDCRequiredGroup      string // BUGBARN_OIDC_REQUIRED_GROUP — defaults to "bugbarn-users"
+	// OIDCIssuer is BUGBARN_OIDC_ISSUER — when all four OIDC vars are set,
+	// OIDC login is offered alongside local auth.
+	OIDCIssuer        string
+	OIDCClientID      string        // BUGBARN_OIDC_CLIENT_ID
+	OIDCClientSecret  string        // BUGBARN_OIDC_CLIENT_SECRET
+	OIDCRedirectURL   string        // BUGBARN_OIDC_REDIRECT_URL
+	OIDCRequiredGroup string        // BUGBARN_OIDC_REQUIRED_GROUP — defaults to "bugbarn-users"
+	OIDCRefreshGrace  time.Duration // BUGBARN_OIDC_REFRESH_GRACE_SECONDS — bounded grace for transient refresh failures (default 1h)
+}
+
+// IsProduction reports whether this instance runs in the production tier.
+func (c Config) IsProduction() bool {
+	return strings.EqualFold(c.Environment, "production")
 }
 
 // Load reads configuration from environment variables and config files.
@@ -57,24 +68,28 @@ func Load() Config {
 	loadConfigFiles()
 
 	cfg := Config{
-		Addr:                   getenv("BUGBARN_ADDR", ":8080"),
-		APIKey:                 os.Getenv("BUGBARN_API_KEY"),
-		APIKeySHA256:           os.Getenv("BUGBARN_API_KEY_SHA256"),
-		AdminUsername:          os.Getenv("BUGBARN_ADMIN_USERNAME"),
-		AdminPassword:          os.Getenv("BUGBARN_ADMIN_PASSWORD"),
-		AdminPasswordBcrypt:    os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT"),
-		SessionSecret:          os.Getenv("BUGBARN_SESSION_SECRET"),
-		AllowedOrigins:         parseCSVEnv("BUGBARN_ALLOWED_ORIGINS"),
-		TrustedProxies:         parseTrustedProxies(os.Getenv("BUGBARN_TRUSTED_PROXIES")),
-		SpoolDir:               getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
-		DBPath:                 getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
-		MaxBodyBytes:           envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
-		MaxSpoolBytes:          envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
-		MaxSourceMapBytes:      envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),
-		SessionTTL:             envDurationSeconds("BUGBARN_SESSION_TTL_SECONDS", time.Hour),
+		Addr:                getenv("BUGBARN_ADDR", ":8080"),
+		APIKey:              os.Getenv("BUGBARN_API_KEY"),
+		APIKeySHA256:        os.Getenv("BUGBARN_API_KEY_SHA256"),
+		AdminUsername:       os.Getenv("BUGBARN_ADMIN_USERNAME"),
+		AdminPassword:       os.Getenv("BUGBARN_ADMIN_PASSWORD"),
+		AdminPasswordBcrypt: os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT"),
+		SessionSecret:       os.Getenv("BUGBARN_SESSION_SECRET"),
+		AllowedOrigins:      parseCSVEnv("BUGBARN_ALLOWED_ORIGINS"),
+		TrustedProxies:      parseTrustedProxies(os.Getenv("BUGBARN_TRUSTED_PROXIES")),
+		SpoolDir:            getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
+		DBPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
+		MaxBodyBytes:        envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
+		MaxSpoolBytes:       envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
+		MaxSourceMapBytes:   envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),
+		// The session TTL is the ABSOLUTE session cap — day-to-day validity is
+		// bound to the ~15m IdP access token via the refresh flow, so the cap
+		// can be a comfortable 12h instead of forcing hourly re-logins.
+		SessionTTL:             envDurationSeconds("BUGBARN_SESSION_TTL_SECONDS", 12*time.Hour),
+		OIDCRefreshGrace:       envDurationSeconds("BUGBARN_OIDC_REFRESH_GRACE_SECONDS", time.Hour),
 		AnalyticsRetentionDays: envIntPositive("BUGBARN_ANALYTICS_RETENTION_DAYS", 90),
 		PublicURL:              os.Getenv("BUGBARN_PUBLIC_URL"),
-		Environment:            os.Getenv("BUGBARN_ENV"),
+		Environment:            getenv("BUGBARN_ENVIRONMENT", os.Getenv("BUGBARN_ENV")),
 		SelfEndpoint:           os.Getenv("BUGBARN_SELF_ENDPOINT"),
 		SelfAPIKey:             os.Getenv("BUGBARN_SELF_API_KEY"),
 		SelfProject:            os.Getenv("BUGBARN_SELF_PROJECT"),

@@ -35,6 +35,8 @@ spec:
               value: https://bugbarn.staging.wiebe.xyz
             - name: BUGBARN_ENV
               value: staging
+            - name: BUGBARN_ENVIRONMENT
+              value: staging
             - name: OTEL_SERVICE_NAME
               value: bugbarn-staging
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -56,6 +58,8 @@ spec:
             - name: BUGBARN_MAX_SPOOL_BYTES
               value: "104857600"
             - name: BUGBARN_SESSION_TTL_SECONDS
+              value: "43200"
+            - name: BUGBARN_OIDC_REFRESH_GRACE_SECONDS
               value: "3600"
             - name: LITESTREAM_REPLICA_PATH
               value: staging/bugbarn.db

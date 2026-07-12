@@ -80,3 +80,4 @@ web/test-results/
 
 # Docker and compose state
 docker-compose.override.yml
+.tools/

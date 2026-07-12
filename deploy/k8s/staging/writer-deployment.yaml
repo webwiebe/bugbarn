@@ -41,6 +41,8 @@ spec:
               value: https://bugbarn.staging.wiebe.xyz
             - name: BUGBARN_ENV
               value: staging
+            - name: BUGBARN_ENVIRONMENT
+              value: staging
             - name: BUGBARN_SPOOL_DIR
               value: /var/lib/bugbarn/spool
             - name: BUGBARN_DB_PATH
@@ -48,6 +50,8 @@ spec:
             - name: BUGBARN_MAX_SPOOL_BYTES
               value: "104857600"
             - name: BUGBARN_SESSION_TTL_SECONDS
+              value: "43200"
+            - name: BUGBARN_OIDC_REFRESH_GRACE_SECONDS
               value: "3600"
             - name: LITESTREAM_ENDPOINT
               value: https://s3.wiebe.xyz

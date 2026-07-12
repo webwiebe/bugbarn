@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
@@ -26,6 +27,19 @@ func buildOIDCClient(cfg config.Config, logger *slog.Logger) *auth.OIDCClient {
 	}
 	logger.Info("oidc: enabled", "issuer", oc.Issuer, "client_id", oc.ClientID, "required_group", oc.RequiredGroup)
 	return auth.NewOIDCClient(oc)
+}
+
+// ensureProductionAPIKeyAuth refuses to boot a production instance whose API
+// authorizer ended up with no mechanism at all — auth.Authorizer fails OPEN
+// per request when disabled (ValidWithProject returns success), so the guard
+// belongs at startup where a misconfiguration is loud instead of silently
+// exposing every keyed endpoint.
+func ensureProductionAPIKeyAuth(cfg config.Config, authorizer *auth.Authorizer) error {
+	if !cfg.IsProduction() || authorizer.Enabled() {
+		return nil
+	}
+	return errors.New("refusing to start: BUGBARN_ENVIRONMENT=production requires an API-key mechanism " +
+		"(set BUGBARN_API_KEY or BUGBARN_API_KEY_SHA256, or wire the database key store)")
 }
 
 func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer, error) {

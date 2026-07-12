@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -23,6 +24,14 @@ func (s *Server) serveSpecialEndpoint(w http.ResponseWriter, r *http.Request) bo
 	// Setup endpoint — public, no auth required.
 	if strings.HasPrefix(r.URL.Path, "/api/v1/setup/") && r.Method == http.MethodGet {
 		s.serveSetup(w, r)
+		return true
+	}
+
+	// Writer-internal session endpoints (CQRS): authenticated exclusively by
+	// an HMAC over the request body with the shared session secret, so they
+	// must bypass the cookie/API-key pipeline. 404 unless enabled.
+	if strings.HasPrefix(r.URL.Path, sessionstore.InternalPathPrefix) {
+		s.serveInternalSessions(w, r)
 		return true
 	}
 
@@ -204,6 +213,15 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request) boo
 		return true
 	case r.URL.Path == "/api/v1/oidc/logged-out" && r.Method == http.MethodGet:
 		s.oidcLoggedOut(w, r)
+		return true
+	case r.URL.Path == "/api/v1/oidc/backchannel-logout" && r.Method == http.MethodPost:
+		// Public (authenticated by the logout token's signature), no CSRF.
+		// Session rows live behind the writer, so readers forward the POST.
+		if s.writeForwarder != nil {
+			s.writeForwarder.Forward(w, r)
+			return true
+		}
+		s.oidcBackchannelLogout(w, r)
 		return true
 	}
 

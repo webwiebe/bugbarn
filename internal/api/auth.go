@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // loginAttempt tracks the rate-limit window for a single IP.
@@ -65,8 +66,14 @@ func (s *Server) cleanupLoginLimiter(ctx context.Context) {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	if s == nil || s.users == nil || !s.users.Enabled() {
+	if s == nil || !s.authEnabled() {
 		writeJSON(w, map[string]any{"authenticated": true, "authEnabled": false})
+		return
+	}
+	if s.users == nil || !s.users.Enabled() {
+		// OIDC-only deployment: there are no local credentials to verify.
+		// Fail closed instead of handing out a session.
+		http.Error(w, "local login disabled", http.StatusUnauthorized)
 		return
 	}
 
@@ -96,19 +103,42 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	token, expires, err := s.sessions.Create(s.users.Username())
+	// Local admin logins get a web_sessions row too (empty token columns) so
+	// one middleware and one revocation story cover both auth methods.
+	handle, expires, err := s.createWebSession(r.Context(), storage.WebSession{
+		Username:   s.users.Username(),
+		AuthMethod: storage.WebSessionAuthLocal,
+	})
 	if err != nil {
+		s.logger.Error("auth: create session failed", "error", err)
 		http.Error(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	secure := secureCookie(r)
-	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
-	http.SetCookie(w, s.sessions.CSRFCookie(token, expires, secure))
+	secure := s.secureCookie(r)
+	http.SetCookie(w, auth.SessionCookie(handle, expires, secure))
+	http.SetCookie(w, s.sessions.CSRFCookie(handle, expires, secure))
 	writeJSON(w, map[string]any{"authenticated": true, "authEnabled": true, "username": s.users.Username()})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	secure := secureCookie(r)
+	secure := s.secureCookie(r)
+	logoutURL := ""
+	if cookie, err := r.Cookie("bugbarn_session"); err == nil && cookie.Value != "" && s.sessionStore != nil {
+		idHash := auth.HashSessionHandle(cookie.Value)
+		if ws, gerr := s.sessionStore.Get(r.Context(), idHash); gerr == nil {
+			if ws.AuthMethod == storage.WebSessionAuthOIDC && s.oidc != nil {
+				// Best-effort server-side revocation: the refresh-token family
+				// dies at iambarn instead of merely being forgotten locally.
+				if rerr := s.oidc.RevokeRefreshToken(r.Context(), ws.RefreshToken); rerr != nil {
+					s.logger.Warn("auth: logout revoke failed", "error", rerr)
+				}
+				// Server-driven RP-initiated logout: the SPA follows this URL
+				// so the iambarn session ends too.
+				logoutURL = s.oidc.LogoutURLWithIDTokenHint(ws.IDToken)
+			}
+			s.deleteSessionRow(r.Context(), idHash)
+		}
+	}
 	http.SetCookie(w, auth.ClearSessionCookie(secure))
 	http.SetCookie(w, auth.ClearCSRFCookie(secure))
 	// Clear the auth-method hint set by the OIDC callback.
@@ -120,37 +150,31 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	writeJSON(w, map[string]any{"authenticated": false})
+	writeJSON(w, map[string]any{"authenticated": false, "logout_url": logoutURL})
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
-	if s == nil || s.users == nil || !s.users.Enabled() {
+	if s == nil || !s.authEnabled() {
 		writeJSON(w, map[string]any{"authenticated": true, "authEnabled": false})
 		return
 	}
-	username, ok := s.sessionUser(r)
+	ws, ok := s.resolveSession(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	// Refresh the CSRF cookie so the frontend always has a valid token.
 	if sessionCookie, err := r.Cookie("bugbarn_session"); err == nil && s.sessions != nil {
-		secure := secureCookie(r)
+		secure := s.secureCookie(r)
 		expires := time.Now().Add(12 * time.Hour)
 		http.SetCookie(w, s.sessions.CSRFCookie(sessionCookie.Value, expires, secure))
 	}
-	writeJSON(w, map[string]any{"authenticated": true, "authEnabled": true, "username": username})
-}
-
-func (s *Server) sessionUser(r *http.Request) (string, bool) {
-	if s == nil || s.sessions == nil {
-		return "", false
-	}
-	cookie, err := r.Cookie("bugbarn_session")
-	if err != nil {
-		return "", false
-	}
-	return s.sessions.Valid(cookie.Value)
+	writeJSON(w, map[string]any{
+		"authenticated": true,
+		"authEnabled":   true,
+		"username":      ws.Username,
+		"authMethod":    ws.AuthMethod,
+	})
 }
 
 // clientIP returns the real client IP. X-Forwarded-For is only trusted when
@@ -189,8 +213,4 @@ func isTrustedProxy(ip string, cidrs []*net.IPNet) bool {
 		}
 	}
 	return false
-}
-
-func secureCookie(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }

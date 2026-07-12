@@ -20,6 +20,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
+	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -89,15 +90,21 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureProductionAPIKeyAuth(cfg, apiAuthorizer); err != nil {
+		return err
+	}
 	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
 	if err != nil {
 		return err
 	}
-	// Readers only exist in a multi-process (CQRS) deployment and validate
-	// sessions minted by the writer. Without a shared BUGBARN_SESSION_SECRET each
-	// process signs with a different random key, so every writer-issued session is
-	// rejected here. Fail fast instead of shipping a login loop.
-	if userAuth.Enabled() && strings.TrimSpace(cfg.SessionSecret) == "" {
+	oidcClient := buildOIDCClient(cfg, logger)
+	// Readers only exist in a multi-process (CQRS) deployment: they validate
+	// sessions from the shared web_sessions table and delegate every session
+	// mutation (create/refresh/delete) to the writer's internal endpoints,
+	// which are authenticated with BUGBARN_SESSION_SECRET. Without the shared
+	// secret those calls are rejected and CSRF tokens diverge per process.
+	// Fail fast instead of shipping a login loop.
+	if (userAuth.Enabled() || oidcClient != nil) && strings.TrimSpace(cfg.SessionSecret) == "" {
 		return errors.New("reader mode requires BUGBARN_SESSION_SECRET (must match the writer) when authentication is enabled")
 	}
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
@@ -108,6 +115,11 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
 	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
+	apiServer.SetAuthEnvironment(cfg.Environment)
+	apiServer.SetOIDCRefreshGrace(cfg.OIDCRefreshGrace)
+	// Sessions: validate against the local read-only SQLite mount, delegate
+	// create/refresh/delete to the writer (single-writer refresh, no races).
+	apiServer.SetSessionStore(sessionstore.NewRemote(store, cfg.WriterURL, cfg.SessionSecret))
 	apiServer.SetWriteForwarder(forwarder)
 	if ingestSpool != nil {
 		apiServer.SetIngestSpool(ingestSpool)
@@ -117,7 +129,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	}
 	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
-	if oidcClient := buildOIDCClient(cfg, logger); oidcClient != nil {
+	if oidcClient != nil {
 		apiServer.SetOIDCClient(oidcClient)
 	}
 	if cfg.MaxSourceMapBytes > 0 {

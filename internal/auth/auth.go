@@ -8,7 +8,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -195,16 +194,13 @@ func (a *UserAuthenticator) Username() string {
 	return a.username
 }
 
+// SessionManager holds the shared session secret and TTL. Sessions themselves
+// are server-side rows (see internal/sessionstore) keyed by an opaque cookie
+// handle; this type keys the derived CSRF tokens and carries the absolute
+// session lifetime.
 type SessionManager struct {
 	secret []byte
 	ttl    time.Duration
-	now    func() time.Time
-}
-
-type sessionClaims struct {
-	Username string `json:"u"`
-	Expires  int64  `json:"e"`
-	Nonce    string `json:"n"`
 }
 
 func NewSessionManager(secret string, ttl time.Duration) *SessionManager {
@@ -218,57 +214,30 @@ func NewSessionManager(secret string, ttl time.Duration) *SessionManager {
 	return &SessionManager{
 		secret: []byte(secret),
 		ttl:    ttl,
-		now:    time.Now,
 	}
 }
 
-func (m *SessionManager) Create(username string) (string, time.Time, error) {
+// TTL returns the absolute session lifetime (the hard cap; day-to-day
+// session validity is bound to the much shorter IdP access token).
+func (m *SessionManager) TTL() time.Duration {
 	if m == nil {
-		return "", time.Time{}, errors.New("session manager is nil")
+		return 12 * time.Hour
 	}
-	expires := m.now().UTC().Add(m.ttl)
-	claims := sessionClaims{
-		Username: username,
-		Expires:  expires.Unix(),
-		Nonce:    randomSecret(),
-	}
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	signature := sign(m.secret, payload)
-	token := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature)
-	return token, expires, nil
+	return m.ttl
 }
 
-func (m *SessionManager) Valid(token string) (string, bool) {
-	if m == nil || strings.TrimSpace(token) == "" {
-		return "", false
-	}
-	parts := strings.Split(token, ".")
-	if len(parts) != 2 {
-		return "", false
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return "", false
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return "", false
-	}
-	expected := sign(m.secret, payload)
-	if hmac.Equal(signature, expected) {
-		var claims sessionClaims
-		if err := json.Unmarshal(payload, &claims); err != nil {
-			return "", false
-		}
-		if claims.Expires <= m.now().UTC().Unix() || claims.Username == "" {
-			return "", false
-		}
-		return claims.Username, true
-	}
-	return "", false
+// NewSessionHandle returns a fresh opaque session handle for the browser
+// cookie. It carries no claims — the server-side web_sessions row (keyed by
+// the handle's SHA-256) is the source of truth.
+func NewSessionHandle() string {
+	return randomSecret()
+}
+
+// HashSessionHandle derives the web_sessions primary key from a cookie value,
+// so a database leak never exposes usable session handles.
+func HashSessionHandle(handle string) string {
+	sum := sha256.Sum256([]byte(handle))
+	return hex.EncodeToString(sum[:])
 }
 
 func SessionCookie(token string, expires time.Time, secure bool) *http.Cookie {

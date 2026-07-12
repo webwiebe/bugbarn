@@ -74,21 +74,39 @@ func TestUserAuthenticator(t *testing.T) {
 
 func TestSessionManager(t *testing.T) {
 	manager := NewSessionManager("test-secret", time.Hour)
-	now := time.Date(2026, 4, 16, 8, 0, 0, 0, time.UTC)
-	manager.now = func() time.Time { return now }
-
-	token, _, err := manager.Create("admin")
-	if err != nil {
-		t.Fatal(err)
+	if manager.TTL() != time.Hour {
+		t.Fatalf("TTL() = %v, want 1h", manager.TTL())
+	}
+	if def := NewSessionManager("s", 0).TTL(); def != 12*time.Hour {
+		t.Fatalf("default TTL = %v, want 12h", def)
 	}
 
-	if username, ok := manager.Valid(token); !ok || username != "admin" {
-		t.Fatalf("expected valid session for admin, got username=%q ok=%v", username, ok)
+	// CSRF tokens are deterministic per (secret, handle) and differ across
+	// secrets/handles.
+	handle := NewSessionHandle()
+	first := manager.CSRFToken(handle)
+	if again := manager.CSRFToken(handle); first != again {
+		t.Fatalf("CSRF token must be deterministic: %q vs %q", first, again)
 	}
+	if manager.CSRFToken(handle) == manager.CSRFToken(NewSessionHandle()) {
+		t.Fatal("CSRF token must differ per handle")
+	}
+	if NewSessionManager("other-secret", time.Hour).CSRFToken(handle) == manager.CSRFToken(handle) {
+		t.Fatal("CSRF token must differ per secret")
+	}
+}
 
-	manager.now = func() time.Time { return now.Add(2 * time.Hour) }
-	if _, ok := manager.Valid(token); ok {
-		t.Fatal("expected expired session to fail")
+func TestSessionHandles(t *testing.T) {
+	h1, h2 := NewSessionHandle(), NewSessionHandle()
+	if h1 == "" || h1 == h2 {
+		t.Fatalf("handles must be non-empty and unique, got %q / %q", h1, h2)
+	}
+	hash := HashSessionHandle(h1)
+	if len(hash) != 64 || hash == HashSessionHandle(h2) {
+		t.Fatalf("hash must be sha256 hex and unique per handle, got %q", hash)
+	}
+	if hash != HashSessionHandle(h1) {
+		t.Fatal("hash must be deterministic")
 	}
 }
 

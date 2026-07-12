@@ -84,8 +84,13 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.MaxBodyBytes != 1<<20 {
 		t.Errorf("MaxBodyBytes default = %d", cfg.MaxBodyBytes)
 	}
-	if cfg.SessionTTL != time.Hour {
+	// The TTL is the ABSOLUTE session cap since sessions became token-bound;
+	// day-to-day validity tracks the short-lived IdP access token instead.
+	if cfg.SessionTTL != 12*time.Hour {
 		t.Errorf("SessionTTL default = %v", cfg.SessionTTL)
+	}
+	if cfg.OIDCRefreshGrace != time.Hour {
+		t.Errorf("OIDCRefreshGrace default = %v", cfg.OIDCRefreshGrace)
 	}
 	if cfg.AnalyticsRetentionDays != 90 {
 		t.Errorf("AnalyticsRetentionDays default = %d", cfg.AnalyticsRetentionDays)
@@ -93,4 +98,28 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Digest.Mail.Port != 587 {
 		t.Errorf("SMTP port default = %d", cfg.Digest.Mail.Port)
 	}
+}
+
+func TestEnvironmentAndIsProduction(t *testing.T) {
+	t.Run("BUGBARN_ENVIRONMENT wins over BUGBARN_ENV", func(t *testing.T) {
+		t.Setenv("BUGBARN_ENV", "staging")
+		t.Setenv("BUGBARN_ENVIRONMENT", "production")
+		cfg := Load()
+		if cfg.Environment != "production" || !cfg.IsProduction() {
+			t.Errorf("Environment = %q IsProduction = %v", cfg.Environment, cfg.IsProduction())
+		}
+	})
+	t.Run("falls back to BUGBARN_ENV", func(t *testing.T) {
+		t.Setenv("BUGBARN_ENVIRONMENT", "")
+		t.Setenv("BUGBARN_ENV", "testing")
+		cfg := Load()
+		if cfg.Environment != "testing" || cfg.IsProduction() {
+			t.Errorf("Environment = %q IsProduction = %v", cfg.Environment, cfg.IsProduction())
+		}
+	})
+	t.Run("case-insensitive production", func(t *testing.T) {
+		if !(Config{Environment: "Production"}).IsProduction() {
+			t.Error("IsProduction should be case-insensitive")
+		}
+	})
 }
