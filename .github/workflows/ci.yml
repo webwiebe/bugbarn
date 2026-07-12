@@ -209,6 +209,14 @@ jobs:
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      # The runners share $HOME across machines; Go caches on that share have
+      # repeatedly served truncated module files (typecheck "EOF" failures)
+      # even after re-download + go mod verify passed. Keep every Go/lint
+      # cache on the machine-local /tmp instead — cold runs re-download and
+      # recompile once per machine, then stay warm.
+      GOMODCACHE: /tmp/bugbarn-ci/gomodcache
+      GOCACHE: /tmp/bugbarn-ci/gocache
+      GOLANGCI_LINT_CACHE: /tmp/bugbarn-ci/golangci-lint
     steps:
       # Go writes its module cache read-only; if a prior run left one inside a
       # workspace, the next checkout cannot clean it (EACCES on unlink). Clear
@@ -248,11 +256,6 @@ jobs:
         run: |
           set -euo pipefail
           GCL="${GITHUB_WORKSPACE}/.tools/golangci-lint"
-          # The analysis cache in the shared $HOME can hold typecheck failures
-          # recorded while the module cache was corrupted (see the heal step)
-          # and keeps replaying them after the modules are healthy again.
-          # Rebuilding it costs well under a minute on these runners.
-          "$GCL" cache clean || true
           BASE="${{ github.base_ref || 'main' }}"
           git fetch --no-tags origin "$BASE" || true
           # --allow-parallel-runners: the self-hosted runners share $HOME, so
