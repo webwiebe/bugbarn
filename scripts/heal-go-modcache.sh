@@ -16,9 +16,23 @@
 # actual corruption event.
 set -eu
 
-# Fill any gaps first so verify sees a complete cache; fresh downloads are
-# verified against go.sum on the way in.
+# A near-full runner disk is the root cause of this corruption class: module
+# extraction gets truncated mid-write and the damage persists. Reclaim the
+# regenerable Go build cache before touching modules, and fail loudly rather
+# than let the lint/test steps fail cryptically on truncated sources.
+free_kb=$(df -k "$HOME" | awk 'NR==2 {print $4}')
+echo "heal-go-modcache: free space on \$HOME: $((free_kb / 1024)) MiB"
+if [ "$free_kb" -lt $((5 * 1024 * 1024)) ]; then
+	echo "heal-go-modcache: low disk — dropping the Go build cache"
+	go clean -cache || true
+	df -k "$HOME" | awk 'NR==2 {print "heal-go-modcache: free space now: " int($4/1024) " MiB"}'
+fi
+
+# Fill any gaps (fresh downloads are verified against go.sum on the way in)
+# and force extraction of every dependency so `go mod verify` gets to check
+# the extracted dirs too, not just the zips.
 go mod download
+go list -e -deps ./... >/dev/null 2>&1 || true
 
 if go mod verify; then
 	echo "heal-go-modcache: module cache OK"
@@ -28,5 +42,6 @@ fi
 echo "heal-go-modcache: corruption detected — rebuilding the module cache"
 go clean -modcache
 go mod download
+go list -e -deps ./... >/dev/null 2>&1 || true
 go mod verify
 echo "heal-go-modcache: module cache rebuilt"
