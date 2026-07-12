@@ -248,6 +248,11 @@ jobs:
         run: |
           set -euo pipefail
           GCL="${GITHUB_WORKSPACE}/.tools/golangci-lint"
+          # The analysis cache in the shared $HOME can hold typecheck failures
+          # recorded while the module cache was corrupted (see the heal step)
+          # and keeps replaying them after the modules are healthy again.
+          # Rebuilding it costs well under a minute on these runners.
+          "$GCL" cache clean || true
           BASE="${{ github.base_ref || 'main' }}"
           git fetch --no-tags origin "$BASE" || true
           # --allow-parallel-runners: the self-hosted runners share $HOME, so

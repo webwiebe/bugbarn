@@ -135,6 +135,10 @@ steps:
           curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/$VERSION/install.sh" | sh -s -- -b "$DEST" "$VERSION"
         fi
         "$DEST/golangci-lint" version
+        # The analysis cache in the shared $HOME can hold typecheck failures
+        # recorded while the module cache was corrupted (see heal-go-modcache)
+        # and keeps replaying them after the modules are healthy again.
+        "$DEST/golangci-lint" cache clean || true
         BASE="$${CI_COMMIT_TARGET_BRANCH:-main}"
         # Create the origin/$BASE remote-tracking ref (a plain `git fetch origin main`
         # only updates FETCH_HEAD), with enough depth for the diff base. Without this
