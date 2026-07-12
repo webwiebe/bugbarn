@@ -126,6 +126,7 @@ steps:
     commands:
       - |
         set -euo pipefail
+        sh scripts/heal-go-modcache.sh
         sh scripts/check-file-length.sh
         VERSION="v2.11.4"
         DEST="$(pwd)/.tools"
