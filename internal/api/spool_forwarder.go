@@ -19,6 +19,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
@@ -26,6 +27,20 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
+
+// produceCounter counts reader-side Redis write-queue publish attempts, built
+// once from the global meter (see tracing.Meter) rather than recreated per
+// call. This is the reader-side mirror of ingestproc's writer-side
+// bugbarn.consumer.items counter.
+var produceCounter metric.Int64Counter
+
+func init() {
+	produceCounter, _ = tracing.Meter().Int64Counter(
+		"bugbarn.queue.produce",
+		metric.WithDescription("Reader-side write-queue publish attempts, by outcome."),
+		metric.WithUnit("{call}"),
+	)
+}
 
 // spooledRequest is a forwardable HTTP write captured by the reader.
 type spooledRequest struct {
@@ -365,7 +380,13 @@ func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) err
 		ProjectSlug: rec.Headers["X-Bugbarn-Project"],
 		BodyBase64:  rec.BodyBase64,
 	}
-	return s.queue.Publish(ctx, []queue.Item{item})
+	err := s.queue.Publish(ctx, []queue.Item{item})
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	produceCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+	return err
 }
 
 // kindForPath maps an ingest request path to its queue Item kind.

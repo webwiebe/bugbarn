@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/XSAM/otelsql"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
 	_ "modernc.org/sqlite"
@@ -58,6 +60,7 @@ func tracedDriver() string {
 				OmitConnPrepare:      true,
 				OmitRows:             true,
 			}),
+			otelsql.WithMeterProvider(otel.GetMeterProvider()),
 		)
 		if err != nil {
 			slog.Warn("otelsql driver registration failed; falling back to plain driver", "err", err)
@@ -66,6 +69,47 @@ func tracedDriver() string {
 		registeredDriver = name
 	})
 	return registeredDriver
+}
+
+// dbStatsRegs tracks the otelsql connection-pool metric registrations keyed
+// by the *sql.DB they observe, so Close can unregister the callback and stop
+// the gauges from reporting stats for a closed pool.
+var (
+	dbStatsRegsMu sync.Mutex
+	dbStatsRegs   = map[*sql.DB]metric.Registration{}
+)
+
+// registerDBStats wires otelsql's observable connection-pool gauges
+// (open/idle/in-use connections, wait counts, etc.) for db, tagged with a
+// "pool" attribute so the read-only and read-write pools are distinguishable
+// in exported metrics. Failures are logged, not fatal: metrics are best
+// effort and must never block opening the database.
+func registerDBStats(db *sql.DB, pool string) {
+	reg, err := otelsql.RegisterDBStatsMetrics(db,
+		otelsql.WithAttributes(semconv.DBSystemSqlite, attribute.String("pool", pool)),
+		otelsql.WithMeterProvider(otel.GetMeterProvider()),
+	)
+	if err != nil {
+		slog.Warn("otelsql db stats metrics registration failed", "pool", pool, "err", err)
+		return
+	}
+	dbStatsRegsMu.Lock()
+	dbStatsRegs[db] = reg
+	dbStatsRegsMu.Unlock()
+}
+
+// unregisterDBStats stops the connection-pool gauges registered for db, if
+// any were registered.
+func unregisterDBStats(db *sql.DB) {
+	dbStatsRegsMu.Lock()
+	reg, ok := dbStatsRegs[db]
+	if ok {
+		delete(dbStatsRegs, db)
+	}
+	dbStatsRegsMu.Unlock()
+	if ok {
+		_ = reg.Unregister()
+	}
 }
 
 // OpenReadOnly opens a read-only connection to an existing SQLite database.
@@ -88,9 +132,11 @@ func OpenReadOnly(path string) (*Store, error) {
 		return nil, err
 	}
 	roDB.SetMaxOpenConns(4)
+	registerDBStats(roDB, "read")
 
 	// Verify the database is reachable.
 	if err := roDB.Ping(); err != nil {
+		unregisterDBStats(roDB)
 		roDB.Close()
 		return nil, err
 	}
@@ -125,17 +171,22 @@ func open(path string, autoMigrate bool) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
+	registerDBStats(db, "write")
 
 	roDB, err := sql.Open(tracedDriver(), sqliteReadOnlyDSN(absPath))
 	if err != nil {
+		unregisterDBStats(db)
 		db.Close()
 		return nil, err
 	}
 	roDB.SetMaxOpenConns(4)
+	registerDBStats(roDB, "read")
 
 	c := &core{db: db, roDB: roDB}
 	ctx := context.Background()
 	if err := c.init(ctx); err != nil {
+		unregisterDBStats(roDB)
+		unregisterDBStats(db)
 		roDB.Close()
 		db.Close()
 		return nil, err
@@ -156,11 +207,13 @@ func (s *core) Close() error {
 	}
 	var firstErr error
 	if s.roDB != nil {
+		unregisterDBStats(s.roDB)
 		if err := s.roDB.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
 	if s.db != nil {
+		unregisterDBStats(s.db)
 		if err := s.db.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}

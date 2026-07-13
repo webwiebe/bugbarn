@@ -14,11 +14,35 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
+
+// CLI request instruments. Built once from the global meter (a valid no-op
+// until tracing.Init wires a real MeterProvider), matching the construction
+// pattern used elsewhere (see internal/ingestproc/metrics.go) rather than
+// recreating instruments per call.
+var (
+	requestCounter  metric.Int64Counter
+	requestDuration metric.Float64Histogram
+)
+
+func init() {
+	m := tracing.Meter()
+	requestCounter, _ = m.Int64Counter(
+		"bugbarn.cli.request",
+		metric.WithDescription("CLI requests made to the BugBarn API, by method and outcome."),
+		metric.WithUnit("{request}"),
+	)
+	requestDuration, _ = m.Float64Histogram(
+		"bugbarn.cli.request.duration",
+		metric.WithDescription("Wall-clock time for a CLI request to the BugBarn API."),
+		metric.WithUnit("ms"),
+	)
+}
 
 type Client struct {
 	base    string
@@ -56,7 +80,48 @@ func (c *Client) do(method, path string, body any) (json.RawMessage, error) {
 	return c.doRetry(context.Background(), method, path, body, false)
 }
 
-func (c *Client) doRetry(ctx context.Context, method, path string, body any, retried bool) (json.RawMessage, error) {
+// recordRequestMetrics records the CLI request counter and duration
+// histogram for a completed request, classifying it by method and outcome.
+func recordRequestMetrics(ctx context.Context, method string, start time.Time, err error) {
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	requestCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("method", method),
+		attribute.String("outcome", outcome),
+	))
+	requestDuration.Record(ctx, float64(time.Since(start).Milliseconds()),
+		metric.WithAttributes(attribute.String("method", method)))
+}
+
+// buildRequest marshals the request body (if any), constructs the HTTP
+// request, sets the standard headers, and injects the trace context so the
+// server side correlates with this client span.
+func (c *Client) buildRequest(ctx context.Context, method, path string, body any) (*http.Request, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request: %w", err)
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+	c.setRequestHeaders(req, method, body != nil)
+
+	// Propagate the client span's trace context to the server so this request
+	// correlates with the server-side trace (extracted in tracing.Middleware).
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	return req, nil
+}
+
+func (c *Client) doRetry(ctx context.Context, method, path string, body any, retried bool) (result json.RawMessage, err error) {
 	target, _, _ := strings.Cut(path, "?")
 
 	ctx, span := tracing.Tracer().Start(ctx, "cli.Request",
@@ -68,26 +133,14 @@ func (c *Client) doRetry(ctx context.Context, method, path string, body any, ret
 	)
 	defer span.End()
 
-	var bodyReader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			return nil, fmt.Errorf("marshal request: %w", err)
-		}
-		bodyReader = bytes.NewReader(data)
-	}
+	start := time.Now()
+	defer func() { recordRequestMetrics(ctx, method, start, err) }()
 
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, bodyReader)
+	req, err := c.buildRequest(ctx, method, path, body)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
-	c.setRequestHeaders(req, method, body != nil)
-
-	// Propagate the client span's trace context to the server so this request
-	// correlates with the server-side trace (extracted in tracing.Middleware).
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	resp, err := c.http.Do(req)
 	if err != nil {

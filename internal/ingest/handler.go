@@ -12,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
@@ -19,6 +20,23 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
+
+// ingestReceivedCounter tags every ingest request by its terminal outcome
+// (accepted or one of the ingestresp.Drop reasons). Built once from the
+// package-global meter; before tracing.Init wires a MeterProvider it is a
+// valid no-op instrument, so construction never fails in tests or when
+// telemetry is disabled.
+var ingestReceivedCounter, _ = tracing.Meter().Int64Counter(
+	"bugbarn.ingest.received",
+	metric.WithDescription("Ingest requests received, by outcome."),
+	metric.WithUnit("{request}"),
+)
+
+// recordIngestReceived reports one ingest request's terminal outcome. outcome
+// is either "accepted" or an ingestresp.Drop.Reason value.
+func recordIngestReceived(ctx context.Context, outcome string) {
+	ingestReceivedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+}
 
 type Handler struct {
 	auth         *auth.Authorizer
@@ -113,6 +131,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 
 	if h == nil || h.auth == nil || h.spool == nil {
+		recordIngestReceived(ctx, ingestresp.DropUnavailable.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
 		return
 	}
@@ -127,6 +146,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !h.ValidAPIKey(r) {
 		span.SetStatus(codes.Error, "unauthorized")
+		recordIngestReceived(ctx, ingestresp.DropUnauthorized.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropUnauthorized)
 		return
 	}
@@ -137,10 +157,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
+			recordIngestReceived(ctx, ingestresp.DropTooLarge.Reason)
 			ingestresp.WriteDropped(w, ingestresp.DropTooLarge)
 			return
 		}
 
+		recordIngestReceived(ctx, ingestresp.DropMalformed.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 		return
 	}
@@ -151,6 +173,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// so the 202 below honestly means "accepted".
 	if err := normalize.Validate(body); err != nil {
 		span.SetStatus(codes.Error, "malformed payload")
+		recordIngestReceived(ctx, ingestresp.DropMalformed.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 		return
 	}
@@ -176,14 +199,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		spoolSpan.SetStatus(codes.Error, err.Error())
 		spoolSpan.End()
 		if errors.Is(err, spool.ErrFull) {
+			recordIngestReceived(ctx, ingestresp.DropSpoolFull.Reason)
 			ingestresp.WriteDropped(w, ingestresp.DropSpoolFull)
 			return
 		}
+		recordIngestReceived(ctx, ingestresp.DropUnavailable.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
 		return
 	}
 	spoolSpan.End()
 
+	recordIngestReceived(ctx, "accepted")
 	ingestresp.WriteAccepted(w, record.IngestID)
 }
 

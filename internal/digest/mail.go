@@ -13,9 +13,22 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
+
+// emailDeliveryCounter counts digest email-send attempts, built once from the
+// global meter (see tracing.Meter) rather than recreated per call.
+var emailDeliveryCounter metric.Int64Counter
+
+func init() {
+	emailDeliveryCounter, _ = tracing.Meter().Int64Counter(
+		"bugbarn.digest.email_delivery",
+		metric.WithDescription("Digest email delivery attempts, by outcome and attempt number."),
+		metric.WithUnit("{attempt}"),
+	)
+}
 
 // MailConfig holds SMTP settings. All fields are optional: when Enabled is
 // false (or Host/To are empty) the mailer is a no-op. Env vars follow the
@@ -117,8 +130,16 @@ func sendMailTraced(ctx context.Context, host string, attempt int, send func() e
 	)
 	if err := send(); err != nil {
 		span.SetStatus(codes.Error, err.Error())
+		emailDeliveryCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("outcome", "error"),
+			attribute.Int("attempt", attempt),
+		))
 		return err
 	}
+	emailDeliveryCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("outcome", "success"),
+		attribute.Int("attempt", attempt),
+	))
 	return nil
 }
 

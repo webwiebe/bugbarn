@@ -11,9 +11,22 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
+
+// webhookDeliveryCounter counts digest webhook-send attempts, built once from
+// the global meter (see tracing.Meter) rather than recreated per call.
+var webhookDeliveryCounter metric.Int64Counter
+
+func init() {
+	webhookDeliveryCounter, _ = tracing.Meter().Int64Counter(
+		"bugbarn.digest.webhook_delivery",
+		metric.WithDescription("Digest webhook delivery attempts, by outcome and attempt number."),
+		metric.WithUnit("{attempt}"),
+	)
+}
 
 // WebhookNotifier delivers the digest as a JSON POST to a configured URL.
 type WebhookNotifier struct {
@@ -35,6 +48,10 @@ func (n *WebhookNotifier) Send(ctx context.Context, report Report) error {
 	body, err := json.Marshal(p)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
+		webhookDeliveryCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("outcome", "error"),
+			attribute.Int("attempt", 1),
+		))
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -42,12 +59,20 @@ func (n *WebhookNotifier) Send(ctx context.Context, report Report) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.URL, bytes.NewReader(body))
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
+		webhookDeliveryCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("outcome", "error"),
+			attribute.Int("attempt", 1),
+		))
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
+		webhookDeliveryCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("outcome", "error"),
+			attribute.Int("attempt", 1),
+		))
 		return err
 	}
 	resp.Body.Close()
@@ -55,8 +80,16 @@ func (n *WebhookNotifier) Send(ctx context.Context, report Report) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err := fmt.Errorf("webhook returned %d", resp.StatusCode)
 		span.SetStatus(codes.Error, err.Error())
+		webhookDeliveryCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("outcome", "error"),
+			attribute.Int("attempt", 1),
+		))
 		return err
 	}
+	webhookDeliveryCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("outcome", "success"),
+		attribute.Int("attempt", 1),
+	))
 	return nil
 }
 
