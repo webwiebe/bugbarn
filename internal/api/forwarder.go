@@ -5,6 +5,12 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 // WriteForwarder proxies write requests to an upstream writer instance
@@ -29,8 +35,18 @@ func NewWriteForwarder(writerURL string) *WriteForwarder {
 func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	upstreamURL := f.writerURL + r.URL.RequestURI()
 
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, r.Body)
+	ctx, span := tracing.Tracer().Start(r.Context(), "forwarder.Forward",
+		trace.WithAttributes(
+			attribute.String("http.target", upstreamURL),
+			attribute.String("http.method", r.Method),
+		),
+	)
+	defer span.End()
+	r = r.WithContext(ctx)
+
+	upstreamReq, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, r.Body)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		http.Error(w, "upstream writer unavailable", http.StatusBadGateway)
 		return
 	}
@@ -50,10 +66,16 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := f.client.Do(upstreamReq)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		http.Error(w, "upstream writer unavailable", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	if resp.StatusCode >= 500 {
+		span.SetStatus(codes.Error, http.StatusText(resp.StatusCode))
+	}
 
 	// Copy response headers, excluding CORS headers that the outer ServeHTTP
 	// already set. Copying them would produce duplicates, and the Fetch spec

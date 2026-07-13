@@ -10,6 +10,11 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 // MailConfig holds SMTP settings. All fields are optional: when Enabled is
@@ -49,12 +54,12 @@ func transientSMTPError(err error) bool {
 
 // DeliverEmail sends the message with up to 3 attempts, retrying only on
 // transient failures (mirrors rapid-root email.ts retryEmailSend).
-func DeliverEmail(mc MailConfig, to, subject, plain, html string) error {
+func DeliverEmail(ctx context.Context, mc MailConfig, to, subject, plain, html string) error {
 	mc.To = to
-	return deliverEmail(mc, subject, plain, html)
+	return deliverEmail(ctx, mc, subject, plain, html)
 }
 
-func deliverEmail(mc MailConfig, subject, plain, html string) error {
+func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html string) error {
 	from := mc.From
 	if from == "" {
 		from = mc.User
@@ -82,7 +87,9 @@ func deliverEmail(mc MailConfig, subject, plain, html string) error {
 	delays := []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
 	var lastErr error
 	for attempt, delay := range delays {
-		lastErr = smtp.SendMail(addr, auth, from, []string{mc.To}, raw)
+		lastErr = sendMailTraced(ctx, mc.Host, attempt+1, func() error {
+			return smtp.SendMail(addr, auth, from, []string{mc.To}, raw)
+		})
 		if lastErr == nil {
 			return nil
 		}
@@ -95,6 +102,24 @@ func deliverEmail(mc MailConfig, subject, plain, html string) error {
 		}
 	}
 	return lastErr
+}
+
+// sendMailTraced wraps a single SMTP send attempt in a span, recording the
+// mail host and attempt number and marking the span as failed on error. The
+// existing slog-based retry logging in deliverEmail is unchanged; this adds
+// span-level visibility alongside it.
+func sendMailTraced(ctx context.Context, host string, attempt int, send func() error) error {
+	_, span := tracing.Tracer().Start(ctx, "digest.EmailSend")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("smtp.host", host),
+		attribute.Int("attempt", attempt),
+	)
+	if err := send(); err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
 }
 
 // mailData is the template data bag for both plain and HTML renders.
@@ -184,7 +209,7 @@ type EmailNotifier struct {
 
 func (n *EmailNotifier) Name() string { return "email" }
 
-func (n *EmailNotifier) Send(_ context.Context, report Report) error {
+func (n *EmailNotifier) Send(ctx context.Context, report Report) error {
 	if !n.Cfg.active() {
 		return nil
 	}
@@ -215,5 +240,5 @@ func (n *EmailNotifier) Send(_ context.Context, report Report) error {
 		return fmt.Errorf("render html: %w", err)
 	}
 
-	return deliverEmail(n.Cfg, subject, plain.String(), html.String())
+	return deliverEmail(ctx, n.Cfg, subject, plain.String(), html.String())
 }

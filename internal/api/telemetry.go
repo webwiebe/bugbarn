@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -49,10 +50,12 @@ func (s *Server) serveTelemetry(w http.ResponseWriter, r *http.Request) {
 func recordClientSpan(ctx context.Context, tracer trace.Tracer, cs clientSpan) {
 	tid, err := trace.TraceIDFromHex(cs.TraceID)
 	if err != nil {
+		slog.Warn("telemetry: malformed client trace id; dropping span", "trace_id", cs.TraceID, "span_name", cs.Name, "error", err)
 		return
 	}
 	sid, err := trace.SpanIDFromHex(cs.SpanID)
 	if err != nil {
+		slog.Warn("telemetry: malformed client span id; dropping span", "span_id", cs.SpanID, "span_name", cs.Name, "error", err)
 		return
 	}
 

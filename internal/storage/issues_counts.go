@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -63,6 +64,8 @@ GROUP BY issue_id, hour_bucket`
 		// Parse the hour bucket to determine how many hours ago it is.
 		t, err := time.Parse("2006-01-02T15", hourBucket)
 		if err != nil {
+			slog.WarnContext(ctx, "storage: malformed hour_bucket timestamp; skipping",
+				"issue_id", issueID, "hour_bucket", hourBucket, "error", err)
 			continue
 		}
 		t = t.UTC()

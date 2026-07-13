@@ -7,12 +7,17 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
 	"strings"
 	"text/template"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 // EventVolumeSource provides recent per-issue event volume for sparklines.
@@ -70,6 +75,7 @@ func (d *Deliverer) fireWebhook(ctx context.Context, rule Rule, issue domain.Iss
 		return fmt.Errorf("build payload: %w", err)
 	}
 
+	host := webhookHost(rule.WebhookURL)
 	delays := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -81,25 +87,55 @@ func (d *Deliverer) fireWebhook(ctx context.Context, rule Rule, issue domain.Iss
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, rule.WebhookURL, bytes.NewReader(payload))
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := d.client.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		resp.Body.Close()
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		lastErr = d.postWebhookAttempt(ctx, rule.WebhookURL, host, attempt+1, payload)
+		if lastErr == nil {
 			return nil
 		}
-		lastErr = fmt.Errorf("webhook returned status %d", resp.StatusCode)
 	}
 	return lastErr
+}
+
+// postWebhookAttempt performs a single POST attempt to a webhook URL, wrapped
+// in a span recording the target host (not the full URL, which may embed a
+// secret token) and attempt number.
+func (d *Deliverer) postWebhookAttempt(ctx context.Context, webhookURL, host string, attempt int, payload []byte) error {
+	ctx, span := tracing.Tracer().Start(ctx, "alert.WebhookPost")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("webhook.host", host),
+		attribute.Int("attempt", attempt),
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(payload))
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := d.client.Do(req)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	err = fmt.Errorf("webhook returned status %d", resp.StatusCode)
+	span.SetStatus(codes.Error, err.Error())
+	return err
+}
+
+// webhookHost extracts just the host (no scheme/path/query, which may carry a
+// secret webhook token) from a webhook URL, for safe use as a span attribute.
+func webhookHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 func (d *Deliverer) fireEmail(ctx context.Context, rule Rule, issue domain.Issue, publicURL string) error {
@@ -137,7 +173,7 @@ func (d *Deliverer) fireEmail(ctx context.Context, rule Rule, issue domain.Issue
 	}
 
 	subject := fmt.Sprintf("%s %s: %s", bugbarnTag(d.env), rule.Name, issue.Title)
-	return digest.DeliverEmail(d.mailCfg, rule.EmailTo, subject, plain.String(), htmlBuf.String())
+	return digest.DeliverEmail(ctx, d.mailCfg, rule.EmailTo, subject, plain.String(), htmlBuf.String())
 }
 
 type alertMailData struct {

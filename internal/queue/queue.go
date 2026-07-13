@@ -11,9 +11,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 // WriteQueueKey is the Redis list backing the write queue.
@@ -116,6 +122,15 @@ func NewRedisQueueWithRetry(ctx context.Context, redisURL string) (*RedisQueue, 
 // up to maxItemsPerBatch. Producers call this after a record is durably in the
 // local spool; the spool cursor advances only once Publish returns nil.
 func (q *RedisQueue) Publish(ctx context.Context, items []Item) error {
+	ctx, span := tracing.Tracer().Start(ctx, "queue.Publish",
+		trace.WithAttributes(
+			attribute.String("queue.name", WriteQueueKey),
+			attribute.Int("queue.item_count", len(items)),
+		),
+	)
+	defer span.End()
+
+	batchCount := 0
 	for i := 0; i < len(items); i += maxItemsPerBatch {
 		end := i + maxItemsPerBatch
 		if end > len(items) {
@@ -123,30 +138,52 @@ func (q *RedisQueue) Publish(ctx context.Context, items []Item) error {
 		}
 		data, err := json.Marshal(items[i:end])
 		if err != nil {
-			return fmt.Errorf("queue: marshal: %w", err)
+			err = fmt.Errorf("queue: marshal: %w", err)
+			span.SetStatus(codes.Error, err.Error())
+			slog.ErrorContext(ctx, "queue: publish marshal failed", "queue", WriteQueueKey, "error", err)
+			return err
 		}
 		if err := q.client.LPush(ctx, WriteQueueKey, data).Err(); err != nil {
-			return fmt.Errorf("queue: lpush: %w", err)
+			err = fmt.Errorf("queue: lpush: %w", err)
+			span.SetStatus(codes.Error, err.Error())
+			slog.ErrorContext(ctx, "queue: publish lpush failed", "queue", WriteQueueKey, "error", err)
+			return err
 		}
+		batchCount++
 	}
+	span.SetAttributes(attribute.Int("queue.batch_count", batchCount))
 	return nil
 }
 
 // Consume blocks for up to brpopTimeout waiting for a batch, then returns it.
 // Returns (nil, nil) when the timeout expires with no items — callers loop.
 func (q *RedisQueue) Consume(ctx context.Context) ([]Item, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "queue.Consume",
+		trace.WithAttributes(attribute.String("queue.name", WriteQueueKey)),
+	)
+	defer span.End()
+
 	result, err := q.client.BRPop(ctx, brpopTimeout, WriteQueueKey).Result()
 	if err == redis.Nil {
+		// Timeout with no items is the expected idle case, not a failure.
+		span.SetAttributes(attribute.Int("queue.item_count", 0))
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("queue: brpop: %w", err)
+		err = fmt.Errorf("queue: brpop: %w", err)
+		span.SetStatus(codes.Error, err.Error())
+		slog.ErrorContext(ctx, "queue: consume brpop failed", "queue", WriteQueueKey, "error", err)
+		return nil, err
 	}
 	// result[0] = key, result[1] = JSON payload.
 	var items []Item
 	if err := json.Unmarshal([]byte(result[1]), &items); err != nil {
-		return nil, fmt.Errorf("queue: unmarshal: %w", err)
+		err = fmt.Errorf("queue: unmarshal: %w", err)
+		span.SetStatus(codes.Error, err.Error())
+		slog.ErrorContext(ctx, "queue: consume unmarshal failed", "queue", WriteQueueKey, "error", err)
+		return nil, err
 	}
+	span.SetAttributes(attribute.Int("queue.item_count", len(items)))
 	return items, nil
 }
 

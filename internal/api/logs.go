@@ -226,6 +226,7 @@ func (s *Server) serveLogsStream(w http.ResponseWriter, r *http.Request) {
 			}
 			data, err := json.Marshal(entry)
 			if err != nil {
+				s.logger.Warn("logs: failed to marshal live log entry; skipping", "log_id", entry.ID, "project_id", entry.ProjectID, "error", err)
 				continue
 			}
 			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,7 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
+
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 func cmdLogin(args []string) error {
@@ -62,7 +70,7 @@ func cmdLogin(args []string) error {
 			}
 			*password = string(pw)
 		}
-		session, csrf, err := loginWithPassword(*urlFlag, *username, *password)
+		session, csrf, err := loginWithPassword(context.Background(), *urlFlag, *username, *password)
 		if err != nil {
 			return err
 		}
@@ -85,16 +93,37 @@ func cmdLogin(args []string) error {
 	return nil
 }
 
-func loginWithPassword(baseURL, username, password string) (session, csrf string, err error) {
+func loginWithPassword(ctx context.Context, baseURL, username, password string) (session, csrf string, err error) {
+	ctx, span := tracing.Tracer().Start(ctx, "cli.Request",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("http.method", http.MethodPost),
+			attribute.String("http.target", "/api/v1/login"),
+		),
+	)
+	defer span.End()
+
 	body, _ := json.Marshal(map[string]string{"username": username, "password": password})
-	resp, err := http.Post(baseURL+"/api/v1/login", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/login", bytes.NewReader(body))
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return "", "", fmt.Errorf("login request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return "", "", fmt.Errorf("login request: %w", err)
 	}
 	defer resp.Body.Close()
 	io.ReadAll(resp.Body)
 
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+
 	if resp.StatusCode != 200 {
+		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
 		return "", "", fmt.Errorf("login failed: HTTP %d", resp.StatusCode)
 	}
 
@@ -321,120 +350,6 @@ func cmdUnmute(args []string) error {
 		return err
 	}
 	return writeRaw(data)
-}
-
-func cmdProjects(args []string) error {
-	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
-	create := fs.String("create", "", "create a new project with this name")
-	slug := fs.String("slug", "", "project slug (defaults to slugified name)")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	client, err := newClient()
-	if err != nil {
-		return err
-	}
-
-	if *create != "" {
-		body := map[string]string{"name": *create}
-		if *slug != "" {
-			body["slug"] = *slug
-		}
-		data, err := client.post("/api/v1/projects", body)
-		if err != nil {
-			return err
-		}
-		return writeRaw(data)
-	}
-
-	data, err := client.get("/api/v1/projects")
-	if err != nil {
-		return err
-	}
-	return writeRaw(data)
-}
-
-func cmdGroups(args []string) error {
-	fs := flag.NewFlagSet("groups", flag.ContinueOnError)
-	create := fs.String("create", "", "create a new group with this name")
-	slug := fs.String("slug", "", "group slug (defaults to slugified name)")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	client, err := newClient()
-	if err != nil {
-		return err
-	}
-
-	if *create != "" {
-		body := map[string]string{"name": *create}
-		if *slug != "" {
-			body["slug"] = *slug
-		}
-		data, err := client.post("/api/v1/groups", body)
-		if err != nil {
-			return err
-		}
-		return writeRaw(data)
-	}
-
-	data, err := client.get("/api/v1/groups")
-	if err != nil {
-		return err
-	}
-	return writeRaw(data)
-}
-
-func cmdAPIKeys(args []string) error {
-	client, err := newClient()
-	if err != nil {
-		return err
-	}
-	data, err := client.get("/api/v1/apikeys")
-	if err != nil {
-		return err
-	}
-	return writeRaw(data)
-}
-
-func validateProject(c *Client, slug string) error {
-	data, err := c.get("/api/v1/projects")
-	if err != nil {
-		return err
-	}
-	var resp struct {
-		Projects []struct{ Slug string `json:"slug"` } `json:"projects"`
-	}
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return fmt.Errorf("parse projects response: %w", err)
-	}
-	for _, p := range resp.Projects {
-		if p.Slug == slug {
-			return nil
-		}
-	}
-	return fmt.Errorf("project %q not found — run 'bb projects' to see available projects", slug)
-}
-
-func validateGroup(c *Client, slug string) error {
-	data, err := c.get("/api/v1/groups")
-	if err != nil {
-		return err
-	}
-	var resp struct {
-		Groups []struct{ Slug string `json:"slug"` } `json:"groups"`
-	}
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return fmt.Errorf("parse groups response: %w", err)
-	}
-	for _, g := range resp.Groups {
-		if g.Slug == slug {
-			return nil
-		}
-	}
-	return fmt.Errorf("group %q not found — run 'bb groups' to see available groups", slug)
 }
 
 func resolveProject(flag string, c *Client) string {

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -106,7 +107,7 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			next, ok := writeLiveEvents(w, events, cursor)
+			next, ok := writeLiveEvents(w, events, cursor, s.logger)
 			if !ok {
 				return
 			}
@@ -136,7 +137,7 @@ func streamSince(r *http.Request) time.Time {
 // writeLiveEvents writes each event newer than cursor as an SSE data frame
 // (oldest first) and returns the advanced cursor. ok is false when writing to
 // the client failed and the stream should terminate.
-func writeLiveEvents(w http.ResponseWriter, events []domain.Event, cursor time.Time) (time.Time, bool) {
+func writeLiveEvents(w http.ResponseWriter, events []domain.Event, cursor time.Time, logger *slog.Logger) (time.Time, bool) {
 	for i := len(events) - 1; i >= 0; i-- {
 		ev := events[i]
 		ts := ev.ReceivedAt
@@ -148,6 +149,7 @@ func writeLiveEvents(w http.ResponseWriter, events []domain.Event, cursor time.T
 		}
 		data, err := json.Marshal(ev)
 		if err != nil {
+			logger.Warn("events: failed to marshal live event; skipping", "issue_id", ev.IssueID, "event_id", ev.ID, "error", err)
 			continue
 		}
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {

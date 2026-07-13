@@ -6,7 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 // WebhookNotifier delivers the digest as a JSON POST to a configured URL.
@@ -17,6 +23,10 @@ type WebhookNotifier struct {
 func (n *WebhookNotifier) Name() string { return "webhook" }
 
 func (n *WebhookNotifier) Send(ctx context.Context, report Report) error {
+	ctx, span := tracing.Tracer().Start(ctx, "digest.WebhookSend")
+	defer span.End()
+	span.SetAttributes(attribute.String("webhook.host", webhookHost(n.URL)))
+
 	p := struct {
 		Type string `json:"type"`
 		Report
@@ -24,22 +34,38 @@ func (n *WebhookNotifier) Send(ctx context.Context, report Report) error {
 
 	body, err := json.Marshal(p)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.URL, bytes.NewReader(body))
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	resp.Body.Close()
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned %d", resp.StatusCode)
+		err := fmt.Errorf("webhook returned %d", resp.StatusCode)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	return nil
+}
+
+// webhookHost extracts just the host (no scheme/path/query, which may carry
+// secrets) from a webhook URL, for safe use as a span attribute.
+func webhookHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
