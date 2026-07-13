@@ -109,16 +109,19 @@ function wireReleaseActions(): void {
 
 async function submitReleaseForm(form: HTMLFormElement): Promise<void> {
   const data = new FormData(form);
+  const name = String(data.get("name") || "");
+  const environment = String(data.get("environment") || "");
   try {
     await postJson("/api/v1/releases", {
-      name: String(data.get("name") || ""),
-      environment: String(data.get("environment") || ""),
+      name,
+      environment,
       observedAt: String(data.get("observedAt") || ""),
       version: String(data.get("version") || ""),
       commitSha: String(data.get("commitSha") || ""),
       url: String(data.get("url") || ""),
       notes: String(data.get("notes") || ""),
     });
+    window.funnelbarn?.track("release_created", { name, environment });
     setStatus("Release marker saved.");
     await loadReleases();
   } catch (error) {

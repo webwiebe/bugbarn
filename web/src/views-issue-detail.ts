@@ -21,6 +21,7 @@ export async function loadIssueDetail(issueId: string): Promise<void> {
     const events = normalizeList<ApiEvent>(raw, "events");
     const hasMore = Boolean(raw?.["hasMore"]);
     renderIssueDetail(issue, events, hasMore);
+    window.funnelbarn?.track("issue_viewed", { issueId });
   } catch (error) {
     renderErrorDetail(`Issue ${issueId}`, error);
   }
@@ -244,6 +245,7 @@ async function muteIssue(id: string, muteMode: string): Promise<void> {
       body: JSON.stringify({ mute_mode: muteMode }),
     });
     if (res.ok) {
+      window.funnelbarn?.track("issue_muted", { issueId: id, muteMode });
       setStatus(`Issue ${id} muted.`);
       await loadIssues();
       if (state.selectedIssueId === id) {
@@ -261,6 +263,7 @@ async function unmuteIssue(id: string): Promise<void> {
   try {
     const res = await apiFetch(`/api/v1/issues/${encodeURIComponent(id)}/unmute`, { method: "PATCH" });
     if (res.ok) {
+      window.funnelbarn?.track("issue_unmuted", { issueId: id });
       setStatus(`Issue ${id} unmuted.`);
       await loadIssues();
       if (state.selectedIssueId === id) {
@@ -277,6 +280,7 @@ async function unmuteIssue(id: string): Promise<void> {
 async function toggleIssueStatus(issueId: string, status: "resolved" | "unresolved"): Promise<void> {
   try {
     await postJson(`/api/v1/issues/${encodeURIComponent(issueId)}/${status === "resolved" ? "resolve" : "reopen"}`, {});
+    window.funnelbarn?.track(status === "resolved" ? "issue_resolved" : "issue_reopened", { issueId });
     showFlash(`Issue ${issueId} marked ${status}.`, "success");
     await loadIssueDetail(issueId);
     await loadIssues();

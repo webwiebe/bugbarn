@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	funnelbarn "github.com/webwiebe/funnelbarn/sdks/go"
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
@@ -39,6 +40,16 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 		logger = slog.New(selflog.NewHandler(logHandler))
 		slog.SetDefault(logger)
 		logger.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
+	}
+
+	// FunnelBarn product-event tracking is opt-in, same gate as the writer.
+	if cfg.FunnelBarnAPIKey != "" {
+		funnelbarn.Init(funnelbarn.Options{
+			APIKey:      cfg.FunnelBarnAPIKey,
+			Endpoint:    cfg.FunnelBarnEndpoint,
+			ProjectName: funnelbarnProjectName,
+		})
+		logger.Info("funnelbarn tracking enabled", "endpoint", cfg.FunnelBarnEndpoint, "project", funnelbarnProjectName)
 	}
 
 	shutdownTracing, err := tracing.Init(context.Background(), Version)
@@ -212,6 +223,11 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 
 		if selfReporting {
 			bb.Shutdown(2 * time.Second)
+		}
+		if cfg.FunnelBarnAPIKey != "" {
+			if err := funnelbarn.Shutdown(5 * time.Second); err != nil {
+				logger.Warn("funnelbarn shutdown", "error", err)
+			}
 		}
 		return shutdownErr
 	case err := <-errCh:

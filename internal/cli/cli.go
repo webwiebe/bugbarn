@@ -11,14 +11,45 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	funnelbarn "github.com/webwiebe/funnelbarn/sdks/go"
 
 	"github.com/wiebe-xyz/bugbarn/internal/config"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
+// funnelbarnProjectName must match cmd/bugbarn's constant of the same name:
+// every bugbarn deployment reports its own product events under one fixed
+// FunnelBarn project. Duplicated here (rather than imported) because cli.go
+// is invoked directly from cmd/bugbarn's argument dispatch, before that
+// package's own long-running server init runs — see trackCLIEvent.
+const funnelbarnProjectName = "bugbarn"
+
+// trackCLIEvent reports a product event for a one-shot CLI invocation
+// (bugbarn user/project/apikey create). These commands run to completion and
+// exit within the same call, unlike the long-running server process that
+// initializes FunnelBarn once at startup and shuts it down on SIGTERM — so
+// each CLI invocation initializes its own short-lived SDK instance and blocks
+// briefly on Shutdown to give the queued event a chance to actually reach the
+// network before the process exits. Gated on the API key being configured,
+// same as the server.
+func trackCLIEvent(cfg config.Config, name string, properties map[string]any) {
+	if cfg.FunnelBarnAPIKey == "" {
+		return
+	}
+	funnelbarn.Init(funnelbarn.Options{
+		APIKey:      cfg.FunnelBarnAPIKey,
+		Endpoint:    cfg.FunnelBarnEndpoint,
+		ProjectName: funnelbarnProjectName,
+	})
+	funnelbarn.Track(name, properties)
+	_ = funnelbarn.Shutdown(3 * time.Second)
+}
 
 // RunUser handles: bugbarn user create --username=X --password=Y
 func RunUser(cfg config.Config, args []string) error {
@@ -53,6 +84,7 @@ func RunUser(cfg config.Config, args []string) error {
 		if err := store.UpsertUser(context.Background(), *username, string(hash)); err != nil {
 			return fmt.Errorf("upsert user: %w", err)
 		}
+		trackCLIEvent(cfg, "cli_login", map[string]any{"action": "user_create"})
 		fmt.Printf("user %q created/updated\n", *username)
 		return nil
 	default:
@@ -92,6 +124,7 @@ func RunProject(cfg config.Config, args []string) error {
 		if err != nil {
 			return fmt.Errorf("create project: %w", err)
 		}
+		trackCLIEvent(cfg, "cli_login", map[string]any{"action": "project_create", "project_slug": p.Slug})
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{
 			"id":   p.ID,
 			"name": p.Name,
@@ -151,6 +184,7 @@ func RunAPIKey(cfg config.Config, args []string) error {
 		if err != nil {
 			return fmt.Errorf("create api key: %w", err)
 		}
+		trackCLIEvent(cfg, "api_key_created", map[string]any{"scope": key.Scope, "project_slug": project.Slug})
 		fmt.Printf("API key created (id=%d, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
 		fmt.Printf("Key (shown once, store securely): %s\n", plaintext)
 		return nil

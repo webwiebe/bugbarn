@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	funnelbarn "github.com/webwiebe/funnelbarn/sdks/go"
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/alert"
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
@@ -42,6 +43,13 @@ var (
 	Version   = "dev"
 	BuildTime = "unknown"
 )
+
+// funnelbarnProjectName identifies this backend's own product events in
+// FunnelBarn. There is no other established per-service project-name
+// convention for this dogfood integration (only the frontend has one today,
+// via runtime-config), so this is a fixed constant rather than a config
+// value — every bugbarn deployment reports under the same project.
+const funnelbarnProjectName = "bugbarn"
 
 func main() {
 	if err := run(); err != nil {
@@ -122,6 +130,17 @@ func run() error {
 	bus.Subscribe(evaluator.HandleEvent)
 
 	eventPub := service.NewEventPublisher(bus)
+
+	// FunnelBarn product-event tracking is opt-in, same gate as the frontend's
+	// runtime-config block: only enabled when an API key is configured.
+	if cfg.FunnelBarnAPIKey != "" {
+		funnelbarn.Init(funnelbarn.Options{
+			APIKey:      cfg.FunnelBarnAPIKey,
+			Endpoint:    cfg.FunnelBarnEndpoint,
+			ProjectName: funnelbarnProjectName,
+		})
+		logger.Info("funnelbarn tracking enabled", "endpoint", cfg.FunnelBarnEndpoint, "project", funnelbarnProjectName)
+	}
 
 	selfReporting := cfg.SelfEndpoint != "" && cfg.SelfAPIKey != ""
 	if selfReporting {
@@ -258,6 +277,11 @@ func run() error {
 		}
 		if selfReporting {
 			bb.Shutdown(2 * time.Second)
+		}
+		if cfg.FunnelBarnAPIKey != "" {
+			if err := funnelbarn.Shutdown(5 * time.Second); err != nil {
+				logger.Warn("funnelbarn shutdown", "error", err)
+			}
 		}
 		return shutdownErr
 	case err := <-errCh:

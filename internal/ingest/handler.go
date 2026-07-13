@@ -8,11 +8,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+
+	funnelbarn "github.com/webwiebe/funnelbarn/sdks/go"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
@@ -44,6 +47,51 @@ type Handler struct {
 	maxBodyBytes int64
 	now          func() time.Time
 	idFn         func() string
+
+	// funnelbarnLastFired throttles the "event_ingested" product event: see
+	// trackEventIngested.
+	funnelbarnLastFired sync.Map // map[int64]time.Time, keyed by project ID
+}
+
+// funnelbarnEventThrottle bounds how often the "event_ingested" product event
+// fires for a given project. Ingest volume is unbounded (this is the
+// error/event intake path, potentially many requests per second per
+// project), so tracking every accepted request would flood FunnelBarn with
+// noise disproportionate to its value.
+//
+// There is deliberately no per-event DB lookup here to distinguish a
+// project's genuinely *first* event from a routine one: this handler only
+// touches the on-disk spool by design (event persistence happens later,
+// off the request path, so the single SQLite writer connection is never
+// contended by ingest traffic — see cmd/bugbarn/main.go). Adding a query per
+// accepted request to check "is this the first event for this project"
+// would undo that separation, and a project-level "has received an event"
+// flag would need a schema migration. Instead this fires a coarse "project
+// is actively sending events" ping at most once per throttle window per
+// project — enough for an activation/engagement signal without a migration
+// or a hot-path DB read.
+const funnelbarnEventThrottle = 5 * time.Minute
+
+// trackEventIngested reports "event_ingested" to FunnelBarn for projectID, at
+// most once per funnelbarnEventThrottle window. projectID<=0 means the
+// request used the global/static API key rather than a specific project, so
+// there is no project to attribute the event to and it is skipped.
+func (h *Handler) trackEventIngested(projectID int64, scope, projectSlug string) {
+	if projectID <= 0 {
+		return
+	}
+	now := h.now()
+	if last, ok := h.funnelbarnLastFired.Load(projectID); ok {
+		if now.Sub(last.(time.Time)) < funnelbarnEventThrottle {
+			return
+		}
+	}
+	h.funnelbarnLastFired.Store(projectID, now)
+	funnelbarn.Track("event_ingested", map[string]any{
+		"project_id":   projectID,
+		"project_slug": projectSlug,
+		"scope":        scope,
+	})
 }
 
 func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyBytes int64) *Handler {
@@ -144,7 +192,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.ValidAPIKey(r) {
+	projectID, scope, ok := h.APIKeyProjectScope(r)
+	if !ok {
 		span.SetStatus(codes.Error, "unauthorized")
 		recordIngestReceived(ctx, ingestresp.DropUnauthorized.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropUnauthorized)
@@ -210,6 +259,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	spoolSpan.End()
 
 	recordIngestReceived(ctx, "accepted")
+	h.trackEventIngested(projectID, scope, record.ProjectSlug)
 	ingestresp.WriteAccepted(w, record.IngestID)
 }
 

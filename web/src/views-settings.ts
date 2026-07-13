@@ -231,6 +231,7 @@ async function approveProject(slug: string, btn?: HTMLButtonElement): Promise<vo
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
   try {
     await postJson(`/api/v1/projects/${encodeURIComponent(slug)}/approve`, {});
+    window.funnelbarn?.track("project_approved", { slug });
     showFlash(`Project "${slug}" approved.`, "success");
     await loadSettings();
     void checkPendingProjects();
@@ -250,6 +251,7 @@ async function deleteProject(slug: string, btn?: HTMLButtonElement): Promise<voi
       const body = await res.json().catch(() => ({}));
       throw new Error((body as Record<string, string>).error || res.statusText);
     }
+    window.funnelbarn?.track("project_deleted", { slug });
     showFlash(`Project "${slug}" deleted.`, "success");
     await loadSettings();
     void checkPendingProjects();
@@ -262,6 +264,7 @@ async function deleteProject(slug: string, btn?: HTMLButtonElement): Promise<voi
 async function createGroup(name: string): Promise<void> {
   try {
     await postJson("/api/v1/groups", { name });
+    window.funnelbarn?.track("project_group_created", { name });
     showFlash(`Group "${name}" created.`, "success");
     await loadSettings();
   } catch (error) {
@@ -307,6 +310,7 @@ async function removeProjectFromGroup(projectSlug: string): Promise<void> {
 async function createAlias(alias: string, project: string): Promise<void> {
   try {
     await postJson("/api/v1/aliases", { alias, project });
+    window.funnelbarn?.track("project_alias_created", { alias, project });
     showFlash(`Alias "${alias}" → "${project}" created.`, "success");
     await loadSettings();
   } catch (error) {
@@ -346,6 +350,7 @@ async function submitSourceMapsForm(form: HTMLFormElement): Promise<void> {
   const data = new FormData(form);
   try {
     await postFormData("/api/v1/source-maps", data);
+    window.funnelbarn?.track("sourcemaps_uploaded");
     setStatus("Source maps uploaded.");
   } catch (error) {
     setStatus(`Source map upload unavailable: ${errorMessage(error)}`);
