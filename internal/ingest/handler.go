@@ -8,10 +8,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+
+	funnelbarn "github.com/webwiebe/funnelbarn/sdks/go"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
@@ -20,12 +24,74 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
+// ingestReceivedCounter tags every ingest request by its terminal outcome
+// (accepted or one of the ingestresp.Drop reasons). Built once from the
+// package-global meter; before tracing.Init wires a MeterProvider it is a
+// valid no-op instrument, so construction never fails in tests or when
+// telemetry is disabled.
+var ingestReceivedCounter, _ = tracing.Meter().Int64Counter(
+	"bugbarn.ingest.received",
+	metric.WithDescription("Ingest requests received, by outcome."),
+	metric.WithUnit("{request}"),
+)
+
+// recordIngestReceived reports one ingest request's terminal outcome. outcome
+// is either "accepted" or an ingestresp.Drop.Reason value.
+func recordIngestReceived(ctx context.Context, outcome string) {
+	ingestReceivedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+}
+
 type Handler struct {
 	auth         *auth.Authorizer
 	spool        *spool.Spool
 	maxBodyBytes int64
 	now          func() time.Time
 	idFn         func() string
+
+	// funnelbarnLastFired throttles the "event_ingested" product event: see
+	// trackEventIngested.
+	funnelbarnLastFired sync.Map // map[int64]time.Time, keyed by project ID
+}
+
+// funnelbarnEventThrottle bounds how often the "event_ingested" product event
+// fires for a given project. Ingest volume is unbounded (this is the
+// error/event intake path, potentially many requests per second per
+// project), so tracking every accepted request would flood FunnelBarn with
+// noise disproportionate to its value.
+//
+// There is deliberately no per-event DB lookup here to distinguish a
+// project's genuinely *first* event from a routine one: this handler only
+// touches the on-disk spool by design (event persistence happens later,
+// off the request path, so the single SQLite writer connection is never
+// contended by ingest traffic — see cmd/bugbarn/main.go). Adding a query per
+// accepted request to check "is this the first event for this project"
+// would undo that separation, and a project-level "has received an event"
+// flag would need a schema migration. Instead this fires a coarse "project
+// is actively sending events" ping at most once per throttle window per
+// project — enough for an activation/engagement signal without a migration
+// or a hot-path DB read.
+const funnelbarnEventThrottle = 5 * time.Minute
+
+// trackEventIngested reports "event_ingested" to FunnelBarn for projectID, at
+// most once per funnelbarnEventThrottle window. projectID<=0 means the
+// request used the global/static API key rather than a specific project, so
+// there is no project to attribute the event to and it is skipped.
+func (h *Handler) trackEventIngested(projectID int64, scope, projectSlug string) {
+	if projectID <= 0 {
+		return
+	}
+	now := h.now()
+	if last, ok := h.funnelbarnLastFired.Load(projectID); ok {
+		if now.Sub(last.(time.Time)) < funnelbarnEventThrottle {
+			return
+		}
+	}
+	h.funnelbarnLastFired.Store(projectID, now)
+	funnelbarn.Track("event_ingested", map[string]any{
+		"project_id":   projectID,
+		"project_slug": projectSlug,
+		"scope":        scope,
+	})
 }
 
 func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyBytes int64) *Handler {
@@ -113,6 +179,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 
 	if h == nil || h.auth == nil || h.spool == nil {
+		recordIngestReceived(ctx, ingestresp.DropUnavailable.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
 		return
 	}
@@ -125,8 +192,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.ValidAPIKey(r) {
+	projectID, scope, ok := h.APIKeyProjectScope(r)
+	if !ok {
 		span.SetStatus(codes.Error, "unauthorized")
+		recordIngestReceived(ctx, ingestresp.DropUnauthorized.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropUnauthorized)
 		return
 	}
@@ -137,10 +206,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
+			recordIngestReceived(ctx, ingestresp.DropTooLarge.Reason)
 			ingestresp.WriteDropped(w, ingestresp.DropTooLarge)
 			return
 		}
 
+		recordIngestReceived(ctx, ingestresp.DropMalformed.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 		return
 	}
@@ -151,6 +222,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// so the 202 below honestly means "accepted".
 	if err := normalize.Validate(body); err != nil {
 		span.SetStatus(codes.Error, "malformed payload")
+		recordIngestReceived(ctx, ingestresp.DropMalformed.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 		return
 	}
@@ -176,14 +248,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		spoolSpan.SetStatus(codes.Error, err.Error())
 		spoolSpan.End()
 		if errors.Is(err, spool.ErrFull) {
+			recordIngestReceived(ctx, ingestresp.DropSpoolFull.Reason)
 			ingestresp.WriteDropped(w, ingestresp.DropSpoolFull)
 			return
 		}
+		recordIngestReceived(ctx, ingestresp.DropUnavailable.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
 		return
 	}
 	spoolSpan.End()
 
+	recordIngestReceived(ctx, "accepted")
+	h.trackEventIngested(projectID, scope, record.ProjectSlug)
 	ingestresp.WriteAccepted(w, record.IngestID)
 }
 

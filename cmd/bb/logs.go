@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,7 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 func cmdLogs(args []string) error {
@@ -86,8 +95,18 @@ func fetchLogs(client *Client, level, project, query string, limit int, noColor 
 func streamLogs(client *Client, level, project string, noColor bool) error {
 	path := "/api/v1/logs/stream"
 
-	req, err := http.NewRequest("GET", client.base+path, nil)
+	ctx, span := tracing.Tracer().Start(context.Background(), "cli.Request",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("http.method", http.MethodGet),
+			attribute.String("http.target", path),
+		),
+	)
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.base+path, nil)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
@@ -101,13 +120,19 @@ func streamLogs(client *Client, level, project string, noColor bool) error {
 		req.AddCookie(&http.Cookie{Name: "bugbarn_session", Value: client.config.Auth.SessionToken})
 	}
 
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
 	resp, err := client.http.Do(req)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("stream connect: %w", err)
 	}
 	defer resp.Body.Close()
 
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+
 	if resp.StatusCode != 200 {
+		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
 		return fmt.Errorf("stream: HTTP %d", resp.StatusCode)
 	}
 

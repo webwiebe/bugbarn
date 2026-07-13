@@ -13,6 +13,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
@@ -139,6 +140,32 @@ func persistReleaseRecord(ctx context.Context, store *storage.Store, record spoo
 	return err
 }
 
+// workerMetrics holds the OTel instruments for the background spool worker.
+// Built once per worker (see newWorkerMetrics) and reused across ticks rather
+// than recreated per call, matching the convention in internal/ingestproc.
+type workerMetrics struct {
+	eventsProcessed metric.Int64Counter
+	deadLetters     metric.Int64Counter
+}
+
+// newWorkerMetrics builds the worker instruments from the global meter; before
+// tracing.Init wires a MeterProvider they are valid no-op instruments, so
+// construction never fails in tests or when telemetry is disabled.
+func newWorkerMetrics() *workerMetrics {
+	m := tracing.Meter()
+	eventsProcessed, _ := m.Int64Counter(
+		"bugbarn.worker.events_processed",
+		metric.WithDescription("Spool records processed by the background worker, by outcome."),
+		metric.WithUnit("{record}"),
+	)
+	deadLetters, _ := m.Int64Counter(
+		"bugbarn.worker.dead_letters",
+		metric.WithDescription("Spool records dead-lettered by the background worker, by stage."),
+		metric.WithUnit("{record}"),
+	)
+	return &workerMetrics{eventsProcessed: eventsProcessed, deadLetters: deadLetters}
+}
+
 // spoolWorker carries the shared state for the background ingest loop so the
 // per-record processing steps read as small methods instead of one deeply nested
 // function. retryCounts and offset are process-lifetime mutable state; the rest
@@ -152,6 +179,7 @@ type spoolWorker struct {
 	ws            *worker.Status
 	mq            *mutqueue.Queue
 	tracer        trace.Tracer
+	metrics       *workerMetrics
 
 	retryCounts map[string]int // per-ingest-ID failure counts within this process
 	offset      int64          // spool cursor
@@ -174,6 +202,7 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 		ws:            ws,
 		mq:            mq,
 		tracer:        tracing.Tracer(),
+		metrics:       newWorkerMetrics(),
 		retryCounts:   make(map[string]int),
 		offset:        offset,
 	}
@@ -291,6 +320,11 @@ func (w *spoolWorker) processEventEntry(ctx context.Context, span trace.Span, en
 		if isTransientPersistError(persistErr) {
 			// Environmental (lock contention); retry forever, don't burn the budget.
 			slog.Warn("worker transient persist failure, will retry", "ingest_id", record.IngestID, "error", persistErr)
+			if w.metrics != nil {
+				w.metrics.eventsProcessed.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("outcome", "transient_error"),
+				))
+			}
 			return true
 		}
 		w.failRecord(record, entry.EndOffset, "persist record", persistErr, true)
@@ -311,7 +345,10 @@ func (w *spoolWorker) processEventEntry(ctx context.Context, span trace.Span, en
 	w.svc.PublishIssueEvent(issue, projectID, isNew, isRegressed)
 
 	span.End()
-	w.markProcessed(record, entry.EndOffset)
+	w.markProcessed(record, entry.EndOffset,
+		attribute.Bool("is_new", isNew),
+		attribute.Bool("is_regressed", isRegressed),
+	)
 	return false
 }
 
@@ -336,12 +373,21 @@ func (w *spoolWorker) resolveProject(ctx context.Context, record spool.Record) c
 }
 
 // markProcessed clears retry state and advances the cursor past a record that was
-// handled successfully.
-func (w *spoolWorker) markProcessed(record spool.Record, endOffset int64) {
+// handled successfully. extraAttrs are attached to the events_processed metric
+// alongside outcome=success (e.g. is_new/is_regressed for event records).
+//
+// Metrics are recorded against context.Background() rather than a per-record
+// span context: this keeps the signature (and its test call sites) stable and
+// exemplar correlation isn't required for these counters.
+func (w *spoolWorker) markProcessed(record spool.Record, endOffset int64, extraAttrs ...attribute.KeyValue) {
 	delete(w.retryCounts, record.IngestID)
 	w.advanceCursor(endOffset)
 	if w.ws != nil {
 		w.ws.RecordProcessed(1)
+	}
+	if w.metrics != nil {
+		attrs := append([]attribute.KeyValue{attribute.String("outcome", "success")}, extraAttrs...)
+		w.metrics.eventsProcessed.Add(context.Background(), 1, metric.WithAttributes(attrs...))
 	}
 }
 
@@ -359,7 +405,7 @@ func (w *spoolWorker) advanceCursor(endOffset int64) {
 // failRecord records a failure for one record. It increments the retry counter
 // and, once the retry budget is exhausted, dead-letters the record and advances
 // the cursor past it. report controls whether the dead-letter is surfaced via
-// self-reporting and the worker's dead-letter metric.
+// self-reporting and the worker's dead-letter metrics.
 func (w *spoolWorker) failRecord(record spool.Record, endOffset int64, stage string, cause error, report bool) {
 	w.retryCounts[record.IngestID]++
 	attempt := w.retryCounts[record.IngestID]
@@ -378,6 +424,9 @@ func (w *spoolWorker) failRecord(record spool.Record, endOffset int64, stage str
 		}
 		if w.ws != nil {
 			w.ws.RecordDeadLetter()
+		}
+		if w.metrics != nil {
+			w.metrics.deadLetters.Add(context.Background(), 1, metric.WithAttributes(attribute.String("stage", stage)))
 		}
 	}
 	delete(w.retryCounts, record.IngestID)

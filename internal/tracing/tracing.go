@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -100,6 +101,12 @@ func initTraces(res *resource.Resource) *sdktrace.TracerProvider {
 		otlptracehttp.WithTimeout(2*time.Second),
 	)
 	if err != nil {
+		// Warn (not Error): this runs during Init, before some callers wrap the
+		// default logger with the selflog/BugBarn self-report handler, and an
+		// Error here would otherwise trigger a self-capture in the middle of
+		// telemetry bootstrap. Traces are best-effort by design (see doc comment
+		// above), so Warn is also the right severity on its own merits.
+		slog.Warn("tracing: failed to build OTLP trace exporter; traces disabled", "error", err)
 		return nil
 	}
 

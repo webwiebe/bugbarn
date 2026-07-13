@@ -370,7 +370,10 @@ function initInstallPrompt(): void {
   });
 
   // Also hide the banner once the app is actually installed
-  window.addEventListener("appinstalled", () => dismissInstallBanner());
+  window.addEventListener("appinstalled", () => {
+    window.funnelbarn?.track("pwa_installed");
+    dismissInstallBanner();
+  });
 }
 
 function showInstallBanner(onInstall: () => void): void {

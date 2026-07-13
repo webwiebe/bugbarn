@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -277,7 +278,12 @@ func (s *core) updateExistingIssue(ctx context.Context, tx *sql.Tx, p existingIs
 	issue.RepresentativeEvent = p.evt
 	// Set display ID for existing issue.
 	var existingPrefix string
-	_ = s.readDB().QueryRowContext(ctx, `SELECT issue_prefix FROM projects WHERE id = ?`, p.projectID).Scan(&existingPrefix)
+	prefixRow := s.readDB().QueryRowContext(ctx,
+		`SELECT issue_prefix FROM projects WHERE id = ?`, p.projectID)
+	if err := prefixRow.Scan(&existingPrefix); err != nil {
+		slog.ErrorContext(ctx, "storage: failed to look up issue prefix; display id will be corrupted",
+			"issue_id", p.id, "project_id", p.projectID, "error", err)
+	}
 	issue.ID = displayIssueID(existingPrefix, p.existingIssueNumber, p.id)
 	return issue, p.id, regressed, nil
 }

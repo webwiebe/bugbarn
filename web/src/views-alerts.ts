@@ -56,6 +56,7 @@ function wireAlertActions(): void {
 async function deleteAlert(id: string): Promise<void> {
   try {
     await deleteJson(`/api/v1/alerts/${encodeURIComponent(id)}`);
+    window.funnelbarn?.track("alert_deleted", { alertId: id });
     setStatus("Alert deleted.");
     await loadAlerts();
   } catch (error) {
@@ -68,16 +69,19 @@ async function submitAlertForm(form: HTMLFormElement): Promise<void> {
   const cooldownRaw = data.get("cooldown_minutes");
   const thresholdRaw = data.get("threshold");
   const param = String(data.get("param") || "").trim();
+  const name = String(data.get("name") || "");
+  const condition = String(data.get("condition") || "");
   try {
     await postJson("/api/v1/alerts", {
-      name: String(data.get("name") || ""),
-      condition: String(data.get("condition") || ""),
+      name,
+      condition,
       param: param || undefined,
       webhook_url: String(data.get("webhook_url") || ""),
       threshold: thresholdRaw ? Number(thresholdRaw) : undefined,
       cooldown_minutes: cooldownRaw ? Number(cooldownRaw) : undefined,
       enabled: data.get("enabled") !== null,
     });
+    window.funnelbarn?.track("alert_created", { name, condition });
     setStatus("Alert saved.");
     await loadAlerts();
   } catch (error) {

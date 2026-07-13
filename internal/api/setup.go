@@ -86,7 +86,9 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 
 	keySHA := hex.EncodeToString(sha256Sum(rawKey))
 	if proj.ID != 0 {
-		_ = s.projects.EnsureSetupAPIKey(r.Context(), slug+"-setup", proj.ID, keySHA)
+		if err := s.projects.EnsureSetupAPIKey(r.Context(), slug+"-setup", proj.ID, keySHA); err != nil {
+			s.logger.Error("setup: failed to provision setup api key", "slug", slug, "project_id", proj.ID, "error", err)
+		}
 	}
 
 	endpoint := s.publicURL

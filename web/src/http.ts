@@ -63,6 +63,7 @@ export async function logout(): Promise<void> {
   } catch {
     // ignore network errors on logout
   }
+  window.funnelbarn?.track("logout", state.username ? { username: state.username } : undefined);
   state.authenticated = false;
   state.username = "";
   stopLiveStream();
@@ -268,6 +269,7 @@ export async function login(username: string, password: string): Promise<void> {
       body: JSON.stringify({ username, password }),
     });
     if (!response.ok) {
+      window.funnelbarn?.track("login_failed", { reason: "invalid_credentials" });
       renderLogin("Invalid username or password.");
       return;
     }
@@ -278,9 +280,11 @@ export async function login(username: string, password: string): Promise<void> {
     if (loginScreen) loginScreen.hidden = true;
     if (appFrame) appFrame.hidden = false;
     updateBBMenuUser();
+    window.funnelbarn?.track("login", state.username ? { username: state.username } : undefined);
     setStatus(state.username ? `Logged in as ${state.username}.` : "Logged in.");
     await Promise.all([loadProjects(), refreshAll()]);
   } catch (error) {
+    window.funnelbarn?.track("login_failed", { reason: errorMessage(error) });
     renderLogin(errorMessage(error));
   }
 }
