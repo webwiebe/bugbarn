@@ -1,0 +1,74 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: bugbarn-forward-domains
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Ingest paths for ANY "bb." vanity alias — a new project only has to point
+    # bb.<their-domain> at the cluster (proxied via Cloudflare) and error/log/
+    # release ingest works with no ingress change. HostRegexp is Traefik v3
+    # Go-regexp syntax; "bugbarn." does not match "^bb\." so the canonical
+    # bugbarn.wiebe.xyz host is unaffected. priority: 101 ensures these beat the
+    # catch-all redirect (priority 1).
+    #
+    # Auth is unchanged (X-BugBarn-Api-Key / X-BugBarn-Project headers); the
+    # wildcard host only changes routing, not authorization. Ingest is served by
+    # the `bugbarn` (reader) pool, which async-enqueues writes to the Redis
+    # queue — same backend the enumerated bb.* Ingresses already use.
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/events`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/releases`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/logs`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/setup`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/health`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+
+    # Any other request (root, dashboard paths, anything non-ingest) gets a
+    # 301 → https://<domain> (strip the "bb." label). priority: 1 keeps this the
+    # weakest match, so a full-alias domain that runs its own dashboard Ingress
+    # (e.g. bb.bananasketch.nl, which serves "/" from bugbarn-web) always wins
+    # by its higher rule-length priority and is never hijacked.
+    - match: HostRegexp(`^bb\..+$`)
+      kind: Rule
+      priority: 1
+      middlewares:
+        - name: bb-redirect-to-root
+      services:
+        # Never actually reached (the redirect middleware returns 301 first) but
+        # an IngressRoute rule requires a service; bugbarn-web is a safe sink.
+        - name: bugbarn-web
+          port: 8080
+  # TLS mirrors SpanBarn's forward-domains route: a shared secret rather than a
+  # per-host cert-manager cert (cert-manager can't pre-issue for an unbounded
+  # set of vanity domains). bb.* aliases are Cloudflare-proxied, so Cloudflare
+  # terminates the visitor TLS at its edge and the origin leg runs in Full mode;
+  # if bugbarn-forward-domains-tls is absent Traefik serves its default cert,
+  # which Cloudflare Full mode accepts. Enumerated bb.* hosts that still carry
+  # their own cert-manager Ingress keep serving their per-host LE cert via SNI.
+  tls:
+    secretName: bugbarn-forward-domains-tls
