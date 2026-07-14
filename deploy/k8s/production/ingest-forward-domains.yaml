@@ -110,13 +110,21 @@ spec:
     # ---------------------------------------------------------------------------
     # Catch-all: any other request (root, dashboard SPA, non-ingest API) gets a
     # 301 → https://<domain> (strip the "bb." label) via the existing
-    # bb-redirect-to-root middleware. priority: 1 keeps this the weakest match,
-    # so a full-alias domain that runs its own dashboard Ingress (e.g.
-    # bb.bananasketch.nl, which serves "/" from bugbarn-web) always wins by its
-    # higher rule-length priority and is never hijacked.
+    # bb-redirect-to-root middleware.
+    #
+    # priority: 2 is deliberately just above 1: the apex apps that claim all of
+    # their subdomains (profotograaf, professionals/scherpstel) each end their
+    # route table with a priority-1 `HostRegexp(^<label>\.<domain>$)` catch-all
+    # to the app. At priority 1 this redirect *tied* those and lost the tie by
+    # Traefik's rule-length tiebreak (their host regex is longer), so
+    # bb.profotograaf.nl/ 404'd on the app instead of redirecting. Priority 2
+    # wins that cleanly for every app-claimed domain. It stays far below the
+    # rule-length priority (~40) of a full-alias domain's own dashboard Ingress
+    # (e.g. bb.bananasketch.nl, which serves "/" from bugbarn-web), so those are
+    # still never hijacked — verified live: bb.bananasketch.nl/ → 200.
     - match: HostRegexp(`^bb\..+$`)
       kind: Rule
-      priority: 1
+      priority: 2
       middlewares:
         - name: bb-redirect-to-root
       services:
