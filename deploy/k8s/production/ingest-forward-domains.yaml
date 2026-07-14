@@ -6,35 +6,84 @@ spec:
   entryPoints:
     - websecure
   routes:
-    # Ingest paths for ANY "bb." vanity alias — a new project only has to point
-    # bb.<their-domain> at the cluster (proxied via Cloudflare) and error/log/
-    # release ingest works with no ingress change. HostRegexp is Traefik v3
-    # Go-regexp syntax; "bugbarn." does not match "^bb\." so the canonical
-    # bugbarn.wiebe.xyz host is unaffected. priority: 101 ensures these beat the
-    # catch-all redirect (priority 1).
+    # ---------------------------------------------------------------------------
+    # Ingest / client-facing paths for ANY "bb." vanity alias.
+    #
+    # A new project only has to point bb.<their-domain> at the cluster (proxied
+    # via Cloudflare) and every ingest surface works with no ingress change.
+    # HostRegexp is Traefik v3 Go-regexp syntax; "bugbarn." does not match
+    # "^bb\." so the canonical bugbarn.wiebe.xyz host is unaffected.
+    # priority: 101 keeps these ahead of the catch-all redirect (priority 1).
     #
     # Auth is unchanged (X-BugBarn-Api-Key / X-BugBarn-Project headers); the
-    # wildcard host only changes routing, not authorization. Ingest is served by
-    # the `bugbarn` (reader) pool, which async-enqueues writes to the Redis
-    # queue — same backend the enumerated bb.* Ingresses already use.
+    # wildcard host only changes routing, not authorization. Requests are served
+    # by the `bugbarn` (reader) pool, which async-enqueues writes to the Redis
+    # queue — the same backend the enumerated bb.* Ingresses already use.
+    #
+    # The set below is the complete surface an SDK / browser / CLI POSTs to
+    # bb.<domain> (verified against internal/api/routes.go and sdks/*): missing
+    # any one of them silently 404→301s that ingest — the exact failure this
+    # route exists to prevent. Everything NOT listed (dashboard reads, auth,
+    # project/issue/alert management) intentionally falls through to the redirect.
+
+    # Error events — POSTed by all four SDKs (go, php, python, typescript).
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/events`)
       kind: Rule
       priority: 101
       services:
         - name: bugbarn
           port: 8080
-    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/releases`)
-      kind: Rule
-      priority: 101
-      services:
-        - name: bugbarn
-          port: 8080
+    # Structured logs — typescript SDK + selflog.
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/logs`)
       kind: Rule
       priority: 101
       services:
         - name: bugbarn
           port: 8080
+    # Release markers — posted by CI / the release tooling.
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/releases`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    # Source maps — uploaded by the typescript SDK / build step so stack traces
+    # de-minify. Without this rule uploads 301 to the app and traces stay minified.
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/source-maps`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    # FunnelBarn analytics beacon — public wildcard-CORS sendBeacon from the
+    # customer's site, plus the /analytics.js snippet that emits it.
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/analytics/collect`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    - match: HostRegexp(`^bb\..+$`) && Path(`/analytics.js`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    # OTel telemetry + browser client-error ingest (mirrors SpanBarn's wildcard,
+    # which forwards the same two ingest paths).
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/telemetry`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/client-errors`)
+      kind: Rule
+      priority: 101
+      services:
+        - name: bugbarn
+          port: 8080
+    # Public setup guide (SDK onboarding) and health checks.
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/setup`)
       kind: Rule
       priority: 101
@@ -48,11 +97,13 @@ spec:
         - name: bugbarn
           port: 8080
 
-    # Any other request (root, dashboard paths, anything non-ingest) gets a
-    # 301 → https://<domain> (strip the "bb." label). priority: 1 keeps this the
-    # weakest match, so a full-alias domain that runs its own dashboard Ingress
-    # (e.g. bb.bananasketch.nl, which serves "/" from bugbarn-web) always wins
-    # by its higher rule-length priority and is never hijacked.
+    # ---------------------------------------------------------------------------
+    # Catch-all: any other request (root, dashboard SPA, non-ingest API) gets a
+    # 301 → https://<domain> (strip the "bb." label) via the existing
+    # bb-redirect-to-root middleware. priority: 1 keeps this the weakest match,
+    # so a full-alias domain that runs its own dashboard Ingress (e.g.
+    # bb.bananasketch.nl, which serves "/" from bugbarn-web) always wins by its
+    # higher rule-length priority and is never hijacked.
     - match: HostRegexp(`^bb\..+$`)
       kind: Rule
       priority: 1
