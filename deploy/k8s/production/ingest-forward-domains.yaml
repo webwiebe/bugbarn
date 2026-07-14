@@ -13,7 +13,17 @@ spec:
     # via Cloudflare) and every ingest surface works with no ingress change.
     # HostRegexp is Traefik v3 Go-regexp syntax; "bugbarn." does not match
     # "^bb\." so the canonical bugbarn.wiebe.xyz host is unaffected.
-    # priority: 101 keeps these ahead of the catch-all redirect (priority 1).
+    #
+    # priority: 200 is deliberately high. "bb." is bugbarn's reserved vanity
+    # prefix, so bb.<domain> ingest must win even when the apex app greedily
+    # claims all of its own subdomains. Several apps in this cluster route
+    # `HostRegexp(^<label>\.<their-domain>$) && PathPrefix(/api) && POST` at
+    # priority 100-115 (profotograaf, professionals/scherpstel) — those match
+    # bb.<their-domain> too and, at the old priority 101, shadowed this route so
+    # bb.profotograaf.nl/api/v1/events 404'd on the profotograaf pod. 200 clears
+    # that band with headroom while staying below nothing that matters (no bb.
+    # host has a more-specific >200 route). The catch-all redirect stays at
+    # priority 1 (see below) so full-alias dashboards still win at "/".
     #
     # Auth is unchanged (X-BugBarn-Api-Key / X-BugBarn-Project headers); the
     # wildcard host only changes routing, not authorization. Requests are served
@@ -29,21 +39,21 @@ spec:
     # Error events — POSTed by all four SDKs (go, php, python, typescript).
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/events`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
     # Structured logs — typescript SDK + selflog.
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/logs`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
     # Release markers — posted by CI / the release tooling.
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/releases`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
@@ -51,7 +61,7 @@ spec:
     # de-minify. Without this rule uploads 301 to the app and traces stay minified.
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/source-maps`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
@@ -59,13 +69,13 @@ spec:
     # customer's site, plus the /analytics.js snippet that emits it.
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/analytics/collect`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
     - match: HostRegexp(`^bb\..+$`) && Path(`/analytics.js`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
@@ -73,26 +83,26 @@ spec:
     # which forwards the same two ingest paths).
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/telemetry`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/client-errors`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
     # Public setup guide (SDK onboarding) and health checks.
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/setup`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/health`)
       kind: Rule
-      priority: 101
+      priority: 200
       services:
         - name: bugbarn
           port: 8080
