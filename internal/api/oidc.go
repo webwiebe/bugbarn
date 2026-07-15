@@ -141,7 +141,7 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/api/v1/oidc/login?"+q.Encode(), http.StatusFound)
 		default:
 			http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
-			http.Redirect(w, r, "/?oidc_error="+url.QueryEscape(oidcErr), http.StatusFound)
+			http.Redirect(w, r, "/app/?oidc_error="+url.QueryEscape(oidcErr), http.StatusFound)
 		}
 		return
 	}
@@ -176,7 +176,7 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		if id := claims.PreferredName(); id != "" {
 			q.Set("identity", id)
 		}
-		http.Redirect(w, r, "/?"+q.Encode(), http.StatusFound)
+		http.Redirect(w, r, "/app/?"+q.Encode(), http.StatusFound)
 		return
 	}
 	if s.sessions == nil {
