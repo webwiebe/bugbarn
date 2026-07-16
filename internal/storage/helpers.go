@@ -108,10 +108,14 @@ func sqliteDSN(path string) string {
 		Scheme: "file",
 		Path:   filepath.ToSlash(path),
 	}
-	// wal_autocheckpoint(0) disables SQLite's built-in autocheckpoint so that
-	// Litestream is the SOLE checkpointer. With both active they race for the
-	// write lock and spam "database is locked"; the writer owns writes,
-	// Litestream owns checkpointing.
+	// wal_autocheckpoint(0) disables SQLite's built-in autocheckpoint; the
+	// writer's RunPeriodicCheckpoint loop is the SOLE checkpointer instead.
+	// SQLite's automatic checkpoint is PASSIVE, and a PASSIVE checkpoint stops
+	// at the first reader snapshot boundary — with reader pods holding
+	// snapshots on this file continuously there is no quiet window, so it can
+	// never bound WAL growth. RunPeriodicCheckpoint issues TRUNCATE with retry,
+	// which can. Keep exactly one checkpointer: two racing for the write lock
+	// just spam "database is locked".
 	params := strings.Join([]string{
 		"mode=rwc",
 		"_txlock=immediate",

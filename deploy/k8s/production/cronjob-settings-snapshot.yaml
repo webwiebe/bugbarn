@@ -1,0 +1,121 @@
+# Hourly disaster-recovery snapshot. Builds a settings-only SQLite database
+# (project registry, users, API keys, alert rules, org settings — no events,
+# issues, logs or analytics) and ships it off-node to the shared "barn-backups"
+# Cloudflare R2 bucket under a bugbarn-specific prefix. This job only ever lists
+# or deletes objects under that prefix, never touching another service's data.
+#
+# This replaces Litestream's continuous WAL->S3 replication, which was removed
+# because it only issues PASSIVE WAL checkpoints — those stop at the first reader
+# snapshot boundary, and with reader pods on the shared PVC there is no quiet
+# window, so the WAL never truncated (outages 2026-06-21 and 2026-07-16).
+#
+# The trade is explicit and deliberate: RPO goes from ~seconds to ~1 hour, and a
+# PVC loss costs every event, issue and log — only configuration survives.
+# Recovery is "grab the newest object, drop it in as BUGBARN_DB_PATH, restart".
+# See docs/deployment/disaster-recovery.md.
+#
+# Production only: testing and staging are disposable and are not worth DR infra.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bugbarn-settings-snapshot
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-secret
+          initContainers:
+            # Reads the live database read-only and writes the settings-only
+            # snapshot to the shared emptyDir for the upload container. The
+            # mount is readOnly and SnapshotSettings additionally opens/ATTACHes
+            # the source with mode=ro, so this cannot write to production data.
+            - name: snapshot
+              image: bugbarn/service
+              imagePullPolicy: IfNotPresent
+              args: ["db", "snapshot-settings", "--out", "/shared/settings.db"]
+              env:
+                - name: BUGBARN_DB_PATH
+                  value: "/var/lib/bugbarn/bugbarn.db"
+              volumeMounts:
+                - name: bugbarn-data
+                  mountPath: /var/lib/bugbarn
+                  readOnly: true
+                - name: shared
+                  mountPath: /shared
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.17.60
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # "bugbarn/" isolates our writes within the shared bucket; the
+                  # list/delete below is scoped to this prefix only.
+                  PREFIX="bugbarn/settings-snapshots/${BUGBARN_ENVIRONMENT}"
+                  TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+                  aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp /shared/settings.db \
+                    "s3://${BUGBARN_SNAPSHOT_BUCKET}/${PREFIX}/${TIMESTAMP}.db"
+
+                  # Best-effort retention: keep only the newest 14 snapshots
+                  # under this prefix. Never fails the job — the upload already
+                  # succeeded, so a pruning hiccup just leaves an extra object.
+                  (
+                    KEYS=$(aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
+                      --bucket "$BUGBARN_SNAPSHOT_BUCKET" --prefix "${PREFIX}/" \
+                      --query "sort_by(Contents || \`[]\`, &LastModified)[:-14].Key" \
+                      --output text) || exit 0
+                    for old in $KEYS; do
+                      [ "$old" = "None" ] && continue
+                      aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${BUGBARN_SNAPSHOT_BUCKET}/${old}"
+                    done
+                  ) || echo "prune step failed (non-fatal)" >&2
+              env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: bugbarn-secrets
+                      key: BUGBARN_SNAPSHOT_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: bugbarn-secrets
+                      key: BUGBARN_SNAPSHOT_SECRET_ACCESS_KEY
+                - name: AWS_ENDPOINT_URL
+                  value: "https://354b481466ca4280c50f2fb8cf9e3d45.eu.r2.cloudflarestorage.com"
+                - name: AWS_DEFAULT_REGION
+                  value: "auto"
+                - name: BUGBARN_SNAPSHOT_BUCKET
+                  value: "barn-backups"
+                - name: BUGBARN_ENVIRONMENT
+                  value: "production"
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+          volumes:
+            - name: bugbarn-data
+              persistentVolumeClaim:
+                claimName: bugbarn-data
+            - name: shared
+              emptyDir: {}

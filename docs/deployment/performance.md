@@ -121,7 +121,7 @@ A sustained `429` means the worker cannot drain the spool as fast as events arri
 
 **BugBarn does not support horizontal scaling.** Single binary, single SQLite file, single writer. The deployment strategy must be `Recreate` (not `RollingUpdate`). Vertical scaling — more CPU, faster disk, more RAM — is the correct path to higher throughput.
 
-For disaster recovery and read replicas, use [Litestream](kubernetes.md#litestream).
+For disaster recovery, see [disaster-recovery.md](disaster-recovery.md) — an hourly settings-only snapshot, not continuous replication.
 
 ---
 

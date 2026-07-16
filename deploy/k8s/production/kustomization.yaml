@@ -16,6 +16,7 @@ resources:
   - ingress.yaml
   - ingest-ingress.yaml
   - ingest-forward-domains.yaml
+  - cronjob-settings-snapshot.yaml
 images:
   - name: bugbarn/service
     newName: ghcr.io/webwiebe/bugbarn/service

@@ -28,7 +28,7 @@ BugBarn is structured as three distinct layers that decouple ingest throughput f
 
 ### Why This Architecture
 
-**SQLite-first.** The entire persistent state fits in a single WAL-mode SQLite file. There is no separate database server to operate, no connection pool to tune, and no network round-trip to storage. Operational complexity is minimal — backup is a file copy (or Litestream replication).
+**SQLite-first.** The entire persistent state fits in a single WAL-mode SQLite file. There is no separate database server to operate, no connection pool to tune, and no network round-trip to storage. Operational complexity is minimal — backup is a file copy.
 
 **Spool for durability.** The ingest handler never writes directly to SQLite. Instead it appends records to an append-only NDJSON file on disk and returns `202 Accepted` to the caller. If the background worker is slow, the spool absorbs the backlog without blocking producers. If the process crashes, the cursor file records the last successfully processed offset so no record is silently dropped.
 
@@ -110,6 +110,6 @@ SQLite access is serialised through a single `*sql.DB` connection (`db.SetMaxOpe
 
 **SQLite WAL mode.** WAL (Write-Ahead Logging) allows readers to proceed concurrently with a single writer without blocking. `synchronous=NORMAL` means SQLite syncs at checkpoints rather than after every write, which improves throughput at the cost of a small durability window (data written since the last checkpoint could be lost in a hard crash). For most self-hosted error-tracking workloads this is an acceptable trade-off.
 
-**No message broker.** The spool is a simple append-only file. It is not a distributed queue. It provides durability across process restarts but not across machine failures unless the `.data/` directory is on durable storage (network volume, Litestream-replicated block device, etc.).
+**No message broker.** The spool is a simple append-only file. It is not a distributed queue. It provides durability across process restarts but not across machine failures unless the `.data/` directory is on durable storage (a network volume, for example).
 
-**Litestream for replication.** Continuous off-site replication of the SQLite database is delegated to [Litestream](https://litestream.io/), which runs as a separate process alongside BugBarn. BugBarn itself has no knowledge of Litestream; it simply writes a standard WAL-mode SQLite file. See [storage.md](storage.md) for the relevant environment variables.
+**No continuous replication.** Litestream was removed: it only issues PASSIVE WAL checkpoints, which stop at the first reader snapshot boundary. With reader pods holding snapshots on the shared PVC there is no quiet window, so the WAL never truncated and grew until every write slowed to a crawl (production incidents 2026-06-21 and 2026-07-16). The writer now bounds its own WAL with a periodic TRUNCATE checkpoint, and disaster recovery is an hourly settings-only snapshot — configuration survives, bulk data does not. See [disaster-recovery.md](../deployment/disaster-recovery.md).

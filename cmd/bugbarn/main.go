@@ -87,6 +87,8 @@ func run() error {
 			return cli.RunProject(cfg, os.Args[2:])
 		case "apikey":
 			return cli.RunAPIKey(cfg, os.Args[2:])
+		case "db":
+			return cli.RunDB(cfg, os.Args[2:])
 		}
 	}
 
@@ -104,6 +106,9 @@ func run() error {
 		return err
 	}
 	defer store.Close()
+	// Runs before the deferred Close above (LIFO), so a clean shutdown folds the
+	// WAL back into the main database file.
+	defer store.FinalCheckpoint(logger)
 
 	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
 	if err != nil {
@@ -119,6 +124,12 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Nothing else checkpoints the WAL: sqliteDSN sets wal_autocheckpoint(0),
+	// and Litestream — which used to own checkpointing — is gone. Without this
+	// loop the WAL grows without bound and every write slows down as it walks
+	// an ever-larger WAL index.
+	go store.RunPeriodicCheckpoint(ctx, cfg.WALCheckpointInterval, logger)
 
 	// Wire the domain event bus and alert evaluator.
 	bus := &domainevents.Bus{}
