@@ -213,7 +213,13 @@ func (c *Consumer) persistLog(ctx context.Context, item queue.Item) string {
 	}
 	proj, ok := c.proc.EnsureProjectForIngest(ctx, item.ProjectSlug)
 	if !ok {
-		c.logger.Warn("dropping log item: unresolved project", "project", item.ProjectSlug)
+		// Error, not warn: this discards accepted log data, and selflog only
+		// self-reports at >= Error — at Warn the loss stays invisible.
+		c.logger.Error("dropping log item: unresolved project",
+			"project", item.ProjectSlug,
+			"empty_slug", item.ProjectSlug == "",
+			"ingest_id", item.IngestID,
+			"received_at", item.ReceivedAt)
 		return "dropped"
 	}
 	// Project pending admin approval: park the raw log payload for replay on

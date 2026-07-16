@@ -221,8 +221,13 @@ const logger = pino(
 |---|---|---|---|
 | `endpoint` | `string` | required | BugBarn logs endpoint |
 | `apiKey` | `string` | required | Project API key |
+| `project` | `string` | — | Project slug, sent as `X-BugBarn-Project`. Optional with a project-scoped API key; required with a global key |
 | `flushIntervalMs` | `number` | `1000` | Batch flush interval in milliseconds |
 | `batchSize` | `number` | `50` | Max logs per batch before immediate flush |
+| `level` | `string` | — | Minimum level to send (`trace`…`fatal`). Entries below it are dropped before batching |
+
+Logs must resolve to a project: use a project-scoped API key, or set `project`.
+A batch that resolves to neither is rejected with a `400`.
 
 ## Flush and shutdown
 

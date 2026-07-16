@@ -71,6 +71,18 @@ type SpoolForwarder struct {
 	file    *os.File
 	path    string
 	pending atomic.Int64 // records appended but not yet acked
+
+	// resolveSlug maps an ingest API key to the slug of the project it is
+	// scoped to, or "" when the key carries no project binding (static
+	// env-var keys) or cannot be resolved. Optional; nil disables key-based
+	// project resolution.
+	resolveSlug func(ctx context.Context, apiKey string) string
+}
+
+// SetProjectResolver wires the API-key → project-slug lookup used to stamp a
+// project onto spooled requests that carry no X-BugBarn-Project header.
+func (s *SpoolForwarder) SetProjectResolver(fn func(ctx context.Context, apiKey string) string) {
+	s.resolveSlug = fn
 }
 
 const (
@@ -79,12 +91,19 @@ const (
 	defaultRotateBytes  = 64 * 1024 * 1024
 )
 
+// Canonical (http.Header.Get) forms of the ingest headers we key the spooled
+// record's header map by.
+const (
+	apiKeyHeader  = "X-Bugbarn-Api-Key"
+	projectHeader = "X-Bugbarn-Project"
+)
+
 // forwardedHeaders is the allowlist of headers we replay to the writer.
 // Restricted to the set the ingest/logs/analytics endpoints actually look at.
 var forwardedHeaders = []string{
 	"Content-Type",
-	"X-Bugbarn-Api-Key",
-	"X-Bugbarn-Project",
+	apiKeyHeader,
+	projectHeader,
 	"User-Agent",
 }
 
@@ -184,6 +203,29 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 		if v := r.Header.Get(h); v != "" {
 			headers[h] = v
 		}
+	}
+
+	// A project-scoped API key identifies its project on its own, so resolve it
+	// here and stamp the slug onto the record: only the header survives into
+	// queue.Item, and the consumer drops any item with an empty slug. The
+	// header, when present, wins — it is the caller's explicit override.
+	if headers[projectHeader] == "" && s.resolveSlug != nil {
+		if slug := s.resolveSlug(r.Context(), headers[apiKeyHeader]); slug != "" {
+			headers[projectHeader] = slug
+		}
+	}
+
+	// Logs need a project to land in. Reject now rather than accept with a 202
+	// and drop the batch in the consumer, which loses the data silently. This
+	// mirrors the direct (non-queue) path, which 400s on the same condition.
+	//
+	// Queue mode only: HTTP mode replays the whole request, API key included, so
+	// the writer resolves the project itself and nothing is lost. Only queue.Item
+	// narrows the request down to a slug. Events pass either way — they fall back
+	// to the Default Project instead of dropping.
+	if s.queue != nil && kindForPath(r.URL.Path) == queue.KindLog && headers[projectHeader] == "" {
+		http.Error(w, "project required: provide X-BugBarn-Project header or use a project-scoped API key", http.StatusBadRequest)
+		return
 	}
 
 	rec := spooledRequest{
@@ -377,7 +419,7 @@ func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) err
 		Kind:        kind,
 		ReceivedAt:  rec.ReceivedAt,
 		ContentType: rec.Headers["Content-Type"],
-		ProjectSlug: rec.Headers["X-Bugbarn-Project"],
+		ProjectSlug: rec.Headers[projectHeader],
 		BodyBase64:  rec.BodyBase64,
 	}
 	err := s.queue.Publish(ctx, []queue.Item{item})

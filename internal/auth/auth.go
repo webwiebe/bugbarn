@@ -102,6 +102,19 @@ func (a *Authorizer) Valid(provided string) bool {
 // For env-var static keys, projectID=0 and scope="full" are returned (global/admin access).
 // Returns (projectID, scope, true) on success, (0, "", false) on failure.
 func (a *Authorizer) ValidWithProject(ctx context.Context, provided string) (projectID int64, scope string, ok bool) {
+	return a.resolveKey(ctx, provided, true)
+}
+
+// ProjectForKey is ValidWithProject without the last-used touch, for callers
+// that have already validated the key on this request and only need to know
+// which project it is scoped to. Skipping the touch keeps a second write
+// attempt off the ingest path — on a read-only reader store that UPDATE is a
+// guaranteed failure and logs a warning for every request.
+func (a *Authorizer) ProjectForKey(ctx context.Context, provided string) (projectID int64, scope string, ok bool) {
+	return a.resolveKey(ctx, provided, false)
+}
+
+func (a *Authorizer) resolveKey(ctx context.Context, provided string, touch bool) (projectID int64, scope string, ok bool) {
 	if a == nil || !a.Enabled() {
 		return 0, "full", true
 	}
@@ -121,7 +134,7 @@ func (a *Authorizer) ValidWithProject(ctx context.Context, provided string) (pro
 	if a.dbLookup != nil {
 		pid, sc, found, err := a.dbLookup(ctx, hexSum)
 		if err == nil && found {
-			if a.dbTouch != nil {
+			if touch && a.dbTouch != nil {
 				if touchErr := a.dbTouch(ctx, hexSum); touchErr != nil {
 					slog.WarnContext(ctx, "auth: failed to update api key last-used timestamp", "project_id", pid, "error", touchErr)
 				}

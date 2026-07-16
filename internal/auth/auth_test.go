@@ -214,3 +214,40 @@ func TestValidWithSetupFallback(t *testing.T) {
 		t.Fatal("expected rejection when both DB and setup verifier fail")
 	}
 }
+
+// TestProjectForKeyDoesNotTouch: ProjectForKey resolves a key's project without
+// updating last_used_at. Callers use it after the key was already validated on
+// the same request; on the read-only reader store the touch is a guaranteed
+// failed write, so a second one per ingest is pure noise.
+func TestProjectForKeyDoesNotTouch(t *testing.T) {
+	const key = "db-key"
+	sum := sha256.Sum256([]byte(key))
+	hexSum := hex.EncodeToString(sum[:])
+
+	touched := 0
+	a := (&Authorizer{}).WithDBLookup(
+		func(_ context.Context, provided string) (int64, string, bool, error) {
+			if provided != hexSum {
+				return 0, "", false, nil
+			}
+			return 7, "ingest", true, nil
+		},
+		func(context.Context, string) error { touched++; return nil },
+	)
+
+	pid, scope, ok := a.ProjectForKey(context.Background(), key)
+	if !ok || pid != 7 || scope != "ingest" {
+		t.Fatalf("ProjectForKey = (%d, %q, %v), want (7, ingest, true)", pid, scope, ok)
+	}
+	if touched != 0 {
+		t.Errorf("touch called %d times, want 0", touched)
+	}
+
+	// ValidWithProject keeps touching — that path is the one that records use.
+	if _, _, ok := a.ValidWithProject(context.Background(), key); !ok {
+		t.Fatal("ValidWithProject rejected a valid key")
+	}
+	if touched != 1 {
+		t.Errorf("touch called %d times after ValidWithProject, want 1", touched)
+	}
+}
