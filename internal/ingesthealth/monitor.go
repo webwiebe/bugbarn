@@ -9,9 +9,16 @@
 //     Check probe gets a 503 when ingest stalls (a channel that does not depend
 //     on the wedged write path);
 //   - OTel gauges for dashboards/alerting;
+//   - out-of-band Notifiers (webhook, SMTP) that carry the alert off the box
+//     without touching the write queue or the store;
 //   - throttled ERROR logs, which selflog reports to BugBarn itself (best effort:
-//     during a total wedge the self-report queues too, so the health probe is the
-//     authoritative signal).
+//     during a total wedge the self-report queues too, so the health probe and
+//     the notifiers are the authoritative signals).
+//
+// The self-report path is circular by construction — it announces that ingest is
+// broken by way of ingest, and a 2026-07-16 backlog hid a stall for ~13h because
+// the alert sat behind 103k queued items. Everything above except the ERROR log
+// is deliberately independent of the pipeline it watches.
 package ingesthealth
 
 import (
@@ -19,6 +26,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -47,6 +55,11 @@ type Config struct {
 	// AlertEvery throttles repeated unhealthy logs for the same condition.
 	// Default 15m.
 	AlertEvery time.Duration
+	// NotifyTimeout bounds a single out-of-band delivery round. Default 30s.
+	NotifyTimeout time.Duration
+	// Environment (production/staging/testing) labels outgoing alerts so a
+	// recipient can tell which instance is stalled. Optional.
+	Environment string
 }
 
 func (c Config) withDefaults() Config {
@@ -64,6 +77,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.AlertEvery <= 0 {
 		c.AlertEvery = 15 * time.Minute
+	}
+	if c.NotifyTimeout <= 0 {
+		c.NotifyTimeout = 30 * time.Second
 	}
 	return c
 }
@@ -105,7 +121,32 @@ type Monitor struct {
 	mu        sync.Mutex
 	lastAlert time.Time
 
+	notifiers []Notifier
+
 	reg metric.Registration
+}
+
+// AddNotifier registers an out-of-band alert channel. Nil notifiers are ignored
+// so callers can pass an unconfigured channel straight through. Call before
+// Start; notifiers are read by the sample loop.
+func (m *Monitor) AddNotifier(notifiers ...Notifier) {
+	for _, n := range notifiers {
+		if isNilNotifier(n) {
+			continue
+		}
+		m.notifiers = append(m.notifiers, n)
+	}
+}
+
+// isNilNotifier reports whether n carries no value. The constructors return a
+// typed nil pointer when a channel is unconfigured, and a nil pointer in an
+// interface is not == nil — so a plain nil check is not enough.
+func isNilNotifier(n Notifier) bool {
+	if n == nil {
+		return true
+	}
+	v := reflect.ValueOf(n)
+	return v.Kind() == reflect.Ptr && v.IsNil()
 }
 
 // New builds a monitor. logger may be nil. now may be nil (defaults to
@@ -196,13 +237,13 @@ func (m *Monitor) sample(ctx context.Context) {
 	}
 
 	m.snap.Store(&snap)
-	m.maybeAlert(snap)
+	m.maybeAlert(ctx, snap)
 }
 
 // maybeAlert logs at ERROR when unhealthy, throttled to AlertEvery so a sustained
 // outage does not spam (and re-report to BugBarn) every interval. A WAL over the
 // warn threshold logs at WARN regardless of overall health, as an early signal.
-func (m *Monitor) maybeAlert(snap Snapshot) {
+func (m *Monitor) maybeAlert(ctx context.Context, snap Snapshot) {
 	if snap.Healthy {
 		if m.cfg.WarnWALBytes > 0 && snap.WALSizeBytes > m.cfg.WarnWALBytes {
 			m.logger.Warn("ingest-health: WAL above warning threshold",
@@ -227,6 +268,38 @@ func (m *Monitor) maybeAlert(snap Snapshot) {
 		"queue_depth", snap.QueueDepth,
 		"wal_bytes", snap.WALSizeBytes,
 	)
+	m.notify(ctx, snap)
+}
+
+// notify fans the alert out over every configured out-of-band channel. It runs
+// on the sample goroutine, bounded by NotifyTimeout, and never lets one dead
+// channel stop another: a stalled SMTP server must not swallow the webhook.
+func (m *Monitor) notify(ctx context.Context, snap Snapshot) {
+	if len(m.notifiers) == 0 {
+		return
+	}
+	// Bounded so a black-holed SMTP host cannot wedge the sample loop; derived
+	// from ctx so shutdown aborts delivery rather than waiting it out.
+	ctx, cancel := context.WithTimeout(ctx, m.cfg.NotifyTimeout)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for _, n := range m.notifiers {
+		wg.Add(1)
+		go func(n Notifier) {
+			defer wg.Done()
+			if err := n.Notify(ctx, m.cfg.Environment, snap); err != nil {
+				// WARN, not ERROR: an ERROR here would be self-reported through
+				// the very pipeline that is already stalled, adding queue
+				// pressure and no signal.
+				m.logger.Warn("ingest-health: out-of-band alert failed",
+					"channel", n.Name(), "error", err)
+				return
+			}
+			m.logger.Info("ingest-health: out-of-band alert sent", "channel", n.Name())
+		}(n)
+	}
+	wg.Wait()
 }
 
 func (m *Monitor) registerGauges() {
