@@ -54,29 +54,12 @@ func SnapshotSettings(ctx context.Context, srcPath, destPath string) (map[string
 	if err != nil {
 		return nil, fmt.Errorf("resolve source path: %w", err)
 	}
-	if _, err := os.Stat(srcAbs); err != nil {
-		return nil, fmt.Errorf("source database %s: %w", srcAbs, err)
+	if err := verifySource(ctx, srcAbs); err != nil {
+		return nil, err
 	}
-
-	// Start from a clean destination; a stale -wal/-shm alongside a removed db
-	// would otherwise be adopted by the new file.
-	if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("remove existing snapshot at %s: %w", destPath, err)
+	if err := resetSnapshotFile(destPath); err != nil {
+		return nil, err
 	}
-	for _, suffix := range []string{"-wal", "-shm"} {
-		_ = os.Remove(destPath + suffix)
-	}
-
-	// Verify the source is readable before creating anything.
-	src, err := OpenReadOnly(srcAbs)
-	if err != nil {
-		return nil, fmt.Errorf("open source database: %w", err)
-	}
-	if err := src.readDB().PingContext(ctx); err != nil {
-		src.Close()
-		return nil, fmt.Errorf("ping source database: %w", err)
-	}
-	src.Close()
 
 	// autoMigrate=false: the background fingerprint migration is pointless here
 	// (the snapshot carries no events) and would race the copy.
@@ -84,7 +67,7 @@ func SnapshotSettings(ctx context.Context, srcPath, destPath string) (map[string
 	if err != nil {
 		return nil, fmt.Errorf("create snapshot database: %w", err)
 	}
-	defer dest.Close()
+	defer func() { _ = dest.Close() }()
 
 	attachURI := (&url.URL{Scheme: "file", Path: filepath.ToSlash(srcAbs)}).String() + "?mode=ro"
 	if _, err := dest.db.ExecContext(ctx, `ATTACH DATABASE ? AS src`, attachURI); err != nil {
@@ -99,6 +82,54 @@ func SnapshotSettings(ctx context.Context, srcPath, destPath string) (map[string
 	}
 	defer detach()
 
+	counts, err := copySettingsTables(ctx, dest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Detach before checkpointing: the source is attached read-only and must not
+	// be touched by the checkpoint below.
+	detach()
+
+	// wal_autocheckpoint(0) means Close would leave the copied rows sitting in
+	// the snapshot's WAL; fold them into the main file so the object we upload
+	// is a single self-contained database.
+	dest.FinalCheckpoint(nil)
+	return counts, nil
+}
+
+// verifySource checks the source database exists and is readable before we
+// create anything at the destination.
+func verifySource(ctx context.Context, srcAbs string) error {
+	if _, err := os.Stat(srcAbs); err != nil {
+		return fmt.Errorf("source database %s: %w", srcAbs, err)
+	}
+	src, err := OpenReadOnly(srcAbs)
+	if err != nil {
+		return fmt.Errorf("open source database: %w", err)
+	}
+	defer func() { _ = src.Close() }()
+	if err := src.readDB().PingContext(ctx); err != nil {
+		return fmt.Errorf("ping source database: %w", err)
+	}
+	return nil
+}
+
+// resetSnapshotFile clears any previous snapshot. A stale -wal/-shm left beside
+// a removed database would otherwise be adopted by the new file.
+func resetSnapshotFile(destPath string) error {
+	if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove existing snapshot at %s: %w", destPath, err)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		_ = os.Remove(destPath + suffix)
+	}
+	return nil
+}
+
+// copySettingsTables clears the destination's settings tables and copies each
+// one from the ATTACHed source, returning per-table row counts.
+func copySettingsTables(ctx context.Context, dest *Store) (map[string]int64, error) {
 	// A fresh database is not empty: open -> init seeds baseline rows (notably
 	// the Default Project at id=1) and those collide with the source's own rows
 	// on copy. Clear the settings tables first, children before parents, so the
@@ -111,7 +142,7 @@ func SnapshotSettings(ctx context.Context, srcPath, destPath string) (map[string
 
 	counts := make(map[string]int64, len(settingsTables))
 	for _, table := range settingsTables {
-		// Table names are from the fixed settingsTables list above, never user
+		// Table names come from the fixed settingsTables list above, never user
 		// input, so interpolating them is safe.
 		if _, err := dest.db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO main.%s SELECT * FROM src.%s`, table, table)); err != nil {
 			return nil, fmt.Errorf("copy table %s: %w", table, err)
@@ -122,14 +153,5 @@ func SnapshotSettings(ctx context.Context, srcPath, destPath string) (map[string
 		}
 		counts[table] = count
 	}
-
-	// Detach before checkpointing: the source is attached read-only and must not
-	// be touched by the checkpoint below.
-	detach()
-
-	// wal_autocheckpoint(0) means Close would leave the copied rows sitting in
-	// the snapshot's WAL; fold them into the main file so the object we upload
-	// is a single self-contained database.
-	dest.FinalCheckpoint(nil)
 	return counts, nil
 }

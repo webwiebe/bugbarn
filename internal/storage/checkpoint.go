@@ -13,7 +13,7 @@ const DefaultCheckpointInterval = 60 * time.Second
 // came back busy because a reader snapshot blocked WAL backfill.
 const checkpointRetryInterval = 5 * time.Second
 
-// RunPeriodicCheckpoint blocks until ctx is cancelled, issuing a TRUNCATE WAL
+// RunPeriodicCheckpoint blocks until ctx is canceled, issuing a TRUNCATE WAL
 // checkpoint on every tick.
 //
 // This loop is the SOLE checkpointer. sqliteDSN sets wal_autocheckpoint(0), so
@@ -38,7 +38,7 @@ const checkpointRetryInterval = 5 * time.Second
 // contention out of Go's pool and into SQLite's lock machinery, where it
 // surfaces as immediate SQLITE_BUSY instead of queueing. The write connection is
 // capped at MaxOpenConns(1) and bugbarn's write transactions are short, so
-// serialising the checkpoint behind them is cheap.
+// serializing the checkpoint behind them is cheap.
 //
 // The checkpoint runs unconditionally on every tick. Do not add a "skip while
 // the write queue is backed up" gate: spanbarn shipped exactly that and a stale

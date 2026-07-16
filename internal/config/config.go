@@ -53,7 +53,7 @@ type Config struct {
 	// Exposed as an env knob so it can be tuned during an incident without a
 	// rebuild.
 	WALCheckpointInterval time.Duration
-	RedisQueueURL          string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
+	RedisQueueURL         string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
 	// OIDCIssuer is BUGBARN_OIDC_ISSUER — when all four OIDC vars are set,
 	// OIDC login is offered alongside local auth.
 	OIDCIssuer        string
@@ -88,9 +88,9 @@ func Load() Config {
 		// Mirrors storage.DefaultCheckpointInterval; kept as a literal so config
 		// does not have to depend on the storage package.
 		WALCheckpointInterval: envDurationSeconds("BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS", 60*time.Second),
-		MaxBodyBytes:        envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
-		MaxSpoolBytes:       envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
-		MaxSourceMapBytes:   envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),
+		MaxBodyBytes:          envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
+		MaxSpoolBytes:         envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
+		MaxSourceMapBytes:     envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),
 		// The session TTL is the ABSOLUTE session cap — day-to-day validity is
 		// bound to the ~15m IdP access token via the refresh flow, so the cap
 		// can be a comfortable 12h instead of forcing hourly re-logins.
