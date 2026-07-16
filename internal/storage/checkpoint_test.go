@@ -130,7 +130,7 @@ func TestRunPeriodicCheckpointStopsOnContextCancel(t *testing.T) {
 		t.Errorf("periodic checkpoint did not truncate the WAL within 5s (size %d)", walSize(t, dbPath))
 	}
 
-	// The loop must exit promptly once the context is cancelled.
+	// The loop must exit promptly once the context is canceled.
 	cancel()
 	select {
 	case <-done:
