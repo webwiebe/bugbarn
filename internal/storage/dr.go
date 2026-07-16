@@ -2,10 +2,12 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // settingsTables lists the tables that make up a "settings-only" snapshot: the
@@ -127,6 +129,51 @@ func resetSnapshotFile(destPath string) error {
 	return nil
 }
 
+// sharedColumns returns the columns table has in BOTH the snapshot (main) and
+// the attached source (src), in the snapshot's declared order. Copying only the
+// intersection keeps the snapshot working across a schema drift in either
+// direction: a column the source predates simply takes its default, and one the
+// source still carries but the schema has dropped is ignored.
+func sharedColumns(ctx context.Context, db *sql.DB, table string) ([]string, error) {
+	read := func(schema string) (map[string]bool, []string, error) {
+		rows, err := db.QueryContext(ctx, fmt.Sprintf(`PRAGMA %s.table_info(%s)`, schema, table))
+		if err != nil {
+			return nil, nil, err
+		}
+		defer rows.Close()
+		set := map[string]bool{}
+		var order []string
+		for rows.Next() {
+			var cid int
+			var name, ctype string
+			var notNull, pk int
+			var dflt sql.NullString
+			if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+				return nil, nil, err
+			}
+			set[name] = true
+			order = append(order, name)
+		}
+		return set, order, rows.Err()
+	}
+
+	_, destOrder, err := read("main")
+	if err != nil {
+		return nil, err
+	}
+	srcSet, _, err := read("src")
+	if err != nil {
+		return nil, err
+	}
+	var shared []string
+	for _, c := range destOrder {
+		if srcSet[c] {
+			shared = append(shared, c)
+		}
+	}
+	return shared, nil
+}
+
 // copySettingsTables clears the destination's settings tables and copies each
 // one from the ATTACHed source, returning per-table row counts.
 func copySettingsTables(ctx context.Context, dest *Store) (map[string]int64, error) {
@@ -142,9 +189,24 @@ func copySettingsTables(ctx context.Context, dest *Store) (map[string]int64, err
 
 	counts := make(map[string]int64, len(settingsTables))
 	for _, table := range settingsTables {
-		// Table names come from the fixed settingsTables list above, never user
-		// input, so interpolating them is safe.
-		if _, err := dest.db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO main.%s SELECT * FROM src.%s`, table, table)); err != nil {
+		// Map columns by NAME, never `SELECT *`. A long-lived database orders its
+		// columns by how they were added (ALTER TABLE ADD COLUMN appends), while a
+		// freshly-migrated one orders them as the CREATE TABLE declares. Those two
+		// orders drift, and `SELECT *` then silently shifts values into the wrong
+		// columns — which showed up as "NOT NULL constraint failed:
+		// projects.created_at" when a NULL group_id landed in created_at.
+		cols, err := sharedColumns(ctx, dest.db, table)
+		if err != nil {
+			return nil, fmt.Errorf("resolve columns for %s: %w", table, err)
+		}
+		if len(cols) == 0 {
+			return nil, fmt.Errorf("table %s: no columns common to source and snapshot", table)
+		}
+		list := strings.Join(cols, ", ")
+		// Table and column names come from the fixed settingsTables list and the
+		// live schema, never user input, so interpolating them is safe.
+		stmt := fmt.Sprintf(`INSERT INTO main.%s (%s) SELECT %s FROM src.%s`, table, list, list, table)
+		if _, err := dest.db.ExecContext(ctx, stmt); err != nil {
 			return nil, fmt.Errorf("copy table %s: %w", table, err)
 		}
 		var count int64
