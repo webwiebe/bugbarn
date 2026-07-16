@@ -16,4 +16,10 @@ set -eu
 # CronJob to R2 rather than continuous replication: restore by dropping the
 # newest snapshot object in as BUGBARN_DB_PATH and starting the pod. See
 # docs/deployment/disaster-recovery.md.
-exec bugbarn
+#
+# "$@" is required, not decorative: a container's `args:` arrive here as our
+# arguments, and the settings-snapshot CronJob runs
+# `db snapshot-settings --out ...`. Dropping them silently starts the server
+# instead of the subcommand — which, on the CronJob's read-only data mount,
+# fails as "attempt to write a readonly database".
+exec bugbarn "$@"

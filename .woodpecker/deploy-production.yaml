@@ -71,6 +71,10 @@ steps:
           kubectl -n $NAMESPACE set image deployment/bugbarn-writer bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
           kubectl -n $NAMESPACE set image deployment/bugbarn-reader bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
           kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=$WEB_IMAGE@$WEB_DIGEST
+          # The CronJob runs the service image too. Without this it keeps the
+          # kustomization's placeholder :local tag and every run dies in
+          # ImagePullBackOff — the DR snapshot silently never happens.
+          kubectl -n $NAMESPACE set image cronjob/bugbarn-settings-snapshot snapshot=$SERVICE_IMAGE@$SERVICE_DIGEST
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-writer --timeout=180s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-reader --timeout=180s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-web --timeout=180s

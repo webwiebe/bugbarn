@@ -114,17 +114,28 @@ func TestRunPeriodicCheckpointStopsOnContextCancel(t *testing.T) {
 		close(done)
 	}()
 
-	// Let at least one tick land, then confirm it exits promptly on cancel.
-	time.Sleep(30 * time.Millisecond)
+	// Poll rather than sleep a fixed amount: under parallel test load the
+	// goroutine may not be scheduled for a while, and asserting on a fixed sleep
+	// makes this flaky.
+	deadline := time.Now().Add(5 * time.Second)
+	truncated := false
+	for time.Now().Before(deadline) {
+		if walSize(t, dbPath) == 0 {
+			truncated = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !truncated {
+		t.Errorf("periodic checkpoint did not truncate the WAL within 5s (size %d)", walSize(t, dbPath))
+	}
+
+	// The loop must exit promptly once the context is canceled.
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("RunPeriodicCheckpoint did not return after context cancel")
-	}
-
-	if got := walSize(t, dbPath); got != 0 {
-		t.Errorf("WAL size after periodic checkpoint = %d, want 0", got)
 	}
 }
 
