@@ -35,8 +35,15 @@ type Config struct {
 	// Environment is BUGBARN_ENVIRONMENT (falls back to BUGBARN_ENV):
 	// production/staging/testing. Drives fail-closed defaults and labels
 	// outgoing alert emails.
-	Environment            string
-	AdminAlertEmail        string // BUGBARN_ADMIN_ALERT_EMAIL; per new issue/regression; defaults to BUGBARN_DIGEST_TO
+	Environment     string
+	AdminAlertEmail string // BUGBARN_ADMIN_ALERT_EMAIL; per new issue/regression; defaults to BUGBARN_DIGEST_TO
+	// IngestAlertWebhookURL and IngestAlertEmail are the out-of-band channels
+	// for ingest-health alerts. They exist because the normal path (self-report
+	// to our own ingest endpoint) cannot deliver an alert about ingest being
+	// broken — it queues behind the very backlog it is reporting. Both are
+	// optional; the email falls back to AdminAlertEmail.
+	IngestAlertWebhookURL  string // BUGBARN_INGEST_ALERT_WEBHOOK_URL
+	IngestAlertEmail       string // BUGBARN_INGEST_ALERT_EMAIL; defaults to BUGBARN_ADMIN_ALERT_EMAIL
 	SelfEndpoint           string
 	SelfAPIKey             string
 	SelfProject            string
@@ -123,6 +130,14 @@ func Load() Config {
 	cfg.AdminAlertEmail = os.Getenv("BUGBARN_ADMIN_ALERT_EMAIL")
 	if cfg.AdminAlertEmail == "" {
 		cfg.AdminAlertEmail = cfg.Digest.Mail.To
+	}
+
+	// Out-of-band ingest-health alerting. Defaults to the admin recipient so an
+	// instance that already mails alerts gets the stall alarm without new config.
+	cfg.IngestAlertWebhookURL = os.Getenv("BUGBARN_INGEST_ALERT_WEBHOOK_URL")
+	cfg.IngestAlertEmail = os.Getenv("BUGBARN_INGEST_ALERT_EMAIL")
+	if cfg.IngestAlertEmail == "" {
+		cfg.IngestAlertEmail = cfg.AdminAlertEmail
 	}
 
 	validateMode(cfg)

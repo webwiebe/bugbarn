@@ -63,6 +63,20 @@ BUGBARN_SPOOL_DIR=/var/lib/bugbarn/spool
 # plus BUGBARN_DIGEST_ENABLED=true. Defaults to BUGBARN_DIGEST_TO when unset.
 #BUGBARN_ADMIN_ALERT_EMAIL=you@example.com
 
+# --- Ingest-health alerting (out-of-band) ---
+#
+# When ingest stalls, BugBarn cannot report it through its own ingest endpoint:
+# the alert queues behind the very backlog it is reporting (a 2026-07-16 stall
+# hid for ~13h that way). These two channels bypass the write queue and the
+# store entirely, so the alarm still gets out. Configure at least one.
+
+# Webhook POSTed with the health snapshot as JSON on each (throttled) stall.
+#BUGBARN_INGEST_ALERT_WEBHOOK_URL=
+
+# Recipient for stall alert emails. Requires SMTP below plus
+# BUGBARN_DIGEST_ENABLED=true. Defaults to BUGBARN_ADMIN_ALERT_EMAIL when unset.
+#BUGBARN_INGEST_ALERT_EMAIL=ops@example.com
+
 # SMTP settings for email delivery
 #SMTP_HOST=smtp.example.com
 #SMTP_PORT=587
