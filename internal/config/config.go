@@ -47,6 +47,12 @@ type Config struct {
 	AutoApproveProjects    bool   // BUGBARN_AUTO_APPROVE_PROJECTS
 	Mode                   string // BUGBARN_MODE: "", "writer", or "reader"
 	WriterURL              string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
+	// WALCheckpointInterval is BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS — how
+	// often the writer TRUNCATE-checkpoints the WAL. Nothing else checkpoints
+	// (wal_autocheckpoint is 0), so this is the only thing bounding WAL growth.
+	// Exposed as an env knob so it can be tuned during an incident without a
+	// rebuild.
+	WALCheckpointInterval time.Duration
 	RedisQueueURL          string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
 	// OIDCIssuer is BUGBARN_OIDC_ISSUER — when all four OIDC vars are set,
 	// OIDC login is offered alongside local auth.
@@ -79,6 +85,9 @@ func Load() Config {
 		TrustedProxies:      parseTrustedProxies(os.Getenv("BUGBARN_TRUSTED_PROXIES")),
 		SpoolDir:            getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
 		DBPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
+		// Mirrors storage.DefaultCheckpointInterval; kept as a literal so config
+		// does not have to depend on the storage package.
+		WALCheckpointInterval: envDurationSeconds("BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS", 60*time.Second),
 		MaxBodyBytes:        envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
 		MaxSpoolBytes:       envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
 		MaxSourceMapBytes:   envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),

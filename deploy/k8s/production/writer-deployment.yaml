@@ -65,10 +65,6 @@ spec:
               value: "43200"
             - name: BUGBARN_OIDC_REFRESH_GRACE_SECONDS
               value: "3600"
-            - name: LITESTREAM_ENDPOINT
-              value: https://s3.wiebe.xyz
-            - name: LITESTREAM_REPLICA_PATH
-              value: production/bugbarn.db
             - name: BUGBARN_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -92,16 +88,6 @@ spec:
                   name: bugbarn-secrets
                   key: BUGBARN_SESSION_SECRET
                   optional: true
-            - name: LITESTREAM_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: bugbarn-secrets
-                  key: LITESTREAM_ACCESS_KEY_ID
-            - name: LITESTREAM_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: bugbarn-secrets
-                  key: LITESTREAM_SECRET_ACCESS_KEY
             - name: SMTP_HOST
               valueFrom:
                 secretKeyRef:

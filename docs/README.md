@@ -34,7 +34,8 @@ BugBarn is a lightweight, self-hosted error tracking system built in Go with SQL
 | [features/digest.md](features/digest.md) | Everyone | Weekly digest email and JSON webhook |
 | [features/logs.md](features/logs.md) | Everyone | Log ingestion, streaming, and filtering |
 | [deployment/configuration.md](deployment/configuration.md) | Operators | All environment variables and their defaults |
-| [deployment/kubernetes.md](deployment/kubernetes.md) | Operators | Kubernetes manifests, Litestream, and production deployment |
+| [deployment/kubernetes.md](deployment/kubernetes.md) | Operators | Kubernetes manifests and production deployment |
+| [deployment/disaster-recovery.md](deployment/disaster-recovery.md) | Operators | Settings-only snapshots, WAL checkpointing, and restore |
 | [deployment/performance.md](deployment/performance.md) | Operators | Throughput, hardware recommendations, and system limits |
 | [api.md](api.md) | Developers | Full REST API reference with request/response examples |
 | [cli.md](cli.md) | Developers | CLI client for querying issues, tailing logs, and managing projects |

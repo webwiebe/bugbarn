@@ -96,7 +96,7 @@ flowchart LR
     API --> UI
 ```
 
-**Litestream** can optionally replicate the SQLite WAL to object storage for disaster recovery.
+An hourly **settings-only snapshot** to object storage covers disaster recovery: configuration (projects, users, API keys, alert rules) survives a total data loss; events, issues and logs do not. Continuous WAL replication was removed — see [disaster-recovery.md](deployment/disaster-recovery.md).
 
 ---
 
@@ -104,4 +104,4 @@ flowchart LR
 
 - [Getting started](getting-started.md) — run BugBarn locally and send your first error in under five minutes
 - [Architecture](architecture.md) — database schema, spool format, background workers, and SSE
-- [Operations](operations.md) — production deployment, Kubernetes manifests, Litestream, backup and restore
+- [Operations](operations.md) — production deployment, Kubernetes manifests, backup and restore

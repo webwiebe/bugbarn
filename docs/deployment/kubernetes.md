@@ -12,7 +12,8 @@ A full BugBarn deployment consists of the following Kubernetes resources:
 | Service | `bugbarn` | ClusterIP for the API pod |
 | Service | `bugbarn-web` | ClusterIP for the web pod |
 | Ingress | `bugbarn` | Routes `/api/*` to the service pod and `/` to the web pod |
-| Secret | `bugbarn-secrets` | Core auth and Litestream credentials |
+| Secret | `bugbarn-secrets` | Core auth and DR snapshot credentials |
+| CronJob | `bugbarn-settings-snapshot` | Hourly settings-only DR snapshot to R2 (production only) |
 | Secret | `smtp-secret` | SMTP credentials and digest configuration |
 
 All resources live in a dedicated namespace (e.g., `bugbarn-production`).
@@ -38,7 +39,7 @@ Both probes target `GET /api/v1/health`, which returns `{"status":"ok"}` when th
 | Liveness | 30 s | 20 s | 3 |
 | Readiness | 10 s | 10 s | 3 (default) |
 
-The liveness probe has a longer initial delay to give Litestream time to restore the database from the replica before BugBarn starts serving traffic. The readiness probe uses a shorter delay so the pod is marked ready as soon as the server accepts requests.
+The liveness probe has a longer initial delay to allow for schema migrations on a large database before BugBarn starts serving traffic. The readiness probe uses a shorter delay so the pod is marked ready as soon as the server accepts requests.
 
 ---
 
@@ -61,14 +62,18 @@ Secrets are stored as SOPS-encrypted YAML files in the repository and decrypted 
 
 ### bugbarn-secrets
 
-Contains core authentication and Litestream replication credentials:
+Contains core authentication and DR snapshot credentials:
 
 - `BUGBARN_API_KEY`
 - `BUGBARN_ADMIN_USERNAME`
 - `BUGBARN_ADMIN_PASSWORD_BCRYPT`
 - `BUGBARN_SESSION_SECRET`
-- `LITESTREAM_ACCESS_KEY_ID`
-- `LITESTREAM_SECRET_ACCESS_KEY`
+- `BUGBARN_SNAPSHOT_ACCESS_KEY_ID` (production only — settings-snapshot CronJob)
+- `BUGBARN_SNAPSHOT_SECRET_ACCESS_KEY` (production only — settings-snapshot CronJob)
+
+Disaster recovery is the hourly settings-only snapshot, not continuous
+replication. See [disaster-recovery.md](disaster-recovery.md) for what is kept,
+what is lost, and how to restore.
 
 ### smtp-secret
 
