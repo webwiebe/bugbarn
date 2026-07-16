@@ -126,14 +126,15 @@ func (s *core) PersistFacets(ctx context.Context, eventID int64, issueID int64, 
 	}
 	defer tx.Rollback()
 
-	// Count existing distinct facet keys for this project once up-front.
-	var keyCount int
-	if err := tx.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT facet_key) FROM event_facets WHERE project_id = ?`,
-		projectID,
-	).Scan(&keyCount); err != nil {
-		return err
-	}
+	// The distinct-key count is consulted ONLY to reject a genuinely new key once
+	// the project is at its cap, so resolve it lazily. Counting up-front made
+	// every event pay for a COUNT(DISTINCT facet_key) that scans every facet row
+	// the project has ever written — in production that reached 46s per event and
+	// held the single write connection for the whole of it, stalling ingest. In
+	// steady state a project's key set is already established, every key exists,
+	// and the count is never needed at all. Same reasoning as the EXISTS checks in
+	// persistFacet below.
+	keyCount := lazyFacetKeyCount(ctx, tx, projectID)
 
 	for k, v := range facets {
 		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
@@ -144,18 +145,57 @@ func (s *core) PersistFacets(ctx context.Context, eventID int64, issueID int64, 
 			return err
 		}
 		if inserted {
-			keyCount++
+			keyCount.inc()
 		}
 	}
 
 	return tx.Commit()
 }
 
+// facetKeyCounter resolves a project's distinct facet-key count at most once per
+// transaction, and only when a caller actually asks for it.
+type facetKeyCounter struct {
+	ctx       context.Context
+	tx        *sql.Tx
+	projectID int64
+	n         int
+	loaded    bool
+}
+
+func lazyFacetKeyCount(ctx context.Context, tx *sql.Tx, projectID int64) *facetKeyCounter {
+	return &facetKeyCounter{ctx: ctx, tx: tx, projectID: projectID}
+}
+
+// get returns the project's distinct facet-key count, running the expensive
+// COUNT(DISTINCT) only on the first call.
+func (c *facetKeyCounter) get() (int, error) {
+	if c.loaded {
+		return c.n, nil
+	}
+	if err := c.tx.QueryRowContext(c.ctx,
+		`SELECT COUNT(DISTINCT facet_key) FROM event_facets WHERE project_id = ?`,
+		c.projectID,
+	).Scan(&c.n); err != nil {
+		return 0, err
+	}
+	c.loaded = true
+	return c.n, nil
+}
+
+// inc records a newly inserted key. Only meaningful once the count is loaded; if
+// it never loaded, a later get() reads the inserted row from this same
+// transaction anyway.
+func (c *facetKeyCounter) inc() {
+	if c.loaded {
+		c.n++
+	}
+}
+
 // persistFacet applies the cardinality guards for a single facet key/value and
 // inserts it when allowed. It returns whether the inserted row introduced a new
 // facet key for the project (so the caller can bump its key count).
 func persistFacet(
-	ctx context.Context, tx *sql.Tx, projectID, eventID, issueID int64, k, v string, keyCount int,
+	ctx context.Context, tx *sql.Tx, projectID, eventID, issueID int64, k, v string, keyCount *facetKeyCounter,
 ) (newKeyInserted bool, err error) {
 	// Determine whether this key is new to this project. EXISTS stops at the
 	// first matching row; the old COUNT(*) counted every row for the key,
@@ -171,9 +211,16 @@ func persistFacet(
 	}
 	isNewKey := !keyExists
 
-	// Cardinality guard: max 50 distinct keys per project.
-	if isNewKey && keyCount >= maxFacetKeysPerProject {
-		return false, nil
+	// Cardinality guard: max 50 distinct keys per project. Only a new key can
+	// breach the cap, so the count is resolved here rather than for every event.
+	if isNewKey {
+		n, err := keyCount.get()
+		if err != nil {
+			return false, err
+		}
+		if n >= maxFacetKeysPerProject {
+			return false, nil
+		}
 	}
 
 	// Determine whether this specific value is new for this key — again an
