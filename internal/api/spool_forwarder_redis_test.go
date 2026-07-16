@@ -81,3 +81,131 @@ func TestRedisSpoolForwarderPublishes(t *testing.T) {
 		}
 	}
 }
+
+// newTestRedisForwarder builds a Redis-backed forwarder over a throwaway
+// miniredis, returning both so tests can assert on what was published.
+func newTestRedisForwarder(t *testing.T) (*SpoolForwarder, *queue.RedisQueue) {
+	t.Helper()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+	t.Cleanup(func() { q.Close() })
+	sf, err := NewRedisSpoolForwarder(t.TempDir(), q, 1<<20, slog.Default())
+	if err != nil {
+		t.Fatalf("NewRedisSpoolForwarder: %v", err)
+	}
+	t.Cleanup(func() { sf.Close() })
+	return sf, q
+}
+
+// TestRedisSpoolForwarderResolvesProjectFromAPIKey is the regression test for
+// issue #164: a log client authenticating with a project-scoped API key and no
+// X-BugBarn-Project header published an item with an empty slug, which the
+// consumer then dropped — ~91% of production log ingest, lost behind a 202.
+func TestRedisSpoolForwarderResolvesProjectFromAPIKey(t *testing.T) {
+	sf, q := newTestRedisForwarder(t)
+	sf.SetProjectResolver(func(_ context.Context, apiKey string) string {
+		if apiKey == "scoped-key" {
+			return "svc"
+		}
+		return ""
+	})
+
+	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
+	req.Header.Set("X-Bugbarn-Api-Key", "scoped-key")
+	rec := httptest.NewRecorder()
+	sf.Forward(rec, req)
+	if rec.Code != 202 {
+		t.Fatalf("Forward status = %d, want 202", rec.Code)
+	}
+	if err := sf.DrainOnce(context.Background()); err != nil {
+		t.Fatalf("DrainOnce: %v", err)
+	}
+
+	items, err := q.Consume(context.Background())
+	if err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("got %d items, want 1", len(items))
+	}
+	if items[0].ProjectSlug != "svc" {
+		t.Errorf("project = %q, want svc — key unresolved, consumer would drop this", items[0].ProjectSlug)
+	}
+}
+
+// TestRedisSpoolForwarderHeaderBeatsAPIKey: an explicit header is the caller's
+// override and wins over the project the key is scoped to.
+func TestRedisSpoolForwarderHeaderBeatsAPIKey(t *testing.T) {
+	sf, q := newTestRedisForwarder(t)
+	sf.SetProjectResolver(func(context.Context, string) string { return "from-key" })
+
+	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
+	req.Header.Set("X-Bugbarn-Api-Key", "scoped-key")
+	req.Header.Set("X-Bugbarn-Project", "from-header")
+	rec := httptest.NewRecorder()
+	sf.Forward(rec, req)
+	if rec.Code != 202 {
+		t.Fatalf("Forward status = %d, want 202", rec.Code)
+	}
+	if err := sf.DrainOnce(context.Background()); err != nil {
+		t.Fatalf("DrainOnce: %v", err)
+	}
+	items, err := q.Consume(context.Background())
+	if err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+	if len(items) != 1 || items[0].ProjectSlug != "from-header" {
+		t.Fatalf("items = %+v, want one item for from-header", items)
+	}
+}
+
+// TestRedisSpoolForwarderRejectsLogsWithoutProject: when neither the header nor
+// the key names a project, reject at ingest. Accepting with a 202 and dropping
+// in the consumer loses the batch without the client ever learning. Mirrors the
+// direct path, which 400s on the same condition.
+func TestRedisSpoolForwarderRejectsLogsWithoutProject(t *testing.T) {
+	sf, _ := newTestRedisForwarder(t)
+	sf.SetProjectResolver(func(context.Context, string) string { return "" })
+
+	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
+	req.Header.Set("X-Bugbarn-Api-Key", "global-key")
+	rec := httptest.NewRecorder()
+	sf.Forward(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("Forward status = %d, want 400", rec.Code)
+	}
+	if pending := sf.Pending(); pending != 0 {
+		t.Errorf("Pending = %d, want 0 — a rejected log must not be spooled", pending)
+	}
+}
+
+// TestRedisSpoolForwarderEventsAllowEmptyProject: events, unlike logs, still
+// pass with no project — the consumer falls them back to the Default Project
+// rather than dropping them. That asymmetry is deliberate.
+func TestRedisSpoolForwarderEventsAllowEmptyProject(t *testing.T) {
+	sf, q := newTestRedisForwarder(t)
+
+	req := httptest.NewRequest("POST", "/api/v1/events", strings.NewReader(`{"message":"boom"}`))
+	rec := httptest.NewRecorder()
+	sf.Forward(rec, req)
+	if rec.Code != 202 {
+		t.Fatalf("Forward status = %d, want 202", rec.Code)
+	}
+	if err := sf.DrainOnce(context.Background()); err != nil {
+		t.Fatalf("DrainOnce: %v", err)
+	}
+	items, err := q.Consume(context.Background())
+	if err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+	if len(items) != 1 || items[0].Kind != queue.KindEvent {
+		t.Fatalf("items = %+v, want one event item", items)
+	}
+}

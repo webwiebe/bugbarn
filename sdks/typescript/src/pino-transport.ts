@@ -10,6 +10,8 @@
  *     createBugBarnDestination({
  *       endpoint: process.env.BUGBARN_ENDPOINT + '/api/v1/logs',
  *       apiKey: process.env.BUGBARN_INGEST_KEY,
+ *       project: process.env.BUGBARN_PROJECT,   // optional with a project-scoped key
+ *       level: 'warn',                          // optional: drop anything below warn
  *     })
  *   )
  *
@@ -23,16 +25,40 @@
 
 import { Writable } from 'node:stream'
 
+/** Pino's numeric level values, used to resolve the `level` option. */
+const LEVELS: Record<string, number> = {
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40,
+  error: 50,
+  fatal: 60,
+}
+
 export interface BugBarnTransportOptions {
   endpoint: string
   apiKey: string
+  /**
+   * Project slug to ingest into, sent as X-BugBarn-Project. Optional when the
+   * API key is project-scoped — the server resolves the project from the key.
+   * Required for a global (non project-scoped) key.
+   */
+  project?: string
   flushIntervalMs?: number
   batchSize?: number
+  /**
+   * Minimum level to send, by name (trace|debug|info|warn|error|fatal).
+   * Entries below it are dropped before batching. Unset sends everything.
+   */
   level?: string
 }
 
 export function createBugBarnDestination(opts: BugBarnTransportOptions): Writable {
-  const { endpoint, apiKey, flushIntervalMs = 1000, batchSize = 50 } = opts
+  const { endpoint, apiKey, project, flushIntervalMs = 1000, batchSize = 50, level } = opts
+  const minLevel = level ? LEVELS[level.toLowerCase()] : undefined
+  if (level && minLevel === undefined) {
+    throw new Error(`bugbarn: unknown level ${JSON.stringify(level)} (expected one of ${Object.keys(LEVELS).join(', ')})`)
+  }
   const batch: object[] = []
   let timer: ReturnType<typeof setTimeout> | null = null
 
@@ -40,12 +66,14 @@ export function createBugBarnDestination(opts: BugBarnTransportOptions): Writabl
     if (!batch.length) return
     const toSend = batch.splice(0)
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-BugBarn-Api-Key': apiKey,
+      }
+      if (project) headers['X-BugBarn-Project'] = project
       await globalThis.fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-BugBarn-Api-Key': apiKey,
-        },
+        headers,
         body: JSON.stringify({ logs: toSend }),
       })
     } catch {
@@ -67,7 +95,11 @@ export function createBugBarnDestination(opts: BugBarnTransportOptions): Writabl
       try {
         const line = chunk.toString().trim()
         if (line) {
-          const parsed = JSON.parse(line) as object
+          const parsed = JSON.parse(line) as { level?: number }
+          if (minLevel !== undefined && typeof parsed.level === 'number' && parsed.level < minLevel) {
+            callback()
+            return
+          }
           batch.push(parsed)
           if (batch.length >= batchSize) {
             if (timer) { clearTimeout(timer); timer = null }

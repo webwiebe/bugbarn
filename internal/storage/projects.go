@@ -75,7 +75,7 @@ func (s *ProjectStore) EnsureProject(ctx context.Context, slug string) (Project,
 	// Check if slug is an alias.
 	targetID, aliasErr := s.ResolveAlias(ctx, slug)
 	if aliasErr == nil {
-		return s.projectByID(ctx, targetID)
+		return s.ProjectByID(ctx, targetID)
 	}
 	if s.db == nil {
 		return Project{}, apperr.NotFound("project not found (read-only)", nil)
@@ -94,7 +94,7 @@ func (s *ProjectStore) EnsureProjectPending(ctx context.Context, slug string) (P
 	// Check if slug is an alias.
 	targetID, aliasErr := s.ResolveAlias(ctx, slug)
 	if aliasErr == nil {
-		return s.projectByID(ctx, targetID)
+		return s.ProjectByID(ctx, targetID)
 	}
 	if s.db == nil {
 		return Project{}, apperr.NotFound("project not found (read-only)", nil)
@@ -239,8 +239,8 @@ WHERE p.issue_prefix = ? AND i.issue_number = ?`, prefix, number).Scan(&rowID)
 	return rowID, nil
 }
 
-// projectByID returns a project by its numeric ID.
-func (s *ProjectStore) projectByID(ctx context.Context, id int64) (Project, error) {
+// ProjectByID returns a project by its numeric ID.
+func (s *ProjectStore) ProjectByID(ctx context.Context, id int64) (Project, error) {
 	var p Project
 	var createdAt string
 	err := s.readDB().QueryRowContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at FROM projects WHERE id = ?`, id).

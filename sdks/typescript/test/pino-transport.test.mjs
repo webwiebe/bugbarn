@@ -87,3 +87,68 @@ test('flushes on stream end', async () => {
   assert.equal(sent.length, 1)
   assert.equal(sent[0].logs[0].msg, 'before-end')
 })
+
+test('sends X-BugBarn-Project when project is set', async () => {
+  const sent = []
+  globalThis.fetch = async (_url, opts) => {
+    sent.push(opts.headers)
+    return { ok: true, status: 200 }
+  }
+
+  const dest = createBugBarnDestination({ endpoint: 'http://test/api/v1/logs', apiKey: 'k', project: 'svc', flushIntervalMs: 50 })
+  dest.write(JSON.stringify({ level: 30, msg: 'hello' }) + '\n')
+  await new Promise(r => setTimeout(r, 150))
+
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0]['X-BugBarn-Project'], 'svc')
+})
+
+test('omits X-BugBarn-Project when project is unset', async () => {
+  const sent = []
+  globalThis.fetch = async (_url, opts) => {
+    sent.push(opts.headers)
+    return { ok: true, status: 200 }
+  }
+
+  const dest = createBugBarnDestination({ endpoint: 'http://test/api/v1/logs', apiKey: 'k', flushIntervalMs: 50 })
+  dest.write(JSON.stringify({ level: 30, msg: 'hello' }) + '\n')
+  await new Promise(r => setTimeout(r, 150))
+
+  assert.equal(sent.length, 1)
+  assert.ok(!('X-BugBarn-Project' in sent[0]))
+})
+
+test('level filters out entries below the threshold', async () => {
+  const sent = []
+  globalThis.fetch = async (_url, opts) => {
+    sent.push(JSON.parse(opts.body))
+    return { ok: true, status: 200 }
+  }
+
+  const dest = createBugBarnDestination({ endpoint: 'http://test/api/v1/logs', apiKey: 'k', level: 'warn', flushIntervalMs: 50 })
+  dest.write(JSON.stringify({ level: 30, msg: 'info' }) + '\n')
+  dest.write(JSON.stringify({ level: 40, msg: 'warn' }) + '\n')
+  dest.write(JSON.stringify({ level: 50, msg: 'error' }) + '\n')
+  await new Promise(r => setTimeout(r, 150))
+
+  assert.equal(sent.length, 1)
+  assert.deepEqual(sent[0].logs.map(l => l.msg), ['warn', 'error'])
+})
+
+test('level below threshold never triggers a request', async () => {
+  let calls = 0
+  globalThis.fetch = async () => { calls++; return { ok: true, status: 200 } }
+
+  const dest = createBugBarnDestination({ endpoint: 'http://test/api/v1/logs', apiKey: 'k', level: 'error', flushIntervalMs: 50 })
+  dest.write(JSON.stringify({ level: 30, msg: 'info' }) + '\n')
+  await new Promise(r => setTimeout(r, 150))
+
+  assert.equal(calls, 0)
+})
+
+test('rejects an unknown level instead of silently ignoring it', () => {
+  assert.throws(
+    () => createBugBarnDestination({ endpoint: 'http://test/api/v1/logs', apiKey: 'k', level: 'verbose' }),
+    /unknown level/,
+  )
+})
