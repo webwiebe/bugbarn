@@ -35,10 +35,32 @@ func TestSampleHealthyWhenRecent(t *testing.T) {
 	}
 }
 
-// TestSampleStalledIngest is the core regression for the silent outage: when no
-// event has been persisted for longer than the threshold, the monitor must mark
-// the pipeline unhealthy so the health probe can report it.
+// TestSampleStalledIngest is the core regression for the silent outage: when
+// events are queued but none has been persisted for longer than the threshold,
+// the writer is wedged and the monitor must mark the pipeline unhealthy so the
+// health probe can report it.
 func TestSampleStalledIngest(t *testing.T) {
+	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	// depth 3: events are arriving into the queue but not draining.
+	m := New(Config{StaleAfter: 30 * time.Minute}, baseDeps(now.Add(-5*24*time.Hour), 3), nil)
+	m.now = func() time.Time { return now }
+
+	m.sample(context.Background())
+	s := m.Snapshot()
+
+	if s.Healthy {
+		t.Fatal("expected unhealthy when events are queued but not persisted")
+	}
+	if len(s.Reasons) == 0 {
+		t.Fatal("expected a reason explaining the stall")
+	}
+}
+
+// TestSampleIdleWithEmptyQueueIsHealthy guards the alert-fatigue fix: a stale
+// last event behind a known-empty write queue is an idle instance (no traffic
+// arriving), not a stall, and must not be flagged. Before the fix this produced
+// ~155 false "ingest pipeline unhealthy" alerts a day from testing and staging.
+func TestSampleIdleWithEmptyQueueIsHealthy(t *testing.T) {
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 	m := New(Config{StaleAfter: 30 * time.Minute}, baseDeps(now.Add(-5*24*time.Hour), 0), nil)
 	m.now = func() time.Time { return now }
@@ -46,11 +68,30 @@ func TestSampleStalledIngest(t *testing.T) {
 	m.sample(context.Background())
 	s := m.Snapshot()
 
-	if s.Healthy {
-		t.Fatal("expected unhealthy for 5-day-old last event")
+	if !s.Healthy {
+		t.Fatalf("an idle instance with an empty queue must not be flagged: %v", s.Reasons)
 	}
-	if len(s.Reasons) == 0 {
-		t.Fatal("expected a reason explaining the stall")
+}
+
+// TestSampleStaleMonolithNoQueueIsUnhealthy: with no write queue to consult
+// (a monolith), staleness is the only available signal, so a stale last event
+// must still flip unhealthy — preserving the original silent-outage protection
+// where the queue-corroboration path cannot apply.
+func TestSampleStaleMonolithNoQueueIsUnhealthy(t *testing.T) {
+	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	m := New(Config{StaleAfter: 30 * time.Minute}, Deps{
+		LastEventAt: func(context.Context) (time.Time, error) { return now.Add(-2 * time.Hour), nil },
+	}, nil)
+	m.now = func() time.Time { return now }
+
+	m.sample(context.Background())
+	s := m.Snapshot()
+
+	if s.Healthy {
+		t.Fatalf("a monolith with no queue must still flag a stale pipeline: %v", s.Reasons)
+	}
+	if s.QueueDepthKnown {
+		t.Fatal("expected QueueDepthKnown=false with no QueueDepth dep")
 	}
 }
 
@@ -131,7 +172,7 @@ func TestQueueDepthErrorDoesNotMarkUnhealthy(t *testing.T) {
 
 func TestAlertThrottled(t *testing.T) {
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
-	m := New(Config{StaleAfter: time.Minute, AlertEvery: 15 * time.Minute}, baseDeps(now.Add(-time.Hour), 0), nil)
+	m := New(Config{StaleAfter: time.Minute, AlertEvery: 15 * time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
 	cur := now
 	m.now = func() time.Time { return cur }
 

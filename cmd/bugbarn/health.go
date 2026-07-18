@@ -24,7 +24,10 @@ func startIngestHealthMonitor(ctx context.Context, cfg config.Config, store *sto
 			logger.Warn("ingest-health: write-queue depth unavailable", "error", err)
 		}
 	}
-	monitor := ingesthealth.New(ingesthealth.Config{Environment: cfg.Environment}, deps, logger)
+	monitor := ingesthealth.New(ingesthealth.Config{
+		Environment: cfg.Environment,
+		StaleAfter:  cfg.IngestStaleAfter,
+	}, deps, logger)
 	// Out-of-band channels: an alert about ingest being broken cannot be
 	// delivered through ingest (see the ingesthealth package doc). Unconfigured
 	// channels construct to nil and are skipped.

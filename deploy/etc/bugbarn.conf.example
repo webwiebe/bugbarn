@@ -77,6 +77,14 @@ BUGBARN_SPOOL_DIR=/var/lib/bugbarn/spool
 # BUGBARN_DIGEST_ENABLED=true. Defaults to BUGBARN_ADMIN_ALERT_EMAIL when unset.
 #BUGBARN_INGEST_ALERT_EMAIL=ops@example.com
 
+# Staleness window: how long the most recent persisted event may age before a
+# backed-up ingest is treated as a stall. Default 1800 (30m). On a queue-backed
+# instance staleness only alarms when the write queue also has a backlog, so an
+# idle instance never false-fires. On a monolith (no write queue) staleness is
+# the only signal, so raise this above the longest normal quiet period to avoid
+# paging on an idle box.
+#BUGBARN_INGEST_STALE_AFTER_SECONDS=1800
+
 # SMTP settings for email delivery
 #SMTP_HOST=smtp.example.com
 #SMTP_PORT=587

@@ -41,9 +41,13 @@ import (
 type Config struct {
 	// Interval is how often the monitor samples. Default 60s.
 	Interval time.Duration
-	// StaleAfter is the maximum age of the most recent persisted event before
-	// ingest is considered stalled. Default 30m. Tune above the longest expected
-	// quiet period so it does not false-positive on a genuinely idle instance.
+	// StaleAfter is the maximum age of the most recent persisted event before a
+	// backed-up queue is considered a stall. Default 30m; wired to
+	// BUGBARN_INGEST_STALE_AFTER_SECONDS so it can be raised on an environment
+	// whose quiet periods run long (e.g. an idle testing box that has no write
+	// queue to distinguish idle from stalled — see evaluate). Staleness alone
+	// never flips a queue-backed instance unhealthy; the queue depth must
+	// corroborate it.
 	StaleAfter time.Duration
 	// MaxQueueDepth is the write-queue backlog (entries) above which ingest is
 	// considered backed up. Default 50_000. Zero disables the check.
@@ -191,8 +195,8 @@ func (m *Monitor) Start(ctx context.Context) {
 	}
 }
 
-// sample collects the signals, evaluates health, stores the snapshot, and emits
-// a throttled log when unhealthy.
+// sample collects the raw signals, evaluates health, stores the snapshot, and
+// emits a throttled log when unhealthy.
 func (m *Monitor) sample(ctx context.Context) {
 	now := m.now().UTC()
 	snap := Snapshot{Sampled: true, SampledAt: now, Healthy: true}
@@ -209,10 +213,6 @@ func (m *Monitor) sample(ctx context.Context) {
 			snap.HasEvents = true
 			snap.LastEventAt = last.UTC()
 			snap.LastEventAgeSeconds = now.Sub(last).Seconds()
-			if now.Sub(last) > m.cfg.StaleAfter {
-				snap.Healthy = false
-				snap.Reasons = append(snap.Reasons, fmt.Sprintf("no event persisted for %s (threshold %s)", now.Sub(last).Round(time.Second), m.cfg.StaleAfter))
-			}
 		}
 	}
 
@@ -223,10 +223,6 @@ func (m *Monitor) sample(ctx context.Context) {
 		} else {
 			snap.QueueDepthKnown = true
 			snap.QueueDepth = depth
-			if m.cfg.MaxQueueDepth > 0 && depth > m.cfg.MaxQueueDepth {
-				snap.Healthy = false
-				snap.Reasons = append(snap.Reasons, fmt.Sprintf("write-queue backlog %d over threshold %d", depth, m.cfg.MaxQueueDepth))
-			}
 		}
 	}
 
@@ -236,8 +232,54 @@ func (m *Monitor) sample(ctx context.Context) {
 		}
 	}
 
+	m.evaluate(&snap, now)
+
 	m.snap.Store(&snap)
 	m.maybeAlert(ctx, snap)
+}
+
+// evaluate applies the health rules to a freshly gathered snapshot. It runs
+// after every signal is collected because the staleness verdict depends on the
+// write-queue depth.
+//
+// Staleness on its own is ambiguous: "no event persisted recently" is a stall
+// only when events are actually arriving and failing to drain. On an idle
+// instance — staging and testing sit quiet for hours or days between deploys —
+// no traffic is the normal state, not an outage. Treating that as unhealthy
+// produced a flood of false "ingest pipeline unhealthy" alerts (155/day across
+// the two non-prod boxes) while every one had queue_depth 0 and an empty WAL.
+//
+// So a stale last-event is only a stall when the write queue corroborates it
+// (depth > 0: events are queued but not being persisted), or when the queue
+// depth is unknown — a monolith with no queue to consult, where staleness is
+// the only signal available and the original silent-outage protection must be
+// preserved. A known-empty queue behind a stale last-event is idle, not stalled.
+func (m *Monitor) evaluate(snap *Snapshot, now time.Time) {
+	if m.cfg.StaleAfter > 0 && snap.HasEvents {
+		if age := now.Sub(snap.LastEventAt); age > m.cfg.StaleAfter {
+			switch {
+			case snap.QueueDepthKnown && snap.QueueDepth == 0:
+				// Idle: nothing is waiting to be persisted. Not a stall.
+			case snap.QueueDepthKnown:
+				snap.Healthy = false
+				snap.Reasons = append(snap.Reasons, fmt.Sprintf(
+					"events queued but not persisted for %s (queue depth %d, threshold %s)",
+					age.Round(time.Second), snap.QueueDepth, m.cfg.StaleAfter))
+			default:
+				// No queue visibility (monolith): fall back to staleness alone.
+				snap.Healthy = false
+				snap.Reasons = append(snap.Reasons, fmt.Sprintf(
+					"no event persisted for %s (threshold %s)",
+					age.Round(time.Second), m.cfg.StaleAfter))
+			}
+		}
+	}
+
+	if m.cfg.MaxQueueDepth > 0 && snap.QueueDepthKnown && snap.QueueDepth > m.cfg.MaxQueueDepth {
+		snap.Healthy = false
+		snap.Reasons = append(snap.Reasons, fmt.Sprintf(
+			"write-queue backlog %d over threshold %d", snap.QueueDepth, m.cfg.MaxQueueDepth))
+	}
 }
 
 // maybeAlert logs at ERROR when unhealthy, throttled to AlertEvery so a sustained

@@ -44,6 +44,11 @@ type Config struct {
 	// optional; the email falls back to AdminAlertEmail.
 	IngestAlertWebhookURL  string // BUGBARN_INGEST_ALERT_WEBHOOK_URL
 	IngestAlertEmail       string // BUGBARN_INGEST_ALERT_EMAIL; defaults to BUGBARN_ADMIN_ALERT_EMAIL
+	// IngestStaleAfter is BUGBARN_INGEST_STALE_AFTER_SECONDS — how long the most
+	// recent persisted event may age before a backed-up queue is treated as a
+	// stall. Zero (unset) uses the monitor default (30m). Raise it on an idle
+	// instance with no write queue whose normal quiet periods exceed the default.
+	IngestStaleAfter time.Duration
 	SelfEndpoint           string
 	SelfAPIKey             string
 	SelfProject            string
@@ -139,6 +144,8 @@ func Load() Config {
 	if cfg.IngestAlertEmail == "" {
 		cfg.IngestAlertEmail = cfg.AdminAlertEmail
 	}
+	// 0 (unset) lets the monitor apply its 30m default.
+	cfg.IngestStaleAfter = envDurationSeconds("BUGBARN_INGEST_STALE_AFTER_SECONDS", 0)
 
 	validateMode(cfg)
 	return cfg
