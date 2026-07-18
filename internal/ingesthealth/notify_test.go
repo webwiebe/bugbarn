@@ -87,7 +87,7 @@ func TestHealthySampleDoesNotNotify(t *testing.T) {
 func TestNotifyShareTheAlertThrottle(t *testing.T) {
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
 	f := &fakeNotifier{name: "fake"}
-	m := New(Config{StaleAfter: time.Minute, AlertEvery: 15 * time.Minute}, baseDeps(now.Add(-time.Hour), 0), nil)
+	m := New(Config{StaleAfter: time.Minute, AlertEvery: 15 * time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
 	cur := now
 	m.now = func() time.Time { return cur }
 	m.AddNotifier(f)
@@ -112,7 +112,7 @@ func TestOneFailingChannelDoesNotBlockAnother(t *testing.T) {
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
 	bad := &fakeNotifier{name: "bad", err: errors.New("smtp unreachable")}
 	good := &fakeNotifier{name: "good"}
-	m := New(Config{StaleAfter: time.Minute}, baseDeps(now.Add(-time.Hour), 0), nil)
+	m := New(Config{StaleAfter: time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
 	m.now = func() time.Time { return now }
 	m.AddNotifier(bad, good)
 
@@ -128,7 +128,7 @@ func TestOneFailingChannelDoesNotBlockAnother(t *testing.T) {
 // Wiring one unconfigured must not panic on the next stall.
 func TestAddNotifierSkipsUnconfigured(t *testing.T) {
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
-	m := New(Config{StaleAfter: time.Minute}, baseDeps(now.Add(-time.Hour), 0), nil)
+	m := New(Config{StaleAfter: time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
 	m.now = func() time.Time { return now }
 	m.AddNotifier(NewWebhookNotifier(""), NewEmailNotifier(digest.MailConfig{}, ""))
 
