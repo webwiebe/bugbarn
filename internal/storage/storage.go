@@ -269,6 +269,12 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 	upsertSpan.SetAttributes(attribute.String("issue_id", issue.ID), attribute.Bool("regressed", regressed))
 	upsertSpan.End()
 
+	// The upsert works entirely from the numeric project id, so the returned
+	// issue carries no project slug. Populate it here so every consumer of the
+	// published IssueCreated/IssueRegressed event — notably the cross-project
+	// admin alert email, which spans all projects — can name the project.
+	issue.ProjectSlug = s.projectSlugByID(ctx, projectID)
+
 	if regressed {
 		if _, rerr := s.db.ExecContext(ctx,
 			`INSERT INTO regression_events (project_id, issue_id, regressed_at) VALUES (?, ?, ?)`,
@@ -308,4 +314,20 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 
 	span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
 	return issue, eventRow, isNew, regressed, nil
+}
+
+// projectSlugByID returns the project's slug for a persisted issue. It is
+// best-effort: a lookup failure yields an empty slug (and a warning) rather
+// than failing the persist, since the slug is cosmetic to the write path and
+// only decorates the published event. The lookup is a primary-key hit, so it
+// adds negligible cost to ingest.
+func (s *core) projectSlugByID(ctx context.Context, projectID int64) string {
+	var slug string
+	if err := s.readDB().QueryRowContext(ctx,
+		`SELECT slug FROM projects WHERE id = ?`, projectID).Scan(&slug); err != nil {
+		slog.WarnContext(ctx, "storage: failed to look up project slug for issue event",
+			"project_id", projectID, "error", err)
+		return ""
+	}
+	return slug
 }
