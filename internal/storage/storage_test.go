@@ -143,6 +143,51 @@ func TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable(t *test
 	}
 }
 
+// TestPersistProcessedEventPopulatesProjectSlug guards the cross-project admin
+// alert email: the published IssueCreated/IssueRegressed event must carry the
+// project slug so a notification spanning all projects can name which one the
+// error belongs to. The upsert works from the numeric project id alone, so the
+// slug is populated by PersistProcessedEvent — assert it on both the new-issue
+// and the repeat-event (update) paths.
+func TestPersistProcessedEventPopulatesProjectSlug(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	ev := processedEventFrom(event.Event{
+		ReceivedAt: time.Date(2026, 7, 20, 3, 3, 0, 0, time.UTC),
+		ObservedAt: time.Date(2026, 7, 20, 3, 3, 0, 0, time.UTC),
+		Severity:   "ERROR",
+		Exception:  event.Exception{Type: "Exception", Message: "vision_analysis_failed"},
+	})
+
+	issue, _, isNew, _, err := store.PersistProcessedEvent(ctx, ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isNew {
+		t.Fatal("expected a new issue")
+	}
+	if issue.ProjectSlug != defaultProject {
+		t.Fatalf("new issue: expected project slug %q, got %q", defaultProject, issue.ProjectSlug)
+	}
+
+	// A repeat event reuses the issue via the update path, which must also
+	// carry the slug.
+	issue2, _, _, _, err := store.PersistProcessedEvent(ctx, ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue2.ProjectSlug != defaultProject {
+		t.Fatalf("existing issue: expected project slug %q, got %q", defaultProject, issue2.ProjectSlug)
+	}
+}
+
 func TestResolveIssueReopensOnRegressionAndLiveEventsAreWindowed(t *testing.T) {
 	t.Parallel()
 
