@@ -106,7 +106,7 @@ func (s *Service) Resolve(ctx context.Context, id string) (domain.Issue, error) 
 	issue, err := s.repo.ResolveIssue(ctx, id)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		if !errors.Is(err, context.Canceled) {
+		if !isClientError(err) {
 			s.logger.ErrorContext(ctx, "resolve issue", "issue_id", id, "error", err)
 		}
 		return domain.Issue{}, err
@@ -122,7 +122,9 @@ func (s *Service) Reopen(ctx context.Context, id string) (domain.Issue, error) {
 	issue, err := s.repo.ReopenIssue(ctx, id)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "reopen issue", "issue_id", id, "error", err)
+		if !isClientError(err) {
+			s.logger.ErrorContext(ctx, "reopen issue", "issue_id", id, "error", err)
+		}
 		return domain.Issue{}, err
 	}
 	s.logger.InfoContext(ctx, "issue reopened", "issue_id", id)
@@ -136,7 +138,9 @@ func (s *Service) Mute(ctx context.Context, id, muteMode string) (domain.Issue, 
 	issue, err := s.repo.MuteIssue(ctx, id, muteMode)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "mute issue", "issue_id", id, "mute_mode", muteMode, "error", err)
+		if !isClientError(err) {
+			s.logger.ErrorContext(ctx, "mute issue", "issue_id", id, "mute_mode", muteMode, "error", err)
+		}
 		return domain.Issue{}, err
 	}
 	s.logger.InfoContext(ctx, "issue muted", "issue_id", id, "mute_mode", muteMode)
@@ -150,7 +154,9 @@ func (s *Service) Unmute(ctx context.Context, id string) (domain.Issue, error) {
 	issue, err := s.repo.UnmuteIssue(ctx, id)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		s.logger.ErrorContext(ctx, "unmute issue", "issue_id", id, "error", err)
+		if !isClientError(err) {
+			s.logger.ErrorContext(ctx, "unmute issue", "issue_id", id, "error", err)
+		}
 		return domain.Issue{}, err
 	}
 	s.logger.InfoContext(ctx, "issue unmuted", "issue_id", id)

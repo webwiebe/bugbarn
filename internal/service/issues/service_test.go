@@ -3,6 +3,7 @@ package issues
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -225,4 +226,77 @@ type sinceCapture struct {
 func (sc *sinceCapture) ListRecentEvents(_ context.Context, _ int, since time.Time) ([]domain.Event, error) {
 	*sc.capturedSince = since
 	return nil, nil
+}
+
+// errorLogCounter counts records emitted at ERROR level or above.
+type errorLogCounter struct {
+	slog.Handler
+	count *int
+}
+
+func (h errorLogCounter) Enabled(_ context.Context, lvl slog.Level) bool {
+	return lvl >= slog.LevelError
+}
+
+func (h errorLogCounter) Handle(_ context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelError {
+		*h.count++
+	}
+	return nil
+}
+
+func (h errorLogCounter) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h errorLogCounter) WithGroup(string) slog.Handler      { return h }
+
+// Mutating an issue that does not exist (or whose request was cancelled) is a
+// caller problem, not a server fault. Logging it at ERROR made BugBarn
+// self-report a bug every time someone resolved a stale issue ID.
+func TestMutationsDoNotLogClientErrorsAtErrorLevel(t *testing.T) {
+	t.Parallel()
+
+	clientErrs := map[string]error{
+		"not found":         apperr.NotFound("issue not found", nil),
+		"invalid input":     apperr.InvalidInput("bad mute mode", nil),
+		"canceled":          context.Canceled,
+		"deadline exceeded": context.DeadlineExceeded,
+	}
+
+	for name, clientErr := range clientErrs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var errorLogs int
+			logger := slog.New(errorLogCounter{count: &errorLogs})
+			svc := New(&fakeRepo{err: clientErr}, logger)
+			ctx := context.Background()
+
+			_, _ = svc.Resolve(ctx, "iss-1")
+			_, _ = svc.Reopen(ctx, "iss-1")
+			_, _ = svc.Mute(ctx, "iss-1", "forever")
+			_, _ = svc.Unmute(ctx, "iss-1")
+
+			if errorLogs != 0 {
+				t.Errorf("client error %v produced %d ERROR logs, want 0", clientErr, errorLogs)
+			}
+		})
+	}
+}
+
+// The flip side: a genuine backend failure must still be logged loudly.
+func TestMutationsLogServerErrorsAtErrorLevel(t *testing.T) {
+	t.Parallel()
+
+	var errorLogs int
+	logger := slog.New(errorLogCounter{count: &errorLogs})
+	svc := New(&fakeRepo{err: errors.New("disk on fire")}, logger)
+	ctx := context.Background()
+
+	_, _ = svc.Resolve(ctx, "iss-1")
+	_, _ = svc.Reopen(ctx, "iss-1")
+	_, _ = svc.Mute(ctx, "iss-1", "forever")
+	_, _ = svc.Unmute(ctx, "iss-1")
+
+	if errorLogs != 4 {
+		t.Errorf("got %d ERROR logs, want 4 (one per mutation)", errorLogs)
+	}
 }
