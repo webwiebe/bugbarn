@@ -171,6 +171,7 @@ func (d *Deliverer) fireEmail(ctx context.Context, rule Rule, issue domain.Issue
 	ev := issue.RepresentativeEvent
 	data := alertMailData{
 		AlertName:       rule.Name,
+		AdminRule:       rule.isAdmin(),
 		Origin:          d.env,
 		Condition:       conditionLabel(rule.Condition),
 		Title:           issue.Title,
@@ -206,7 +207,10 @@ func (d *Deliverer) fireEmail(ctx context.Context, rule Rule, issue domain.Issue
 }
 
 type alertMailData struct {
-	AlertName       string
+	AlertName string
+	// AdminRule is true for the synthetic global admin rule, whose AlertName is
+	// an internal label rather than something a user chose. The heading omits it.
+	AdminRule       bool
 	Origin          string
 	Condition       string
 	Title           string
@@ -263,7 +267,7 @@ func conditionLabel(condition string) string {
 }
 
 var alertPlainTmpl = template.Must(template.New("alert-plain").Parse(
-	`[BugBarn{{if .Origin}} · {{.Origin}}{{end}}] Alert: {{.AlertName}}
+	`{{if .Project}}{{.Project}}{{else}}Alert{{end}}{{if and .AlertName (not .AdminRule)}} — {{.AlertName}}{{end}}
 
 Environment: {{if .Origin}}{{.Origin}}{{else}}(unset){{end}}
 Condition:  {{.Condition}}
@@ -288,7 +292,8 @@ var alertHTMLTmpl = template.Must(template.New("alert-html").Parse(
 	`<!DOCTYPE html>
 <html>
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-<h2 style="color:#1a1a1a;margin-bottom:4px">[BugBarn{{if .Origin}} · {{.Origin}}{{end}}] {{.AlertName}}</h2>
+<h2 style="color:#1a1a1a;margin-bottom:4px">{{if .Project}}{{.Project}}{{else}}Alert{{end}}{{if and
+  .AlertName (not .AdminRule)}} — {{.AlertName}}{{end}}</h2>
 <p style="color:#555;margin-top:0;font-size:13px">{{.Condition}}{{if .Origin}}
   <span style="display:inline-block;margin-left:6px;padding:2px 8px;background:#eef2ff;color:#3538cd;
   border-radius:10px;font-size:11px;font-weight:bold;text-transform:uppercase">{{.Origin}}</span>{{end}}</p>

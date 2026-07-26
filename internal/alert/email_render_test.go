@@ -162,20 +162,85 @@ func TestRuleIsAdmin(t *testing.T) {
 
 func TestHTMLTmpl_ShowsOrigin(t *testing.T) {
 	t.Parallel()
-	data := alertMailData{AlertName: "Admin notifications", Origin: "staging", Title: "boom", Severity: "error"}
+	data := alertMailData{
+		AlertName: "Admin notifications", AdminRule: true,
+		Origin: "staging", Project: "qr", Title: "boom", Severity: "error",
+	}
 	var buf bytes.Buffer
 	if err := alertHTMLTmpl.Execute(&buf, data.escaped()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "[BugBarn · staging]") {
-		t.Errorf("expected env-labeled header, got:\n%s", out)
+	// Origin still surfaces, as the badge rather than as a heading prefix.
+	if !strings.Contains(out, ">staging</span>") {
+		t.Errorf("expected the origin badge, got:\n%s", out)
 	}
-	// No origin -> plain tag, no badge.
+	// No origin -> no badge.
 	var buf2 bytes.Buffer
-	_ = alertHTMLTmpl.Execute(&buf2, (alertMailData{AlertName: "x", Title: "y"}).escaped())
-	if !strings.Contains(buf2.String(), "[BugBarn]") || strings.Contains(buf2.String(), "·") {
-		t.Errorf("expected plain [BugBarn] when origin unset")
+	_ = alertHTMLTmpl.Execute(&buf2, (alertMailData{AlertName: "x", Project: "qr", Title: "y"}).escaped())
+	if strings.Contains(buf2.String(), "</span>") {
+		t.Errorf("expected no origin badge when origin is unset:\n%s", buf2.String())
+	}
+}
+
+// The body heading carries the same fix as the subject: lead with the project,
+// drop our own name and the admin rule's internal label.
+func TestTemplates_HeadingLeadsWithProject(t *testing.T) {
+	t.Parallel()
+
+	admin := alertMailData{
+		AlertName: "Admin notifications", AdminRule: true,
+		Origin: "production", Project: "qr", Title: "boom", Severity: "error",
+	}
+	user := alertMailData{
+		AlertName: "Checkout 5xx",
+		Origin:    "production", Project: "qr", Title: "boom", Severity: "error",
+	}
+	noProject := alertMailData{
+		AlertName: "Admin notifications", AdminRule: true,
+		Origin: "production", Title: "boom", Severity: "error",
+	}
+
+	firstLine := func(t *testing.T, d alertMailData) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := alertPlainTmpl.Execute(&buf, d); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		return strings.SplitN(buf.String(), "\n", 2)[0]
+	}
+
+	if got, want := firstLine(t, admin), "qr"; got != want {
+		t.Errorf("admin plain heading = %q, want %q", got, want)
+	}
+	if got, want := firstLine(t, user), "qr — Checkout 5xx"; got != want {
+		t.Errorf("user plain heading = %q, want %q", got, want)
+	}
+	if got, want := firstLine(t, noProject), "Alert"; got != want {
+		t.Errorf("no-project plain heading = %q, want %q", got, want)
+	}
+
+	for _, tc := range []struct {
+		name, want string
+		data       alertMailData
+	}{
+		{"admin", ">qr</h2>", admin},
+		{"user", ">qr — Checkout 5xx</h2>", user},
+		{"no project", ">Alert</h2>", noProject},
+	} {
+		var buf bytes.Buffer
+		if err := alertHTMLTmpl.Execute(&buf, tc.data.escaped()); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, tc.want) {
+			t.Errorf("%s: h2 should contain %q, got:\n%s", tc.name, tc.want, out)
+		}
+		for _, unwanted := range []string{"[BugBarn", "Admin notifications"} {
+			if strings.Contains(out, unwanted) {
+				t.Errorf("%s: body still contains %q", tc.name, unwanted)
+			}
+		}
 	}
 }
 
