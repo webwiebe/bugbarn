@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -48,10 +49,19 @@ func StartWorker(ctx context.Context, store Store, retentionDays int, wg *sync.W
 	}()
 }
 
+// shuttingDown reports whether err is just the process stopping. A rollup
+// interrupted by shutdown is expected, not a fault: logging it at ERROR made
+// every deploy self-report one bug per project per date.
+func shuttingDown(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
 func runRollup(ctx context.Context, store Store, retentionDays int) {
 	projectIDs, err := store.ListProjectIDs(ctx)
 	if err != nil {
-		slog.Error("analytics rollup: failed to list projects", "error", err)
+		if !shuttingDown(err) {
+			slog.Error("analytics rollup: failed to list projects", "error", err)
+		}
 		return
 	}
 
@@ -63,15 +73,22 @@ func runRollup(ctx context.Context, store Store, retentionDays int) {
 	}
 
 	for _, pid := range projectIDs {
+		// Stop at the first sign of shutdown rather than walking the rest of
+		// the fleet just to fail on every one of them.
+		if ctx.Err() != nil {
+			slog.Info("analytics rollup: stopping early, context done", "error", ctx.Err())
+			return
+		}
 		for _, date := range dates {
-			if err := store.RollupDailyAnalytics(ctx, pid, date); err != nil {
-				slog.Error("analytics rollup: failed to roll up project", "project_id", pid, "date", date.Format("2006-01-02"), "error", err)
+			if err := store.RollupDailyAnalytics(ctx, pid, date); err != nil && !shuttingDown(err) {
+				slog.Error("analytics rollup: failed to roll up project",
+					"project_id", pid, "date", date.Format("2006-01-02"), "error", err)
 			}
 		}
 	}
 
 	cutoff := now.AddDate(0, 0, -retentionDays)
-	if err := store.DeleteOldPageviews(ctx, cutoff); err != nil {
+	if err := store.DeleteOldPageviews(ctx, cutoff); err != nil && !shuttingDown(err) {
 		slog.Error("analytics retention: failed to delete old pageviews", "error", err)
 	}
 }

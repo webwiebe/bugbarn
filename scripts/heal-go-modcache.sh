@@ -41,7 +41,20 @@ fi
 
 echo "heal-go-modcache: corruption detected — rebuilding the module cache"
 go clean -modcache
+# The build cache is downstream of the damage and must go with it. GOCACHE
+# holds compiled export data produced FROM the truncated sources, and it
+# outlives `go clean -modcache`. golangci-lint's typechecker loads that export
+# data directly, so a healed module cache plus a stale build cache still fails
+# — and fails in a way that looks nothing like the real cause:
+#
+#   internal/sourcemap/symbolicate.go:6:14: could not import
+#   github.com/go-sourcemap/sourcemap (no required module provides package)
+#
+# while plain `go build ./...` of the very same package succeeds, because the
+# toolchain recompiles instead of trusting the poisoned entry. That mismatch
+# cost a full CI debug cycle; drop both caches together.
+go clean -cache
 go mod download
 go list -e -deps ./... >/dev/null 2>&1 || true
 go mod verify
-echo "heal-go-modcache: module cache rebuilt"
+echo "heal-go-modcache: module and build caches rebuilt"

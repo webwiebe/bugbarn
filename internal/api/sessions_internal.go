@@ -63,7 +63,9 @@ func (s *Server) dispatchInternalSessionOp(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if err := s.sessionStore.Create(ctx, *req.Session); err != nil {
-			s.logger.Error("internal sessions: create failed", "error", err)
+			if !clientGone(err) {
+				s.logger.Error("internal sessions: create failed", "error", err)
+			}
 			http.Error(w, "create failed", http.StatusInternalServerError)
 			return
 		}
@@ -72,7 +74,9 @@ func (s *Server) dispatchInternalSessionOp(w http.ResponseWriter, r *http.Reques
 		s.internalGetOrRefresh(w, r, req.IDHash)
 	case "delete":
 		if err := s.sessionStore.Delete(ctx, req.IDHash); err != nil {
-			s.logger.Error("internal sessions: delete failed", "error", err)
+			if !clientGone(err) {
+				s.logger.Error("internal sessions: delete failed", "error", err)
+			}
 			http.Error(w, "delete failed", http.StatusInternalServerError)
 			return
 		}

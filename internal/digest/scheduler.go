@@ -68,9 +68,9 @@ func run(ctx context.Context, cfg Config, store Store, notifiers []Notifier) {
 			}
 			lastFired = now
 			slog.Info("digest: sending weekly digest")
-			digestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			errs := Send(digestCtx, cfg, store, notifiers)
-			cancel()
+			// Send owns its own gather/delivery budgets; ctx here only carries
+			// shutdown cancellation.
+			errs := Send(ctx, cfg, store, notifiers)
 			for _, err := range errs {
 				slog.Error("digest: delivery error", "error", err)
 			}

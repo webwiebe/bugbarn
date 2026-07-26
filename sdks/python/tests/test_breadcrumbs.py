@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from bugbarn.breadcrumbs import add_breadcrumb, get_breadcrumbs, clear_breadcrumbs, MAX_BREADCRUMBS
-from bugbarn.client import init, shutdown, capture_exception
+from bugbarn.breadcrumbs import (
+    MAX_BREADCRUMBS,
+    add_breadcrumb,
+    clear_breadcrumbs,
+    get_breadcrumbs,
+)
+from bugbarn.client import capture_exception, init, shutdown
 
 
 class RecordingTransport:
