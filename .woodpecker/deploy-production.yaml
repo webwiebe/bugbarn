@@ -59,6 +59,23 @@ steps:
         test -n "$SERVICE_DIGEST" && test -n "$WEB_DIGEST" || { echo "ERROR: missing digests"; exit 1; }
         SSH="ssh -o StrictHostKeyChecking=no"
         $SSH "$K3S_USER@$K3S_HOST" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
+        # Snapshot what production is running RIGHT NOW, before we touch it, so
+        # rollback can restore these exact images instead of using `rollout
+        # undo`. Undo is wrong here: the deploy below does `apply -k` (which
+        # sets the kustomization's :local placeholder) and only then `set
+        # image`, so every deploy leaves a :local revision immediately behind
+        # the good one — undo lands on it and production cannot pull.
+        # The file is named for this pipeline, so it exists only if THIS
+        # deploy actually started; rollback keys off that.
+        $SSH "$K3S_USER@$K3S_HOST" "
+          set -euo pipefail
+          COL='custom-columns=I:.spec.template.spec.containers[0].image'
+          W=\$(kubectl -n $NAMESPACE get deploy bugbarn-writer -o \"\$COL\" --no-headers)
+          R=\$(kubectl -n $NAMESPACE get deploy bugbarn-reader -o \"\$COL\" --no-headers)
+          B=\$(kubectl -n $NAMESPACE get deploy bugbarn-web -o \"\$COL\" --no-headers)
+          printf 'PREV_WRITER=%s\nPREV_READER=%s\nPREV_WEB=%s\n' \"\$W\" \"\$R\" \"\$B\" > /tmp/bugbarn-prev-images-$CI_PIPELINE_NUMBER
+          cat /tmp/bugbarn-prev-images-$CI_PIPELINE_NUMBER
+        "
         scp -o StrictHostKeyChecking=no -r deploy "$K3S_USER@$K3S_HOST:/tmp/bugbarn-deploy/deploy"
         $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/production/namespace.yaml"
         sops -d deploy/k8s/production/secret.yaml | $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f -"
@@ -91,11 +108,26 @@ steps:
     commands:
       - |
         ssh -o StrictHostKeyChecking=no "$K3S_USER@$K3S_HOST" "
-          kubectl -n $NAMESPACE rollout undo deployment/bugbarn-writer || true
-          kubectl -n $NAMESPACE rollout undo deployment/bugbarn-reader || true
-          kubectl -n $NAMESPACE rollout undo deployment/bugbarn-web || true
-          echo 'Rollback triggered'
-        " || true
+          SNAP=/tmp/bugbarn-prev-images-$CI_PIPELINE_NUMBER
+          # No snapshot means the deploy step never ran — a preflight failure,
+          # say. Production is untouched and healthy, so rolling it back would
+          # CAUSE the outage rather than undo one. That is exactly what took
+          # prod down on v0.236.156: preflight died on a missing docker binary,
+          # deploy was skipped, and the blanket rollback still fired.
+          test -s \"\$SNAP\" || { echo 'no pre-deploy snapshot for this pipeline; deploy never started, nothing to roll back'; exit 0; }
+          . \"\$SNAP\"
+          # Never restore the kustomization placeholder: it is unpullable.
+          for IMG in \"\$PREV_WRITER\" \"\$PREV_READER\" \"\$PREV_WEB\"; do
+            case \"\$IMG\" in
+              ''|*:local) echo \"ERROR: refusing to roll back to unusable image '\$IMG'\"; exit 1 ;;
+            esac
+          done
+          kubectl -n $NAMESPACE set image deployment/bugbarn-writer bugbarn=\"\$PREV_WRITER\"
+          kubectl -n $NAMESPACE set image deployment/bugbarn-reader bugbarn=\"\$PREV_READER\"
+          kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=\"\$PREV_WEB\"
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-writer --timeout=180s
+          echo \"Rolled back to \$PREV_WRITER\"
+        "
 
   - name: release-marker
     image: bash
