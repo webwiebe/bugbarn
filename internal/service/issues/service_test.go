@@ -248,7 +248,7 @@ func (h errorLogCounter) Handle(_ context.Context, r slog.Record) error {
 func (h errorLogCounter) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h errorLogCounter) WithGroup(string) slog.Handler      { return h }
 
-// Mutating an issue that does not exist (or whose request was cancelled) is a
+// Mutating an issue that does not exist (or whose request was canceled) is a
 // caller problem, not a server fault. Logging it at ERROR made BugBarn
 // self-report a bug every time someone resolved a stale issue ID.
 func TestMutationsDoNotLogClientErrorsAtErrorLevel(t *testing.T) {

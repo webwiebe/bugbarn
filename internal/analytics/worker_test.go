@@ -121,7 +121,7 @@ func TestRunRollupStopsEarlyOnCancel(t *testing.T) {
 	runRollup(ctx, store, 90)
 
 	if got := store.rollupCount(); got != 0 {
-		t.Errorf("want no rollup attempts on an already-cancelled context, got %d", got)
+		t.Errorf("want no rollup attempts on an already-canceled context, got %d", got)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestRunRollupListFailureShutdownIsQuiet(t *testing.T) {
 	runRollup(context.Background(), store, 90)
 
 	if got := logs.errors(); got != 0 {
-		t.Errorf("cancelled project list produced %d ERROR logs, want 0", got)
+		t.Errorf("canceled project list produced %d ERROR logs, want 0", got)
 	}
 
 	logs2 := withErrorCounter(t)
