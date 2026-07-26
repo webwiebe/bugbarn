@@ -42,13 +42,13 @@ type Config struct {
 	// to our own ingest endpoint) cannot deliver an alert about ingest being
 	// broken — it queues behind the very backlog it is reporting. Both are
 	// optional; the email falls back to AdminAlertEmail.
-	IngestAlertWebhookURL  string // BUGBARN_INGEST_ALERT_WEBHOOK_URL
-	IngestAlertEmail       string // BUGBARN_INGEST_ALERT_EMAIL; defaults to BUGBARN_ADMIN_ALERT_EMAIL
+	IngestAlertWebhookURL string // BUGBARN_INGEST_ALERT_WEBHOOK_URL
+	IngestAlertEmail      string // BUGBARN_INGEST_ALERT_EMAIL; defaults to BUGBARN_ADMIN_ALERT_EMAIL
 	// IngestStaleAfter is BUGBARN_INGEST_STALE_AFTER_SECONDS — how long the most
 	// recent persisted event may age before a backed-up queue is treated as a
 	// stall. Zero (unset) uses the monitor default (30m). Raise it on an idle
 	// instance with no write queue whose normal quiet periods exceed the default.
-	IngestStaleAfter time.Duration
+	IngestStaleAfter       time.Duration
 	SelfEndpoint           string
 	SelfAPIKey             string
 	SelfProject            string
@@ -160,6 +160,10 @@ func parseDigestConfig(publicURL string) digest.Config {
 		Hour:       envIntInRange("BUGBARN_DIGEST_HOUR", 8, 0, 23),
 		WebhookURL: os.Getenv("BUGBARN_DIGEST_WEBHOOK_URL"),
 		PublicURL:  publicURL,
+		GatherBudget: envDurationSeconds(
+			"BUGBARN_DIGEST_GATHER_BUDGET_SECONDS", digest.DefaultGatherBudget),
+		ProjectBudget: envDurationSeconds(
+			"BUGBARN_DIGEST_PROJECT_BUDGET_SECONDS", digest.DefaultProjectBudget),
 		Mail: digest.MailConfig{
 			Enabled: os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
 			Host:    os.Getenv("SMTP_HOST"),

@@ -10,6 +10,20 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
+// Budgets bounding a digest run. Gathering is per-project rather than one
+// deadline for the whole fleet: a single slow project must not consume the
+// budget of every project after it, and must not eat into delivery.
+const (
+	// DefaultGatherBudget bounds gathering across all projects.
+	DefaultGatherBudget = 10 * time.Minute
+	// DefaultProjectBudget bounds one project's stats queries.
+	DefaultProjectBudget = 30 * time.Second
+	// deliveryBudget bounds delivery to all notifiers. It is derived from the
+	// caller's context, not the gather budget, so a slow or partially failed
+	// gather still ships the report it did manage to build.
+	deliveryBudget = 2 * time.Minute
+)
+
 // Config controls when and how the digest is delivered.
 type Config struct {
 	Day        int // 0=Sunday … 6=Saturday
@@ -17,10 +31,28 @@ type Config struct {
 	WebhookURL string
 	Mail       MailConfig
 	PublicURL  string
+	// GatherBudget bounds the data-gathering phase. Zero means DefaultGatherBudget.
+	GatherBudget time.Duration
+	// ProjectBudget bounds one project's gather. Zero means DefaultProjectBudget.
+	ProjectBudget time.Duration
 }
 
 func (c Config) Enabled() bool {
 	return c.WebhookURL != "" || c.Mail.active()
+}
+
+func (c Config) gatherBudget() time.Duration {
+	if c.GatherBudget > 0 {
+		return c.GatherBudget
+	}
+	return DefaultGatherBudget
+}
+
+func (c Config) projectBudget() time.Duration {
+	if c.ProjectBudget > 0 {
+		return c.ProjectBudget
+	}
+	return DefaultProjectBudget
 }
 
 // Store is the subset of storage needed by the digest.
@@ -80,11 +112,18 @@ func buildSection(cfg Config, slug string, data domain.DigestData) ProjectSectio
 // notifiers. Projects with no activity in the period are silently skipped.
 // Each notifier is attempted independently; failures are returned but do not
 // suppress others.
+//
+// Gathering runs under its own budget (cfg.gatherBudget()), with each project
+// further bounded by projectBudget. Delivery is budgeted separately from the
+// caller's context, so whatever was gathered still ships.
 func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []error {
 	now := time.Now().UTC()
 	since := now.AddDate(0, 0, -7)
 
-	projects, err := store.ListProjects(ctx)
+	gatherCtx, cancelGather := context.WithTimeout(ctx, cfg.gatherBudget())
+	defer cancelGather()
+
+	projects, err := store.ListProjects(gatherCtx)
 	if err != nil {
 		return []error{fmt.Errorf("list projects: %w", err)}
 	}
@@ -95,9 +134,47 @@ func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []
 		PublicURL:   cfg.PublicURL,
 	}
 
+	errs := gather(gatherCtx, cfg, store, projects, since, &report)
+
+	if len(report.Projects) == 0 {
+		slog.Info("digest: no activity across all projects, skipping")
+		return errs
+	}
+
+	deliverCtx, cancelDeliver := context.WithTimeout(ctx, deliveryBudget)
+	defer cancelDeliver()
+
+	for _, n := range notifiers {
+		if err := n.Send(deliverCtx, report); err != nil {
+			slog.Error("digest: delivery failed", "channel", n.Name(), "error", err)
+			errs = append(errs, fmt.Errorf("%s: %w", n.Name(), err))
+		}
+	}
+
+	return errs
+}
+
+// gather collects per-project stats into report, one project at a time under
+// its own deadline. If the overall gather budget runs out it stops and reports
+// that once, rather than emitting an identical deadline error per remaining
+// project.
+func gather(
+	ctx context.Context, cfg Config, store Store,
+	projects []domain.Project, since time.Time, report *Report,
+) []error {
 	var errs []error
-	for _, proj := range projects {
-		data, err := store.WeeklyDigest(ctx, proj.ID, since)
+	for i, proj := range projects {
+		if err := ctx.Err(); err != nil {
+			slog.Error("digest: gather budget exhausted",
+				"gathered", i, "total", len(projects), "error", err)
+			errs = append(errs, fmt.Errorf(
+				"gather budget exhausted after %d/%d projects: %w", i, len(projects), err))
+			break
+		}
+
+		projCtx, cancel := context.WithTimeout(ctx, cfg.projectBudget())
+		data, err := store.WeeklyDigest(projCtx, proj.ID, since)
+		cancel()
 		if err != nil {
 			slog.Error("digest: failed to gather project data", "project", proj.Slug, "error", err)
 			errs = append(errs, fmt.Errorf("gather %s: %w", proj.Slug, err))
@@ -108,18 +185,5 @@ func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []
 		}
 		report.Projects = append(report.Projects, buildSection(cfg, proj.Slug, data))
 	}
-
-	if len(report.Projects) == 0 {
-		slog.Info("digest: no activity across all projects, skipping")
-		return errs
-	}
-
-	for _, n := range notifiers {
-		if err := n.Send(ctx, report); err != nil {
-			slog.Error("digest: delivery failed", "channel", n.Name(), "error", err)
-			errs = append(errs, fmt.Errorf("%s: %w", n.Name(), err))
-		}
-	}
-
 	return errs
 }
