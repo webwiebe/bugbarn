@@ -13,7 +13,17 @@ EPSILON="0.5"
 PROFILE="coverage/go.out"
 
 mkdir -p coverage
-go test -covermode=atomic -coverprofile="$PROFILE" ./...
+
+# Measure OUR packages only. `go test ./...` does not skip node_modules, so once
+# a node step has run `npm ci` the tree contains vendored third-party Go code
+# (e.g. web/node_modules/flatted/golang/...) which lands in the profile at 0%
+# and drags the total down. That made the number depend on whether an unrelated
+# step ran first: CI reported 46.4% where a clean local tree reported 47.3%, so
+# the baseline could not be computed or reproduced locally at all.
+pkgs=$(go list ./... | grep -v '/node_modules/')
+test -n "$pkgs" || { echo "ERROR: no packages to test"; exit 1; }
+# shellcheck disable=SC2086
+go test -covermode=atomic -coverprofile="$PROFILE" $pkgs
 
 total=$(go tool cover -func="$PROFILE" | awk '/^total:/ { gsub(/%/, "", $3); print $3 }')
 echo "Total Go coverage: ${total}%"
