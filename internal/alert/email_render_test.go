@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"testing"
 	"time"
 
@@ -92,16 +94,69 @@ func TestHTMLTmpl_EscapesUntrustedFields(t *testing.T) {
 	}
 }
 
-func TestBugbarnTag(t *testing.T) {
+// The subject leads with the project so it is obvious which project broke.
+// Admin notifications used to lead with "[BugBarn · <env>] Admin notifications:"
+// — the sender and an internal rule label — before anything informative.
+func TestAlertSubject(t *testing.T) {
 	t.Parallel()
-	if got := bugbarnTag(""); got != "[BugBarn]" {
-		t.Errorf("empty env: got %q", got)
+
+	adminRule := Rule{ID: AdminRuleIDPrefix + "new_issue", Name: "Admin notifications"}
+	userRule := Rule{ID: "rule-7", Name: "Checkout 5xx"}
+	issue := domain.Issue{ProjectSlug: "qr", Title: "Error: qrcodes-uptime-check: BackoffLimitExceeded"}
+
+	tests := []struct {
+		name  string
+		env   string
+		rule  Rule
+		issue domain.Issue
+		want  string
+	}{
+		{
+			name: "admin rule drops its internal name", env: "production", rule: adminRule, issue: issue,
+			want: "qr: Error: qrcodes-uptime-check: BackoffLimitExceeded [production]",
+		},
+		{
+			name: "user rule keeps the name the user chose", env: "production", rule: userRule, issue: issue,
+			want: "qr: Checkout 5xx: Error: qrcodes-uptime-check: BackoffLimitExceeded [production]",
+		},
+		{
+			name: "missing project slug is omitted, not blank-prefixed", env: "production", rule: adminRule,
+			issue: domain.Issue{Title: "boom"},
+			want:  "boom [production]",
+		},
+		{
+			name: "no env means no trailing bracket", env: "", rule: adminRule, issue: issue,
+			want: "qr: Error: qrcodes-uptime-check: BackoffLimitExceeded",
+		},
+		{
+			name: "blank env is treated as unset", env: "   ", rule: adminRule,
+			issue: domain.Issue{ProjectSlug: "qr", Title: "boom"},
+			want:  "qr: boom",
+		},
+		{
+			name: "user rule with an empty name does not emit a stray separator", env: "staging",
+			rule: Rule{ID: "rule-9"}, issue: domain.Issue{ProjectSlug: "qr", Title: "boom"},
+			want: "qr: boom [staging]",
+		},
 	}
-	if got := bugbarnTag("  "); got != "[BugBarn]" {
-		t.Errorf("blank env: got %q", got)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := alertSubject(tc.env, tc.rule, tc.issue); got != tc.want {
+				t.Errorf("alertSubject()\n got %q\nwant %q", got, tc.want)
+			}
+		})
 	}
-	if got := bugbarnTag("staging"); got != "[BugBarn · staging]" {
-		t.Errorf("staging: got %q", got)
+}
+
+func TestRuleIsAdmin(t *testing.T) {
+	t.Parallel()
+	if !(Rule{ID: AdminRuleIDPrefix + "regression"}).isAdmin() {
+		t.Error("admin-prefixed rule should be admin")
+	}
+	if (Rule{ID: "rule-1", Name: "Admin notifications"}).isAdmin() {
+		t.Error("a user rule merely named like the admin one is not admin")
 	}
 }
 

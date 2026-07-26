@@ -201,7 +201,7 @@ func (d *Deliverer) fireEmail(ctx context.Context, rule Rule, issue domain.Issue
 		return fmt.Errorf("render html: %w", err)
 	}
 
-	subject := fmt.Sprintf("%s %s: %s", bugbarnTag(d.env), rule.Name, issue.Title)
+	subject := alertSubject(d.env, rule, issue)
 	return digest.DeliverEmail(ctx, d.mailCfg, rule.EmailTo, subject, plain.String(), htmlBuf.String())
 }
 
