@@ -407,6 +407,15 @@ func (w *spoolWorker) advanceCursor(endOffset int64) {
 // the cursor past it. report controls whether the dead-letter is surfaced via
 // self-reporting and the worker's dead-letter metrics.
 func (w *spoolWorker) failRecord(record spool.Record, endOffset int64, stage string, cause error, report bool) {
+	// A canceled context means the process is stopping, not that this record is
+	// bad. The cursor is not advanced on failure, so the record is retried from
+	// the same spool offset after restart. Spending a retry on a shutdown would
+	// eventually dead-letter a perfectly good record, and logging it at ERROR
+	// self-reports a bug against us on every deploy.
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		slog.Info("worker "+stage+" interrupted by shutdown", "ingest_id", record.IngestID)
+		return
+	}
 	w.retryCounts[record.IngestID]++
 	attempt := w.retryCounts[record.IngestID]
 	slog.Error("worker failed to "+stage, "ingest_id", record.IngestID, "attempt", attempt, "error", cause)
