@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -82,5 +84,42 @@ func TestMarkProcessed_AdvancesCursor(t *testing.T) {
 	}
 	if snap := w.ws.Snapshot(); snap.ProcessedTotal != 1 {
 		t.Fatalf("expected 1 processed, got %d", snap.ProcessedTotal)
+	}
+}
+
+// A shutdown must not be charged to the record. The cursor is not advanced on
+// failure, so the record is retried from the same offset after restart —
+// spending retries on cancellations would eventually dead-letter a good
+// record, and each one was logged at ERROR, which self-reported a bug against
+// us on every deploy (BS2-105).
+func TestFailRecord_ShutdownDoesNotConsumeRetries(t *testing.T) {
+	rec := spool.Record{IngestID: "ing-shutdown"}
+
+	for name, cause := range map[string]error{
+		"canceled":          context.Canceled,
+		"deadline exceeded": context.DeadlineExceeded,
+		"wrapped canceled":  fmt.Errorf("persist release: %w", context.Canceled),
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newTestWorker(t)
+
+			// Far more failures than the retry budget: none may count.
+			for range workerMaxRetries * 3 {
+				w.failRecord(rec, 128, "persist release", cause, false)
+			}
+
+			if n, ok := w.retryCounts[rec.IngestID]; ok && n != 0 {
+				t.Errorf("shutdown consumed %d retries, want 0", n)
+			}
+			if off, _ := spool.ReadCursor(w.spoolDir); off != 0 {
+				t.Errorf("cursor advanced past a record interrupted by shutdown: %d", off)
+			}
+			if _, err := os.Stat(filepath.Join(w.spoolDir, "deadletter.ndjson")); err == nil {
+				t.Error("a shutdown dead-lettered the record")
+			}
+			if snap := w.ws.Snapshot(); snap.DeadLetterCount != 0 {
+				t.Errorf("dead-letter recorded for a shutdown: %d", snap.DeadLetterCount)
+			}
+		})
 	}
 }
