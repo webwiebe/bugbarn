@@ -130,6 +130,7 @@ func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
 		From:    "bugbarn@localhost",
 	}
 	deliverer := NewDeliverer(mailCfg)
+	deliverer.SetEnvironment("production")
 	if !deliverer.EmailConfigured() {
 		t.Fatal("expected EmailConfigured() to be true with host + enabled")
 	}
@@ -141,11 +142,11 @@ func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
 	bus.Subscribe(evaluator.HandleEvent)
 
 	bus.Publish(domainevents.IssueCreated{
-		Issue:     storage.Issue{ID: "issue-000001", Title: "NewBoom: kaboom in prod"},
+		Issue:     storage.Issue{ID: "issue-000001", Title: "NewBoom: kaboom in prod", ProjectSlug: "qr"},
 		ProjectID: 42,
 	})
 	bus.Publish(domainevents.IssueRegressed{
-		Issue:     storage.Issue{ID: "issue-000002", Title: "RegressBoom: it came back"},
+		Issue:     storage.Issue{ID: "issue-000002", Title: "RegressBoom: it came back", ProjectSlug: "qr"},
 		ProjectID: 42,
 	})
 
@@ -182,5 +183,32 @@ func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
 		t.Error("did not receive the regression admin email")
 	}
 
+	// The subject on the wire must lead with the project and carry neither the
+	// sender's own name nor the internal rule label.
+	for _, m := range mails {
+		subject := subjectHeader(m.data)
+		if !strings.HasPrefix(subject, "qr: ") {
+			t.Errorf("subject must lead with the project slug, got %q", subject)
+		}
+		if !strings.HasSuffix(subject, " [production]") {
+			t.Errorf("subject must carry the environment, got %q", subject)
+		}
+		for _, unwanted := range []string{"BugBarn", "Admin notifications"} {
+			if strings.Contains(subject, unwanted) {
+				t.Errorf("subject still contains %q: %s", unwanted, subject)
+			}
+		}
+	}
+
 	t.Logf("delivered %d real SMTP emails to %s (new issue + regression)", len(mails), admin)
+}
+
+// subjectHeader pulls the Subject header out of a raw RFC 822 message.
+func subjectHeader(data string) string {
+	for _, line := range strings.Split(data, "\r\n") {
+		if after, ok := strings.CutPrefix(line, "Subject: "); ok {
+			return after
+		}
+	}
+	return ""
 }

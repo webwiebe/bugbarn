@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"testing"
 	"time"
 
@@ -92,35 +94,153 @@ func TestHTMLTmpl_EscapesUntrustedFields(t *testing.T) {
 	}
 }
 
-func TestBugbarnTag(t *testing.T) {
+// The subject leads with the project so it is obvious which project broke.
+// Admin notifications used to lead with "[BugBarn · <env>] Admin notifications:"
+// — the sender and an internal rule label — before anything informative.
+func TestAlertSubject(t *testing.T) {
 	t.Parallel()
-	if got := bugbarnTag(""); got != "[BugBarn]" {
-		t.Errorf("empty env: got %q", got)
+
+	adminRule := Rule{ID: AdminRuleIDPrefix + "new_issue", Name: "Admin notifications"}
+	userRule := Rule{ID: "rule-7", Name: "Checkout 5xx"}
+	issue := domain.Issue{ProjectSlug: "qr", Title: "Error: qrcodes-uptime-check: BackoffLimitExceeded"}
+
+	tests := []struct {
+		name  string
+		env   string
+		rule  Rule
+		issue domain.Issue
+		want  string
+	}{
+		{
+			name: "admin rule drops its internal name", env: "production", rule: adminRule, issue: issue,
+			want: "qr: Error: qrcodes-uptime-check: BackoffLimitExceeded [production]",
+		},
+		{
+			name: "user rule keeps the name the user chose", env: "production", rule: userRule, issue: issue,
+			want: "qr: Checkout 5xx: Error: qrcodes-uptime-check: BackoffLimitExceeded [production]",
+		},
+		{
+			name: "missing project slug is omitted, not blank-prefixed", env: "production", rule: adminRule,
+			issue: domain.Issue{Title: "boom"},
+			want:  "boom [production]",
+		},
+		{
+			name: "no env means no trailing bracket", env: "", rule: adminRule, issue: issue,
+			want: "qr: Error: qrcodes-uptime-check: BackoffLimitExceeded",
+		},
+		{
+			name: "blank env is treated as unset", env: "   ", rule: adminRule,
+			issue: domain.Issue{ProjectSlug: "qr", Title: "boom"},
+			want:  "qr: boom",
+		},
+		{
+			name: "user rule with an empty name does not emit a stray separator", env: "staging",
+			rule: Rule{ID: "rule-9"}, issue: domain.Issue{ProjectSlug: "qr", Title: "boom"},
+			want: "qr: boom [staging]",
+		},
 	}
-	if got := bugbarnTag("  "); got != "[BugBarn]" {
-		t.Errorf("blank env: got %q", got)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := alertSubject(tc.env, tc.rule, tc.issue); got != tc.want {
+				t.Errorf("alertSubject()\n got %q\nwant %q", got, tc.want)
+			}
+		})
 	}
-	if got := bugbarnTag("staging"); got != "[BugBarn · staging]" {
-		t.Errorf("staging: got %q", got)
+}
+
+func TestRuleIsAdmin(t *testing.T) {
+	t.Parallel()
+	if !(Rule{ID: AdminRuleIDPrefix + "regression"}).isAdmin() {
+		t.Error("admin-prefixed rule should be admin")
+	}
+	if (Rule{ID: "rule-1", Name: "Admin notifications"}).isAdmin() {
+		t.Error("a user rule merely named like the admin one is not admin")
 	}
 }
 
 func TestHTMLTmpl_ShowsOrigin(t *testing.T) {
 	t.Parallel()
-	data := alertMailData{AlertName: "Admin notifications", Origin: "staging", Title: "boom", Severity: "error"}
+	data := alertMailData{
+		AlertName: "Admin notifications", AdminRule: true,
+		Origin: "staging", Project: "qr", Title: "boom", Severity: "error",
+	}
 	var buf bytes.Buffer
 	if err := alertHTMLTmpl.Execute(&buf, data.escaped()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "[BugBarn · staging]") {
-		t.Errorf("expected env-labeled header, got:\n%s", out)
+	// Origin still surfaces, as the badge rather than as a heading prefix.
+	if !strings.Contains(out, ">staging</span>") {
+		t.Errorf("expected the origin badge, got:\n%s", out)
 	}
-	// No origin -> plain tag, no badge.
+	// No origin -> no badge.
 	var buf2 bytes.Buffer
-	_ = alertHTMLTmpl.Execute(&buf2, (alertMailData{AlertName: "x", Title: "y"}).escaped())
-	if !strings.Contains(buf2.String(), "[BugBarn]") || strings.Contains(buf2.String(), "·") {
-		t.Errorf("expected plain [BugBarn] when origin unset")
+	_ = alertHTMLTmpl.Execute(&buf2, (alertMailData{AlertName: "x", Project: "qr", Title: "y"}).escaped())
+	if strings.Contains(buf2.String(), "</span>") {
+		t.Errorf("expected no origin badge when origin is unset:\n%s", buf2.String())
+	}
+}
+
+// The body heading carries the same fix as the subject: lead with the project,
+// drop our own name and the admin rule's internal label.
+func TestTemplates_HeadingLeadsWithProject(t *testing.T) {
+	t.Parallel()
+
+	admin := alertMailData{
+		AlertName: "Admin notifications", AdminRule: true,
+		Origin: "production", Project: "qr", Title: "boom", Severity: "error",
+	}
+	user := alertMailData{
+		AlertName: "Checkout 5xx",
+		Origin:    "production", Project: "qr", Title: "boom", Severity: "error",
+	}
+	noProject := alertMailData{
+		AlertName: "Admin notifications", AdminRule: true,
+		Origin: "production", Title: "boom", Severity: "error",
+	}
+
+	firstLine := func(t *testing.T, d alertMailData) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := alertPlainTmpl.Execute(&buf, d); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		return strings.SplitN(buf.String(), "\n", 2)[0]
+	}
+
+	if got, want := firstLine(t, admin), "qr"; got != want {
+		t.Errorf("admin plain heading = %q, want %q", got, want)
+	}
+	if got, want := firstLine(t, user), "qr — Checkout 5xx"; got != want {
+		t.Errorf("user plain heading = %q, want %q", got, want)
+	}
+	if got, want := firstLine(t, noProject), "Alert"; got != want {
+		t.Errorf("no-project plain heading = %q, want %q", got, want)
+	}
+
+	for _, tc := range []struct {
+		name, want string
+		data       alertMailData
+	}{
+		{"admin", ">qr</h2>", admin},
+		{"user", ">qr — Checkout 5xx</h2>", user},
+		{"no project", ">Alert</h2>", noProject},
+	} {
+		var buf bytes.Buffer
+		if err := alertHTMLTmpl.Execute(&buf, tc.data.escaped()); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, tc.want) {
+			t.Errorf("%s: h2 should contain %q, got:\n%s", tc.name, tc.want, out)
+		}
+		for _, unwanted := range []string{"[BugBarn", "Admin notifications"} {
+			if strings.Contains(out, unwanted) {
+				t.Errorf("%s: body still contains %q", tc.name, unwanted)
+			}
+		}
 	}
 }
 

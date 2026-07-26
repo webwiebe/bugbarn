@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
@@ -30,13 +31,36 @@ func issueURL(publicURL, issueID string) string {
 	return base + "/app/#/issues/" + issueID
 }
 
-// bugbarnTag is the "[BugBarn]" / "[BugBarn · staging]" label used in subjects
-// and the email header, identifying the sending instance's environment.
-func bugbarnTag(env string) string {
-	if env = strings.TrimSpace(env); env != "" {
-		return "[BugBarn · " + env + "]"
+// alertSubject builds the alert email subject. The project comes first so it is
+// obvious at a glance which project broke — these mails fan in from every
+// project, and the issue title alone rarely says. The old subject led with
+// "[BugBarn · <env>] Admin notifications:", which is two pieces of information
+// the reader already has (it arrived from BugBarn, and "Admin notifications" is
+// an internal rule label) before the part they actually need.
+//
+// A user-defined rule keeps its name — the user chose it, so it carries intent.
+// The environment trails in brackets so production and staging stay tellable
+// apart without pushing the subject line off the left edge.
+//
+// Every component is optional: the project slug is populated best-effort by the
+// write path and can be empty, and env is unset outside deployed environments.
+func alertSubject(env string, rule Rule, issue domain.Issue) string {
+	var b strings.Builder
+	if slug := strings.TrimSpace(issue.ProjectSlug); slug != "" {
+		b.WriteString(slug)
+		b.WriteString(": ")
 	}
-	return "[BugBarn]"
+	if name := strings.TrimSpace(rule.Name); name != "" && !rule.isAdmin() {
+		b.WriteString(name)
+		b.WriteString(": ")
+	}
+	b.WriteString(issue.Title)
+	if env = strings.TrimSpace(env); env != "" {
+		b.WriteString(" [")
+		b.WriteString(env)
+		b.WriteString("]")
+	}
+	return b.String()
 }
 
 // buildSparkline scales a 24h hourly count array to fixed-height bars.
