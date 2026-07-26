@@ -27,6 +27,9 @@ const (
 	consumerMaxRetries = 5
 	// consumerErrBackoff is the pause after a Redis Consume error before retry.
 	consumerErrBackoff = time.Second
+	// requeueTimeout bounds the shutdown requeue LPUSH. Short: the process is
+	// already stopping, and losing the race is better than blocking the exit.
+	requeueTimeout = 5 * time.Second
 )
 
 // Consumer drains the Redis write queue and persists each item through the
@@ -74,7 +77,7 @@ func (c *Consumer) Close() {
 // rollout visibility into backlog.
 const depthLogInterval = 30 * time.Second
 
-// Run loops on Consume until ctx is cancelled.
+// Run loops on Consume until ctx is canceled.
 func (c *Consumer) Run(ctx context.Context) {
 	go c.monitorDepth(ctx)
 	for {
@@ -127,8 +130,9 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) {
 		c.writeMu.Lock()
 		defer c.writeMu.Unlock()
 	}
-	for _, item := range items {
+	for i, item := range items {
 		if ctx.Err() != nil {
+			c.requeue(ctx, items[i:])
 			return
 		}
 		start := time.Now()
@@ -147,7 +151,101 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) {
 			kind = "unknown"
 		}
 		c.metrics.record(ctx, kind, outcome, float64(time.Since(start).Milliseconds()))
+
+		// Shutdown landed mid-item. Whether this one made it decides where the
+		// unfinished tail starts.
+		if ctx.Err() != nil {
+			if handled(outcome) {
+				c.requeue(ctx, items[i+1:])
+			} else {
+				c.requeue(ctx, items[i:])
+			}
+			return
+		}
 	}
+}
+
+// resolveProject resolves the item's project, retrying transient failures the
+// same way the log insert below does.
+//
+// These two cases used to collapse into one silent drop of accepted log data
+// (BS2-103's sibling, BS2-120), even though only one of them is permanent:
+//
+//   - no slug at all — unroutable, since no amount of retrying invents a
+//     project to attach the logs to;
+//   - slug present but resolution failed — a database blip, exactly the class
+//     the insert retries. Dropping here while retrying there was simply
+//     inconsistent, and it discarded data we had already accepted.
+//
+// Returns ok=false with the outcome label to report when the item cannot be
+// resolved; "resolve_error" is deliberately not a final disposition, so a
+// shutdown hands the item back to the queue instead of eating it.
+func (c *Consumer) resolveProject(ctx context.Context, item queue.Item) (storage.Project, string, bool) {
+	if item.ProjectSlug == "" {
+		// Error, not warn: this discards accepted log data, and selflog only
+		// self-reports at >= Error — at Warn the loss stays invisible.
+		c.logger.Error("dropping log item: no project slug",
+			"ingest_id", item.IngestID, "received_at", item.ReceivedAt)
+		return storage.Project{}, "dropped", false
+	}
+	for attempt := 1; attempt <= consumerMaxRetries; attempt++ {
+		if proj, ok := c.proc.EnsureProjectForIngest(ctx, item.ProjectSlug); ok {
+			return proj, "", true
+		}
+		if ctx.Err() != nil {
+			return storage.Project{}, "transient_drop", false
+		}
+		if attempt < consumerMaxRetries {
+			select {
+			case <-ctx.Done():
+				return storage.Project{}, "transient_drop", false
+			case <-time.After(time.Duration(attempt*attempt) * 100 * time.Millisecond):
+			}
+		}
+	}
+	c.logger.Error("dropping log item: project unresolved after retries",
+		"project", item.ProjectSlug, "ingest_id", item.IngestID, "attempts", consumerMaxRetries)
+	return storage.Project{}, "resolve_error", false
+}
+
+// handled reports whether an outcome is a final disposition — persisted,
+// parked, or permanently unprocessable — so the item must not be requeued.
+// Anything else was simply not finished and is safe to hand back.
+func handled(outcome string) bool {
+	switch outcome {
+	case "success", "held", "parse_error", "decode_error", "dropped", "empty", "unknown_kind":
+		return true
+	}
+	return false
+}
+
+// requeue puts items that shutdown interrupted back on the write queue.
+//
+// They have already been BRPOPped off the Redis list, so without this they are
+// simply gone: that is what "drop event after persist error: context canceled"
+// was, and the silent case was worse — every remaining item in a batch
+// vanished with no log at all. The at-most-once trade-off in the comment on
+// consumerMaxRetries is about genuine persist failures and still stands; a
+// deploy is not a persist failure.
+//
+// Publish LPUSHes while Consume BRPOPs, so returned items go to the far end of
+// the queue rather than being re-popped immediately into the same shutdown.
+func (c *Consumer) requeue(ctx context.Context, items []queue.Item) {
+	if len(items) == 0 {
+		return
+	}
+	// ctx is canceled by definition here, so detach from it — the LPUSH needs
+	// a live context to run at all.
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), requeueTimeout)
+	defer cancel()
+
+	if err := c.queue.Publish(pubCtx, items); err != nil {
+		// Now the events really are lost, and this is the only trace of it.
+		c.logger.Error("requeue on shutdown failed, events lost",
+			"count", len(items), "error", err)
+		return
+	}
+	c.logger.Info("requeued unprocessed items on shutdown", "count", len(items))
 }
 
 // persistEvent persists a single event item and returns a short outcome label
@@ -179,7 +277,12 @@ func (c *Consumer) persistEvent(ctx context.Context, item queue.Item) string {
 			c.logger.Error("drop unparseable event", "ingest_id", item.IngestID, "error", res.Err)
 			return "parse_error"
 		case OutcomePersistError:
-			c.logger.Error("drop event after persist error", "ingest_id", item.IngestID, "error", res.Err)
+			// On shutdown the caller requeues this item, so it is not dropped
+			// and must not be reported as an error — that log is what filed
+			// BS2-103 against us on every deploy.
+			if ctx.Err() == nil {
+				c.logger.Error("drop event after persist error", "ingest_id", item.IngestID, "error", res.Err)
+			}
 			return "persist_error"
 		case OutcomeTransient:
 			if ctx.Err() != nil {
@@ -211,16 +314,9 @@ func (c *Consumer) persistLog(ctx context.Context, item queue.Item) string {
 		c.logger.Error("decode log body", "project", item.ProjectSlug, "error", err)
 		return "decode_error"
 	}
-	proj, ok := c.proc.EnsureProjectForIngest(ctx, item.ProjectSlug)
+	proj, outcome, ok := c.resolveProject(ctx, item)
 	if !ok {
-		// Error, not warn: this discards accepted log data, and selflog only
-		// self-reports at >= Error — at Warn the loss stays invisible.
-		c.logger.Error("dropping log item: unresolved project",
-			"project", item.ProjectSlug,
-			"empty_slug", item.ProjectSlug == "",
-			"ingest_id", item.IngestID,
-			"received_at", item.ReceivedAt)
-		return "dropped"
+		return outcome
 	}
 	// Project pending admin approval: park the raw log payload for replay on
 	// approval instead of inserting it.
