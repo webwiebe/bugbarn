@@ -3,9 +3,12 @@ package digest
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"mime"
+	"net"
 	"net/smtp"
 	"strings"
 	"text/template"
@@ -94,14 +97,33 @@ func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html strin
 	msg.WriteString("--" + boundary + "--\r\n")
 
 	addr := fmt.Sprintf("%s:%d", mc.Host, mc.Port)
-	auth := smtp.PlainAuth("", mc.User, mc.Pass, mc.Host)
+	// Only authenticate when credentials are actually configured. Building an
+	// auth unconditionally meant a relay that does not advertise AUTH was
+	// rejected outright ("server doesn't support AUTH") even though we had no
+	// credentials to offer it — unauthenticated internal relays could never
+	// work. Nothing that authenticates today changes: a configured User still
+	// produces exactly the same PlainAuth.
+	var auth smtp.Auth
+	if mc.User != "" {
+		auth = smtp.PlainAuth("", mc.User, mc.Pass, mc.Host)
+	}
 	raw := []byte(msg.String())
 
 	delays := []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
 	var lastErr error
 	for attempt, delay := range delays {
+		if err := ctx.Err(); err != nil {
+			if lastErr != nil {
+				return lastErr
+			}
+			return err
+		}
 		lastErr = sendMailTraced(ctx, mc.Host, attempt+1, func() error {
-			return smtp.SendMail(addr, auth, from, []string{mc.To}, raw)
+			// Bound each attempt even when the caller gave us no deadline, so
+			// no configuration can leave this blocking forever.
+			attemptCtx, cancel := context.WithTimeout(ctx, smtpAttemptTimeout)
+			defer cancel()
+			return sendMail(attemptCtx, addr, mc.Host, auth, from, []string{mc.To}, raw)
 		})
 		if lastErr == nil {
 			return nil
@@ -111,10 +133,100 @@ func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html strin
 		}
 		if attempt < len(delays)-1 {
 			slog.Warn("digest mailer: transient error, retrying", "attempt", attempt+1, "max_attempts", 3, "retry_in", delay, "error", lastErr)
-			time.Sleep(delay)
+			select {
+			case <-ctx.Done():
+				return lastErr
+			case <-time.After(delay):
+			}
 		}
 	}
 	return lastErr
+}
+
+// smtpAttemptTimeout bounds one SMTP attempt when the caller's context carries
+// no deadline of its own. A var rather than a const so tests can shrink it
+// instead of waiting out the real thing.
+var smtpAttemptTimeout = 30 * time.Second
+
+// sendMail is a context-aware replacement for smtp.SendMail. The stdlib helper
+// dials with no timeout and never consults a context, so a server that accepts
+// the TCP connection and then stalls pins the caller forever — for the weekly
+// digest that means the scheduler goroutine never returns and every LATER
+// digest silently stops firing too.
+//
+// The protocol flow mirrors smtp.SendMail exactly, including its security
+// properties: STARTTLS whenever the server advertises it, and refusing to
+// authenticate over an unencrypted link (smtp.PlainAuth.Start enforces that
+// itself, so it still applies here).
+func sendMail(ctx context.Context, addr, host string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	client, err := dialSMTP(ctx, addr, host, auth)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+	return writeMessage(client, from, to, msg)
+}
+
+// dialSMTP opens the connection and completes the greeting, STARTTLS and AUTH
+// handshake, all bounded by ctx.
+func dialSMTP(ctx context.Context, addr, host string, auth smtp.Auth) (*smtp.Client, error) {
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	// net/smtp has no context plumbing, so translate the deadline onto the
+	// socket: that is what actually bounds a mid-conversation stall.
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+			_ = client.Close()
+			return nil, err
+		}
+	}
+	if auth != nil {
+		if ok, _ := client.Extension("AUTH"); !ok {
+			_ = client.Close()
+			return nil, errors.New("smtp: server doesn't support AUTH")
+		}
+		if err := client.Auth(auth); err != nil {
+			_ = client.Close()
+			return nil, err
+		}
+	}
+	return client, nil
+}
+
+// writeMessage plays the envelope and body over an established client.
+func writeMessage(client *smtp.Client, from string, to []string, msg []byte) error {
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	for _, rcpt := range to {
+		if err := client.Rcpt(rcpt); err != nil {
+			return err
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(msg); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 // sendMailTraced wraps a single SMTP send attempt in a span, recording the
