@@ -110,7 +110,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		AuthMethod: storage.WebSessionAuthLocal,
 	})
 	if err != nil {
-		s.logger.Error("auth: create session failed", "error", err)
+		if !clientGone(err) {
+			s.logger.Error("auth: create session failed", "error", err)
+		}
 		http.Error(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
