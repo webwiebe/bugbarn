@@ -100,7 +100,10 @@ steps:
         python3 -m venv .ci-venv
         . .ci-venv/bin/activate
         python -m pip install --upgrade pip
-        python -m pip install build pytest ruff
+        # Pin ruff: an unpinned install means a new ruff release changes what CI
+        # enforces with no commit on our side. 0.16.0 shipped new defaults and
+        # broke every build until sdks/python/pyproject.toml pinned the rule set.
+        python -m pip install build pytest 'ruff==0.16.0'
         if [ -f pyproject.toml ]; then python -m pip install -e .; fi
         if find . \( -name 'test_*.py' -o -name '*_test.py' -o -path '*/tests/*.py' \) -print -quit | grep -q .; then PYTHONPATH=src python -m pytest; fi
         if find . -name '*.py' -print -quit | grep -q .; then python -m ruff check .; fi

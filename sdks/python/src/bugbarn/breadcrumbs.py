@@ -1,8 +1,9 @@
 from __future__ import annotations
+
+import datetime
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from collections import deque
-import datetime
 
 MAX_BREADCRUMBS = 100
 

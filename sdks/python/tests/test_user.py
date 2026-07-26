@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from bugbarn.user import set_user, clear_user, get_user
 from bugbarn.client import init, shutdown
+from bugbarn.user import clear_user, get_user, set_user
 
 
 class RecordingTransport:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import atexit
 import datetime
 import json
@@ -10,10 +9,11 @@ import threading
 import traceback
 import urllib.error
 import urllib.request
+from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from .user import UserContext, get_user
 from .breadcrumbs import Breadcrumb, get_breadcrumbs
+from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
 SDK_VERSION = "0.1.0"

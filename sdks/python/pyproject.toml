@@ -12,6 +12,18 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest"]
 
+[tool.ruff]
+# Pin the rule set and the Python floor explicitly. Without this, ruff applies
+# whatever its current defaults are, so a new ruff release changes what CI
+# enforces with no commit on our side — ruff 0.16.0 did exactly that and broke
+# every build. target-version must track requires-python above: this SDK still
+# supports 3.9, where `X | None` annotations are not valid at runtime, so the
+# pyupgrade rules must not rewrite them.
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "RUF"]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
