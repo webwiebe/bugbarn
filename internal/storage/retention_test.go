@@ -1,0 +1,201 @@
+package storage
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+)
+
+// seedEventsAt inserts n events for the default project, all received at the
+// given time, and returns the issue they belong to.
+func seedEventsAt(t *testing.T, s *Store, receivedAt time.Time, n int) int64 {
+	t.Helper()
+	ctx := context.Background()
+	db := s.DB()
+	pid := s.DefaultProjectID()
+
+	fp := fmt.Sprintf("fp-%d", receivedAt.UnixNano())
+	res, err := db.ExecContext(ctx, `
+		INSERT INTO issues (project_id, fingerprint, fingerprint_material, title, normalized_title,
+			exception_type, first_seen, last_seen, event_count, representative_event_json, issue_number)
+		VALUES (?, ?, '', 'issue', 'issue', 'Error', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, '{}', 1)`,
+		pid, fp, n)
+	if err != nil {
+		t.Fatalf("insert issue: %v", err)
+	}
+	issueID, _ := res.LastInsertId()
+
+	ts := receivedAt.UTC().Format(time.RFC3339Nano)
+	for i := 0; i < n; i++ {
+		evRes, err := db.ExecContext(ctx, `
+			INSERT INTO events (project_id, issue_id, fingerprint, received_at, observed_at, severity, message, event_json)
+			VALUES (?, ?, 'fp', ?, ?, 'error', 'test', '{}')`,
+			pid, issueID, ts, ts)
+		if err != nil {
+			t.Fatalf("insert event: %v", err)
+		}
+		eventID, _ := evRes.LastInsertId()
+		// One facet per event, so the test also covers the cascade.
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value)
+			VALUES (?, ?, ?, 'tags', 'env', 'prod')`, pid, eventID, issueID); err != nil {
+			t.Fatalf("insert facet: %v", err)
+		}
+	}
+	return issueID
+}
+
+func countRows(t *testing.T, s *Store, table string) int {
+	t.Helper()
+	var n int
+	if err := s.DB().QueryRowContext(context.Background(), `SELECT COUNT(*) FROM `+table).Scan(&n); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	return n
+}
+
+func TestDeleteEventsBeforeRemovesOnlyExpiredEvents(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	seedEventsAt(t, s, now.AddDate(0, 0, -40), 5) // expired
+	seedEventsAt(t, s, now.AddDate(0, 0, -2), 3)  // fresh
+
+	cutoff := now.AddDate(0, 0, -30)
+	deleted, err := s.DeleteEventsBefore(ctx, cutoff, 100)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if deleted != 5 {
+		t.Errorf("deleted = %d, want 5", deleted)
+	}
+	if got := countRows(t, s, "events"); got != 3 {
+		t.Errorf("events remaining = %d, want 3 (the fresh ones)", got)
+	}
+}
+
+// The cascade is the whole reason migration 00011 exists: without an index on
+// event_facets.event_id the delete still works but degrades to a full scan per
+// row, so assert the children actually go.
+func TestDeleteEventsBeforeCascadesToFacets(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	seedEventsAt(t, s, now.AddDate(0, 0, -40), 4)
+	seedEventsAt(t, s, now.AddDate(0, 0, -1), 2)
+
+	if got := countRows(t, s, "event_facets"); got != 6 {
+		t.Fatalf("facets before = %d, want 6", got)
+	}
+	if _, err := s.DeleteEventsBefore(ctx, now.AddDate(0, 0, -30), 100); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if got := countRows(t, s, "event_facets"); got != 2 {
+		t.Errorf("facets after = %d, want 2 — expired events' facets should cascade", got)
+	}
+}
+
+// Issues are a durable record of what happened; expiring an issue's events must
+// not rewrite history by touching its lifetime event_count.
+func TestDeleteEventsBeforeLeavesIssuesIntact(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	issueID := seedEventsAt(t, s, now.AddDate(0, 0, -60), 7)
+
+	if _, err := s.DeleteEventsBefore(ctx, now.AddDate(0, 0, -30), 100); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	var count int
+	var eventCount int
+	if err := s.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*), MAX(event_count) FROM issues WHERE id = ?`, issueID).Scan(&count, &eventCount); err != nil {
+		t.Fatalf("query issue: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("issue rows = %d, want 1 — the issue must survive its events", count)
+	}
+	if eventCount != 7 {
+		t.Errorf("issue.event_count = %d, want 7 — the lifetime counter must not be rewritten", eventCount)
+	}
+}
+
+func TestDeleteEventsBeforeHonorsBatchLimit(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	cutoff := now.AddDate(0, 0, -30)
+
+	seedEventsAt(t, s, now.AddDate(0, 0, -45), 10)
+
+	deleted, err := s.DeleteEventsBefore(ctx, cutoff, 4)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if deleted != 4 {
+		t.Errorf("deleted = %d, want 4 (the batch limit)", deleted)
+	}
+	if got := countRows(t, s, "events"); got != 6 {
+		t.Errorf("events remaining = %d, want 6", got)
+	}
+
+	// A limit of 0 or less is a no-op rather than an unbounded delete.
+	deleted, err = s.DeleteEventsBefore(ctx, cutoff, 0)
+	if err != nil {
+		t.Fatalf("delete with zero limit: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("deleted = %d with limit 0, want 0", deleted)
+	}
+	if got := countRows(t, s, "events"); got != 6 {
+		t.Errorf("events remaining = %d after zero-limit delete, want 6", got)
+	}
+}
+
+func TestCountEventsBefore(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	seedEventsAt(t, s, now.AddDate(0, 0, -90), 6)
+	seedEventsAt(t, s, now.AddDate(0, 0, -3), 2)
+
+	n, err := s.CountEventsBefore(ctx, now.AddDate(0, 0, -30))
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 6 {
+		t.Errorf("CountEventsBefore = %d, want 6", n)
+	}
+}
+
+// Retention is writer-only, but a read-only store must fail loudly rather than
+// panic on a nil write connection if it is ever wired up by mistake.
+func TestDeleteEventsBeforeRejectsReadOnlyStore(t *testing.T) {
+	var s *EventStore
+	n, err := s.DeleteEventsBefore(context.Background(), time.Now(), 100)
+	if err == nil {
+		t.Fatal("expected an error from a read-only store, got nil")
+	}
+	if n != 0 {
+		t.Errorf("deleted = %d, want 0", n)
+	}
+}
+
+// The retention sweep's cost hinges entirely on this index existing: the
+// ON DELETE CASCADE from events to event_facets has no other way to find a
+// deleted event's children than scanning the whole table.
+func TestEventFacetsEventIDIndexExists(t *testing.T) {
+	s := mustOpenStore(t)
+	var name string
+	err := s.DB().QueryRowContext(context.Background(),
+		`SELECT name FROM sqlite_master WHERE type='index' AND name='idx_event_facets_event'`).Scan(&name)
+	if err != nil {
+		t.Fatalf("idx_event_facets_event is missing, so cascaded facet deletes fall back to a full scan: %v", err)
+	}
+}

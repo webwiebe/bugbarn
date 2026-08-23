@@ -800,6 +800,21 @@ paths:
       operationId: listProjects
       tags: [Projects]
       summary: List all projects
+      description: >
+        Returns every project. Per-project usage counts are opt-in via
+        `usage=true` because computing them aggregates the issues, events and
+        log_entries tables in full; callers that only need the project list
+        (the project picker, the scope switcher) should omit the parameter.
+      parameters:
+        - name: usage
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["true"]
+          description: >
+            Set to `true` to include issue_count, event_count and log_count on
+            each project. Expensive; see `usage_available` in the response.
       responses:
         "200":
           description: List of projects
@@ -811,7 +826,20 @@ paths:
                   projects:
                     type: array
                     items:
-                      $ref: "#/components/schemas/Project"
+                      $ref: "#/components/schemas/ProjectWithUsage"
+                  usage_available:
+                    type: boolean
+                    description: >
+                      Present only when `usage=true` was requested. False means
+                      the usage aggregate could not be computed, in which case
+                      the count fields are absent from every project. Absent
+                      counts mean "unknown", never zero.
+                  usage_stale:
+                    type: boolean
+                    description: >
+                      Present only when the counts were served from a cached
+                      snapshot because a refresh failed. The numbers are real
+                      but older than the usual one-minute cache window.
     post:
       operationId: createProject
       tags: [Projects]
@@ -2127,6 +2155,30 @@ components:
         CreatedAt:
           type: string
           format: date-time
+
+    ProjectWithUsage:
+      allOf:
+        - $ref: "#/components/schemas/Project"
+        - type: object
+          description: >
+            A project, optionally carrying its usage counts. The three count
+            fields are present only when the request asked for usage and the
+            aggregate succeeded; an absent field means the count is unknown,
+            which is deliberately distinct from a count of zero.
+          properties:
+            issue_count:
+              type: integer
+              description: Issues recorded for this project.
+            event_count:
+              type: integer
+              description: >
+                Events currently retained for this project. Events older than
+                the retention window (BUGBARN_EVENT_RETENTION_DAYS, default 30)
+                are expired, so this is a live count and not a lifetime total —
+                per-issue lifetime counts live on the issue itself.
+            log_count:
+              type: integer
+              description: Log entries currently retained for this project.
 
     ProjectGroup:
       type: object

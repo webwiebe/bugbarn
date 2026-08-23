@@ -574,10 +574,31 @@ List all observed values for a given facet key.
 
 List all projects.
 
+**Query parameters:**
+
+| Name | Description |
+|---|---|
+| `usage` | Set to `true` to include `issue_count`, `event_count` and `log_count` on each project. |
+
+Usage counts are opt-in because computing them aggregates the issues, events and log_entries tables in full. Callers that only need the project list should omit the parameter.
+
 **Response:**
 ```json
 {"projects": [{"id": 1, "name": "My App", "slug": "my-app"}]}
 ```
+
+**Response with `?usage=true`:**
+```json
+{
+  "projects": [{"id": 1, "name": "My App", "slug": "my-app",
+                "issue_count": 12, "event_count": 3401, "log_count": 890}],
+  "usage_available": true
+}
+```
+
+The counts are served from a short-lived cache. `usage_available` is `false` when the aggregate could not be computed; in that case the three count fields are **absent** from every project. An absent count means "unknown" and must not be rendered as zero. `usage_stale: true` means the counts are real but came from a cached snapshot because a refresh failed.
+
+`event_count` is the number of events *currently retained*. Events older than `BUGBARN_EVENT_RETENTION_DAYS` (default 30) are expired, so this is a live count, not a lifetime total — lifetime counts live on each issue.
 
 ---
 

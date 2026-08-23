@@ -67,6 +67,7 @@ type Service struct {
 	repo     Repository
 	logger   *slog.Logger
 	replayer HeldReplayer
+	usage    usageCache
 }
 
 func New(repo Repository, logger *slog.Logger) *Service {
@@ -103,6 +104,7 @@ func (s *Service) Create(ctx context.Context, name, slug string) (domain.Project
 		s.logger.ErrorContext(ctx, "create project", "slug", slug, "error", err)
 		return domain.Project{}, err
 	}
+	s.usage.invalidate()
 	s.logger.InfoContext(ctx, "project created", "slug", slug, "id", proj.ID)
 	return proj, nil
 }
@@ -144,6 +146,7 @@ func (s *Service) Delete(ctx context.Context, slug string) error {
 		s.logger.ErrorContext(ctx, "delete project", "slug", slug, "error", err)
 		return err
 	}
+	s.usage.invalidate()
 	s.logger.InfoContext(ctx, "project deleted", "slug", slug)
 	return nil
 }
@@ -198,19 +201,6 @@ func (s *Service) BySlug(ctx context.Context, slug string) (domain.Project, erro
 
 func (s *Service) DefaultProjectID() int64 {
 	return s.repo.DefaultProjectID()
-}
-
-func (s *Service) UsageAll(ctx context.Context) (map[int64]storage.ProjectUsage, error) {
-	ctx, span := tracing.Tracer().Start(ctx, "service.projects.UsageAll")
-	defer span.End()
-	result, err := s.repo.ProjectUsageAll(ctx)
-	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "usage all", "error", err)
-		}
-	}
-	return result, err
 }
 
 func (s *Service) ListAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
@@ -372,6 +362,7 @@ func (s *Service) Merge(ctx context.Context, sourceSlug, targetSlug string) erro
 		s.logger.ErrorContext(ctx, "merge projects", "source", sourceSlug, "target", targetSlug, "error", err)
 		return err
 	}
+	s.usage.invalidate()
 	s.logger.InfoContext(ctx, "projects merged", "source", sourceSlug, "target", targetSlug)
 	return nil
 }

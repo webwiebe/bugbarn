@@ -38,10 +38,20 @@ BUGBARN_ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com
 | `BUGBARN_MAX_BODY_BYTES` | `1048576` (1 MiB) | No | Maximum size of an ingest request body in bytes. Requests larger than this value are rejected with `413`. |
 | `BUGBARN_MAX_SPOOL_BYTES` | `0` (unlimited) | No | Maximum total size of the spool directory in bytes. When set and exceeded, ingest requests return `429 Too Many Requests` with a `Retry-After` header. Set this to protect disk space on constrained nodes. |
 | `BUGBARN_PUBLIC_URL` | — | No | Base URL of the BugBarn instance (e.g., `https://bugbarn.example.com`). Used to build links in alert notifications and digest emails. |
+| `BUGBARN_EVENT_RETENTION_DAYS` | `30` | No | How long individual event rows are kept before the hourly retention sweep deletes them. Issues and their lifetime event counts are never expired — only the per-event payloads. Values `<= 0` fall back to the 30-day default, so retention cannot be switched off by misconfiguration, only widened. |
 
 #### BUGBARN_MAX_SPOOL_BYTES
 
 Set this variable when you want a hard ceiling on disk usage by the event spool. Useful in production where disk is shared with other workloads or where you prefer to drop events over crashing. When the limit is exceeded, the ingest endpoint returns `429` with `Retry-After: 60`. SDKs and clients that respect `Retry-After` will back off and retry automatically.
+
+
+#### BUGBARN_EVENT_RETENTION_DAYS
+
+`events` is the fastest-growing table in the database, and before retention existed it grew without bound — a single noisy integration can contribute millions of rows, and one busy issue alone can account for most of the file. The writer runs an hourly sweep that deletes events older than this window in small batches, pausing between them so ingest keeps the write connection.
+
+Retention only removes individual event payloads. The issue each event belonged to survives, along with its lifetime `event_count`, so the record of what happened and how often is preserved even after the events themselves age out. Widen the window if you need to browse older individual events; the cost is roughly linear in database size.
+
+Only the writer sweeps. Readers open the database read-only and skip retention entirely.
 
 ---
 

@@ -13,7 +13,10 @@ export async function loadSettings(): Promise<void> {
     const [settingsPayload, keysPayload, projectsPayload, groupsPayload, aliasesPayload] = await Promise.all([
       fetchJson("/api/v1/settings", true),
       fetchJson("/api/v1/apikeys", true).catch(() => null),
-      fetchJson("/api/v1/projects", true).catch(() => null),
+      // ?usage=true: the settings screen is the only view that renders the
+      // per-project counts, and computing them is expensive enough that every
+      // other caller opts out.
+      fetchJson("/api/v1/projects?usage=true", true).catch(() => null),
       fetchJson("/api/v1/groups", true).catch(() => null),
       fetchJson("/api/v1/aliases", true).catch(() => null),
     ]);

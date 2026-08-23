@@ -7,16 +7,21 @@ import (
 )
 
 func cmdProjects(args []string) error {
-	return cmdResourceList(args, "projects", "project", "/api/v1/projects")
+	// Ask for usage counts explicitly: the API omits them by default because
+	// computing them scans the events and log_entries tables in full, but they
+	// are part of what `bb projects` has always reported and this is a
+	// low-frequency interactive command.
+	return cmdResourceList(args, "projects", "project", "/api/v1/projects", "/api/v1/projects?usage=true")
 }
 
 func cmdGroups(args []string) error {
-	return cmdResourceList(args, "groups", "group", "/api/v1/groups")
+	return cmdResourceList(args, "groups", "group", "/api/v1/groups", "/api/v1/groups")
 }
 
 // cmdResourceList implements the shared shape of `bb projects` / `bb groups`:
-// list all, or create one with --create [--slug].
-func cmdResourceList(args []string, fsName, singular, apiPath string) error {
+// list all, or create one with --create [--slug]. createPath is the collection
+// endpoint; listPath may carry query parameters that only apply to reads.
+func cmdResourceList(args []string, fsName, singular, createPath, listPath string) error {
 	fs := flag.NewFlagSet(fsName, flag.ContinueOnError)
 	create := fs.String("create", "", "create a new "+singular+" with this name")
 	slug := fs.String("slug", "", singular+" slug (defaults to slugified name)")
@@ -34,14 +39,14 @@ func cmdResourceList(args []string, fsName, singular, apiPath string) error {
 		if *slug != "" {
 			body["slug"] = *slug
 		}
-		data, err := client.post(apiPath, body)
+		data, err := client.post(createPath, body)
 		if err != nil {
 			return err
 		}
 		return writeRaw(data)
 	}
 
-	data, err := client.get(apiPath)
+	data, err := client.get(listPath)
 	if err != nil {
 		return err
 	}
