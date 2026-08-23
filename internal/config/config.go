@@ -54,6 +54,12 @@ type Config struct {
 	SelfProject            string
 	Digest                 digest.Config
 	AnalyticsRetentionDays int
+	// EventRetentionDays is BUGBARN_EVENT_RETENTION_DAYS — how long individual
+	// event rows are kept before the retention sweep expires them. Issues (and
+	// their lifetime event counts) are never expired; only the per-event
+	// payloads are. Events were unbounded before this existed, which is what
+	// grew the production database past 3M rows.
+	EventRetentionDays int
 	FunnelBarnEndpoint     string // BUGBARN_FUNNELBARN_ENDPOINT
 	FunnelBarnAPIKey       string // BUGBARN_FUNNELBARN_API_KEY
 	AutoApproveProjects    bool   // BUGBARN_AUTO_APPROVE_PROJECTS
@@ -109,6 +115,9 @@ func Load() Config {
 		SessionTTL:             envDurationSeconds("BUGBARN_SESSION_TTL_SECONDS", 12*time.Hour),
 		OIDCRefreshGrace:       envDurationSeconds("BUGBARN_OIDC_REFRESH_GRACE_SECONDS", time.Hour),
 		AnalyticsRetentionDays: envIntPositive("BUGBARN_ANALYTICS_RETENTION_DAYS", 90),
+		// Mirrors retention.DefaultRetentionDays; kept as a literal so config
+		// does not have to depend on the retention package.
+		EventRetentionDays: envIntPositive("BUGBARN_EVENT_RETENTION_DAYS", 30),
 		PublicURL:              os.Getenv("BUGBARN_PUBLIC_URL"),
 		Environment:            getenv("BUGBARN_ENVIRONMENT", os.Getenv("BUGBARN_ENV")),
 		SelfEndpoint:           os.Getenv("BUGBARN_SELF_ENDPOINT"),

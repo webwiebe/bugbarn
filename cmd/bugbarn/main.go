@@ -28,6 +28,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
+	"github.com/wiebe-xyz/bugbarn/internal/retention"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
@@ -175,6 +176,14 @@ func run() error {
 
 	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
 	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, &bgWg)
+
+	// Event retention. Writer-only: this is past the cfg.Mode=="reader" early
+	// return, so a reader — which holds the database read-only — never gets
+	// here. Events were the last unbounded table; without this sweep the file
+	// grows forever and every aggregate over it gets slower forever.
+	retention.StartWorker(ctx, store, retention.Config{
+		RetentionDays: cfg.EventRetentionDays,
+	}, logger, &bgWg)
 
 	// Spec 007: when a Redis write queue is configured, a single consumer drains
 	// it into the DB. This decouples ingest producers (reader pods) from the

@@ -127,6 +127,14 @@ function renderSettingsOverview(
   return errorBanner + pendingBanner + noProjectsBanner + statsBar + navItems + setupCard;
 }
 
+// usageCount formats a per-project count for display. An absent count means the
+// server could not produce the usage aggregate, which must not be shown as "0"
+// — that would read as "this project has no data" when the truth is "we don't
+// know right now".
+function usageCount(n: number | undefined): string {
+  return n === undefined ? "—" : String(n);
+}
+
 function renderSettingsProjects(
   projects: ApiProject[],
   groups: import("../types.js").ApiProjectGroup[],
@@ -168,12 +176,15 @@ function renderSettingsProjects(
         const name = String(p.name ?? p.Name ?? slug);
         const status = String(p.status ?? p.Status ?? 'active');
         const setupUrl = `/api/v1/setup/${slug}`;
-        const issues = p.issue_count ?? 0;
-        const events = p.event_count ?? 0;
-        const logs = p.log_count ?? 0;
+        // Absent counts mean the usage aggregate was unavailable, which is not
+        // the same as zero — show a dash rather than claiming the project is
+        // empty. Sort/filter attributes still need a number, so they use 0.
+        const issues = p.issue_count;
+        const events = p.event_count;
+        const logs = p.log_count;
         const group = p.group_id != null ? groups.find(g => g.id === p.group_id) : undefined;
         return `
-          <div class="project-row" data-slug="${escapeAttr(slug)}" data-name="${escapeAttr(name.toLowerCase())}" data-status="${escapeAttr(status)}" data-issues="${issues}" data-events="${events}" data-logs="${logs}">
+          <div class="project-row" data-slug="${escapeAttr(slug)}" data-name="${escapeAttr(name.toLowerCase())}" data-status="${escapeAttr(status)}" data-issues="${issues ?? 0}" data-events="${events ?? 0}" data-logs="${logs ?? 0}">
             <div class="project-info">
               <strong>${escapeHtml(name)}</strong>
               <span class="project-slug">${escapeHtml(slug)}</span>
@@ -181,9 +192,9 @@ function renderSettingsProjects(
             </div>
             <div class="project-actions">
               <div class="project-usage">
-                <span class="usage-stat" title="Open issues"><span class="usage-icon">◆</span>${escapeHtml(String(issues))}<span class="usage-label">${issues === 1 ? "issue" : "issues"}</span></span>
-                <span class="usage-stat" title="Total ingested events"><span class="usage-icon">▸</span>${escapeHtml(String(events))}<span class="usage-label">${events === 1 ? "event" : "events"}</span></span>
-                <span class="usage-stat" title="Total ingested log lines"><span class="usage-icon">≡</span>${escapeHtml(String(logs))}<span class="usage-label">${logs === 1 ? "log" : "logs"}</span></span>
+                <span class="usage-stat" title="Open issues"><span class="usage-icon">◆</span>${escapeHtml(usageCount(issues))}<span class="usage-label">${issues === 1 ? "issue" : "issues"}</span></span>
+                <span class="usage-stat" title="Retained events (older ones are expired by the retention window)"><span class="usage-icon">▸</span>${escapeHtml(usageCount(events))}<span class="usage-label">${events === 1 ? "event" : "events"}</span></span>
+                <span class="usage-stat" title="Retained log lines"><span class="usage-icon">≡</span>${escapeHtml(usageCount(logs))}<span class="usage-label">${logs === 1 ? "log" : "logs"}</span></span>
               </div>
               <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
               <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup</a>

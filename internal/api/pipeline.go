@@ -5,6 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -56,6 +59,7 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 	}
 
 	s.refreshCSRFCookie(w, r, usingSession)
+	s.annotateCaller(r, usingSession, usingAPIKey, apiKeyProjectID)
 
 	r = s.resolveProjectScope(r, usingSession, usingAPIKey, apiKeyProjectID)
 
@@ -163,4 +167,40 @@ func (s *Server) applyGroupScope(r *http.Request) *http.Request {
 		}
 	}
 	return r
+}
+
+// annotateCaller records who made the request on the active server span.
+//
+// The transport-level attributes alone cannot identify a caller: every Go
+// client on the network reports the same "Go-http-client/2.0" user agent, which
+// left an endpoint being polled several times a second with no way to tell
+// which service was doing it. Auth has just resolved here, so this is the first
+// point where the caller has a name.
+func (s *Server) annotateCaller(r *http.Request, usingSession, usingAPIKey bool, apiKeyProjectID int64) {
+	span := trace.SpanFromContext(r.Context())
+	if !span.IsRecording() {
+		return
+	}
+
+	method := "unknown"
+	switch {
+	case usingSession && usingAPIKey:
+		method = "session+api_key"
+	case usingSession:
+		method = "session"
+	case usingAPIKey:
+		method = "api_key"
+	}
+
+	attrs := []attribute.KeyValue{
+		attribute.String("bugbarn.caller.auth", method),
+		attribute.String("bugbarn.caller.ip", s.clientIP(r)),
+	}
+	if usingAPIKey {
+		// The project an API key is bound to is the closest thing to a caller
+		// identity we have without logging the key itself, which must never
+		// reach a span.
+		attrs = append(attrs, attribute.Int64("bugbarn.caller.api_key_project_id", apiKeyProjectID))
+	}
+	span.SetAttributes(attrs...)
 }
