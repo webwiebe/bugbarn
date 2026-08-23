@@ -84,7 +84,15 @@ steps:
           kubectl -n $NAMESPACE set image deployment/bugbarn-writer bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
           kubectl -n $NAMESPACE set image deployment/bugbarn-reader bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
           kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=$WEB_IMAGE@$WEB_DIGEST
-          kubectl -n $NAMESPACE rollout status deployment/bugbarn-writer --timeout=180s
+          # 600s, not 180s: the writer runs schema migrations at startup, and a
+          # migration over a multi-gigabyte database can take minutes (the
+          # event_facets index in 00011 took over three minutes on staging's
+          # 9GB file). The deployment's startupProbe already budgets 10m for
+          # exactly this; waiting only 3m here made the two disagree, so a
+          # perfectly healthy slow rollout was reported as a failed deploy —
+          # and on production that fires the rollback. Keep this in step with
+          # the startupProbe budget in the writer deployment manifests.
+          kubectl -n $NAMESPACE rollout status deployment/bugbarn-writer --timeout=600s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-reader --timeout=180s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-web --timeout=180s
         "
