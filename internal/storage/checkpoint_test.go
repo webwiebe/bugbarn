@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"log/slog"
@@ -169,4 +170,78 @@ func TestRunPeriodicCheckpointNoopOnReadOnlyStore(t *testing.T) {
 		t.Fatal("RunPeriodicCheckpoint on a read-only store should return immediately")
 	}
 	reader.FinalCheckpoint(quietLogger()) // must not panic
+}
+
+// The bound added for #166: a checkpoint that keeps coming back busy must give
+// up when its context expires instead of retrying forever. RunPeriodicCheckpoint
+// relies on exactly this to cap each tick's share of the single write
+// connection, so if this contract breaks the unbounded retry is back.
+func TestCheckpointGivesUpWhenPersistentlyBusy(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bugbarn.db")
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close()
+	growWAL(t, store)
+
+	// An OPEN read transaction pins a WAL snapshot for as long as it lives,
+	// which is what blocks TRUNCATE backfill. (The reader in the sibling test
+	// finishes its query, so it holds nothing and truncation succeeds.)
+	reader, err := OpenReadOnly(dbPath)
+	if err != nil {
+		t.Fatalf("open reader: %v", err)
+	}
+	defer reader.Close()
+	tx, err := reader.readDB().BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatalf("begin read tx: %v", err)
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRow(`SELECT count(*) FROM projects`).Scan(&n); err != nil {
+		t.Fatalf("reader query: %v", err)
+	}
+	// Move the WAL past the pinned snapshot. Distinct slugs: growWAL's rows are
+	// already in the table.
+	for i := 0; i < 200; i++ {
+		if _, err := store.db.Exec(
+			`INSERT INTO projects (slug, name, status, issue_prefix) VALUES (?, ?, 'active', 'Q')`,
+			fmt.Sprintf("post-snap-%d", i), fmt.Sprintf("Post Snapshot %d", i),
+		); err != nil {
+			t.Fatalf("post-snapshot write %d: %v", i, err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	frames := store.checkpoint(ctx, 50*time.Millisecond, quietLogger())
+	elapsed := time.Since(start)
+
+	if frames == 0 {
+		t.Skip("checkpoint truncated despite a held read snapshot; busy path not reproduced here")
+	}
+	// Ceiling allows ONE full attempt, not a precise duration. A blocked
+	// attempt sits in SQLite's busy handler for up to busy_timeout(10s) and is
+	// not interruptible by the Go context, so the deadline takes effect at the
+	// next retry decision rather than mid-pragma. What matters is that the call
+	// returns at all: without a deadline it retries forever while the reader
+	// holds its snapshot, and this test would hang instead of failing.
+	if elapsed > 20*time.Second {
+		t.Errorf("checkpoint ran %v under persistent busy, want it to give up after ~one attempt", elapsed)
+	}
+}
+
+// The per-tick budget only bounds contention if it is a fraction of the tick
+// interval; a budget >= the interval would mean back-to-back checkpointing.
+func TestCheckpointTickBudgetIsAFractionOfTheInterval(t *testing.T) {
+	if checkpointTickBudget >= DefaultCheckpointInterval {
+		t.Errorf("checkpointTickBudget %v >= DefaultCheckpointInterval %v: a tick could occupy the write connection continuously",
+			checkpointTickBudget, DefaultCheckpointInterval)
+	}
+	if checkpointTickBudget <= checkpointRetryInterval {
+		t.Errorf("checkpointTickBudget %v <= checkpointRetryInterval %v: no retry would ever get a second attempt",
+			checkpointTickBudget, checkpointRetryInterval)
+	}
 }

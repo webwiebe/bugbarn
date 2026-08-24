@@ -13,6 +13,18 @@ const DefaultCheckpointInterval = 60 * time.Second
 // came back busy because a reader snapshot blocked WAL backfill.
 const checkpointRetryInterval = 5 * time.Second
 
+// checkpointTickBudget bounds how long one tick may keep retrying. Without it a
+// tick that keeps seeing busy=1 never yields — the reader pods hold snapshots on
+// the shared PVC continuously, so busy=1 can persist indefinitely and the loop
+// reaches for the single MaxOpenConns(1) write connection every
+// checkpointRetryInterval forever, competing with ingestion for it (#166).
+//
+// Sized against the 60s default interval so a tick can occupy at most ~1/6 of
+// it, and against busy_timeout(10000): an attempt that has to wait on the write
+// lock can burn the whole budget on its own, which is fine — giving up and
+// letting the next tick retry costs only a slightly larger WAL for one interval.
+const checkpointTickBudget = 10 * time.Second
+
 // RunPeriodicCheckpoint blocks until ctx is canceled, issuing a TRUNCATE WAL
 // checkpoint on every tick.
 //
@@ -27,11 +39,21 @@ const checkpointRetryInterval = 5 * time.Second
 // up 12.8h behind on 2026-07-16 behind a 377MB WAL that could not truncate:
 // Litestream was the only checkpointer and it only issues PASSIVE.
 //
-// The retry is also required. A TRUNCATE checkpoint does NOT wait on
-// busy_timeout when a reader blocks WAL backfill — it returns SQLITE_BUSY
-// immediately in that phase. busy_timeout only covers write-lock conflicts
-// between writers. So draining the WAL under read load needs application-level
-// retry, which is what retryInterval does here.
+// The retry is also required: a TRUNCATE checkpoint blocked by a reader
+// snapshot reports busy rather than draining, so getting the WAL down under
+// read load needs application-level retry, which is what retryInterval does.
+//
+// That retry is bounded per tick by checkpointTickBudget so it can never hold
+// the write connection hostage — an unbounded retry is contention, not
+// resilience (#166).
+//
+// Note the budget is not a precise cap. A blocked attempt can sit in SQLite's
+// busy handler for up to busy_timeout (10s, see sqliteDSN) and is NOT
+// interruptible by the Go context, so a deadline only takes effect at the next
+// retry decision, never mid-pragma. TestCheckpointGivesUpWhenPersistentlyBusy
+// measures this: a 300ms deadline still returned after ~10s. Treat the budget
+// as "roughly one attempt per tick when the WAL is contended", which is the
+// behavior we want anyway.
 //
 // Runs on the same *sql.DB as every other writer: SQLite allows one writer at a
 // time at the file level, so a dedicated second connection would only move the
@@ -64,7 +86,12 @@ func (s *core) RunPeriodicCheckpoint(ctx context.Context, interval time.Duration
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			s.checkpoint(ctx, checkpointRetryInterval, log)
+			// Per-tick deadline: bound this tick's share of the write
+			// connection. Giving up early only leaves the WAL untruncated
+			// until the next tick, which then retries from scratch.
+			tickCtx, cancel := context.WithTimeout(ctx, checkpointTickBudget)
+			s.checkpoint(tickCtx, checkpointRetryInterval, log)
+			cancel()
 		}
 	}
 }
