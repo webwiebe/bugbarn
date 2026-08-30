@@ -138,7 +138,13 @@ steps:
         set -euo pipefail
         sh scripts/heal-go-modcache.sh
         sh scripts/check-file-length.sh
-        VERSION="v2.11.4"
+        # Must be built with a Go at least as new as the host toolchain: the
+        # quality gates run on the host, and golangci-lint typechecks against
+        # that Go's stdlib source. v2.11.4 (built with go1.26) started panicking
+        # "file requires newer Go version go1.27" the moment the runners moved
+        # to Go 1.27, which is a hard failure of every PR, not a lint finding.
+        # Bump this in step with the runners' Go.
+        VERSION="v2.13.2"
         DEST="$(pwd)/.tools"
         mkdir -p "$DEST"
         if [ ! -x "$DEST/golangci-lint" ] || ! "$DEST/golangci-lint" version 2>/dev/null | grep -q "$${VERSION#v}"; then
