@@ -39,13 +39,23 @@ func (s *EventStore) DeleteEventsBefore(ctx context.Context, cutoff time.Time, l
 	if s == nil || s.db == nil {
 		return 0, apperr.Internal("delete events before cutoff: store is read-only", nil)
 	}
-	// Selecting ids by the id order rather than by received_at keeps the
-	// subquery on the primary key: received_at is RFC3339Nano text, so a
-	// lexicographic comparison is a valid chronological one, and
-	// idx_events_project_received_at cannot serve a cross-project scan anyway.
+	// Order by received_at, not by id. Both are chronological — received_at is
+	// RFC3339Nano UTC text, so its lexicographic order is its time order — but
+	// only received_at order lets migration 00012's idx_events_received_at
+	// (received_at, id) serve the filter, the ordering and the projected column
+	// at once, so the scan stops at LIMIT and never touches the table.
+	//
+	// Asking for id order instead is what this used to do, and it was the whole
+	// problem: no index spans received_at across projects, so the planner walked
+	// the primary key and evaluated every row. A batch that fills early gets away
+	// with it; a short batch cannot, because returning fewer rows than the limit
+	// means the search space was exhausted. Steady state is always a short batch
+	// (~1,400 expiring per hour against a 2000 limit), so every sweep read the
+	// whole table — 98s on production's 7.75GB, holding the single write
+	// connection the entire time and starving ingest (BS2-98).
 	res, err := s.db.ExecContext(ctx, `
 		DELETE FROM events WHERE id IN (
-			SELECT id FROM events WHERE received_at < ? ORDER BY id ASC LIMIT ?
+			SELECT id FROM events WHERE received_at < ? ORDER BY received_at ASC, id ASC LIMIT ?
 		)`,
 		cutoff.UTC().Format(time.RFC3339Nano), limit,
 	)

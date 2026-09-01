@@ -1,0 +1,36 @@
+-- +goose Up
+-- The retention sweep picks its batch with
+--
+--   SELECT id FROM events WHERE received_at < ? ORDER BY ... LIMIT ?
+--
+-- and no index could serve it. Every index on events is prefixed by project_id
+-- (idx_events_issue_id, idx_events_issue_observed, idx_events_project_received_at,
+-- idx_events_project_received_issue), so a cross-project `received_at < ?` had
+-- to scan the table.
+--
+-- Scanning is survivable while the batch fills early, but the steady state never
+-- does: production expires ~1,400 events an hour against a batch size of 2000,
+-- so every sweep is a single short batch, and a short batch is precisely the
+-- case that cannot stop early — returning fewer rows than the limit means the
+-- search space was exhausted, i.e. the whole table was read. Measured on
+-- production (7.75GB) on 2026-09-01: one batch deleting 1,391 rows held the
+-- single write connection for 98.1 seconds, of which the deletes themselves are
+-- a rounding error. That is an hourly 98-second ingest stall spent proving there
+-- was nothing left to delete, and it is what dropped accepted log batches
+-- (BS2-98).
+--
+-- The index is (received_at, id) rather than (received_at) alone so it covers
+-- the subquery outright: the planner reads id straight out of the index and
+-- never touches the table, and it supplies ORDER BY received_at, id directly, so
+-- there is no sort to spill. Ordering by received_at rather than by id is what
+-- lets the scan stop at LIMIT; asking for id order would force a sort of every
+-- match and hand the planner a reason to fall back to the table scan this index
+-- exists to remove. received_at is RFC3339Nano UTC text, so its lexicographic
+-- order is chronological.
+--
+-- Cost: one more index for the ingest path to maintain per inserted event. That
+-- is the deliberate trade for removing a full table scan per sweep.
+CREATE INDEX IF NOT EXISTS idx_events_received_at ON events(received_at, id);
+
+-- +goose Down
+DROP INDEX IF EXISTS idx_events_received_at;
