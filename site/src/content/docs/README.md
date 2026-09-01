@@ -26,14 +26,14 @@ BugBarn is a lightweight, self-hosted error tracking system built in Go with SQL
 | [overview.md](overview.md) | Everyone | What BugBarn is, key capabilities, and what it is not |
 | [getting-started.md](getting-started.md) | New users | Run BugBarn locally and send your first error |
 | [architecture/overview.md](architecture/overview.md) | Developers | System architecture, data flow, and component responsibilities |
-| [architecture/storage.md](architecture/storage.md) | Developers | Database schema, spool format, and WAL replication |
+| [architecture/storage.md](architecture/storage.md) | Developers | Database schema, spool format, WAL checkpointing, and disaster recovery |
 | [architecture/authentication.md](architecture/authentication.md) | Developers | Session cookies, API keys, CSRF, and auth internals |
 | [features/issues.md](features/issues.md) | Everyone | Issue grouping, statuses, and lifecycle |
 | [features/alerts.md](features/alerts.md) | Everyone | Alert rules, conditions, delivery channels, and cooldowns |
 | [features/digest.md](features/digest.md) | Everyone | Weekly digest email and JSON webhook |
 | [features/logs.md](features/logs.md) | Everyone | Log ingestion, streaming, and filtering |
 | [deployment/configuration.md](deployment/configuration.md) | Operators | All environment variables and their defaults |
-| [deployment/kubernetes.md](deployment/kubernetes.md) | Operators | Kubernetes manifests, Litestream, and production deployment |
+| [deployment/kubernetes.md](deployment/kubernetes.md) | Operators | Kubernetes manifests and production deployment |
 | [deployment/performance.md](deployment/performance.md) | Operators | Throughput, hardware recommendations, and system limits |
 | [api.md](api.md) | Developers | Full REST API reference with request/response examples |
 | [sdks/overview.md](sdks/overview.md) | Developers | Integration options, API key scopes, event shape, and privacy scrubbing |

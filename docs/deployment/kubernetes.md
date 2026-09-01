@@ -92,22 +92,6 @@ Contains SMTP credentials and digest configuration:
 
 ---
 
-## Litestream
-
-[Litestream](https://litestream.io) provides continuous streaming replication of the SQLite database to an S3-compatible object store. It runs alongside BugBarn — either as a sidecar container or as a wrapper process — and is configured entirely through environment variables injected from `bugbarn-secrets`.
-
-Litestream is transparent to BugBarn. BugBarn simply opens the SQLite file at the path set by `BUGBARN_DB_PATH`; Litestream watches that file and streams WAL pages to the configured replica path.
-
-The relevant environment variables (consumed by Litestream, not BugBarn):
-
-| Variable | Description |
-|---|---|
-| `LITESTREAM_REPLICA_PATH` | S3-compatible path for the replica (e.g., `production/bugbarn.db`) |
-| `LITESTREAM_ACCESS_KEY_ID` | Object-storage access key |
-| `LITESTREAM_SECRET_ACCESS_KEY` | Object-storage secret key |
-
----
-
 ## Image Registry and Tags
 
 Images are published to the GitHub Container Registry:
@@ -125,7 +109,7 @@ Images are published to the GitHub Container Registry:
 
 Because the deployment strategy is `Recreate`, every upgrade causes a brief downtime while the old pod is terminated and the new pod starts. To minimise impact:
 
-1. The liveness probe allows 30 seconds for startup before it begins checking — long enough for Litestream to restore the database on a fresh node.
+1. The liveness probe allows 30 seconds for startup before it begins checking, giving the service time to open its PVC-backed database and run migrations.
 2. The readiness probe ensures traffic is not sent to the pod until `/api/v1/health` returns `200`.
 3. `revisionHistoryLimit: 2` keeps two old ReplicaSets for rollback.
 
