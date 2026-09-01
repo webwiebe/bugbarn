@@ -44,8 +44,8 @@ const (
 	// single writer for tens of milliseconds, not seconds.
 	batchSize = 2000
 
-	// batchPause is the gap between batches, during which ingest has the writer
-	// to itself.
+	// minBatchPause is the floor on the gap between batches, during which
+	// ingest has the writer to itself.
 	//
 	// It is sized by WAL growth, not by CPU. Nothing checkpoints the WAL except
 	// the writer's own TRUNCATE loop on a 60s tick, so what matters is how much
@@ -60,7 +60,22 @@ const (
 	// Do not "fix" this by checkpointing from the sweep: the TRUNCATE loop is
 	// deliberately the sole checkpointer, and a second one just races it for
 	// the write lock.
-	batchPause = time.Second
+	minBatchPause = time.Second
+
+	// maxBatchPause caps the proportional pause (see pauseFor) so a pathological
+	// batch cannot stall retention outright. The sweep budget already bounds the
+	// whole run, so this only shapes the duty cycle within it.
+	maxBatchPause = 30 * time.Second
+
+	// sweepBudget bounds one sweep's wall clock, the same way
+	// checkpointTickBudget bounds one checkpoint tick (#166). maxDeletesPerSweep
+	// alone does not: it counts rows, and rows only bound time if you already
+	// know what a batch costs. Production showed a 2000-row batch costing tens
+	// of seconds rather than the tens of milliseconds this package assumed, at
+	// which point a full 500k-row budget is hours of sweeping, overrunning the
+	// hourly interval. Bounding the clock instead means a slow database simply
+	// drains over more ticks.
+	sweepBudget = 20 * time.Minute
 
 	// maxDeletesPerSweep bounds one sweep so a huge first-run backlog is spread
 	// over several hours instead of running for an unbounded stretch.
@@ -84,16 +99,50 @@ type Config struct {
 }
 
 // tuning is the sweep's pacing. It exists so tests can exercise the batching
-// and budget logic without sleeping through the real batchPause, which would
-// make a full-budget sweep take the better part of a minute.
+// and budget logic without sleeping through the real pauses, which would make a
+// full-budget sweep take the better part of a minute.
 type tuning struct {
 	batchSize   int
-	pause       time.Duration
+	minPause    time.Duration
+	maxPause    time.Duration
+	budget      time.Duration
 	maxPerSweep int64
 }
 
 func defaultTuning() tuning {
-	return tuning{batchSize: batchSize, pause: batchPause, maxPerSweep: maxDeletesPerSweep}
+	return tuning{
+		batchSize:   batchSize,
+		minPause:    minBatchPause,
+		maxPause:    maxBatchPause,
+		budget:      sweepBudget,
+		maxPerSweep: maxDeletesPerSweep,
+	}
+}
+
+// pauseFor sizes the gap after a batch that held the writer for d.
+//
+// The pause is proportional to what the batch just cost, so the sweep hands
+// back at least as much of the single write connection as it consumed. The old
+// fixed one-second pause encoded an assumption in batchSize's comment — that a
+// batch occupies the writer "for tens of milliseconds, not seconds" — which
+// production disproved: batches ran tens of seconds, so a 1s gap left ingest
+// roughly 3% of the writer instead of nearly all of it. Log inserts arriving
+// during a sweep then exhausted every retry layer and were dropped outright
+// (BS2-98), and the drops tracked sweep length exactly: none at 177-180s,
+// every sweep from 214s up.
+//
+// Proportional pacing fixes that without needing to know which part of a batch
+// is slow, because it measures the batch instead of predicting it. On a fast
+// database d is tiny, the floor applies, and behavior is unchanged.
+func pauseFor(d time.Duration, tun tuning) time.Duration {
+	p := d
+	if p < tun.minPause {
+		p = tun.minPause
+	}
+	if tun.maxPause > 0 && p > tun.maxPause {
+		p = tun.maxPause
+	}
+	return p
 }
 
 type workerMetrics struct {
@@ -166,57 +215,114 @@ func shuttingDown(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-// sweep deletes expired events in batches until the backlog is drained, the
-// per-sweep budget is spent, or the process is shutting down.
-func sweep(ctx context.Context, store Store, cfg Config, tun tuning, log *slog.Logger, m *workerMetrics) {
-	cutoff := time.Now().UTC().AddDate(0, 0, -cfg.RetentionDays)
-	start := time.Now()
+// sweepResult is what one pass of the batch loop accomplished.
+type sweepResult struct {
+	deleted int64
+	// drained reports that a short batch proved nothing older than the cutoff
+	// is left, which makes the remaining backlog 0 without having to count it.
+	drained bool
+	// stop names why the loop ended, for the summary log line.
+	stop string
+	// aborted means shutdown or a delete error ended the sweep; the caller logs
+	// nothing further.
+	aborted    bool
+	deleteTime time.Duration
+	pauseTime  time.Duration
+}
 
-	var deleted int64
-	for deleted < tun.maxPerSweep {
+// drainBatches deletes expired events in batches until the backlog is drained,
+// a budget is spent, or the process is shutting down.
+func drainBatches(
+	ctx context.Context, store Store, cutoff time.Time, tun tuning, log *slog.Logger, m *workerMetrics,
+) sweepResult {
+	res := sweepResult{stop: "row_budget"}
+	deadline := time.Now().Add(tun.budget)
+
+	for res.deleted < tun.maxPerSweep {
 		if ctx.Err() != nil {
-			return
+			res.aborted = true
+			return res
 		}
+		batchStart := time.Now()
 		n, err := store.DeleteEventsBefore(ctx, cutoff, tun.batchSize)
+		batchDur := time.Since(batchStart)
+		res.deleteTime += batchDur
 		if err != nil {
 			if !shuttingDown(err) {
 				log.Error("retention: delete batch failed",
-					"cutoff", cutoff.Format(time.RFC3339), "deleted_so_far", deleted, "error", err)
+					"cutoff", cutoff.Format(time.RFC3339), "deleted_so_far", res.deleted, "error", err)
 			}
-			return
+			res.aborted = true
+			return res
 		}
-		deleted += n
+		res.deleted += n
 		if m != nil {
 			m.eventsDeleted.Add(ctx, n)
 		}
 		// A short batch means nothing older than the cutoff is left.
 		if n < int64(tun.batchSize) {
-			break
+			res.drained, res.stop = true, "drained"
+			return res
 		}
+		if tun.budget > 0 && !time.Now().Before(deadline) {
+			res.stop = "time_budget"
+			return res
+		}
+		pause := pauseFor(batchDur, tun)
 		select {
 		case <-ctx.Done():
-			return
-		case <-time.After(tun.pause):
+			res.aborted = true
+			return res
+		case <-time.After(pause):
 		}
+		res.pauseTime += pause
 	}
+	return res
+}
 
-	if deleted == 0 {
+// sweep runs one retention pass and reports what it did.
+func sweep(ctx context.Context, store Store, cfg Config, tun tuning, log *slog.Logger, m *workerMetrics) {
+	cutoff := time.Now().UTC().AddDate(0, 0, -cfg.RetentionDays)
+	start := time.Now()
+
+	res := drainBatches(ctx, store, cutoff, tun, log, m)
+	if res.aborted {
+		return
+	}
+	if res.deleted == 0 {
 		log.Debug("retention: nothing to expire", "cutoff", cutoff.Format(time.RFC3339))
 		return
 	}
 
-	// Report the remaining backlog so a sweep that hit its budget is visible as
-	// "still draining" rather than looking like a completed run. The COUNT is a
-	// scan, so it runs once per sweep and only when the sweep did work.
-	remaining, err := store.CountEventsBefore(ctx, cutoff)
-	if err != nil && !shuttingDown(err) {
-		log.Warn("retention: could not measure remaining backlog", "error", err)
+	// Only count when the sweep stopped early. A drained sweep already proved
+	// the backlog is empty, and CountEventsBefore is a full scan of events —
+	// every index on the table is prefixed by project_id, so a cross-project
+	// `received_at < ?` can use none of them. Counting unconditionally meant
+	// scanning the whole table on every steady-state sweep purely to log
+	// "remaining": 0, which is exactly what production logged every hour.
+	var remaining int64
+	var countMS int64
+	if !res.drained {
+		countStart := time.Now()
+		n, err := store.CountEventsBefore(ctx, cutoff)
+		countMS = time.Since(countStart).Milliseconds()
+		if err != nil && !shuttingDown(err) {
+			log.Warn("retention: could not measure remaining backlog", "error", err)
+		}
+		remaining = n
 	}
+
+	// delete_ms vs pause_ms is the sweep's duty cycle on the single writer — the
+	// number to look at first if ingest starves during retention again.
 	log.Info("retention: expired events",
-		"deleted", deleted,
+		"deleted", res.deleted,
 		"remaining", remaining,
+		"stop", res.stop,
 		"cutoff", cutoff.Format(time.RFC3339),
 		"retention_days", cfg.RetentionDays,
 		"duration_ms", time.Since(start).Milliseconds(),
+		"delete_ms", res.deleteTime.Milliseconds(),
+		"pause_ms", res.pauseTime.Milliseconds(),
+		"count_ms", countMS,
 	)
 }
