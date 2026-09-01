@@ -55,7 +55,10 @@ func ProcessRecordCtx(ctx context.Context, record spool.Record) (ProcessedEvent,
 	normalizeSpan.End()
 
 	_, fpSpan := tracing.Tracer().Start(ctx, "worker.Fingerprint")
-	fp := fingerprint.Fingerprint(evt)
+	fp := evt.Fingerprint
+	if fp == "" {
+		fp = fingerprint.Fingerprint(evt)
+	}
 	material := fingerprint.Material(evt)
 	explanation := fingerprint.Explanation(evt)
 	evt.Fingerprint = fp

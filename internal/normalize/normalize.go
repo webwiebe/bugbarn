@@ -51,6 +51,7 @@ func Normalize(raw []byte, ingestID string, receivedAt time.Time) (event.Event, 
 		TraceID:     stringValue(scrubbed["traceId"]),
 		SpanID:      stringValue(scrubbed["spanId"]),
 		SDKName:     sdkName(scrubbed),
+		Fingerprint: stringValue(scrubbed["fingerprint"]),
 		RawScrubbed: scrubbed,
 	}
 

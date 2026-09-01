@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
 	"github.com/wiebe-xyz/bugbarn/internal/normalize"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
@@ -193,6 +194,12 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 
 	if kindForPath(r.URL.Path) == queue.KindEvent {
 		if err := normalize.Validate(body); err != nil {
+			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+			return
+		}
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/alertmanager") {
+		if _, err := ingest.AlertmanagerEvents(body); err != nil {
 			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 			return
 		}
@@ -409,6 +416,9 @@ func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) err
 // publishOne converts a spooled ingest request into a queue.Item and LPUSHes it.
 // Returning nil acks the record (cursor advances); returning an error retries.
 func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) error {
+	if strings.HasPrefix(rec.Path, "/api/v1/alertmanager") {
+		return s.publishAlertmanager(ctx, rec)
+	}
 	kind := kindForPath(rec.Path)
 	if kind == "" {
 		// Not an ingest path we route through the queue — drop and advance.
@@ -423,6 +433,32 @@ func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) err
 		BodyBase64:  rec.BodyBase64,
 	}
 	err := s.queue.Publish(ctx, []queue.Item{item})
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	produceCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+	return err
+}
+
+func (s *SpoolForwarder) publishAlertmanager(ctx context.Context, rec spooledRequest) error {
+	body, err := base64.StdEncoding.DecodeString(rec.BodyBase64)
+	if err != nil {
+		return nil // corrupt local spool record; dropping avoids blocking all ingest
+	}
+	payloads, err := ingest.AlertmanagerEvents(body)
+	if err != nil {
+		return nil // malformed input is permanent and would be rejected by the writer
+	}
+	items := make([]queue.Item, 0, len(payloads))
+	for _, payload := range payloads {
+		items = append(items, queue.Item{
+			Kind: queue.KindEvent, ReceivedAt: rec.ReceivedAt,
+			ContentType: "application/json", ProjectSlug: rec.Headers[projectHeader],
+			BodyBase64: base64.StdEncoding.EncodeToString(payload),
+		})
+	}
+	err = s.queue.Publish(ctx, items)
 	outcome := "success"
 	if err != nil {
 		outcome = "error"
