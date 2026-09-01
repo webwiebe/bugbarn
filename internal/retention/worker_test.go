@@ -14,12 +14,13 @@ import (
 type fakeStore struct {
 	mu sync.Mutex
 
-	remaining  int64 // rows still older than the cutoff
-	limits     []int // limit passed to each DeleteEventsBefore call
-	cutoffs    []time.Time
-	deleteErr  error
-	countErr   error
-	countCalls int
+	remaining   int64 // rows still older than the cutoff
+	limits      []int // limit passed to each DeleteEventsBefore call
+	cutoffs     []time.Time
+	deleteErr   error
+	countErr    error
+	countCalls  int
+	deleteDelay time.Duration // simulates a batch that holds the writer
 }
 
 func (f *fakeStore) DeleteEventsBefore(_ context.Context, cutoff time.Time, limit int) (int64, error) {
@@ -27,6 +28,9 @@ func (f *fakeStore) DeleteEventsBefore(_ context.Context, cutoff time.Time, limi
 	defer f.mu.Unlock()
 	f.limits = append(f.limits, limit)
 	f.cutoffs = append(f.cutoffs, cutoff)
+	if f.deleteDelay > 0 {
+		time.Sleep(f.deleteDelay)
+	}
 	if f.deleteErr != nil {
 		return 0, f.deleteErr
 	}
@@ -57,7 +61,13 @@ func (f *fakeStore) batches() int {
 // fastTuning keeps the real batching and budget semantics but removes the
 // inter-batch sleep, so a full-budget sweep is instant instead of ~50s.
 func fastTuning() tuning {
-	return tuning{batchSize: batchSize, pause: 0, maxPerSweep: maxDeletesPerSweep}
+	return tuning{
+		batchSize:   batchSize,
+		minPause:    0,
+		maxPause:    0,
+		budget:      sweepBudget,
+		maxPerSweep: maxDeletesPerSweep,
+	}
 }
 
 func quietLogger() *slog.Logger {
@@ -146,6 +156,77 @@ func TestSweepRespectsPerSweepBudget(t *testing.T) {
 	}
 }
 
+// CountEventsBefore is a full scan of events — no index spans received_at
+// across projects. A sweep that ends on a short batch has already proved the
+// backlog is empty, so counting anyway bought a whole-table scan every hour to
+// log a zero. Production did exactly that on every steady-state sweep.
+func TestSweepSkipsBacklogCountWhenDrained(t *testing.T) {
+	store := &fakeStore{remaining: batchSize + 10}
+	sweep(context.Background(), store, Config{RetentionDays: 30}, fastTuning(), quietLogger(), nil)
+
+	if store.remaining != 0 {
+		t.Fatalf("remaining = %d, want 0 — the sweep should have drained it", store.remaining)
+	}
+	if store.countCalls != 0 {
+		t.Errorf("CountEventsBefore called %d times after a drained sweep, want 0 — "+
+			"a short batch already proves the backlog is empty", store.countCalls)
+	}
+}
+
+// The converse: when a budget cuts the sweep short the backlog really is
+// unknown, so the count must still run or "still draining" becomes invisible.
+func TestSweepCountsBacklogWhenBudgetStopsIt(t *testing.T) {
+	store := &fakeStore{remaining: maxDeletesPerSweep * 3}
+	sweep(context.Background(), store, Config{RetentionDays: 30}, fastTuning(), quietLogger(), nil)
+
+	if store.remaining == 0 {
+		t.Fatal("budget did not bound the sweep")
+	}
+	if store.countCalls != 1 {
+		t.Errorf("CountEventsBefore called %d times after a budget-stopped sweep, want 1", store.countCalls)
+	}
+}
+
+// A batch that holds the writer for seconds must be followed by a comparable
+// yield, or ingest gets a sliver of the connection and log inserts get dropped
+// (BS2-98).
+func TestPauseIsProportionalToBatchCost(t *testing.T) {
+	tun := defaultTuning()
+
+	if got := pauseFor(time.Millisecond, tun); got != tun.minPause {
+		t.Errorf("fast batch paused %v, want the %v floor", got, tun.minPause)
+	}
+	slow := 5 * time.Second
+	if got := pauseFor(slow, tun); got != slow {
+		t.Errorf("a %v batch paused %v, want %v — the sweep must yield what it consumed", slow, got, slow)
+	}
+	if got := pauseFor(time.Hour, tun); got != tun.maxPause {
+		t.Errorf("pathological batch paused %v, want the %v cap", got, tun.maxPause)
+	}
+}
+
+// The row budget cannot bound wall clock unless you know what a row costs, and
+// production showed we did not: batches ran tens of seconds, so a full row
+// budget would sweep for hours and overrun the hourly interval.
+func TestSweepStopsOnWallClockBudget(t *testing.T) {
+	store := &fakeStore{remaining: maxDeletesPerSweep, deleteDelay: 20 * time.Millisecond}
+	tun := fastTuning()
+	tun.budget = 60 * time.Millisecond
+
+	start := time.Now()
+	sweep(context.Background(), store, Config{RetentionDays: 30}, tun, quietLogger(), nil)
+	elapsed := time.Since(start)
+
+	if store.remaining == 0 {
+		t.Fatal("the whole backlog drained; the wall-clock budget did nothing")
+	}
+	// Generous ceiling: the budget is only checked between batches, so one
+	// in-flight batch always overruns it.
+	if elapsed > time.Second {
+		t.Errorf("sweep ran %v with a %v budget — the clock is not bounding it", elapsed, tun.budget)
+	}
+}
+
 func TestShuttingDownClassifiesContextErrors(t *testing.T) {
 	if !shuttingDown(context.Canceled) {
 		t.Error("context.Canceled should count as shutdown, not a fault")
@@ -198,10 +279,22 @@ func TestStartWorkerIgnoresNilStore(t *testing.T) {
 // connection. Removing it would let a large backlog starve ingest, so pin it.
 func TestDefaultTuningThrottlesBetweenBatches(t *testing.T) {
 	tun := defaultTuning()
-	if tun.pause <= 0 {
+	if tun.minPause <= 0 {
 		t.Error("default tuning has no inter-batch pause; retention would monopolize the writer")
+	}
+	if tun.maxPause < tun.minPause {
+		t.Errorf("maxPause %v below minPause %v", tun.maxPause, tun.minPause)
 	}
 	if tun.batchSize <= 0 || tun.maxPerSweep <= 0 {
 		t.Errorf("default tuning is unbounded: batchSize=%d maxPerSweep=%d", tun.batchSize, tun.maxPerSweep)
+	}
+	// A row budget only bounds time if you know what a row costs, and
+	// production proved we did not. The wall-clock budget is what actually
+	// keeps a sweep inside its hourly interval.
+	if tun.budget <= 0 {
+		t.Error("default tuning has no wall-clock sweep budget")
+	}
+	if tun.budget >= sweepInterval {
+		t.Errorf("sweep budget %v does not fit inside the %v interval", tun.budget, sweepInterval)
 	}
 }
