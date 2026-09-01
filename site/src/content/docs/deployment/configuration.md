@@ -124,18 +124,6 @@ BugBarn can report its own unhandled errors to a BugBarn instance (including its
 
 ---
 
-### Litestream
-
-These variables are consumed by the Litestream process that runs alongside BugBarn (as a sidecar or wrapper). BugBarn itself does not read them.
-
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `LITESTREAM_REPLICA_PATH` | — | Yes (if Litestream enabled) | S3-compatible path for the database replica (e.g., `s3://bucket/production/bugbarn.db`). |
-| `LITESTREAM_ACCESS_KEY_ID` | — | Yes (if Litestream enabled) | Access key ID for the object-storage backend. |
-| `LITESTREAM_SECRET_ACCESS_KEY` | — | Yes (if Litestream enabled) | Secret access key for the object-storage backend. |
-
----
-
 ## CLI Commands
 
 ```
@@ -158,7 +146,6 @@ The default resource requests (100m CPU / 128 Mi RAM) are appropriate for:
 
 - Low-to-medium traffic (up to a few hundred events per minute).
 - A single project with up to tens of thousands of issues in the database.
-- Running Litestream in the same pod without heavy replication load.
 
 **Consider increasing memory limits when:**
 
