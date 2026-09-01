@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -197,5 +198,91 @@ func TestEventFacetsEventIDIndexExists(t *testing.T) {
 		`SELECT name FROM sqlite_master WHERE type='index' AND name='idx_event_facets_event'`).Scan(&name)
 	if err != nil {
 		t.Fatalf("idx_event_facets_event is missing, so cascaded facet deletes fall back to a full scan: %v", err)
+	}
+}
+
+// Existence alone is not enough here, so this asserts the plan instead.
+//
+// The batch subquery has to be able to stop at LIMIT. When it cannot, a short
+// batch — which in steady state is *every* batch, since far fewer events expire
+// per hour than the batch size — reads the whole table to prove nothing more
+// matches. On production that was 98 seconds of unbroken hold on the single
+// write connection, every hour, which is what starved ingest and dropped
+// accepted log batches (BS2-98).
+//
+// Ordering is the load-bearing part and the reason a plain existence check
+// would miss a regression: with idx_events_received_at in place but ORDER BY id
+// restored, SQLite goes right back to `SCAN events`, because it would have to
+// sort every match to satisfy that order. The index only pays off while the
+// query asks for the order the index already has.
+func TestDeleteEventsBeforePlanUsesReceivedAtIndex(t *testing.T) {
+	s := mustOpenStore(t)
+	seedEventsAt(t, s, time.Now().AddDate(0, 0, -40), 5)
+
+	rows, err := s.DB().QueryContext(context.Background(), `
+		EXPLAIN QUERY PLAN
+		DELETE FROM events WHERE id IN (
+			SELECT id FROM events WHERE received_at < ? ORDER BY received_at ASC, id ASC LIMIT ?
+		)`, time.Now().UTC().Format(time.RFC3339Nano), 2000)
+	if err != nil {
+		t.Fatalf("explain query plan: %v", err)
+	}
+	defer rows.Close()
+
+	var plan []string
+	for rows.Next() {
+		var id, parent, notUsed int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notUsed, &detail); err != nil {
+			t.Fatalf("scan plan row: %v", err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("plan rows: %v", err)
+	}
+
+	var usesIndex bool
+	for _, step := range plan {
+		if strings.Contains(step, "idx_events_received_at") {
+			usesIndex = true
+		}
+		// A bare table scan is the exact regression this guards. Steps that
+		// name an index are fine however they are phrased.
+		if strings.Contains(step, "SCAN events") && !strings.Contains(step, "INDEX") {
+			t.Errorf("retention batch falls back to a full table scan: %q\nfull plan: %v", step, plan)
+		}
+	}
+	if !usesIndex {
+		t.Errorf("retention batch does not use idx_events_received_at; plan: %v", plan)
+	}
+}
+
+// Deleting oldest-first must stay oldest-first now that the ORDER BY drives off
+// received_at rather than id.
+func TestDeleteEventsBeforeRemovesOldestFirst(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	seedEventsAt(t, s, now.AddDate(0, 0, -60), 3) // oldest
+	seedEventsAt(t, s, now.AddDate(0, 0, -45), 3) // middle
+
+	// Budget for only the three oldest.
+	if _, err := s.DeleteEventsBefore(ctx, now.AddDate(0, 0, -30), 3); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	var oldest int
+	if err := s.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM events WHERE received_at < ?`,
+		now.AddDate(0, 0, -50).Format(time.RFC3339Nano)).Scan(&oldest); err != nil {
+		t.Fatalf("count oldest: %v", err)
+	}
+	if oldest != 0 {
+		t.Errorf("%d of the oldest events survived a budgeted batch; retention must expire oldest-first", oldest)
+	}
+	if got := countRows(t, s, "events"); got != 3 {
+		t.Errorf("events remaining = %d, want 3", got)
 	}
 }
