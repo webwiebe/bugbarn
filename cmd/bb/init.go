@@ -56,6 +56,9 @@ type project struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 	Slug string `json:"slug"`
+	// GroupID is null for an ungrouped project; the TUI's project switcher
+	// uses it to stay inside a --group scope.
+	GroupID *int64 `json:"group_id"`
 }
 
 type group struct {

@@ -107,7 +107,7 @@ Authentication:
 Examples:
   bb init                            # set project for this directory
   bb issues                          # list open issues (JSON)
-  bb tui                             # interactive issue browser
+  bb tui                             # interactive issue browser (p/tab switch project)
   bb logs -f                         # live-tail all logs (colored)
   bb logs -f --level warn            # tail warnings and above
   bb logs --project backend --limit 20

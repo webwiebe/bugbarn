@@ -1,6 +1,10 @@
 package main
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
 	primaryColor = lipgloss.Color("39")
@@ -53,6 +57,18 @@ var (
 	projectStyle = lipgloss.NewStyle().Foreground(accentColor)
 	timeStyle    = lipgloss.NewStyle().Foreground(subtleColor)
 
+	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(titleColor)
+	labelStyle   = lipgloss.NewStyle().Foreground(subtleColor)
+	valueStyle   = lipgloss.NewStyle().Foreground(brightColor)
+	keyStyle     = lipgloss.NewStyle().Foreground(primaryColor)
+	frameStyle   = lipgloss.NewStyle().Foreground(accentColor)
+	dimStyle     = lipgloss.NewStyle().Foreground(dimColor)
+	scopeStyle   = lipgloss.NewStyle().Foreground(titleColor).Background(primaryColor).Bold(true)
+
+	severityError = lipgloss.NewStyle().Foreground(errorColor).Bold(true)
+	severityWarn  = lipgloss.NewStyle().Foreground(warningColor).Bold(true)
+	severityInfo  = lipgloss.NewStyle().Foreground(primaryColor)
+
 	helpKeyStyle = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
 	helpStyle    = lipgloss.NewStyle().Foreground(dimColor)
 	helpSep      = lipgloss.NewStyle().Foreground(borderColor)
@@ -85,6 +101,21 @@ func statusIcon(status string) string {
 		return "○"
 	default:
 		return "?"
+	}
+}
+
+// severityStyle colors a log/event severity the same way across the event
+// header and the breadcrumb trail.
+func severityStyle(severity string) lipgloss.Style {
+	switch strings.ToLower(severity) {
+	case "fatal", "critical", "error":
+		return severityError
+	case "warn", "warning":
+		return severityWarn
+	case "debug", "trace":
+		return dimStyle
+	default:
+		return severityInfo
 	}
 }
 

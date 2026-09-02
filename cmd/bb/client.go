@@ -64,6 +64,17 @@ func newClient() (*Client, error) {
 	}, nil
 }
 
+// withProject returns a copy of the client scoped to a single project, or — for
+// an empty slug — an unscoped copy. A project scope always clears the group
+// scope: setRequestHeaders prefers the group header, so leaving it in place
+// would silently ignore the project the caller just picked.
+func (c *Client) withProject(slug string) *Client {
+	scoped := *c
+	scoped.project = slug
+	scoped.group = ""
+	return &scoped
+}
+
 func (c *Client) get(path string) (json.RawMessage, error) {
 	return c.do("GET", path, nil)
 }

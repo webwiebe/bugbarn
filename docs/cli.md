@@ -122,15 +122,31 @@ bb apikeys                             # list all API keys (no secrets shown)
 ```sh
 bb tui                                 # interactive issue browser
 bb tui --status all                    # browse all issues
+bb tui --project bugbarn-service       # start scoped to one project
+bb tui --group bugbarn                 # start scoped to a project group
 ```
 
-The TUI provides keyboard-driven navigation:
+Started without `--project`, the TUI lists every project's issues. Press `p` for
+a type-to-filter project switcher, or `tab` / `shift+tab` to cycle straight
+through the projects; `s` cycles the status filter. The header always names the
+scope and status in effect. A `--group` launch keeps its group: the switcher
+offers only that group's projects.
+
+Issue detail shows the full stored event — exception and complete stack trace
+(with source-map originals and snippets), user context, breadcrumbs, attributes,
+resource, trace/span ids, and grouping. Use `←` / `→` to page through the
+issue's recent occurrences.
 
 | Key | Action |
 |---|---|
 | `j` / `k` or arrows | Navigate issues |
-| `enter` | View issue detail (stack trace, metadata) |
-| `r` | Resolve or reopen the selected issue |
+| `enter` | View issue detail |
+| `p` | Open the project switcher |
+| `tab` / `shift+tab` | Cycle to the next / previous project |
+| `s` | Cycle the status filter (open → resolved → muted → all) |
+| `←` / `→` | Previous / next occurrence (in detail) |
+| `v` | Open a Claude Code session for the issue |
+| `r` | Resolve, reopen, or unmute the selected issue |
 | `R` | Refresh the issue list |
 | `esc` | Back to list / quit |
 | `q` | Quit |
