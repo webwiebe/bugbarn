@@ -3,22 +3,22 @@ name: Binary Release
 # Builds and publishes bugbarn binaries on every push to main.
 # Publishes to:
 #   - APT repository:      https://webwiebe.nl/apt/  (via rapid-root centralized workflow)
-#   - Homebrew tap (MinIO): https://webwiebe.nl/brew/bugbarn-darwin-*.tar.gz
+#   - Homebrew tap (Cloudflare R2): https://webwiebe.nl/brew/bugbarn-darwin-*.tar.gz
 #   - Homebrew tap (GitHub): webwiebe/homebrew-bugbarn Formula/bugbarn.rb
 #   - GitHub Releases:     attached .deb and .tar.gz files
 #
 # APT publishing is delegated to wiebe-xyz/rapid-root via repository_dispatch —
-# no MinIO credentials or GPG keys needed here for APT.
-# Brew tarballs are uploaded directly to MinIO (bucket: webwiebe-apt-repository,
+# no R2 credentials or GPG keys needed here for APT.
+# Brew tarballs are uploaded directly to R2 (bucket: webwiebe-apt-repository-production,
 # under the brew/ prefix). No --delete flag is ever used, so other apps' files
 # in the shared bucket are never touched.
 #
 # Required GitHub secrets:
 #   RAPID_ROOT_DISPATCH_TOKEN  — PAT with repo scope on wiebe-xyz/rapid-root
-#   MINIO_ACCESS_KEY           — MinIO user: webwiebe-apt
-#   MINIO_SECRET_KEY           — MinIO password for webwiebe-apt
-#   MINIO_ENDPOINT             — https://s3.wiebe.xyz
-#   MINIO_BUCKET               — webwiebe-apt-repository
+#   R2_ACCESS_KEY              — Cloudflare R2 S3 access key
+#   R2_SECRET_KEY              — Cloudflare R2 S3 secret key
+#   R2_ENDPOINT                — R2 account endpoint
+#   R2_BUCKET                  — webwiebe-apt-repository-production
 #   TAP_GITHUB_TOKEN           — PAT with repo scope on wiebe-xyz/homebrew-buddy-tools
 
 on:
@@ -285,10 +285,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ---------------------------------------------------------------------------
-  # macOS: publish tarballs + formula to MinIO and GitHub Homebrew tap
+  # macOS: publish tarballs + formula to R2 and GitHub Homebrew tap
   # ---------------------------------------------------------------------------
   update-brew-repo:
-    name: Update Homebrew Tap (MinIO)
+    name: Update Homebrew Tap (R2)
     runs-on: [self-hosted, build]
     needs: [tag, build-darwin-tarballs]
     steps:
@@ -365,12 +365,13 @@ jobs:
           end
           EOF
 
-      - name: Deploy to MinIO (brew/ prefix — only adds bugbarn files)
+      - name: Deploy to R2 (brew/ prefix — only adds bugbarn files)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_SECRET_KEY }}
-          AWS_ENDPOINT_URL: ${{ secrets.MINIO_ENDPOINT }}
-          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           # The self-hosted runner's Homebrew Python is PEP-668 externally-managed,
           # so install awscli into a throwaway venv rather than the global env.
@@ -378,14 +379,14 @@ jobs:
           . .ci-venv/bin/activate
           pip install awscli
           # Use cp per-file instead of sync to avoid the LIST operation
-          # that consistently times out against the MinIO endpoint from
-          # GitHub Actions runners. --no-delete behaviour is preserved
+          # that would otherwise inspect the whole destination. --no-delete
+          # behaviour is preserved
           # since we only upload, never remove.
           find brew-repo -type f | while read f; do
             key="${f#brew-repo/}"
             aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp \
               "$f" \
-              "s3://${MINIO_BUCKET}/brew/${key}" \
+              "s3://${R2_BUCKET}/brew/${key}" \
               --cache-control "public, max-age=3600, must-revalidate"
           done
 
