@@ -378,19 +378,13 @@ The `BUGBARN_MAX_SPOOL_BYTES` environment variable sets an additional byte limit
 
 ---
 
-## Litestream Replication
+## Disaster Recovery
 
-BugBarn does not bundle any replication logic. Continuous off-site replication is handled by [Litestream](https://litestream.io/), a separate binary that streams SQLite WAL frames to an object store (S3, GCS, Azure Blob, SFTP, etc.) in near-real time.
-
-Litestream is configured entirely via its own configuration file or environment variables. BugBarn has no knowledge of it; BugBarn simply operates on the SQLite file as normal. Common Litestream environment variables used alongside BugBarn deployments:
-
-| Variable | Purpose |
-|---|---|
-| `LITESTREAM_ACCESS_KEY_ID` | S3-compatible access key |
-| `LITESTREAM_SECRET_ACCESS_KEY` | S3-compatible secret key |
-| `LITESTREAM_REPLICA_URL` | Replica destination (e.g. `s3://bucket/bugbarn.db`) |
-
-See the [Litestream documentation](https://litestream.io/reference/config/) for the full reference.
+BugBarn does not continuously replicate its SQLite WAL. The writer bounds WAL
+growth with periodic checkpoints, while the production settings-snapshot CronJob
+stores an hourly, settings-only database snapshot in the `barn-backups` Cloudflare
+R2 bucket. See [the disaster-recovery guide](../deployment/disaster-recovery.md)
+for retention and restore steps.
 
 ---
 

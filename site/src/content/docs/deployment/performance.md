@@ -80,7 +80,7 @@ BugBarn has no minimum hardware requirement. The following tiers reflect typical
 
 BugBarn does not support horizontal scaling — it runs as a single binary with a single SQLite file and a single writer. Vertical scaling (more RAM, faster disk) is the path to higher throughput. If you need multi-region active-active ingestion, BugBarn is the wrong tool.
 
-For disaster recovery, use **Litestream** to replicate the SQLite WAL to object storage. This provides a continuous backup and allows point-in-time restore. See [kubernetes.md](kubernetes.md) for a Litestream configuration example.
+For disaster recovery, use the hourly settings-only snapshot documented in [disaster-recovery.md](disaster-recovery.md). It protects configuration but does not provide continuous replication or point-in-time restore.
 
 ---
 
@@ -93,7 +93,7 @@ For disaster recovery, use **Litestream** to replicate the SQLite WAL to object 
 | Facet values per key | 10,000 distinct values | New values beyond the limit are silently dropped |
 | Log entries per project | 10,000 | Oldest entries are trimmed on each insert |
 | Concurrent writers | 1 (background worker) | By design; additional writers would cause SQLite contention |
-| Horizontal replicas | 1 | Single binary, single SQLite file; use Litestream for read replicas |
+| Horizontal replicas | 1 | Single binary, single SQLite file |
 
 ---
 
