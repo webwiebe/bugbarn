@@ -53,6 +53,16 @@ jobs:
 
       - uses: actions/configure-pages@v5
 
+      # upload-pages-artifact uses GNU tar (`gtar`) to create the Pages bundle.
+      # macOS self-hosted runners provide BSD tar as `tar`, so ensure GNU tar is
+      # available before invoking the action.
+      - name: Ensure GNU tar for Pages artifact
+        run: |
+          if ! command -v gtar >/dev/null 2>&1; then
+            brew install gnu-tar
+          fi
+          gtar --version
+
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site/dist/
