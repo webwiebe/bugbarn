@@ -31,6 +31,20 @@ func TestProcessRecordNormalizesAndFingerprints(t *testing.T) {
 	}
 }
 
+func TestProcessRecordPreservesReporterFingerprint(t *testing.T) {
+	processed, err := ProcessRecord(spool.Record{
+		IngestID:   "ing-alertmanager",
+		ReceivedAt: time.Now().UTC(),
+		BodyBase64: base64.StdEncoding.EncodeToString([]byte(`{"body":"rule: summary","fingerprint":"alertmanager:abc"}`)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := processed.Fingerprint, "alertmanager:abc"; got != want {
+		t.Fatalf("fingerprint = %q, want %q", got, want)
+	}
+}
+
 func TestProcessRecordsStopsOnInvalidRecord(t *testing.T) {
 	_, err := ProcessRecords([]spool.Record{
 		{IngestID: "bad", BodyBase64: "not-base64"},

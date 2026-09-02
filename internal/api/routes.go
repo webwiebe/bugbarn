@@ -17,6 +17,9 @@ func (s *Server) serveSpecialEndpoint(w http.ResponseWriter, r *http.Request) bo
 	if s.serveEventsIngestEndpoint(w, r) {
 		return true
 	}
+	if s.serveAlertmanagerIngestEndpoint(w, r) {
+		return true
+	}
 	if s.serveLogsIngestEndpoint(w, r) {
 		return true
 	}
@@ -52,6 +55,32 @@ func (s *Server) serveSpecialEndpoint(w http.ResponseWriter, r *http.Request) bo
 	}
 
 	return false
+}
+
+// serveAlertmanagerIngestEndpoint accepts Alertmanager's batch webhook format.
+func (s *Server) serveAlertmanagerIngestEndpoint(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != "/api/v1/alertmanager" {
+		return false
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return true
+	}
+	if s.ingestHandler != nil && !s.ingestHandler.ValidAPIKey(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return true
+	}
+	if s.ingestSpool != nil {
+		s.ingestSpool.Forward(w, r)
+		return true
+	}
+	if s.writeForwarder != nil {
+		s.writeForwarder.Forward(w, r)
+		return true
+	}
+	s.ingestHandler.ServeAlertmanagerHTTP(w, r)
+	return true
 }
 
 // serveEventsIngestEndpoint handles /api/v1/events with wildcard CORS so browser

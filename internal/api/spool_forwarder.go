@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
 	"github.com/wiebe-xyz/bugbarn/internal/normalize"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
@@ -193,6 +194,12 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 
 	if kindForPath(r.URL.Path) == queue.KindEvent {
 		if err := normalize.Validate(body); err != nil {
+			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+			return
+		}
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/alertmanager") {
+		if _, err := ingest.AlertmanagerEvents(body); err != nil {
 			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 			return
 		}
@@ -409,6 +416,9 @@ func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) err
 // publishOne converts a spooled ingest request into a queue.Item and LPUSHes it.
 // Returning nil acks the record (cursor advances); returning an error retries.
 func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) error {
+	if strings.HasPrefix(rec.Path, "/api/v1/alertmanager") {
+		return s.publishAlertmanager(ctx, rec)
+	}
 	kind := kindForPath(rec.Path)
 	if kind == "" {
 		// Not an ingest path we route through the queue — drop and advance.

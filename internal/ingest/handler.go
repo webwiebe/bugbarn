@@ -200,7 +200,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes))
 	if err != nil {
@@ -261,6 +261,61 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	recordIngestReceived(ctx, "accepted")
 	h.trackEventIngested(projectID, scope, record.ProjectSlug)
 	ingestresp.WriteAccepted(w, record.IngestID)
+}
+
+// ServeAlertmanagerHTTP accepts an Alertmanager webhook envelope and appends
+// one native event record per alert in a single durable spool write.
+func (h *Handler) ServeAlertmanagerHTTP(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.auth == nil || h.spool == nil {
+		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	projectID, scope, ok := h.APIKeyProjectScope(r)
+	if !ok {
+		ingestresp.WriteDropped(w, ingestresp.DropUnauthorized)
+		return
+	}
+	defer func() { _ = r.Body.Close() }()
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes))
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			ingestresp.WriteDropped(w, ingestresp.DropTooLarge)
+			return
+		}
+		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+		return
+	}
+	payloads, err := AlertmanagerEvents(body)
+	if err != nil {
+		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+		return
+	}
+	now := h.now().UTC()
+	records := make([]spool.Record, 0, len(payloads))
+	for _, payload := range payloads {
+		records = append(records, spool.Record{
+			IngestID: h.idFn(), ReceivedAt: now, ContentType: "application/json",
+			RemoteAddr: r.RemoteAddr, ContentLength: int64(len(payload)),
+			BodyBase64:  base64.StdEncoding.EncodeToString(payload),
+			ProjectSlug: r.Header.Get("x-bugbarn-project"),
+		})
+	}
+	if err := h.spool.AppendBatch(records); err != nil {
+		if errors.Is(err, spool.ErrFull) {
+			ingestresp.WriteDropped(w, ingestresp.DropSpoolFull)
+			return
+		}
+		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+		return
+	}
+	h.trackEventIngested(projectID, scope, r.Header.Get("x-bugbarn-project"))
+	ingestresp.WriteAccepted(w, "")
 }
 
 func generateIngestID() string {
