@@ -10,8 +10,11 @@ name: Binary Release
 # APT publishing is delegated to wiebe-xyz/rapid-root via repository_dispatch —
 # no R2 credentials or GPG keys needed here for APT.
 # Brew tarballs are uploaded directly to R2 (bucket: webwiebe-apt-repository-production,
-# under the brew/ prefix). No --delete flag is ever used, so other apps' files
-# in the shared bucket are never touched.
+# under the brew/ prefix). Uploads never touch other apps' files — each
+# upload/prune is scoped to this tool's own name+arch prefixes, never a
+# bucket-wide sync/LIST. After uploading, only the newest 2 versions of
+# each tarball are kept (the bucket's 5GB retention policy — see
+# rapid-root's infra/docs/apt-repository.md), older ones are deleted.
 #
 # Required GitHub secrets:
 #   RAPID_ROOT_DISPATCH_TOKEN  — PAT with repo scope on wiebe-xyz/rapid-root
@@ -388,6 +391,38 @@ jobs:
               "$f" \
               "s3://${R2_BUCKET}/brew/${key}" \
               --cache-control "public, max-age=3600, must-revalidate"
+          done
+
+      - name: Prune old brew tarballs from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          . .ci-venv/bin/activate
+          # Keep only the newest 2 versions of each tarball this job
+          # publishes, matching the bucket's 5GB retention policy
+          # (rapid-root#2799 / infra/docs/apt-repository.md). Scoped to our
+          # own name+arch prefixes — a targeted list per prefix, never a
+          # bucket-wide LIST — same care the deploy step above takes.
+          KEEP=2
+          for GROUP in bugbarn-darwin-amd64 bugbarn-darwin-arm64 bb-darwin-amd64 bb-darwin-arm64; do
+            aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
+              --bucket "$R2_BUCKET" --prefix "brew/${GROUP}-" \
+              --query 'Contents[].Key' --output text 2>/dev/null \
+              | tr '\t' '\n' | grep -E '\.tar\.gz$' | sort -V > /tmp/versions.txt || true
+
+            COUNT=$(wc -l < /tmp/versions.txt)
+            DROP=$((COUNT - KEEP))
+            if [ "$DROP" -gt 0 ]; then
+              head -n "$DROP" /tmp/versions.txt | while read -r key; do
+                echo "Pruning old brew tarball: $key"
+                aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${R2_BUCKET}/${key}"
+                aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${R2_BUCKET}/${key}.sha256" || true
+              done
+            fi
           done
 
   update-homebrew-tap:
