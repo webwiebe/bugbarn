@@ -168,10 +168,10 @@ steps:
           KEY=$${f#brew-repo/}
           aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "$f" "s3://$R2_BUCKET/brew/$KEY" --cache-control "public, max-age=3600, must-revalidate"
         done
-        # Keep only the newest 2 versions of each tarball this pipeline
+        # Keep only the newest 10 versions of each tarball this pipeline
         # publishes — the bucket's 5GB retention policy (rapid-root#2839).
         # Scoped to our own name+arch prefixes, never a bucket-wide LIST.
-        KEEP=2
+        KEEP=10
         for GROUP in bugbarn-darwin-amd64 bugbarn-darwin-arm64 bb-darwin-amd64 bb-darwin-arm64; do
           aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
             --bucket "$R2_BUCKET" --prefix "brew/$GROUP-" \

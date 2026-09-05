@@ -13,7 +13,7 @@ name: Binary Release
 # webwiebe-apt-repository-production, under the brew/ prefix). That prefix is
 # shared with every other publisher, so uploads and prunes are scoped to this
 # tool's own name+arch prefixes — never a bucket-wide sync or LIST, and never
-# --delete. Only the newest 2 versions of each tarball are kept, matching the
+# --delete. Only the newest 10 versions of each tarball are kept, matching the
 # bucket's 5GB retention policy (wiebe-xyz/rapid-root#2839).
 #
 # Required GitHub secrets:
@@ -407,11 +407,11 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           . .ci-venv/bin/activate
-          # Keep only the newest 2 versions of each tarball this job publishes,
+          # Keep only the newest 10 versions of each tarball this job publishes,
           # matching the bucket's 5GB retention policy (rapid-root#2839).
           # Scoped to our own name+arch prefixes — a targeted list per prefix,
           # never a bucket-wide LIST.
-          KEEP=2
+          KEEP=10
           for GROUP in bugbarn-darwin-amd64 bugbarn-darwin-arm64 bb-darwin-amd64 bb-darwin-arm64; do
             aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
               --bucket "$R2_BUCKET" --prefix "brew/${GROUP}-" \
