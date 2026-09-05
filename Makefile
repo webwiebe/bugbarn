@@ -265,6 +265,10 @@ woodpecker-secrets-sync:
 	put ghcr_token            "$$(get ghcr_token)"; \
 	put ghcr_pull_pat         "$$(get ghcr_pull_pat)"; \
 	put bugbarn_api_key       "$$(get bugbarn_api_key)"; \
+	put r2_access_key         "$$(get r2_access_key)"; \
+	put r2_secret_key         "$$(get r2_secret_key)"; \
+	put r2_endpoint           "$$(get r2_endpoint)"; \
+	put r2_bucket             "$$(get r2_bucket)"; \
 	put sops_age_key_testing    "$$AGE_KEY"; \
 	put sops_age_key_staging    "$$AGE_KEY"; \
 	put sops_age_key_production  "$$AGE_KEY"; \

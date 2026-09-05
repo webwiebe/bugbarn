@@ -3,22 +3,25 @@ name: Binary Release
 # Builds and publishes bugbarn binaries on every push to main.
 # Publishes to:
 #   - APT repository:      https://webwiebe.nl/apt/  (via rapid-root centralized workflow)
-#   - Homebrew tap (MinIO): https://webwiebe.nl/brew/bugbarn-darwin-*.tar.gz
+#   - Homebrew tap (Cloudflare R2): https://webwiebe.nl/brew/bugbarn-darwin-*.tar.gz
 #   - Homebrew tap (GitHub): webwiebe/homebrew-bugbarn Formula/bugbarn.rb
 #   - GitHub Releases:     attached .deb and .tar.gz files
 #
 # APT publishing is delegated to wiebe-xyz/rapid-root via repository_dispatch —
-# no MinIO credentials or GPG keys needed here for APT.
-# Brew tarballs are uploaded directly to MinIO (bucket: webwiebe-apt-repository,
-# under the brew/ prefix). No --delete flag is ever used, so other apps' files
-# in the shared bucket are never touched.
+# no R2 credentials or GPG keys needed here for APT.
+# Brew tarballs are uploaded directly to R2 (bucket:
+# webwiebe-apt-repository-production, under the brew/ prefix). That prefix is
+# shared with every other publisher, so uploads and prunes are scoped to this
+# tool's own name+arch prefixes — never a bucket-wide sync or LIST, and never
+# --delete. Only the newest 2 versions of each tarball are kept, matching the
+# bucket's 5GB retention policy (wiebe-xyz/rapid-root#2839).
 #
 # Required GitHub secrets:
 #   RAPID_ROOT_DISPATCH_TOKEN  — PAT with repo scope on wiebe-xyz/rapid-root
-#   MINIO_ACCESS_KEY           — MinIO user: webwiebe-apt
-#   MINIO_SECRET_KEY           — MinIO password for webwiebe-apt
-#   MINIO_ENDPOINT             — https://s3.wiebe.xyz
-#   MINIO_BUCKET               — webwiebe-apt-repository
+#   R2_ACCESS_KEY              — Cloudflare R2 S3 access key
+#   R2_SECRET_KEY              — Cloudflare R2 S3 secret key
+#   R2_ENDPOINT                — R2 account S3 endpoint
+#   R2_BUCKET                  — webwiebe-apt-repository-production
 #   TAP_GITHUB_TOKEN           — PAT with repo scope on wiebe-xyz/homebrew-buddy-tools
 
 on:
@@ -285,10 +288,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ---------------------------------------------------------------------------
-  # macOS: publish tarballs + formula to MinIO and GitHub Homebrew tap
+  # macOS: publish tarballs + formula to R2 and GitHub Homebrew tap
   # ---------------------------------------------------------------------------
   update-brew-repo:
-    name: Update Homebrew Tap (MinIO)
+    name: Update Homebrew Tap (R2)
     runs-on: [self-hosted, build]
     needs: [tag, build-darwin-tarballs]
     steps:
@@ -365,28 +368,67 @@ jobs:
           end
           EOF
 
-      - name: Deploy to MinIO (brew/ prefix — only adds bugbarn files)
+      - name: Deploy to R2 (brew/ prefix — only adds bugbarn files)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_SECRET_KEY }}
-          AWS_ENDPOINT_URL: ${{ secrets.MINIO_ENDPOINT }}
-          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
+          for var in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL R2_BUCKET; do
+            if [ -z "${!var}" ]; then
+              echo "ERROR: ${var} is empty — the R2_* secrets must be configured on this repo."
+              exit 1
+            fi
+          done
           # The self-hosted runner's Homebrew Python is PEP-668 externally-managed,
           # so install awscli into a throwaway venv rather than the global env.
           python3 -m venv .ci-venv
           . .ci-venv/bin/activate
           pip install awscli
-          # Use cp per-file instead of sync to avoid the LIST operation
-          # that consistently times out against the MinIO endpoint from
-          # GitHub Actions runners. --no-delete behaviour is preserved
-          # since we only upload, never remove.
+          # cp per-file rather than sync: the brew/ prefix is shared with every
+          # other publisher, and sync LISTs the whole destination to compute a
+          # delta. cp touches only our own keys.
           find brew-repo -type f | while read f; do
             key="${f#brew-repo/}"
             aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp \
               "$f" \
-              "s3://${MINIO_BUCKET}/brew/${key}" \
+              "s3://${R2_BUCKET}/brew/${key}" \
               --cache-control "public, max-age=3600, must-revalidate"
+          done
+
+      - name: Prune old brew tarballs from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          . .ci-venv/bin/activate
+          # Keep only the newest 2 versions of each tarball this job publishes,
+          # matching the bucket's 5GB retention policy (rapid-root#2839).
+          # Scoped to our own name+arch prefixes — a targeted list per prefix,
+          # never a bucket-wide LIST.
+          KEEP=2
+          for GROUP in bugbarn-darwin-amd64 bugbarn-darwin-arm64 bb-darwin-amd64 bb-darwin-arm64; do
+            aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
+              --bucket "$R2_BUCKET" --prefix "brew/${GROUP}-" \
+              --query 'Contents[].Key' --output text 2>/dev/null \
+              | tr '\t' '\n' | grep -E '\.tar\.gz$' | sort -V > /tmp/${GROUP}-versions.txt || true
+
+            COUNT=$(wc -l < /tmp/${GROUP}-versions.txt)
+            DROP=$((COUNT - KEEP))
+            if [ "$DROP" -gt 0 ]; then
+              head -n "$DROP" /tmp/${GROUP}-versions.txt | while read -r key; do
+                echo "Pruning old brew tarball: $key"
+                aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${R2_BUCKET}/${key}"
+                aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${R2_BUCKET}/${key}.sha256" || true
+              done
+            else
+              echo "${GROUP}: ${COUNT} tarball(s) in R2, nothing to prune."
+            fi
           done
 
   update-homebrew-tap:
