@@ -19,14 +19,20 @@ keychain-free `DOCKER_CONFIG` trick all work unchanged.
 | `release.yaml` | tag `v*` | `release.yml` (retag + deploy staging) |
 | `deploy-production.yaml` | manual | `deploy-production.yml` |
 | `tag-check.yaml` | tag | `tag-check.yml` |
+| `binary-release.yaml` | push main, manual | `binary-release.yml` (GitHub Releases + Homebrew tap + rapid-root APT dispatch) |
 
 ### Still on GitHub Actions (intentionally)
 
-`deploy-site.yml` (GitHub **Pages**) and `binary-release.yml` (GitHub
-**Releases** + Homebrew tap + rapid-root APT dispatch) are bound to
-GitHub-platform features. They keep running on GitHub, fed by the Gitea→GitHub
-**push-mirror**. Porting them means re-hosting the docs site off Pages and
-re-pointing release distribution — tracked as a follow-up, not part of this cut.
+`deploy-site.yml` (GitHub **Pages**) is bound to a GitHub-platform feature and
+keeps running on GitHub, fed by the Gitea→GitHub **push-mirror**. Porting it
+means re-hosting the docs site off Pages — tracked as a follow-up, not part of
+this cut.
+
+`binary-release.yml` also stays in the repo as a disabled GitHub Actions
+mirror: kept in sync with `binary-release.yaml` (same secrets, same R2/APT
+destinations) so the workflow definition doesn't rot, but the enabled,
+validated pipeline that actually runs on every push to `main` is
+`binary-release.yaml` on Woodpecker.
 
 ## Required Woodpecker secrets (repo scope)
 
@@ -42,6 +48,12 @@ pipelines can't read them.
 | `sops_age_key_staging` | age private key (staging) | release deploy |
 | `sops_age_key_production` | age private key (production) | production deploy |
 | `bugbarn_api_key` | BugBarn release-marker API key | all deploys |
+| `github_token` | GitHub PAT (`release_tag_pat`) — GitHub releases/tap/dispatch/tag | binary-release |
+| `gitea_token` | Push the bump tag to Gitea, triggering `release.yaml` | binary-release |
+| `r2_access_key` | Cloudflare R2 S3 access key | binary-release (brew CDN) |
+| `r2_secret_key` | Cloudflare R2 S3 secret key | binary-release (brew CDN) |
+| `r2_endpoint` | R2 account S3 endpoint | binary-release (brew CDN) |
+| `r2_bucket` | R2 bucket name, `webwiebe-apt-repository-production` | binary-release (brew CDN) |
 
 SSH keys are **not** secrets — they're already on the Mac Mini host (`~/.ssh`),
 reused by the local backend. `BUGBARN_ENDPOINT` is hardcoded (`https://bugbarn.wiebe.xyz`).
