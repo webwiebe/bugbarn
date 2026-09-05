@@ -420,15 +420,27 @@ jobs:
 
             COUNT=$(wc -l < /tmp/${GROUP}-versions.txt)
             DROP=$((COUNT - KEEP))
-            if [ "$DROP" -gt 0 ]; then
-              head -n "$DROP" /tmp/${GROUP}-versions.txt | while read -r key; do
-                echo "Pruning old brew tarball: $key"
-                aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${R2_BUCKET}/${key}"
-                aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${R2_BUCKET}/${key}.sha256" || true
-              done
-            else
+            if [ "$DROP" -le 0 ]; then
               echo "${GROUP}: ${COUNT} tarball(s) in R2, nothing to prune."
+              continue
             fi
+            head -n "$DROP" /tmp/${GROUP}-versions.txt > /tmp/${GROUP}-drop.txt
+            echo "${GROUP}: ${COUNT} tarball(s), pruning ${DROP}, keeping newest ${KEEP}."
+            # Batch DeleteObjects rather than `s3 rm` per key: one process spawn
+            # per object took ~7s under load and the step was killed mid-prune.
+            # 400 tarballs per chunk = 800 keys with their .sha256 siblings,
+            # under the 1000-key limit. Deleting an absent .sha256 is not an
+            # error, so no per-key existence check is needed.
+            rm -f /tmp/${GROUP}-chunk.*
+            split -l 400 /tmp/${GROUP}-drop.txt /tmp/${GROUP}-chunk.
+            for CHUNK in /tmp/${GROUP}-chunk.*; do
+              awk 'BEGIN { printf "{\"Objects\":[" }
+                   { printf "%s{\"Key\":\"%s\"},{\"Key\":\"%s.sha256\"}", (NR>1 ? "," : ""), $0, $0 }
+                   END { printf "],\"Quiet\":true}" }' "$CHUNK" > "$CHUNK.json"
+              aws --endpoint-url "$AWS_ENDPOINT_URL" s3api delete-objects \
+                --bucket "$R2_BUCKET" --delete "file://$CHUNK.json" >/dev/null
+              echo "  deleted $(wc -l < "$CHUNK") tarball(s) and their .sha256 files"
+            done
           done
 
   update-homebrew-tap:

@@ -168,27 +168,6 @@ steps:
           KEY=$${f#brew-repo/}
           aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "$f" "s3://$R2_BUCKET/brew/$KEY" --cache-control "public, max-age=3600, must-revalidate"
         done
-        # Keep only the newest 10 versions of each tarball this pipeline
-        # publishes — the bucket's 5GB retention policy (rapid-root#2839).
-        # Scoped to our own name+arch prefixes, never a bucket-wide LIST.
-        KEEP=10
-        for GROUP in bugbarn-darwin-amd64 bugbarn-darwin-arm64 bb-darwin-amd64 bb-darwin-arm64; do
-          aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
-            --bucket "$R2_BUCKET" --prefix "brew/$GROUP-" \
-            --query 'Contents[].Key' --output text 2>/dev/null \
-            | tr '\t' '\n' | grep -E '\.tar\.gz$$' | sort -V > /tmp/$GROUP.txt || true
-          COUNT=$$(wc -l < /tmp/$GROUP.txt)
-          DROP=$$((COUNT - KEEP))
-          if [ "$DROP" -gt 0 ]; then
-            head -n "$DROP" /tmp/$GROUP.txt | while read -r key; do
-              echo "Pruning old brew tarball: $key"
-              aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://$R2_BUCKET/$key"
-              aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://$R2_BUCKET/$key.sha256" || true
-            done
-          else
-            echo "$GROUP: $COUNT tarball(s) in R2, nothing to prune."
-          fi
-        done
 
   - name: homebrew-tap
     image: bash
@@ -208,3 +187,55 @@ steps:
         git config user.email ci@wiebe.xyz
         git add Formula/bugbarn.rb Formula/bb.rb
         if git diff --staged --quiet; then echo "no formula changes"; else git commit -m "Update formula to $VERSION_NUM"; git push; fi
+
+  # Retention runs AFTER the tap is published, and never with `s3 rm` per
+  # object: one process spawn per key took ~7s under load and the step was
+  # killed mid-prune, which cancelled homebrew-tap and left the tap stale.
+  # DeleteObjects removes up to 1000 keys per call, so a group is one request.
+  # Keeps the newest 10 versions of each tarball this pipeline publishes, per
+  # the bucket's 5GB retention policy (rapid-root#2839). Scoped to our own
+  # name+arch prefixes, never a bucket-wide LIST.
+  - name: r2-brew-prune
+    image: bash
+    environment:
+      AWS_ACCESS_KEY_ID:
+        from_secret: r2_access_key
+      AWS_SECRET_ACCESS_KEY:
+        from_secret: r2_secret_key
+      AWS_DEFAULT_REGION: auto
+      AWS_ENDPOINT_URL:
+        from_secret: r2_endpoint
+      R2_BUCKET:
+        from_secret: r2_bucket
+    commands:
+      - |
+        set -euo pipefail
+        . .ci-venv/bin/activate
+        KEEP=10
+        for GROUP in bugbarn-darwin-amd64 bugbarn-darwin-arm64 bb-darwin-amd64 bb-darwin-arm64; do
+          aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" --prefix "brew/$GROUP-" \
+            --query 'Contents[].Key' --output text 2>/dev/null \
+            | tr '\t' '\n' | grep -E '\.tar\.gz$$' | sort -V > /tmp/$GROUP.txt || true
+          COUNT=$$(wc -l < /tmp/$GROUP.txt)
+          DROP=$$((COUNT - KEEP))
+          if [ "$DROP" -le 0 ]; then
+            echo "$GROUP: $COUNT tarball(s) in R2, nothing to prune."
+            continue
+          fi
+          head -n "$DROP" /tmp/$GROUP.txt > /tmp/$GROUP.drop
+          echo "$GROUP: $COUNT tarball(s), pruning $DROP, keeping newest $KEEP."
+          # 400 tarballs per chunk = 800 keys with their .sha256 siblings,
+          # under the 1000-key DeleteObjects limit. Deleting an absent
+          # .sha256 is not an error, so no per-key existence check is needed.
+          rm -f /tmp/$GROUP.chunk.*
+          split -l 400 /tmp/$GROUP.drop /tmp/$GROUP.chunk.
+          for CHUNK in /tmp/$GROUP.chunk.*; do
+            awk 'BEGIN { printf "{\"Objects\":[" }
+                 { printf "%s{\"Key\":\"%s\"},{\"Key\":\"%s.sha256\"}", (NR>1 ? "," : ""), $$0, $$0 }
+                 END { printf "],\"Quiet\":true}" }' "$CHUNK" > "$CHUNK.json"
+            aws --endpoint-url "$AWS_ENDPOINT_URL" s3api delete-objects \
+              --bucket "$R2_BUCKET" --delete "file://$CHUNK.json" >/dev/null
+            echo "  deleted $$(wc -l < "$CHUNK") tarball(s) and their .sha256 files"
+          done
+        done
