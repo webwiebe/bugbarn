@@ -1,6 +1,6 @@
 # Binary release — ported from .github/workflows/binary-release.yml to Woodpecker.
 # Auto-bumps a patch tag, builds linux .debs + macOS tarballs, and publishes to
-# GitHub Releases, the rapid-root APT repo, MinIO (brew CDN) and the Homebrew tap.
+# GitHub Releases, the rapid-root APT repo, Cloudflare R2 (brew CDN) and the Homebrew tap.
 #
 # The 7 GitHub jobs (which passed files via upload/download-artifact) are collapsed
 # into ONE workflow whose steps share the workspace. Mac Mini build agent (local
@@ -10,7 +10,7 @@
 #
 # Secrets: github_token (release_tag_pat — GitHub releases/tap/dispatch/tag),
 # gitea_token (push the bump tag to Gitea -> triggers release.yaml staging deploy),
-# minio_access_key/minio_secret_key/minio_endpoint/minio_bucket.
+# r2_access_key/r2_secret_key/r2_endpoint/r2_bucket.
 # Release on every push to main (validated on Woodpecker; the GitHub
 # binary-release workflow is disabled). Also runnable manually.
 when:
@@ -127,17 +127,18 @@ steps:
           --field "client_payload[tag]=$VERSION" \
           --field 'client_payload[asset_pattern]=*.deb'
 
-  - name: minio-brew-cdn
+  - name: r2-brew-cdn
     image: bash
     environment:
       AWS_ACCESS_KEY_ID:
-        from_secret: minio_access_key
+        from_secret: r2_access_key
       AWS_SECRET_ACCESS_KEY:
-        from_secret: minio_secret_key
+        from_secret: r2_secret_key
+      AWS_DEFAULT_REGION: auto
       AWS_ENDPOINT_URL:
-        from_secret: minio_endpoint
-      MINIO_BUCKET:
-        from_secret: minio_bucket
+        from_secret: r2_endpoint
+      R2_BUCKET:
+        from_secret: r2_bucket
     commands:
       - |
         set -euo pipefail
@@ -154,9 +155,39 @@ steps:
         gen_formula Bugbarn bugbarn bugbarn "$AMD64_SHA" "$ARM64_SHA"
         gen_formula Bb bb bb "$BB_AMD64_SHA" "$BB_ARM64_SHA"
         python3 -m venv .ci-venv && . .ci-venv/bin/activate && pip install -q awscli
+        for var in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL R2_BUCKET; do
+          eval "v=\$$$var"
+          if [ -z "$v" ]; then
+            echo "ERROR: $var is empty — the r2_* Woodpecker secrets must be set."
+            exit 1
+          fi
+        done
+        # cp per file, never `s3 sync`: the brew/ prefix is shared with every
+        # other publisher and sync LISTs the whole destination to compute a delta.
         find brew-repo -type f | while read -r f; do
           KEY=$${f#brew-repo/}
-          aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "$f" "s3://$MINIO_BUCKET/brew/$KEY" --cache-control "public, max-age=3600, must-revalidate"
+          aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "$f" "s3://$R2_BUCKET/brew/$KEY" --cache-control "public, max-age=3600, must-revalidate"
+        done
+        # Keep only the newest 2 versions of each tarball this pipeline
+        # publishes — the bucket's 5GB retention policy (rapid-root#2839).
+        # Scoped to our own name+arch prefixes, never a bucket-wide LIST.
+        KEEP=2
+        for GROUP in bugbarn-darwin-amd64 bugbarn-darwin-arm64 bb-darwin-amd64 bb-darwin-arm64; do
+          aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" --prefix "brew/$GROUP-" \
+            --query 'Contents[].Key' --output text 2>/dev/null \
+            | tr '\t' '\n' | grep -E '\.tar\.gz$$' | sort -V > /tmp/$GROUP.txt || true
+          COUNT=$$(wc -l < /tmp/$GROUP.txt)
+          DROP=$$((COUNT - KEEP))
+          if [ "$DROP" -gt 0 ]; then
+            head -n "$DROP" /tmp/$GROUP.txt | while read -r key; do
+              echo "Pruning old brew tarball: $key"
+              aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://$R2_BUCKET/$key"
+              aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://$R2_BUCKET/$key.sha256" || true
+            done
+          else
+            echo "$GROUP: $COUNT tarball(s) in R2, nothing to prune."
+          fi
         done
 
   - name: homebrew-tap
