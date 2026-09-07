@@ -220,7 +220,12 @@ h2 {
   padding: 10px 8px;
   border-right: 1px solid var(--line);
   background: #1d1e16;
-  overflow: hidden;
+  /* Not `hidden`: the user menu at the bottom opens a dropdown wider than the
+     sidebar, which a clipping ancestor would cut off. The nav clips itself. */
+  overflow: visible;
+  /* `overflow: hidden` used to supply this implicitly. Without it the grid track
+     cannot shrink to the collapsed width past its content's min-content size. */
+  min-width: 0;
 }
 
 .side-top {
@@ -245,6 +250,9 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* The hosted user menu's trigger is wider than the collapsed sidebar; let this
+     row shrink to the track so the trigger ellipsizes instead of overhanging. */
+  min-width: 0;
 }
 
 .user-avatar-wrap {
@@ -350,6 +358,8 @@ h2 {
   display: grid;
   align-content: start;
   gap: 4px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .side-nav a {
@@ -2507,10 +2517,22 @@ button.settings-nav-item:last-child {
   --iambarn-font: inherit;
 }
 
-/* The user menu lives in the collapsed-by-default sidebar; keep it from spilling. */
+/* The user menu lives in the collapsed-by-default sidebar. The trigger is capped
+   to the sidebar width (see MENU_PLACEMENT_CSS in iambarn.ts), but its dropdown
+   is 220px and deliberately overhangs the workspace, so it needs to paint above
+   it — the workspace is a later sibling and would otherwise cover it. */
 #iambarn-user-menu-host {
   min-width: 0;
+  position: relative;
+  z-index: 200;
   --iambarn-width: var(--sidebar-expanded);
+}
+
+/* A custom element is display: inline until told otherwise, which would let the
+   trigger size to its own content and overhang the collapsed sidebar. Block
+   gives the width: 100% in MENU_PLACEMENT_CSS something to resolve against. */
+#iambarn-user-menu-host iambarn-user-menu {
+  display: block;
 }
 
 /* The account editor gets a comfortable readable column in the main panel. */
