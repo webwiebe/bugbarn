@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -29,20 +31,19 @@ func seedEventsAt(t *testing.T, s *Store, receivedAt time.Time, n int) int64 {
 
 	ts := receivedAt.UTC().Format(time.RFC3339Nano)
 	for i := 0; i < n; i++ {
-		evRes, err := db.ExecContext(ctx, `
+		if _, err := db.ExecContext(ctx, `
 			INSERT INTO events (project_id, issue_id, fingerprint, received_at, observed_at, severity, message, event_json)
 			VALUES (?, ?, 'fp', ?, ?, 'error', 'test', '{}')`,
-			pid, issueID, ts, ts)
-		if err != nil {
+			pid, issueID, ts, ts); err != nil {
 			t.Fatalf("insert event: %v", err)
 		}
-		eventID, _ := evRes.LastInsertId()
-		// One facet per event, so the test also covers the cascade.
-		if _, err := db.ExecContext(ctx, `
-			INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value)
-			VALUES (?, ?, ?, 'tags', 'env', 'prod')`, pid, eventID, issueID); err != nil {
-			t.Fatalf("insert facet: %v", err)
-		}
+	}
+	// The facet set is per issue, not per event: one row however many events the
+	// issue has.
+	if _, err := db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO issue_facets (project_id, issue_id, facet_key, facet_value)
+		VALUES (?, ?, 'env', 'prod')`, pid, issueID); err != nil {
+		t.Fatalf("insert facet: %v", err)
 	}
 	return issueID
 }
@@ -77,10 +78,11 @@ func TestDeleteEventsBeforeRemovesOnlyExpiredEvents(t *testing.T) {
 	}
 }
 
-// The cascade is the whole reason migration 00011 exists: without an index on
-// event_facets.event_id the delete still works but degrades to a full scan per
-// row, so assert the children actually go.
-func TestDeleteEventsBeforeCascadesToFacets(t *testing.T) {
+// Facets outlive the events they were observed on. Since migration 00013 they
+// are a per-issue projection with no event_id, so expiring an issue's events
+// must not take its environments and hosts with them: the issue survives, and
+// so must the facets that make it findable.
+func TestDeleteEventsBeforeLeavesFacetsIntact(t *testing.T) {
 	s := mustOpenStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -88,14 +90,14 @@ func TestDeleteEventsBeforeCascadesToFacets(t *testing.T) {
 	seedEventsAt(t, s, now.AddDate(0, 0, -40), 4)
 	seedEventsAt(t, s, now.AddDate(0, 0, -1), 2)
 
-	if got := countRows(t, s, "event_facets"); got != 6 {
-		t.Fatalf("facets before = %d, want 6", got)
+	if got := countRows(t, s, "issue_facets"); got != 2 {
+		t.Fatalf("facets before = %d, want 2 (one per issue)", got)
 	}
 	if _, err := s.DeleteEventsBefore(ctx, now.AddDate(0, 0, -30), 100); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if got := countRows(t, s, "event_facets"); got != 2 {
-		t.Errorf("facets after = %d, want 2 — expired events' facets should cascade", got)
+	if got := countRows(t, s, "issue_facets"); got != 2 {
+		t.Errorf("facets after = %d, want 2 — the projection is not tied to events", got)
 	}
 }
 
@@ -188,16 +190,21 @@ func TestDeleteEventsBeforeRejectsReadOnlyStore(t *testing.T) {
 	}
 }
 
-// The retention sweep's cost hinges entirely on this index existing: the
-// ON DELETE CASCADE from events to event_facets has no other way to find a
-// deleted event's children than scanning the whole table.
-func TestEventFacetsEventIDIndexExists(t *testing.T) {
+// The sweep must have no facet work left to do. event_facets carried a
+// per-event ON DELETE CASCADE that made every deleted event a child lookup, and
+// needed idx_event_facets_event to keep that from being a full scan. Migration
+// 00013 removed the table and with it the cascade; if a per-event facet table
+// ever comes back, this fails and the index question comes back with it.
+func TestNoPerEventFacetTable(t *testing.T) {
 	s := mustOpenStore(t)
 	var name string
 	err := s.DB().QueryRowContext(context.Background(),
-		`SELECT name FROM sqlite_master WHERE type='index' AND name='idx_event_facets_event'`).Scan(&name)
-	if err != nil {
-		t.Fatalf("idx_event_facets_event is missing, so cascaded facet deletes fall back to a full scan: %v", err)
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='event_facets'`).Scan(&name)
+	if err == nil {
+		t.Fatal("event_facets is back: the retention sweep now cascades a facet delete per event again")
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("look up event_facets: %v", err)
 	}
 }
 

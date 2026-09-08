@@ -40,8 +40,8 @@ const (
 	sweepInterval = time.Hour
 
 	// batchSize is how many events one DELETE statement removes. Small enough
-	// that the statement (plus its cascaded event_facets deletes) occupies the
-	// single writer for tens of milliseconds, not seconds.
+	// that the statement occupies the single writer for tens of milliseconds,
+	// not seconds.
 	batchSize = 2000
 
 	// minBatchPause is the floor on the gap between batches, during which
@@ -50,8 +50,8 @@ const (
 	// It is sized by WAL growth, not by CPU. Nothing checkpoints the WAL except
 	// the writer's own TRUNCATE loop on a 60s tick, so what matters is how much
 	// a sweep can write between two checkpoints. Deleting an event row also
-	// writes its (potentially kilobyte-scale) event_json into the WAL, plus its
-	// cascaded facets. At a 200ms pause a sweep would push on the order of half
+	// writes its (potentially kilobyte-scale) event_json into the WAL. At a
+	// 200ms pause a sweep would push on the order of half
 	// a million rows through the WAL inside one checkpoint window — past the
 	// ~377MB that wedged production on 2026-07-16. A one-second pause holds it
 	// to roughly 60 batches per window instead, which the next TRUNCATE clears

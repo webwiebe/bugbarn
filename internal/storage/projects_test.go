@@ -277,11 +277,9 @@ func TestDeleteProjectWithRelatedData(t *testing.T) {
 		}
 	}
 
-	// event_facets
-	var eventID int64
-	db.QueryRowContext(ctx, `SELECT id FROM events WHERE project_id = ? LIMIT 1`, p.ID).Scan(&eventID)
-	_, err = db.ExecContext(ctx, `INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value) VALUES (?, ?, ?, 'tags', 'env', 'prod')`,
-		p.ID, eventID, issueIDs[0])
+	// issue_facets
+	_, err = db.ExecContext(ctx, `INSERT INTO issue_facets (project_id, issue_id, facet_key, facet_value) VALUES (?, ?, 'env', 'prod')`,
+		p.ID, issueIDs[0])
 	if err != nil {
 		t.Fatalf("insert facet: %v", err)
 	}
@@ -358,7 +356,7 @@ func TestDeleteProjectWithRelatedData(t *testing.T) {
 	}
 
 	// Verify cascade cleaned up child rows.
-	for _, table := range []string{"issues", "events", "event_facets", "releases", "alerts", "settings", "source_maps", "api_keys", "log_entries", "project_aliases", "analytics_pageviews", "analytics_daily"} {
+	for _, table := range []string{"issues", "events", "issue_facets", "releases", "alerts", "settings", "source_maps", "api_keys", "log_entries", "project_aliases", "analytics_pageviews", "analytics_daily"} {
 		db.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE project_id = ?`, table), p.ID).Scan(&count)
 		if count != 0 {
 			t.Errorf("table %s still has %d rows for deleted project", table, count)

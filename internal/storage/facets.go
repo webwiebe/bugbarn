@@ -12,6 +12,11 @@ import (
 const (
 	maxFacetKeysPerProject = 50
 	maxFacetValuesPerKey   = 10_000
+
+	// maxFacetValueLength bounds what the projection will store as a facet
+	// value. Anything longer is a payload, not something a human filters issues
+	// by, and it would sit in the primary key of every row that carries it.
+	maxFacetValueLength = 200
 )
 
 // extractFacets pulls a fixed set of well-known fields from an event into a
@@ -108,9 +113,11 @@ func stringFromMap(m map[string]any, key string) string {
 	return stringFromMap(nested, parts[1])
 }
 
-// PersistFacets inserts extracted facet key/value pairs for a given event into
-// event_facets, enforcing per-project cardinality caps (T030).
-func (s *core) PersistFacets(ctx context.Context, eventID int64, issueID int64, facets map[string]string) error {
+// PersistFacets records the curated facet key/value pairs for an event's issue
+// in the issue-level projection, enforcing per-project cardinality caps (T030).
+// The projection is a distinct set, so re-persisting a pair an issue already
+// carries is a no-op rather than another row.
+func (s *core) PersistFacets(ctx context.Context, issueID int64, facets map[string]string) error {
 	if len(facets) == 0 {
 		return nil
 	}
@@ -140,7 +147,10 @@ func (s *core) PersistFacets(ctx context.Context, eventID int64, issueID int64, 
 		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
 			continue
 		}
-		inserted, err := persistFacet(ctx, tx, projectID, eventID, issueID, k, v, keyCount)
+		if facetProjectionExcluded(k, v) {
+			continue
+		}
+		inserted, err := persistFacet(ctx, tx, projectID, issueID, k, v, keyCount)
 		if err != nil {
 			return err
 		}
@@ -150,6 +160,32 @@ func (s *core) PersistFacets(ctx context.Context, eventID int64, issueID int64, 
 	}
 
 	return tx.Commit()
+}
+
+// facetProjectionExcluded reports whether a key/value pair is deliberately left
+// out of the issue-level projection.
+//
+// issue_facets answers one question: which issues carry this key/value. A key
+// whose value is unique per event answers it with "exactly one issue, always",
+// so it filters nothing — while writing one row per event, which is the row
+// explosion the projection exists to undo. Production carried a distinct trace
+// id for each of 260k events. Message text is the same shape with a far larger
+// value, and a stack trace is a payload. None of it is lost: the event keeps its
+// full JSON, and the issue keeps its representative event.
+func facetProjectionExcluded(key, value string) bool {
+	switch key {
+	case "message", "traceId", "spanId":
+		return true
+	case "exception":
+		// The flattener cannot descend into event.Exception (a struct, not a
+		// map), so it renders the whole thing — type, message and every stack
+		// frame — into one value that is unique per event.
+		return true
+	}
+	if strings.HasPrefix(key, "exception.stacktrace") {
+		return true
+	}
+	return len(value) > maxFacetValueLength
 }
 
 // facetKeyCounter resolves a project's distinct facet-key count at most once per
@@ -173,7 +209,7 @@ func (c *facetKeyCounter) get() (int, error) {
 		return c.n, nil
 	}
 	if err := c.tx.QueryRowContext(c.ctx,
-		`SELECT COUNT(DISTINCT facet_key) FROM event_facets WHERE project_id = ?`,
+		`SELECT COUNT(DISTINCT facet_key) FROM issue_facets WHERE project_id = ?`,
 		c.projectID,
 	).Scan(&c.n); err != nil {
 		return 0, err
@@ -195,7 +231,7 @@ func (c *facetKeyCounter) inc() {
 // inserts it when allowed. It returns whether the inserted row introduced a new
 // facet key for the project (so the caller can bump its key count).
 func persistFacet(
-	ctx context.Context, tx *sql.Tx, projectID, eventID, issueID int64, k, v string, keyCount *facetKeyCounter,
+	ctx context.Context, tx *sql.Tx, projectID, issueID int64, k, v string, keyCount *facetKeyCounter,
 ) (newKeyInserted bool, err error) {
 	// Determine whether this key is new to this project. EXISTS stops at the
 	// first matching row; the old COUNT(*) counted every row for the key,
@@ -204,7 +240,7 @@ func persistFacet(
 	// event persistence. We only need the existence boolean.
 	var keyExists bool
 	if err := tx.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ?)`,
+		`SELECT EXISTS(SELECT 1 FROM issue_facets WHERE project_id = ? AND facet_key = ?)`,
 		projectID, k,
 	).Scan(&keyExists); err != nil {
 		return false, err
@@ -227,7 +263,7 @@ func persistFacet(
 	// existence check, not a count.
 	var valueExists bool
 	if err := tx.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?)`,
+		`SELECT EXISTS(SELECT 1 FROM issue_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?)`,
 		projectID, k, v,
 	).Scan(&valueExists); err != nil {
 		return false, err
@@ -238,7 +274,7 @@ func persistFacet(
 	if isNewValue {
 		var distinctValueCount int
 		if err := tx.QueryRowContext(ctx,
-			`SELECT COUNT(DISTINCT facet_value) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
+			`SELECT COUNT(DISTINCT facet_value) FROM issue_facets WHERE project_id = ? AND facet_key = ?`,
 			projectID, k,
 		).Scan(&distinctValueCount); err != nil {
 			return false, err
@@ -248,23 +284,28 @@ func persistFacet(
 		}
 	}
 
-	section := rootSection(k)
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value) VALUES (?, ?, ?, ?, ?, ?)`,
-		projectID, eventID, issueID, section, k, v,
-	); err != nil {
+	// OR IGNORE because the projection is a set: the pair may already be there
+	// from an earlier event of this issue. The primary key decides that, so no
+	// extra read is needed to find out.
+	if _, err := tx.ExecContext(ctx, insertIssueFacetSQL, projectID, issueID, k, v); err != nil {
 		return false, err
 	}
 
 	return isNewKey, nil
 }
 
+// insertIssueFacetSQL adds one pair to an issue's facet set, silently doing
+// nothing when it is already there.
+const insertIssueFacetSQL = `
+INSERT OR IGNORE INTO issue_facets (project_id, issue_id, facet_key, facet_value)
+VALUES (?, ?, ?, ?)`
+
 // ListFacetKeys returns all distinct facet keys observed for a project. It is
 // always project-scoped: cross-project facet listing is intentionally not
 // supported (no index backs it, and no caller needs it).
 func (s *FacetStore) ListFacetKeys(ctx context.Context, projectID int64) ([]string, error) {
 	rows, err := s.readDB().QueryContext(ctx,
-		`SELECT DISTINCT facet_key FROM event_facets WHERE project_id = ? ORDER BY facet_key ASC`,
+		`SELECT DISTINCT facet_key FROM issue_facets WHERE project_id = ? ORDER BY facet_key ASC`,
 		projectID,
 	)
 	if err != nil {
@@ -288,7 +329,7 @@ func (s *FacetStore) ListFacetKeys(ctx context.Context, projectID int64) ([]stri
 // intentionally not supported (no index backs it, and no caller needs it).
 func (s *FacetStore) ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error) {
 	rows, err := s.readDB().QueryContext(ctx,
-		`SELECT DISTINCT facet_value FROM event_facets WHERE project_id = ? AND facet_key = ? ORDER BY facet_value ASC`,
+		`SELECT DISTINCT facet_value FROM issue_facets WHERE project_id = ? AND facet_key = ? ORDER BY facet_value ASC`,
 		projectID, key,
 	)
 	if err != nil {

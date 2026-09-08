@@ -127,9 +127,16 @@ func mergeIntoKeeper(ctx context.Context, tx *sql.Tx, u fingerprintUpdate, keepe
 		keeperID, u.id); err != nil {
 		return err
 	}
+	// Fold the facet set into the keeper's rather than reassigning it: both
+	// issues can already carry the same (key, value), and issue_facets is a
+	// distinct set whose primary key would reject the duplicate.
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE event_facets SET issue_id = ? WHERE issue_id = ?`,
+		INSERT OR IGNORE INTO issue_facets (project_id, issue_id, facet_key, facet_value)
+		SELECT project_id, ?, facet_key, facet_value FROM issue_facets WHERE issue_id = ?`,
 		keeperID, u.id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM issue_facets WHERE issue_id = ?`, u.id); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `

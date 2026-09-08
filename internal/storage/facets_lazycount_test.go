@@ -24,8 +24,8 @@ func TestFacetKeyCounterIssuesNoQueryUntilAsked(t *testing.T) {
 }
 
 // newFacetFixture persists a real event so facet rows satisfy their FKs, and
-// returns the event and issue row IDs to hang facets off.
-func newFacetFixture(t *testing.T, store *Store) (evRowID, issueRowID int64) {
+// returns the issue row ID to hang facets off.
+func newFacetFixture(t *testing.T, store *Store) (issueRowID int64) {
 	t.Helper()
 	ctx := context.Background()
 	_, ev, _, _, err := store.PersistProcessedEvent(ctx, processedEventFrom(event.Event{
@@ -38,15 +38,11 @@ func newFacetFixture(t *testing.T, store *Store) (evRowID, issueRowID int64) {
 	if err != nil {
 		t.Fatalf("persist fixture event: %v", err)
 	}
-	evRowID, err = parseID(eventIDPrefix, ev.ID)
-	if err != nil {
-		t.Fatalf("parse event id: %v", err)
-	}
 	issueRowID, err = store.IssueRowIDByDisplayID(ctx, ev.IssueID)
 	if err != nil {
 		t.Fatalf("resolve issue row id: %v", err)
 	}
-	return evRowID, issueRowID
+	return issueRowID
 }
 
 func TestFacetKeyCounterLoadsOnceThenCountsInMemory(t *testing.T) {
@@ -59,8 +55,8 @@ func TestFacetKeyCounterLoadsOnceThenCountsInMemory(t *testing.T) {
 	defer store.Close()
 	ctx := context.Background()
 
-	evID, issueID := newFacetFixture(t, store)
-	if err := store.PersistFacets(ctx, evID, issueID, map[string]string{"env": "prod", "region": "eu"}); err != nil {
+	issueID := newFacetFixture(t, store)
+	if err := store.PersistFacets(ctx, issueID, map[string]string{"env": "prod", "region": "eu"}); err != nil {
 		t.Fatalf("seed facets: %v", err)
 	}
 
@@ -70,7 +66,7 @@ func TestFacetKeyCounterLoadsOnceThenCountsInMemory(t *testing.T) {
 	// truth from the database rather than assuming a literal.
 	var want int
 	if err := store.db.QueryRow(
-		`SELECT COUNT(DISTINCT facet_key) FROM event_facets WHERE project_id = ?`, projectID,
+		`SELECT COUNT(DISTINCT facet_key) FROM issue_facets WHERE project_id = ?`, projectID,
 	).Scan(&want); err != nil {
 		t.Fatalf("baseline count: %v", err)
 	}
@@ -119,18 +115,18 @@ func TestPersistFacetsWithExistingKeysStillPersists(t *testing.T) {
 	defer store.Close()
 	ctx := context.Background()
 
-	evID, issueID := newFacetFixture(t, store)
-	if err := store.PersistFacets(ctx, evID, issueID, map[string]string{"env": "prod"}); err != nil {
+	issueID := newFacetFixture(t, store)
+	if err := store.PersistFacets(ctx, issueID, map[string]string{"env": "prod"}); err != nil {
 		t.Fatalf("seed PersistFacets: %v", err)
 	}
 	// Same key, new value: no new key, so the cap is never in play.
-	if err := store.PersistFacets(ctx, evID, issueID, map[string]string{"env": "staging"}); err != nil {
+	if err := store.PersistFacets(ctx, issueID, map[string]string{"env": "staging"}); err != nil {
 		t.Fatalf("PersistFacets with existing key: %v", err)
 	}
 
 	var vals int
 	if err := store.db.QueryRow(
-		`SELECT COUNT(DISTINCT facet_value) FROM event_facets WHERE facet_key = 'env'`,
+		`SELECT COUNT(DISTINCT facet_value) FROM issue_facets WHERE facet_key = 'env'`,
 	).Scan(&vals); err != nil {
 		t.Fatalf("count values: %v", err)
 	}

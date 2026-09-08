@@ -43,7 +43,7 @@ flowchart TD
     IQ["In-Memory Queue\n32 768-record channel\nflushed every 5 ms or 64 records"]
     SPOOL["Event Spool\ninternal/spool/\n─\n.data/spool/ingest.ndjson\nappend-only NDJSON\ncursor.json tracks offset\ndeadletter.ndjson on 3 failures"]
     W["Background Worker\ncmd/bugbarn/main.go:runBackgroundWorker\nruns every ~1 s\n─\nReadRecordsFrom(offset)\nProcessRecord() — decode→normalise→scrub→fingerprint\nEnsureProject()\nSymbolicateEvent()\nPersistProcessedEvent()\nPublishIssueEvent()\nadvance cursor"]
-    DB["SQLite (WAL mode)\n.data/bugbarn.db\n─\nprojects, issues, events,\nevent_facets, alerts,\nalert_firings, log_entries, …"]
+    DB["SQLite (WAL mode)\n.data/bugbarn.db\n─\nprojects, issues, events,\nissue_facets, alerts,\nalert_firings, log_entries, …"]
     BUS["Domain Event Bus\ninternal/domainevents/Bus\nin-process pub/sub"]
     AE["Alert Evaluator\ninternal/alert/evaluator.go\n─\nnew_issue / regression /\nevent_count_exceeds\ncooldown check\nwebhook HTTP POST (3 retries)"]
     API["API Server\ninternal/api/\n─\nREST + SSE\nsession & API key auth\nCSRF middleware"]
@@ -53,7 +53,7 @@ flowchart TD
     IH -->|"enqueue spool.Record"| IQ
     IQ -->|"flush batch"| SPOOL
     W -->|"ReadRecordsFrom(offset)"| SPOOL
-    W -->|"INSERT issues, events, event_facets"| DB
+    W -->|"INSERT issues, events, issue_facets"| DB
     W -->|"PublishIssueEvent"| BUS
     BUS -->|"HandleEvent"| AE
     AE -->|"RecordFiring"| DB

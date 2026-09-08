@@ -169,7 +169,6 @@ type IssueHourlyCounts struct {
 
 // facetRow is an internal struct used when inserting raw facets.
 type facetRow struct {
-	section string
-	key     string
-	value   string
+	key   string
+	value string
 }

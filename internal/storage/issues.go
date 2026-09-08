@@ -146,7 +146,7 @@ func buildIssueFromClause(facetFilters []facetFilter, projectID int64) (string, 
 	var subqueries []string
 	for _, f := range facetFilters {
 		subqueries = append(subqueries,
-			`SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
+			`SELECT issue_id FROM issue_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`)
 		fromArgs = append(fromArgs, projectID, f.k, f.v)
 	}
 	fromClause := fmt.Sprintf(`issues i INNER JOIN (%s) ef ON i.id = ef.issue_id LEFT JOIN projects p ON p.id = i.project_id`,

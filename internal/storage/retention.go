@@ -19,9 +19,10 @@ import (
 // deleted page into a WAL that only the 60s checkpoint loop can truncate. The
 // caller sleeps between batches so ingest gets the writer back in between.
 //
-// event_facets rows are removed by the ON DELETE CASCADE on
-// event_facets.event_id, which migration 00011 made index-backed; without that
-// index this loop degrades to a full scan of event_facets per deleted event.
+// Facets are not touched. Since migration 00013 they live in issue_facets, a
+// distinct per-issue projection with no link to any individual event, so the
+// sweep no longer cascades a facet delete per event — and an issue keeps the
+// environments and hosts it was ever seen with after its events age out.
 //
 // issues are deliberately left alone. issues.event_count is a lifetime counter
 // maintained by the ingest path, not a count of retained rows, so trimming

@@ -161,17 +161,17 @@ func TestPersistFacetsExistenceChecksUseIndex(t *testing.T) {
 	}{
 		{
 			name:  "key existence (project_id, facet_key)",
-			query: `SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ?)`,
+			query: `SELECT EXISTS(SELECT 1 FROM issue_facets WHERE project_id = ? AND facet_key = ?)`,
 			args:  []any{int64(1), "host.name"},
 		},
 		{
 			name:  "value existence (project_id, facet_key, facet_value)",
-			query: `SELECT EXISTS(SELECT 1 FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?)`,
+			query: `SELECT EXISTS(SELECT 1 FROM issue_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?)`,
 			args:  []any{int64(1), "host.name", "web-01"},
 		},
 		{
 			name:  "distinct values per key (project_id, facet_key)",
-			query: `SELECT COUNT(DISTINCT facet_value) FROM event_facets WHERE project_id = ? AND facet_key = ?`,
+			query: `SELECT COUNT(DISTINCT facet_value) FROM issue_facets WHERE project_id = ? AND facet_key = ?`,
 			args:  []any{int64(1), "host.name"},
 		},
 	}
@@ -182,11 +182,15 @@ func TestPersistFacetsExistenceChecksUseIndex(t *testing.T) {
 			// The outage plan was "SEARCH event_facets USING COVERING INDEX
 			// idx_event_facets_issue (project_id=?)" — an index search, but
 			// constrained only by project_id, so it still scanned the whole
-			// project partition. The fix is an index that also constrains
+			// project partition. The fix is a key that also constrains
 			// facet_key. SQLite reports the constrained columns in the plan
 			// detail, so requiring "facet_key" there proves the lookup is bound
 			// past the project prefix and not re-scanning the partition.
-			if !strings.Contains(plan, "INDEX") {
+			//
+			// issue_facets is WITHOUT ROWID, so its primary key *is* the table:
+			// SQLite names it "PRIMARY KEY" rather than an index name, and a
+			// search through it needs no table lookup at all.
+			if !strings.Contains(plan, "SEARCH") {
 				t.Fatalf("query plan uses no index (full table scan) — the outage condition.\nquery: %s\nplan:  %s", tc.query, plan)
 			}
 			if !strings.Contains(plan, "facet_key") {
@@ -196,11 +200,12 @@ func TestPersistFacetsExistenceChecksUseIndex(t *testing.T) {
 	}
 }
 
-// TestFacetReadQueriesUseIndexes guards the project-scoped facet→issue filter:
-// it needs issue_id in idx_event_facets_kv_issue to stay covering and avoid a
-// per-row table lookup. Cross-project facet querying is intentionally not
-// supported (migration 00009 dropped idx_event_facets_facet and the code paths),
-// so there are no cross-project cases here.
+// TestFacetReadQueriesUseIndexes guards the three project-scoped reads: the
+// facet→issue filter and the key/value listings. All of them must resolve
+// through the issue_facets primary key, which carries issue_id as its last
+// column so the filter never leaves the key. Cross-project facet querying is
+// intentionally not supported (migration 00009 dropped idx_event_facets_facet
+// and the code paths), so there are no cross-project cases here.
 func TestFacetReadQueriesUseIndexes(t *testing.T) {
 	t.Parallel()
 
@@ -218,9 +223,21 @@ func TestFacetReadQueriesUseIndexes(t *testing.T) {
 	}{
 		{
 			name:      "project-scoped issue filter by facet (covering)",
-			query:     `SELECT DISTINCT issue_id FROM event_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`,
+			query:     `SELECT issue_id FROM issue_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?`,
 			args:      []any{int64(1), "host.name", "web-01"},
-			wantIndex: "idx_event_facets_kv_issue",
+			wantIndex: "SEARCH issue_facets USING PRIMARY KEY (project_id=? AND facet_key=? AND facet_value=?)",
+		},
+		{
+			name:      "project-scoped facet key listing",
+			query:     `SELECT DISTINCT facet_key FROM issue_facets WHERE project_id = ? ORDER BY facet_key ASC`,
+			args:      []any{int64(1)},
+			wantIndex: "SEARCH issue_facets USING PRIMARY KEY (project_id=?)",
+		},
+		{
+			name:      "project-scoped facet value listing",
+			query:     `SELECT DISTINCT facet_value FROM issue_facets WHERE project_id = ? AND facet_key = ? ORDER BY facet_value ASC`,
+			args:      []any{int64(1), "host.name"},
+			wantIndex: "SEARCH issue_facets USING PRIMARY KEY (project_id=? AND facet_key=?)",
 		},
 	}
 
@@ -343,11 +360,6 @@ func TestPersistFacetsCardinalityGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Parse the row IDs back out.
-	evRowID, err := parseID(eventIDPrefix, ev.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	issueRowID, err := store.IssueRowIDByDisplayID(ctx, ev.IssueID)
 	if err != nil {
 		t.Fatal(err)
@@ -359,7 +371,7 @@ func TestPersistFacetsCardinalityGuards(t *testing.T) {
 		facets[indexedKey(i)] = "value"
 	}
 
-	if err := store.PersistFacets(ctx, evRowID, issueRowID, facets); err != nil {
+	if err := store.PersistFacets(ctx, issueRowID, facets); err != nil {
 		t.Fatal(err)
 	}
 

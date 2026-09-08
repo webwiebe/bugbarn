@@ -287,7 +287,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 	isNew := issue.EventCount == 1 && !regressed
 
 	_, insertSpan := tracing.Tracer().Start(ctx, "storage.InsertEvent")
-	eventRow, eventRowID, err := s.insertEvent(ctx, projectID, issueID, issue.ID, regressed, processed)
+	eventRow, err := s.insertEvent(ctx, projectID, issueID, issue.ID, regressed, processed)
 	if err != nil {
 		insertSpan.SetStatus(codes.Error, err.Error())
 		insertSpan.End()
@@ -297,14 +297,14 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 	insertSpan.End()
 
 	_, facetSpan := tracing.Tracer().Start(ctx, "storage.InsertFacets")
-	if err := s.insertFacets(ctx, projectID, issueID, eventRowID, processed.Event); err != nil {
+	if err := s.insertFacets(ctx, projectID, issueID, processed.Event); err != nil {
 		facetSpan.SetStatus(codes.Error, err.Error())
 		facetSpan.End()
 		span.SetStatus(codes.Error, err.Error())
 		return Issue{}, Event{}, false, false, err
 	}
 
-	if err := s.PersistFacets(ctx, eventRowID, issueID, extractFacets(processed.Event)); err != nil {
+	if err := s.PersistFacets(ctx, issueID, extractFacets(processed.Event)); err != nil {
 		facetSpan.SetStatus(codes.Error, err.Error())
 		facetSpan.End()
 		span.SetStatus(codes.Error, err.Error())
