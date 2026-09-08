@@ -78,6 +78,12 @@ var/
 # Playwright test output
 web/test-results/
 
+# PHP SDK composer output (CI runs composer inside a pinned container and
+# leaves these in the workspace)
+sdks/php/vendor/
+sdks/php/composer.lock
+sdks/php/.phpunit.result.cache
+
 # Docker and compose state
 docker-compose.override.yml
 .tools/

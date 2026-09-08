@@ -22,9 +22,14 @@ export default [
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       // TypeScript handles undefined-variable checking; disable ESLint's duplicate
       'no-undef': 'off',
-      // Size/complexity budgets. Warnings (not errors) so they guide the Phase B
-      // refactor without blocking the build; the hard 500-line gate is enforced
-      // for all languages by scripts/check-file-length.sh.
+      // Size/complexity budgets. These stay at 'warn' on purpose: 18 findings
+      // exist today, so 'error' would break every build. They are not advisory
+      // either — scripts/check-ts-budget.sh counts exactly these three rules and
+      // ratchets the count against scripts/ts-budget-baseline.txt, which may
+      // only fall. ENFORCE-AT: 0. When the baseline reaches 0, flip all three to
+      // 'error', add --max-warnings=0 to lint:eslint, and delete the soak script
+      // and its baseline. The hard 500-line file cap is separate and already
+      // blocking for every language via scripts/check-file-length.sh.
       'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true, IIFEs: true }],
       'complexity': ['warn', 15],

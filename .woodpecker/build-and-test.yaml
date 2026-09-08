@@ -3,10 +3,21 @@
 # backend): cross-builds amd64 via binfmt, SSHes to k3s1 with the host's keys.
 # NB: local backend runs each `commands` entry in its own shell (only exported
 # env carries over), so each step keeps its logic in ONE block.
+#
+# `depends_on: ci` is load-bearing, not tidiness. On a push to main, ci,
+# build-and-test and binary-release are sibling workflows of ONE pipeline and
+# would otherwise all start at once — so this workflow used to build images and
+# roll them out to bugbarn-testing in parallel with the test suite, red or
+# green, and the testing environment could be running a commit that never
+# passed. binary-release got the same one-line dependency in #50; this is the
+# other half of it.
 when:
   - event: push
     branch: main
   - event: manual
+
+depends_on:
+  - ci
 
 labels:
   type: build

@@ -57,6 +57,10 @@ steps:
           --output type=cacheonly \
           .
 
+  # `npm run lint` and `npm run build` are deliberately NOT --if-present. A
+  # missing script used to read exactly like a clean package: sdks/typescript
+  # had no lint script at all and was silently never linted. Every package
+  # below now has both, and a package that loses one fails the build.
   - name: node-web
     image: bash
     commands:
@@ -64,10 +68,14 @@ steps:
         set -euo pipefail
         cd web
         if [ -f package-lock.json ]; then npm ci; else npm install; fi
-        npm run lint --if-present
-        npm run test --if-present
-        npm run build --if-present
+        npm run lint
+        npm run test
+        npm run build
         npx --yes jscpd@latest .
+        cd ..
+        # TypeScript size/complexity soak. Lives here, not in the quality step,
+        # because it needs the node_modules this step just installed.
+        sh scripts/check-ts-budget.sh
 
   - name: node-site
     image: bash
@@ -76,9 +84,12 @@ steps:
         set -euo pipefail
         cd site
         if [ -f package-lock.json ]; then npm ci; else npm install; fi
-        npm run lint --if-present
-        npm run test --if-present
-        npm run build --if-present
+        npm run lint
+        # site is the one package with no test script: it is an Astro content
+        # site with no runtime logic, and `npm run lint` (astro check) plus the
+        # build are its whole check surface. Stated here rather than hidden
+        # behind --if-present.
+        npm run build
 
   - name: node-sdk-ts
     image: bash
@@ -87,9 +98,9 @@ steps:
         set -euo pipefail
         cd sdks/typescript
         if [ -f package-lock.json ]; then npm ci; else npm install; fi
-        npm run lint --if-present
-        npm run test --if-present
-        npm run build --if-present
+        npm run lint
+        npm run test
+        npm run build
 
   - name: python
     image: bash
@@ -109,18 +120,27 @@ steps:
         if find . -name '*.py' -print -quit | grep -q .; then python -m ruff check .; fi
         if [ -f pyproject.toml ]; then python -m build; fi
 
+  # The PHP toolchain comes from a pinned container, not from the host. This
+  # step used to `exit 0` when php or composer were missing — and neither is
+  # installed on the build agent, so the PHP SDK had not been tested at all
+  # while the step reported green. There is now no path through this step that
+  # skips the tests: a missing docker fails it.
   - name: php
     image: bash
     commands:
       - |
         set -euo pipefail
+        command -v docker >/dev/null 2>&1 || { echo "FAIL: docker is required to run the PHP SDK tests"; exit 1; }
         cd sdks/php
-        if ! command -v php >/dev/null 2>&1 || ! command -v composer >/dev/null 2>&1; then echo "php/composer not available; skipping"; exit 0; fi
-        composer install --no-interaction --prefer-dist
-        if find tests -name '*Test.php' -print -quit 2>/dev/null | grep -q .; then ./vendor/bin/phpunit; fi
+        docker run --rm -v "$(pwd):/app" -w /app composer:2.8 sh -c 'set -eu; composer install --no-interaction --prefer-dist; ./vendor/bin/phpunit'
 
   # Quality gates run directly on the host so golangci-lint can use full git
   # history for diff-mode and the coverage profile can escape.
+  #
+  # Every gate is a script in scripts/, called identically from here and from
+  # the GitHub ci.yml mirror. They used to be inline shell duplicated across
+  # both files, which is how the two pipelines ended up pinning different
+  # golangci-lint versions and therefore enforcing different linters.
   - name: quality
     image: bash
     environment:
@@ -137,35 +157,24 @@ steps:
       - |
         set -euo pipefail
         sh scripts/heal-go-modcache.sh
+        # The gates' own tests run first: a gate that has stopped failing must
+        # be reported before the gates it protects are trusted.
+        sh scripts/gates_test.sh
         sh scripts/check-file-length.sh
-        # Must be built with a Go at least as new as the host toolchain: the
-        # quality gates run on the host, and golangci-lint typechecks against
-        # that Go's stdlib source. v2.11.4 (built with go1.26) started panicking
-        # "file requires newer Go version go1.27" the moment the runners moved
-        # to Go 1.27, which is a hard failure of every PR, not a lint finding.
-        # Bump this in step with the runners' Go.
-        VERSION="v2.13.2"
-        DEST="$(pwd)/.tools"
-        mkdir -p "$DEST"
-        if [ ! -x "$DEST/golangci-lint" ] || ! "$DEST/golangci-lint" version 2>/dev/null | grep -q "$${VERSION#v}"; then
-          curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/$VERSION/install.sh" | sh -s -- -b "$DEST" "$VERSION"
-        fi
-        "$DEST/golangci-lint" version
-        BASE="$${CI_COMMIT_TARGET_BRANCH:-main}"
-        # Create the origin/$BASE remote-tracking ref (a plain `git fetch origin main`
-        # only updates FETCH_HEAD), with enough depth for the diff base. Without this
-        # golangci-lint's --new-from-rev treats the whole tree as new. (A colon
-        # refspec breaks Woodpecker's variable parser, so use update-ref.)
-        # Fetch the diff base over an authenticated URL — Apple git here won't use
+        # Create the origin/* remote-tracking refs (a plain `git fetch origin main`
+        # only updates FETCH_HEAD), with enough depth for the diff base. Without
+        # this golangci-lint's diff mode treats the whole tree as new. (A colon
+        # refspec breaks Woodpecker's variable parser, so set the fetch refspec
+        # in config.) Fetch over an authenticated URL — Apple git here won't use
         # ~/.netrc and the osxkeychain helper is unreachable headless. Token is a
         # masked Woodpecker secret.
         git remote set-url origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
         git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
-        git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=2000 origin || true
-        git rev-parse --is-shallow-repository; git rev-parse "origin/$BASE" >/dev/null && echo "origin/$BASE OK"
-        # --timeout well above the 1m default: the shared mac runners are often
-        # loaded by concurrent deploys, and a cold-cache run of ./... can exceed 1m.
-        "$DEST/golangci-lint" run --timeout=10m --new-from-merge-base="origin/$BASE" ./...
-        ( cd sdks/go && "$DEST/golangci-lint" run --timeout=10m --new-from-merge-base="origin/$BASE" ./... )
+        git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=2000 origin
+        # Full-tree ratchet on every event plus a diff-scoped run on PRs. The
+        # old step ran only the diff-scoped half, unconditionally, so on a push
+        # to main it compared main to itself and passed without reading a line.
+        sh scripts/check-go-lint.sh
+        sh scripts/check-go-soak.sh
         sh scripts/check-coverage.sh
         npx --yes jscpd@latest .
