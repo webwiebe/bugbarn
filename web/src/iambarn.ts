@@ -120,29 +120,90 @@ function mountMenu(): void {
   menu.setAttribute("show-email", "");
   host.replaceChildren(menu);
   host.removeAttribute("hidden");
-  flipDropdownUpward(menu);
+  applyMenuPlacement(menu);
   // The hosted menu now owns the signed-in-user affordance; retire the custom one.
   document.getElementById("user-avatar-wrap")?.setAttribute("hidden", "");
   menuMounted = true;
 }
 
-// flipDropdownUpward makes the hosted user-menu open its dropdown ABOVE the
-// avatar. The widget hardcodes the dropdown to open downward (top: 100%), but we
-// mount it at the bottom of the sidebar, so downward would clip off the bottom of
-// the viewport. The element uses an open shadow root, so we inject a scoped style
-// override that opens it upward into the empty sidebar space instead.
-function flipDropdownUpward(menu: HTMLElement): void {
+// The hosted widget hardcodes its dropdown to open downward (top: 100%), to sit
+// at least 220px wide, and to anchor right: 0. We mount it at the bottom of a
+// 180px sidebar, so downward runs off the bottom of the viewport and the width
+// does not fit. The element uses an open shadow root, so we scope an override
+// into it that opens the dropdown upward and anchors it left, letting it extend
+// over the workspace (see the #iambarn-user-menu-host rules in styles.css,
+// which keep the sidebar from clipping it).
+//
+// The override has to be an *adopted* stylesheet: the widget re-renders on every
+// /api/v1/me response with `shadow.innerHTML = ""`, which drops any <style> we
+// appended. Adopted sheets survive that, and !important keeps them winning
+// whatever the cascade order.
+const MENU_PLACEMENT_CSS = `
+.menu-root { display: block !important; }
+.menu-trigger {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+.menu-dropdown {
+  top: auto !important;
+  bottom: calc(100% + 6px) !important;
+  left: 0 !important;
+  right: auto !important;
+}
+`;
+
+let placementSheet: CSSStyleSheet | null = null;
+let placementSheetTried = false;
+
+// buildPlacementSheet returns the shared constructable stylesheet, or null on
+// engines without support (callers then fall back to a re-injected <style>).
+function buildPlacementSheet(): CSSStyleSheet | null {
+  if (placementSheetTried) return placementSheet;
+  placementSheetTried = true;
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(MENU_PLACEMENT_CSS);
+    placementSheet = sheet;
+  } catch {
+    placementSheet = null;
+  }
+  return placementSheet;
+}
+
+// injectPlacementStyle is the fallback for engines without constructable
+// stylesheets: append the override and re-append it whenever the widget clears
+// the shadow root to re-render.
+function injectPlacementStyle(root: ShadowRoot): void {
   const inject = (): void => {
-    const root = menu.shadowRoot;
-    if (!root || root.getElementById("bb-menu-placement")) return;
+    if (root.getElementById("bb-menu-placement")) return;
     const style = document.createElement("style");
     style.id = "bb-menu-placement";
-    style.textContent = ".menu-dropdown{top:auto !important;bottom:calc(100% + 6px) !important;}";
+    style.textContent = MENU_PLACEMENT_CSS;
     root.appendChild(style);
   };
   inject();
-  // The shadow root may not be attached on the same tick the element upgrades.
-  if (!menu.shadowRoot) requestAnimationFrame(inject);
+  new MutationObserver(inject).observe(root, { childList: true });
+}
+
+function applyMenuPlacement(menu: HTMLElement): void {
+  const root = menu.shadowRoot;
+  if (!root) {
+    // The shadow root may not be attached on the tick the element upgrades.
+    requestAnimationFrame(() => {
+      if (menu.shadowRoot) applyMenuPlacement(menu);
+    });
+    return;
+  }
+  const sheet = buildPlacementSheet();
+  if (sheet) {
+    if (!root.adoptedStyleSheets.includes(sheet)) {
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+    }
+    return;
+  }
+  injectPlacementStyle(root);
 }
 
 function unmountMenu(): void {
