@@ -1,0 +1,53 @@
+# golangci-lint config for the two dimensions bugbarn has never measured: dead
+# code and architectural import boundaries.
+#
+# It is deliberately SEPARATE from .golangci.yml. Both linters find existing
+# violations, so folding them into the main config would either break the build
+# on day one or have to be scoped away to nothing. Instead scripts/check-go-soak.sh
+# counts what they find and ratchets each count against a committed baseline
+# that may only fall. Enforce-at target for both is 0, at which point these two
+# linters move into .golangci.yml and this file goes away.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+# Truncation is off. golangci-lint defaults to max-same-issues: 3, which caps
+# repeated findings and would make the baseline a count of the cap rather than
+# a count of the debt.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  default: none
+  enable:
+    - unused # dead code
+    - depguard # architectural import boundaries
+  settings:
+    depguard:
+      # The layering CLAUDE.md already documents as an architecture rule:
+      # "Storage wraps DB errors into apperr types. Services log errors and pass
+      # through. API maps apperr codes to HTTP status codes. Never leak
+      # sql.ErrNoRows or raw DB errors past the storage layer." Nothing enforced
+      # it. Test files are exempt: integration tests legitimately wire the real
+      # store up to the real handlers.
+      rules:
+        api-storage-boundary:
+          files:
+            - "**/internal/api/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/storage
+              desc: "the API layer must go through internal/service, not reach into internal/storage"
+        sql-outside-storage:
+          files:
+            - "**/internal/**"
+            - "!**/internal/storage/**"
+            - "!$test"
+          deny:
+            - pkg: database/sql
+              desc: "only internal/storage may touch database/sql; everything else takes a repository interface"
+            - pkg: modernc.org/sqlite
+              desc: "only internal/storage may bind the sqlite driver"

@@ -17,6 +17,7 @@
     "README.md"
   ],
   "scripts": {
+    "lint": "tsc -p tsconfig.json --noEmit",
     "build": "npm run clean && npm run build:esm && npm run build:cjs && node scripts/write-cjs-package.cjs",
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
