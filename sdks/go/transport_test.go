@@ -10,18 +10,23 @@ import (
 )
 
 func TestTransportQueueFull(t *testing.T) {
-	// Use a non-listening address so sends fail fast without blocking.
-	// The transport background goroutine will error on each send and loop,
-	// keeping items in the queue long enough to test back-pressure.
-	const cap = 2
-	tr := newTransport("key", "http://127.0.0.1:1", "", cap)
-	defer tr.shutdown(200 * time.Millisecond)
+	// Built without newTransport, and therefore without its background
+	// goroutine. That goroutine drains the queue as fast as items arrive, so
+	// the previous version of this test — fill the channel, then assert the
+	// next enqueue fails — was a race it usually won on an idle machine and
+	// lost on a loaded one: run() had already taken an item off the channel
+	// and freed a slot, and the test failed with no bug present. The
+	// assertion is purely about enqueue's non-blocking send, which needs no
+	// goroutine and no network at all.
+	const capacity = 2
+	tr := &transport{queue: make(chan envelope, capacity), done: make(chan struct{})}
 
 	env := envelope{Timestamp: "now", SeverityText: "ERROR"}
-
-	// Fill the buffered channel directly (bypass the goroutine draining it).
-	tr.queue <- env
-	tr.queue <- env
+	for i := 0; i < capacity; i++ {
+		if !tr.enqueue(env) {
+			t.Fatalf("enqueue %d returned false while the queue still had room", i)
+		}
+	}
 
 	// Queue is now at capacity; next enqueue must return false.
 	if tr.enqueue(env) {
