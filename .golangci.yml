@@ -57,6 +57,14 @@ linters:
         - name: empty-block
   exclusions:
     generated: lax
+    # Vendored third-party Go inside node_modules (web/node_modules/flatted/
+    # golang/...) is part of `go list ./...`, so it was linted whenever a node
+    # step had already run `npm ci` and not otherwise. That made the finding
+    # count depend on step ordering: 106 on a CI runner with no node_modules,
+    # 110 on a tree that had them. scripts/check-coverage.sh carries the same
+    # exclusion for the same reason.
+    paths:
+      - (^|/)node_modules/
     rules:
       # Table-driven tests are legitimately long and repetitive, and routinely
       # ignore cleanup (deferred Close) errors.
