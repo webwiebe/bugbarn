@@ -25,6 +25,11 @@ linters:
   enable:
     - unused # dead code
     - depguard # architectural import boundaries
+  exclusions:
+    # Same reason as .golangci.yml: vendored Go under node_modules is in
+    # `go list ./...` and would make the count depend on whether npm ci ran.
+    paths:
+      - (^|/)node_modules/
   settings:
     depguard:
       # The layering CLAUDE.md already documents as an architecture rule:
