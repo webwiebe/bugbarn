@@ -142,9 +142,9 @@ func (s *ProjectStore) DeleteProject(_ context.Context, slug string) error {
 
 	// Delete child rows in batches outside the final transaction to keep
 	// each write small. Order matters: delete leaf tables first to respect
-	// foreign key constraints (event_facets → events → issues).
+	// foreign key constraints (issue_facets and events both reference issues).
 	childTables := []string{
-		"event_facets",
+		"issue_facets",
 		"events",
 		"issues",
 		"analytics_pageviews",
@@ -169,11 +169,22 @@ func (s *ProjectStore) DeleteProject(_ context.Context, slug string) error {
 	return nil
 }
 
+// batchDeleteKeys names the row identity to batch on for tables that have no
+// rowid to use. issue_facets is WITHOUT ROWID, so `SELECT rowid` there is an
+// error, not a slower plan; its primary key columns are the identity instead.
+var batchDeleteKeys = map[string]string{
+	"issue_facets": "project_id, facet_key, facet_value, issue_id",
+}
+
 func deleteInBatches(ctx context.Context, db *sql.DB, table string, projectID int64) error {
 	const batchSize = 10000
+	key, ok := batchDeleteKeys[table]
+	if !ok {
+		key = "rowid"
+	}
 	for {
 		res, err := db.ExecContext(ctx,
-			fmt.Sprintf(`DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE project_id = ? LIMIT ?)`, table, table),
+			fmt.Sprintf(`DELETE FROM %s WHERE (%s) IN (SELECT %s FROM %s WHERE project_id = ? LIMIT ?)`, table, key, key, table),
 			projectID, batchSize)
 		if err != nil {
 			return err
@@ -404,9 +415,10 @@ func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug
 		return apperr.Internal("merge: move events", err)
 	}
 
-	// Move event facets.
-	if _, err := tx.ExecContext(ctx, `UPDATE event_facets SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
-		return apperr.Internal("merge: move event_facets", err)
+	// Move issue facets. The issues moved above keep their ids, so no row can
+	// collide with one the target project already has.
+	if _, err := tx.ExecContext(ctx, `UPDATE issue_facets SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
+		return apperr.Internal("merge: move issue_facets", err)
 	}
 
 	// Move analytics pageviews.

@@ -239,17 +239,17 @@ LIMIT ?`, sinceStr, limit)
 func (s *core) insertEvent(
 	ctx context.Context, projectID int64, issueID int64, issueDisplayID string,
 	regressed bool, processed worker.ProcessedEvent,
-) (Event, int64, error) {
+) (Event, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {
-		return Event{}, 0, err
+		return Event{}, err
 	}
 
 	receivedAt, observedAt := eventTimestamps(processed.Event)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Event{}, 0, err
+		return Event{}, err
 	}
 	defer tx.Rollback()
 
@@ -280,16 +280,16 @@ INSERT INTO events (
 		payload,
 	)
 	if err != nil {
-		return Event{}, 0, err
+		return Event{}, err
 	}
 
 	eventRowID, err := res.LastInsertId()
 	if err != nil {
-		return Event{}, 0, err
+		return Event{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return Event{}, 0, err
+		return Event{}, err
 	}
 
 	return Event{
@@ -304,10 +304,14 @@ INSERT INTO events (
 		Message:                processed.Event.Message,
 		Regressed:              regressed,
 		Payload:                processed.Event,
-	}, eventRowID, nil
+	}, nil
 }
 
-func (s *core) insertFacets(ctx context.Context, projectID int64, issueID, eventID int64, processed event.Event) error {
+// insertFacets projects the event's whole flattened payload into the issue's
+// facet set. It is issue-level and deduplicated by the primary key, so the
+// second and every later event of an issue that carries the same values writes
+// nothing. Keys the projection does not accept are skipped rather than stored.
+func (s *core) insertFacets(ctx context.Context, projectID int64, issueID int64, processed event.Event) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -328,16 +332,10 @@ func (s *core) insertFacets(ctx context.Context, projectID int64, issueID, event
 	rows := make([]facetRow, 0, 32)
 	flattenFacets(&rows, "", facets)
 	for _, row := range rows {
-		if _, err := tx.ExecContext(ctx, `
-INSERT INTO event_facets (project_id, event_id, issue_id, section, facet_key, facet_value)
-VALUES (?, ?, ?, ?, ?, ?)`,
-			projectID,
-			eventID,
-			issueID,
-			row.section,
-			row.key,
-			row.value,
-		); err != nil {
+		if facetProjectionExcluded(row.key, row.value) {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, insertIssueFacetSQL, projectID, issueID, row.key, row.value); err != nil {
 			return err
 		}
 	}
@@ -364,56 +362,46 @@ func flattenFacets(out *[]facetRow, prefix string, value any) {
 		if strings.TrimSpace(typed) == "" || strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{section: rootSection(prefix), key: prefix, value: typed})
+		*out = append(*out, facetRow{key: prefix, value: typed})
 	case fmt.Stringer:
 		value := typed.String()
 		if strings.TrimSpace(value) == "" || strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{section: rootSection(prefix), key: prefix, value: value})
+		*out = append(*out, facetRow{key: prefix, value: value})
 	case bool:
 		if strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{section: rootSection(prefix), key: prefix, value: strconv.FormatBool(typed)})
+		*out = append(*out, facetRow{key: prefix, value: strconv.FormatBool(typed)})
 	case float64:
 		if strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{section: rootSection(prefix), key: prefix, value: strconv.FormatFloat(typed, 'f', -1, 64)})
+		*out = append(*out, facetRow{key: prefix, value: strconv.FormatFloat(typed, 'f', -1, 64)})
 	case int:
 		if strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{section: rootSection(prefix), key: prefix, value: strconv.Itoa(typed)})
+		*out = append(*out, facetRow{key: prefix, value: strconv.Itoa(typed)})
 	case int64:
 		if strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{section: rootSection(prefix), key: prefix, value: strconv.FormatInt(typed, 10)})
+		*out = append(*out, facetRow{key: prefix, value: strconv.FormatInt(typed, 10)})
 	case json.Number:
 		if strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{section: rootSection(prefix), key: prefix, value: typed.String()})
+		*out = append(*out, facetRow{key: prefix, value: typed.String()})
 	case nil:
 		return
 	default:
 		if strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{section: rootSection(prefix), key: prefix, value: fmt.Sprint(typed)})
+		*out = append(*out, facetRow{key: prefix, value: fmt.Sprint(typed)})
 	}
-}
-
-func rootSection(key string) string {
-	if idx := strings.IndexByte(key, '.'); idx >= 0 {
-		return key[:idx]
-	}
-	if idx := strings.IndexByte(key, '['); idx >= 0 {
-		return key[:idx]
-	}
-	return key
 }
 
 func scanEvent(scanner interface {

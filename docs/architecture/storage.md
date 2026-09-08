@@ -86,19 +86,25 @@ A `default` project is always created on first startup.
 
 ---
 
-### `event_facets`
+### `issue_facets`
 
 | Column | Type | Description |
 |---|---|---|
-| `id` | `INTEGER PK` | Auto-increment primary key |
 | `project_id` | `INTEGER` | Foreign key → `projects(id)` ON DELETE CASCADE |
-| `event_id` | `INTEGER` | Foreign key → `events(id)` ON DELETE CASCADE |
 | `issue_id` | `INTEGER` | Foreign key → `issues(id)` ON DELETE CASCADE |
-| `section` | `TEXT` | Grouping label derived from the key prefix (e.g. `http`, `service`) |
 | `facet_key` | `TEXT` | Attribute name (e.g. `http.route`, `severity`) |
 | `facet_value` | `TEXT` | Attribute value |
 
-See [Event Facets](#event-facets) below for cardinality caps and the list of extracted keys.
+`PRIMARY KEY (project_id, facet_key, facet_value, issue_id)`, `WITHOUT ROWID`:
+every column is in the key, so the table is its own covering index and carries
+no secondary index at all.
+
+Replaced the per-event `event_facets` table in migration 00013. Facets are not
+tied to an event, so they survive the 30-day event retention window and an issue
+stays filterable by the environments and hosts it was ever seen on.
+
+See [Event Facets](#event-facets) below for cardinality caps, what is projected
+and what is not.
 
 ---
 
@@ -287,7 +293,9 @@ The raw JSON material string and a human-readable explanation array are also sto
 
 ## Event Facets
 
-Facets are a flat set of key/value pairs extracted from each event and stored in the `event_facets` table. They enable the API and UI to offer filtered views of issues (e.g. "show all issues where `http.route = /api/v1/users`") without requiring a full-text scan of the `event_json` column.
+Facets are a flat set of key/value pairs extracted from each event and projected into the `issue_facets` table. They enable the API and UI to offer filtered views of issues (e.g. "show all issues where `http.route = /api/v1/users`") without requiring a full-text scan of the `event_json` column.
+
+The projection is a distinct set of `(project_id, facet_key, facet_value, issue_id)`, so an issue that fires a million times with the same environment holds one row, not a million. Keys whose value identifies a single event rather than describing a class of them are not projected at all: `traceId`, `spanId`, `message`, the rendered `exception`, anything under `exception.stacktrace`, and any value longer than 200 characters. Filtering issues by those would match exactly one issue per value while costing a row per event. They remain available in full on the event itself (`events.event_json`).
 
 ### Extracted Keys
 
@@ -396,6 +404,6 @@ for retention and restore steps.
 | `idx_events_issue_id` | `events` | `(project_id, issue_id, id ASC)` | Fetches the event history for a single issue in chronological order |
 | `idx_events_project_received_at` | `events` | `(project_id, received_at DESC, id DESC)` | Powers the recent-events feed ordered by ingest time within a project |
 | `idx_releases_project_observed_at` | `releases` | `(project_id, observed_at DESC, id DESC)` | Lists releases for a project ordered by most recent |
-| `idx_event_facets_lookup` | `event_facets` | `(project_id, section, facet_key, facet_value)` | Supports facet key/value queries and cardinality cap checks |
+| primary key | `issue_facets` | `(project_id, facet_key, facet_value, issue_id)` | Serves every facet read — key listing, value listing and the issue filter — plus the cardinality cap checks on the write path. The table is `WITHOUT ROWID`, so this is the table itself and no secondary index exists |
 | `idx_alert_firings_lookup` | `alert_firings` | `(alert_id, issue_id, fired_at DESC)` | Cooldown check: most recent firing for a given alert/issue pair |
 | `idx_log_entries_project_id` | `log_entries` | `(project_id, id DESC)` | Paginates log entries for a project in reverse-insertion order |

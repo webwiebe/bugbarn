@@ -22,7 +22,7 @@ import (
 //   - users is independent.
 //
 // Deliberately excluded:
-//   - events, event_facets, issues, log_entries, analytics_*, alert_firings,
+//   - events, issue_facets, issues, log_entries, analytics_*, alert_firings,
 //     held_events, regression_events — the bulk data this snapshot trades away.
 //   - releases and source_maps — both hang off a timeline of events that will
 //     not exist after a reset, and CI re-posts a release marker and re-uploads
