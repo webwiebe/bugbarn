@@ -32,7 +32,7 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 
 // ListProjects returns all projects ordered alphabetically by name.
 func (s *ProjectStore) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at FROM projects ORDER BY name ASC`)
+	rows, err := s.readDB().QueryContext(ctx, `SELECT `+projectColumns+` FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -42,26 +42,41 @@ func (s *ProjectStore) ListProjects(ctx context.Context) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		var createdAt string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter, &p.GroupID, &createdAt); err != nil {
+		var retention sql.NullInt64
+		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter,
+			&p.GroupID, &createdAt, &retention, &p.SamplingMode); err != nil {
 			return nil, err
 		}
 		p.CreatedAt, _ = parseTime(createdAt)
+		p.RetentionDays = nullIntToPtr(retention)
 		projects = append(projects, p)
 	}
 	return projects, rows.Err()
 }
 
-// ProjectBySlug returns the project with the given slug.
-func (s *ProjectStore) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
+// projectColumns is the column list every single-project lookup selects, in the
+// order scanProject expects them.
+const projectColumns = `id, name, slug, status, issue_prefix, issue_counter, group_id, created_at, retention_days, sampling_mode`
+
+// scanProject reads one project row, turning the nullable retention column into
+// the pointer the domain type uses.
+func scanProject(row interface{ Scan(dest ...any) error }) (Project, error) {
 	var p Project
 	var createdAt string
-	err := s.readDB().QueryRowContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at FROM projects WHERE slug = ?`, slug).
-		Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter, &p.GroupID, &createdAt)
-	if err != nil {
+	var retention sql.NullInt64
+	if err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter,
+		&p.GroupID, &createdAt, &retention, &p.SamplingMode); err != nil {
 		return Project{}, wrapNotFound(err, "project not found")
 	}
 	p.CreatedAt, _ = parseTime(createdAt)
+	p.RetentionDays = nullIntToPtr(retention)
 	return p, nil
+}
+
+// ProjectBySlug returns the project with the given slug.
+func (s *ProjectStore) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
+	return scanProject(s.readDB().QueryRowContext(ctx,
+		`SELECT `+projectColumns+` FROM projects WHERE slug = ?`, slug))
 }
 
 // EnsureProject returns the project with the given slug, creating it if it does not exist.
@@ -252,15 +267,18 @@ WHERE p.issue_prefix = ? AND i.issue_number = ?`, prefix, number).Scan(&rowID)
 
 // ProjectByID returns a project by its numeric ID.
 func (s *ProjectStore) ProjectByID(ctx context.Context, id int64) (Project, error) {
-	var p Project
-	var createdAt string
-	err := s.readDB().QueryRowContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter, &p.GroupID, &createdAt)
-	if err != nil {
-		return Project{}, wrapNotFound(err, "project not found")
+	return scanProject(s.readDB().QueryRowContext(ctx,
+		`SELECT `+projectColumns+` FROM projects WHERE id = ?`, id))
+}
+
+// nullIntToPtr converts a nullable integer column into the pointer the domain
+// type uses, where nil means "inherit the deployment default".
+func nullIntToPtr(n sql.NullInt64) *int {
+	if !n.Valid {
+		return nil
 	}
-	p.CreatedAt, _ = parseTime(createdAt)
-	return p, nil
+	v := int(n.Int64)
+	return &v
 }
 
 // ProjectUsage holds per-project usage counts.
@@ -282,7 +300,7 @@ func (s *ProjectStore) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUs
 			COALESCE(lc.cnt, 0)
 		FROM projects p
 		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM issues GROUP BY project_id) ic ON ic.project_id = p.id
-		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM events GROUP BY project_id) ec ON ec.project_id = p.id
+		LEFT JOIN (SELECT project_id, SUM(sample_weight) cnt FROM events GROUP BY project_id) ec ON ec.project_id = p.id
 		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM log_entries GROUP BY project_id) lc ON lc.project_id = p.id`)
 	if err != nil {
 		return nil, err

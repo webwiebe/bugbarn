@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -34,6 +35,10 @@ type Repository interface {
 	// Rename and merge
 	RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error
 	MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error
+
+	// Volume policy: retention window and event sampling.
+	UpdateProjectLimits(ctx context.Context, slug string, retentionDays *int, sampling string) error
+	SampleAfter() int64
 
 	// Group operations
 	CreateGroup(ctx context.Context, name, slug string) (domain.ProjectGroup, error)
@@ -352,6 +357,28 @@ func (s *Service) Rename(ctx context.Context, oldSlug, newSlug, newName string) 
 	s.logger.InfoContext(ctx, "project renamed", "old_slug", oldSlug, "new_slug", newSlug, "new_name", newName)
 	return nil
 }
+
+// UpdateLimits sets a project's retention window and sampling mode.
+func (s *Service) UpdateLimits(ctx context.Context, slug string, retentionDays *int, sampling string) error {
+	ctx, span := tracing.Tracer().Start(ctx, "service.projects.UpdateLimits",
+		trace.WithAttributes(attribute.String("slug", slug), attribute.String("sampling", sampling)))
+	defer span.End()
+	if err := s.repo.UpdateProjectLimits(ctx, slug, retentionDays, sampling); err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		s.logger.ErrorContext(ctx, "update project limits", "slug", slug, "error", err)
+		return err
+	}
+	days := "inherit"
+	if retentionDays != nil {
+		days = strconv.Itoa(*retentionDays)
+	}
+	s.logger.InfoContext(ctx, "project limits updated", "slug", slug, "retention_days", days, "sampling", sampling)
+	return nil
+}
+
+// SampleAfter reports the deployment-wide sampling threshold, so the API can
+// show what a project inheriting the default actually gets.
+func (s *Service) SampleAfter() int64 { return s.repo.SampleAfter() }
 
 func (s *Service) Merge(ctx context.Context, sourceSlug, targetSlug string) error {
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.Merge",

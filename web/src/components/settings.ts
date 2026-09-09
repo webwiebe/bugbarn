@@ -17,7 +17,7 @@ export function renderSettingsViewMarkup(
   const pendingProjects = projects.filter(p => (p.status ?? p.Status) === "pending");
   const activeProjects = projects.filter(p => (p.status ?? p.Status) !== "pending");
 
-  const subPageTitles: Record<string, string> = { projects: "Projects", preferences: "Preferences", keys: "API Keys", system: "System" };
+  const subPageTitles: Record<string, string> = { projects: "Projects", volume: "Volume", preferences: "Preferences", keys: "API Keys", system: "System" };
   const subTitle = subPageTitles[tab] ?? "";
   const headContent = subTitle
     ? `<a href="#/settings/overview" class="back-link">← Settings</a><h2>${escapeHtml(subTitle)}${tab === "projects" && pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</h2>`
@@ -95,11 +95,25 @@ function renderSettingsOverview(
       <p class="muted" style="margin-top:6px">Replace <code>your-project-slug</code> with the desired name. Approve the project once it appears in <a href="#/settings/projects">Projects</a>.</p>
     </div>`;
 
-  const navItems = `
+  const navItems = renderSettingsNav(username, pendingProjects.length);
+
+  return errorBanner + pendingBanner + noProjectsBanner + statsBar + navItems + setupCard;
+}
+
+// renderSettingsNav is the settings landing page's link list. It lives outside
+// renderSettingsOverview so that function stays inside the 80-line budget the
+// TS gate enforces.
+function renderSettingsNav(username: string, pendingCount: number): string {
+  return `
     <div class="settings-nav">
       <a href="#/settings/projects" class="settings-nav-item">
-        <span class="settings-nav-label">Projects${pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</span>
+        <span class="settings-nav-label">Projects${pendingCount > 0 ? ` <span class="nav-badge">${pendingCount}</span>` : ""}</span>
         <span class="settings-nav-desc">Manage projects, groups, and slug aliases</span>
+        <span class="settings-nav-arrow">›</span>
+      </a>
+      <a href="#/settings/volume" class="settings-nav-item">
+        <span class="settings-nav-label">Volume</span>
+        <span class="settings-nav-desc">Retention windows and event sampling per project</span>
         <span class="settings-nav-arrow">›</span>
       </a>
       <a href="#/settings/preferences" class="settings-nav-item">
@@ -123,8 +137,6 @@ function renderSettingsOverview(
         <span class="settings-nav-arrow">›</span>
       </button>
     </div>`;
-
-  return errorBanner + pendingBanner + noProjectsBanner + statsBar + navItems + setupCard;
 }
 
 // usageCount formats a per-project count for display. An absent count means the

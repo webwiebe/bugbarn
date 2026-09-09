@@ -17,6 +17,16 @@ type core struct {
 	roDB             *sql.DB
 	defaultProjectID int64
 
+	// sampleAfter is the deployment-wide event-sampling threshold: an issue
+	// stores every event until it has this many, and is sampled past it. 0
+	// disables sampling everywhere. Projects can opt out (or back in) but do not
+	// get their own threshold — see projectLimits.
+	sampleAfter int64
+
+	// limits caches per-project volume policy for the ingest path, which would
+	// otherwise query it once per event.
+	limits *limitsCache
+
 	// logInsertCount counts log-entry insert batches so the retention trim can
 	// be amortized (run roughly once per logTrimInterval batches) instead of on
 	// every insert — the single writer is shared with event ingestion, so we
@@ -92,6 +102,15 @@ type Stores struct {
 
 // newStore builds the facade and every domain store over a single shared core.
 func newStore(c *core) *Store {
+	if c.limits == nil {
+		c.limits = newLimitsCache()
+	}
+	// Sampling is on by default, at the default threshold: a deployment that
+	// never configures anything is still protected from a runaway fingerprint.
+	// SetSampleAfter overrides it, including with 0 to turn sampling off.
+	if c.sampleAfter == 0 {
+		c.sampleAfter = defaultSampleAfter
+	}
 	return &Store{
 		core:            c,
 		IssueStore:      &IssueStore{c},

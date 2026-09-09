@@ -364,14 +364,21 @@ func (s *Server) dispatchProjectRoutes(w http.ResponseWriter, r *http.Request) b
 }
 
 func (s *Server) dispatchProjectItemRoutes(w http.ResponseWriter, r *http.Request) bool {
+	if !strings.HasPrefix(r.URL.Path, "/api/v1/projects/") {
+		return false
+	}
 	switch {
-	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && strings.HasSuffix(r.URL.Path, "/approve") && r.Method == http.MethodPost:
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/approve"):
 		s.approveProject(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && strings.HasSuffix(r.URL.Path, "/merge") && r.Method == http.MethodPost:
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/merge"):
 		s.mergeProject(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && r.Method == http.MethodPut:
+	// Before the bare-PUT case below, which would otherwise swallow it: that one
+	// matches any path under /api/v1/projects/ and treats the whole tail as a slug.
+	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/limits"):
+		s.updateProjectLimits(w, r)
+	case r.Method == http.MethodPut:
 		s.renameProject(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/projects/") && r.Method == http.MethodDelete:
+	case r.Method == http.MethodDelete:
 		s.deleteProject(w, r)
 	default:
 		return false

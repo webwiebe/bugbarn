@@ -84,3 +84,40 @@ func (s *EventStore) CountEventsBefore(ctx context.Context, cutoff time.Time) (i
 	}
 	return n, nil
 }
+
+// DeleteProjectEventsBefore is DeleteEventsBefore scoped to one project, for
+// projects that carry their own retention window.
+//
+// It is a separate query rather than an optional predicate on the global one for
+// an index reason. The global sweep is served by idx_events_received_at
+// (received_at, id) from migration 00012, and adding `AND project_id = ?` to it
+// would force the planner to evaluate rows it cannot use — which is exactly the
+// full-table scan that made the hourly sweep take 98 seconds and starve ingest
+// (BS2-98). This one is shaped for idx_events_project_received_at
+// (project_id, received_at DESC, id DESC) from the initial schema, whose leading
+// column is the project: the scan starts inside the project's partition and
+// stops at LIMIT. SQLite walks a DESC index backwards happily, so the ASC
+// ordering here still resolves to an index scan rather than a sort.
+func (s *EventStore) DeleteProjectEventsBefore(ctx context.Context, projectID int64, cutoff time.Time, limit int) (int64, error) {
+	if limit <= 0 || projectID <= 0 {
+		return 0, nil
+	}
+	if s == nil || s.db == nil {
+		return 0, apperr.Internal("delete project events before cutoff: store is read-only", nil)
+	}
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM events WHERE id IN (
+			SELECT id FROM events WHERE project_id = ? AND received_at < ?
+			ORDER BY received_at ASC, id ASC LIMIT ?
+		)`,
+		projectID, cutoff.UTC().Format(time.RFC3339Nano), limit,
+	)
+	if err != nil {
+		return 0, wrapErr(err, "delete project events before cutoff")
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, wrapErr(err, "delete project events before cutoff")
+	}
+	return n, nil
+}

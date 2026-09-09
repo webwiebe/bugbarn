@@ -13,8 +13,11 @@ func (s *DigestStore) WeeklyDigest(ctx context.Context, projectID int64, since t
 
 	var d DigestData
 
+	// SUM(sample_weight), not COUNT(*): past the sampling threshold one stored
+	// row stands for many events, and a digest that reported stored rows would
+	// quietly under-report exactly the projects that are loudest.
 	if err := s.readDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM events WHERE project_id = ? AND received_at >= ?`,
+		`SELECT COALESCE(SUM(sample_weight), 0) FROM events WHERE project_id = ? AND received_at >= ?`,
 		projectID, sinceStr,
 	).Scan(&d.TotalEvents); err != nil && err != sql.ErrNoRows {
 		return d, err
@@ -42,7 +45,7 @@ func (s *DigestStore) WeeklyDigest(ctx context.Context, projectID int64, since t
 	}
 
 	rows, err := s.readDB().QueryContext(ctx, `
-		SELECT i.id, i.title, COUNT(e.id) AS event_count, i.status
+		SELECT i.id, i.title, SUM(e.sample_weight) AS event_count, i.status
 		FROM events e
 		JOIN issues i ON i.id = e.issue_id
 		WHERE e.project_id = ?

@@ -598,7 +598,9 @@ Usage counts are opt-in because computing them aggregates the issues, events and
 
 The counts are served from a short-lived cache. `usage_available` is `false` when the aggregate could not be computed; in that case the three count fields are **absent** from every project. An absent count means "unknown" and must not be rendered as zero. `usage_stale: true` means the counts are real but came from a cached snapshot because a refresh failed.
 
-`event_count` is the number of events *currently retained*. Events older than `BUGBARN_EVENT_RETENTION_DAYS` (default 30) are expired, so this is a live count, not a lifetime total — lifetime counts live on each issue.
+`event_count` is the number of events *currently retained*. Events older than the retention window — the project's own `retention_days` when set, otherwise `BUGBARN_EVENT_RETENTION_DAYS` (default 30) — are expired, so this is a live count, not a lifetime total; lifetime counts live on each issue. Sampled events still count: this figure sums what each stored event stands for, not how many rows survived sampling.
+
+Each project also carries `retention_days` (null when it inherits the deployment window) and `sampling_mode` (`""` inherit, `"on"`, `"off"`), and the response carries a `defaults` object with the `retention_days` and `sample_after` an unset project inherits.
 
 ---
 

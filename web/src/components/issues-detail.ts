@@ -15,6 +15,8 @@ import {
   eventUrl,
   firstIdentifier,
   issueEventCount,
+  issueSampleRate,
+  sampledChipMarkup,
   issueExceptionType,
   issueFingerprint,
   issueFingerprintMaterial,
@@ -95,7 +97,10 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       </div>
     </div>
     <div class="issue-stats">
-      <div><span>Events</span><strong>${escapeHtml(String(eventCount))}</strong></div>
+      <div>
+        <span>Events</span>
+        <strong>${escapeHtml(String(eventCount))} ${sampledChipMarkup(issueSampleRate(issue), "0.6rem")}</strong>
+      </div>
       <div><span>First seen</span><strong>${escapeHtml(firstSeen || "n/a")}</strong></div>
       <div><span>Last seen</span><strong>${escapeHtml(lastSeen || "n/a")}</strong></div>
       <div><span>Status</span><strong>${escapeHtml(status)}</strong></div>

@@ -54,7 +54,30 @@ func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter)
 	}
 	defer rows.Close()
 
-	return scanIssueRows(rows)
+	issues, err := scanIssueRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	s.annotateSampleRates(ctx, issues)
+	return issues, nil
+}
+
+// annotateSampleRates fills in each issue's SampleRate, so the UI can say "1 in
+// 100" without knowing anything about the ladder or which projects opted out.
+//
+// The threshold lookup is cached per project, and an issue list is almost always
+// one project, so this is a map hit per row rather than a query per row.
+func (s *core) annotateSampleRates(ctx context.Context, issues []Issue) {
+	thresholds := make(map[int64]int64)
+	for i := range issues {
+		projectID := issues[i].ProjectID
+		threshold, ok := thresholds[projectID]
+		if !ok {
+			threshold = s.sampleAfterFor(ctx, projectID)
+			thresholds[projectID] = threshold
+		}
+		issues[i].SampleRate = int(sampleRateFor(int64(issues[i].EventCount), threshold))
+	}
 }
 
 // buildIssueListQuery assembles the SELECT/FROM/WHERE/ORDER BY/LIMIT SQL for the
@@ -82,7 +105,8 @@ SELECT
 	i.representative_event_json,
 	COALESCE(p.slug, '') AS project_slug,
 	i.issue_number,
-	COALESCE(p.issue_prefix, '') AS issue_prefix
+	COALESCE(p.issue_prefix, '') AS issue_prefix,
+	i.project_id
 FROM ` + fromClause
 	if len(conditions) > 0 {
 		sqlQuery += `
@@ -237,7 +261,8 @@ SELECT
 	i.representative_event_json,
 	COALESCE(p.slug, '') AS project_slug,
 	i.issue_number,
-	COALESCE(p.issue_prefix, '') AS issue_prefix
+	COALESCE(p.issue_prefix, '') AS issue_prefix,
+	i.project_id
 FROM issues i
 LEFT JOIN projects p ON p.id = i.project_id
 WHERE i.id = ?`
@@ -247,6 +272,7 @@ WHERE i.id = ?`
 	if err != nil {
 		return Issue{}, wrapNotFound(err, "issue not found")
 	}
+	issue.SampleRate = int(sampleRateFor(int64(issue.EventCount), s.sampleAfterFor(ctx, issue.ProjectID)))
 	return issue, nil
 }
 
@@ -287,6 +313,7 @@ func scanIssue(scanner interface {
 		&issue.ProjectSlug,
 		&issueNumber,
 		&issuePrefix,
+		&issue.ProjectID,
 	); err != nil {
 		return Issue{}, err
 	}

@@ -17,6 +17,7 @@ import { loadReleaseDetail, loadReleases, renderReleasesView } from "./views-rel
 import { loadAlerts, renderAlertsView } from "./views-alerts.js";
 import { connectLogSSE, disconnectLogSSE, loadLogs, renderLogsView } from "./views-logs.js";
 import { loadSdkInfo, loadSettings, renderSettingsView } from "./views-settings.js";
+import { loadVolume, renderVolumeView } from "./views-volume.js";
 import { renderAccountView } from "./views-account.js";
 
 export function route(): void {
@@ -59,9 +60,9 @@ export function route(): void {
     setRouteChip("Account");
   } else if (kind === "settings") {
     state.currentRoute = "settings";
-    const validTabs: SettingsTab[] = ["overview", "projects", "preferences", "keys", "system"];
+    const validTabs: SettingsTab[] = ["overview", "projects", "volume", "preferences", "keys", "system"];
     state.settingsTab = (validTabs.includes(id as SettingsTab) ? id : "overview") as SettingsTab;
-    const subPageTitles: Record<string, string> = { projects: "Projects", preferences: "Preferences", keys: "API Keys", system: "System" };
+    const subPageTitles: Record<string, string> = { projects: "Projects", volume: "Volume", preferences: "Preferences", keys: "API Keys", system: "System" };
     const subTitle = subPageTitles[state.settingsTab];
     setPageTitle(subTitle ? `Settings — ${subTitle}` : "Settings");
     setRouteChip(subTitle ?? "Settings");
@@ -104,7 +105,8 @@ function renderCurrentRoute(): void {
   } else if (state.currentRoute === "logs") {
     renderLogsView();
   } else if (state.currentRoute === "settings") {
-    renderSettingsView();
+    if (state.settingsTab === "volume") renderVolumeView();
+    else renderSettingsView();
   } else if (state.currentRoute === "account") {
     renderAccountView();
   } else if (state.selectedEventId) {
@@ -159,6 +161,11 @@ async function loadCurrentRouteData(): Promise<void> {
     return;
   }
   if (state.currentRoute === "settings") {
+    if (state.settingsTab === "volume") {
+      await loadVolume();
+      setRouteStatus();
+      return;
+    }
     await loadSettings();
     loadSdkInfo();
     setRouteStatus();

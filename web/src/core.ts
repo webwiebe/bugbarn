@@ -41,6 +41,7 @@ export const state: AppState = {
   currentProject: (() => { const v = localStorage.getItem(projectKey); return (v && v !== "default") ? v : "__all"; })(),
   currentGroup: localStorage.getItem(groupKey) || null,
   settingsTab: "overview",
+  volumeDefaults: null,
   currentEnv: localStorage.getItem(envKey) ?? "",
   currentRoute: "issues",
   issues: [],

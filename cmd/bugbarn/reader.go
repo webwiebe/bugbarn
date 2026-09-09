@@ -157,6 +157,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 		apiServer.SetTrustedProxies(cfg.TrustedProxies)
 	}
 	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
+	apiServer.SetRetentionDays(cfg.EventRetentionDays)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
 	if oidcClient != nil {
 		apiServer.SetOIDCClient(oidcClient)

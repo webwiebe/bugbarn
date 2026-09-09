@@ -27,6 +27,13 @@ type Issue struct {
 	EventCount             int           `json:"event_count"`
 	RepresentativeEvent    event.Event   `json:"representative_event"`
 	ProjectSlug            string        `json:"project_slug,omitempty"`
+	ProjectID              int64         `json:"project_id,omitempty"`
+
+	// SampleRate is how many occurrences one stored event of this issue stands
+	// for: 1 when everything is stored, 100 when the issue is loud enough that
+	// only every hundredth event is kept. EventCount is unaffected either way —
+	// it always counts every occurrence.
+	SampleRate int `json:"sample_rate,omitempty"`
 }
 
 // IssueFilter holds optional filters and sort order for listing issues.
@@ -64,6 +71,13 @@ type Project struct {
 	IssueCounter int       `json:"issue_counter"`
 	GroupID      *int64    `json:"group_id"`
 	CreatedAt    time.Time `json:"created_at"`
+
+	// RetentionDays overrides how long this project's events are kept. nil means
+	// it inherits the deployment-wide window; a value may only be shorter than
+	// that window, since the global sweep would delete anything older anyway.
+	RetentionDays *int `json:"retention_days"`
+	// SamplingMode is "" (inherit the deployment default), "on" or "off".
+	SamplingMode string `json:"sampling_mode"`
 }
 
 // ProjectGroup represents a named collection of related projects.

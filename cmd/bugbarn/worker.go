@@ -35,6 +35,7 @@ func runWorkerOnce(cfg config.Config) error {
 		return err
 	}
 	defer persistentStore.Close()
+	persistentStore.SetSampleAfter(int64(cfg.EventSampleAfter))
 
 	records, err := spool.ReadRecords(spool.Path(cfg.SpoolDir))
 	if err != nil {

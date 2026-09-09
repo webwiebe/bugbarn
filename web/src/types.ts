@@ -157,6 +157,10 @@ export interface ApiProject extends RawRecord {
   event_count?: number;
   log_count?: number;
   group_id?: number | null;
+  /** null when the project inherits the deployment retention window. */
+  retention_days?: number | null;
+  /** "" inherit | "on" | "off" */
+  sampling_mode?: string;
 }
 
 export interface ApiProjectGroup {
@@ -213,7 +217,15 @@ export interface AnalyticsSegmentBucket extends RawRecord { value: string; pagev
 
 export type IssueSort = "last_seen" | "first_seen" | "event_count";
 export type IssueStatus = "all" | "open" | "resolved" | "muted";
-export type SettingsTab = "overview" | "projects" | "preferences" | "keys" | "system";
+export type SettingsTab = "overview" | "projects" | "volume" | "preferences" | "keys" | "system";
+
+/** VolumeDefaults are the deployment-wide settings a project inherits unless it
+ * overrides them: the event retention window, and how many events an issue
+ * stores before it starts being sampled (0 = sampling off). */
+export interface VolumeDefaults {
+  retention_days: number;
+  sample_after: number;
+}
 
 export interface IngestHealth extends RawRecord {
   healthy: boolean;
@@ -241,6 +253,7 @@ export interface AppState {
   currentProject: string;
   currentGroup: string | null;
   settingsTab: SettingsTab;
+  volumeDefaults: VolumeDefaults | null;
   currentEnv: string;
   currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs" | "account";
   issues: ApiIssue[];
