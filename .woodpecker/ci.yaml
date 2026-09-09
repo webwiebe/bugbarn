@@ -131,6 +131,21 @@ steps:
       - |
         set -euo pipefail
         command -v docker >/dev/null 2>&1 || { echo "FAIL: docker is required to run the PHP SDK tests"; exit 1; }
+        # Keychain-free DOCKER_CONFIG, for the same reason the go step above has
+        # one. The agent's ~/.docker/config.json sets "credsStore": "desktop", so
+        # docker shells out to docker-credential-desktop for every pull — even a
+        # public image needing no auth at all. That helper lives inside
+        # Docker.app and is not on this step's PATH, so the pull dies with
+        # `error getting credentials ... executable file not found in $PATH`.
+        #
+        # It stayed hidden while composer:2.8 was in the agent's local image
+        # cache: no pull, no credential lookup. The first run after the cache
+        # lost the image failed (pipeline 258), which is why this looks like it
+        # broke spontaneously. An empty config means no credsStore to consult;
+        # composer:2.8 is public, so there is nothing to authenticate.
+        DOCKER_CONFIG_DIR="$(mktemp -d)"
+        printf '{}\n' > "$DOCKER_CONFIG_DIR/config.json"
+        export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
         cd sdks/php
         docker run --rm -v "$(pwd):/app" -w /app composer:2.8 sh -c 'set -eu; composer install --no-interaction --prefer-dist; ./vendor/bin/phpunit'
 
