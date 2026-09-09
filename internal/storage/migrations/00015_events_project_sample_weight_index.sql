@@ -1,0 +1,31 @@
+-- +goose Up
+-- Make the per-project usage aggregate index-only again.
+--
+-- Migration 00014 added events.sample_weight and switched the volume aggregates
+-- from COUNT(*) to SUM(sample_weight), so they report real event volume rather
+-- than however many rows survived sampling. That was the point, but it made this
+-- query, which ProjectUsageAll runs over the whole table:
+--
+--   SELECT project_id, SUM(sample_weight) FROM events GROUP BY project_id
+--
+-- read every row. COUNT(*) could be answered from any project_id index without
+-- touching the table; summing a column that is in no index cannot. Every one of
+-- production's 831k rows then costs a table lookup, and each of those pulls a
+-- page holding a multi-kilobyte event_json. GET /api/v1/projects?usage=true went
+-- from 0.05s to 30s — straight into the request timeout, so the settings and
+-- volume screens showed "—" for every project (v0.236.181).
+--
+-- Two integer columns in the order the GROUP BY wants them turns it back into a
+-- covering scan: no table access, no sort. Measured on a synthetic 300k-row
+-- table, 0.56s → 0.02s, with the index costing ~1% of the table's own pages.
+-- Production's rows are far larger than the synthetic ones, so the real gap is
+-- wider still.
+--
+-- This one is NOT free the way 00014 was: building an index reads the table, so
+-- expect the writer to spend time here on first start. It is one pass over 831k
+-- rows writing ~9MB, well inside the 600s startupProbe budget, and far cheaper
+-- than migration 00011, which built a 4-column index over 2.25M rows in 7m17s.
+CREATE INDEX IF NOT EXISTS idx_events_project_sample_weight ON events(project_id, sample_weight);
+
+-- +goose Down
+DROP INDEX IF EXISTS idx_events_project_sample_weight;
