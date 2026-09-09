@@ -46,6 +46,12 @@ func (r projectRepo) DefaultProjectID() int64 {
 	return r.ProjectStore.DefaultProjectID()
 }
 
+// SampleAfter disambiguates the shared-kernel accessor, for the same reason as
+// DefaultProjectID above.
+func (r projectRepo) SampleAfter() int64 {
+	return r.ProjectStore.SampleAfter()
+}
+
 // newServiceRepos builds the per-service repositories from a store's domain set.
 func newServiceRepos(d storage.Stores) (issueRepo, releaseRepo, projectRepo) {
 	return issueRepo{d.Issues, d.Events, d.Facets},

@@ -6,6 +6,8 @@ import {
   eventTitle,
   firstIdentifier,
   issueEventCount,
+  issueSampleRate,
+  sampledChipMarkup,
   issueExceptionType,
   issueFingerprint,
   issueFirstSeen,
@@ -77,6 +79,7 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
               <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
               ${statusLabel ? `<span class="chip issue-status-chip ${statusClass}" style="font-size:0.65rem">${escapeHtml(statusLabel)}</span>` : ""}
               ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
+              ${sampledChipMarkup(issueSampleRate(issue))}
               <span>${escapeHtml(id)}</span>
             </div>
           </button>

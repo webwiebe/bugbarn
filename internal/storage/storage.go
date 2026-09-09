@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	_ "modernc.org/sqlite"
 
+	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
@@ -286,8 +287,27 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 
 	isNew := issue.EventCount == 1 && !regressed
 
+	// Sampling decision. issue.EventCount was incremented by the upsert above and
+	// is the issue's lifetime total, so it is the only input the ladder needs —
+	// no extra query, no counter, no coordination. Skipping the event row leaves
+	// the issue itself untouched: the count stays exact, alerts read it rather
+	// than counting rows, the regression row is already written, and the facet
+	// projection has not depended on an event row since migration 00013. The
+	// issue also keeps representative_event_json, so there is always a full
+	// example payload to look at.
+	keep, weight := sampleFor(int64(issue.EventCount), s.sampleAfterFor(ctx, projectID))
+	if !keep {
+		span.SetAttributes(attribute.Bool("sampled_out", true))
+		if err := s.persistFacetsFor(ctx, projectID, issueID, processed.Event); err != nil {
+			span.SetStatus(codes.Error, err.Error())
+			return Issue{}, Event{}, false, false, err
+		}
+		span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
+		return issue, Event{}, isNew, regressed, nil
+	}
+
 	_, insertSpan := tracing.Tracer().Start(ctx, "storage.InsertEvent")
-	eventRow, err := s.insertEvent(ctx, projectID, issueID, issue.ID, regressed, processed)
+	eventRow, err := s.insertEvent(ctx, projectID, issueID, issue.ID, regressed, weight, processed)
 	if err != nil {
 		insertSpan.SetStatus(codes.Error, err.Error())
 		insertSpan.End()
@@ -296,24 +316,33 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 	}
 	insertSpan.End()
 
-	_, facetSpan := tracing.Tracer().Start(ctx, "storage.InsertFacets")
-	if err := s.insertFacets(ctx, projectID, issueID, processed.Event); err != nil {
-		facetSpan.SetStatus(codes.Error, err.Error())
-		facetSpan.End()
+	if err := s.persistFacetsFor(ctx, projectID, issueID, processed.Event); err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return Issue{}, Event{}, false, false, err
 	}
-
-	if err := s.PersistFacets(ctx, issueID, extractFacets(processed.Event)); err != nil {
-		facetSpan.SetStatus(codes.Error, err.Error())
-		facetSpan.End()
-		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, err
-	}
-	facetSpan.End()
 
 	span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
 	return issue, eventRow, isNew, regressed, nil
+}
+
+// persistFacetsFor writes both facet projections for an issue: the flattened
+// payload and the curated key set. It runs whether or not the event itself was
+// stored — a sampled-out event still tells us the issue was seen on this host,
+// in this environment, on this release, and that is exactly the kind of fact the
+// projection exists to answer.
+func (s *core) persistFacetsFor(ctx context.Context, projectID, issueID int64, evt event.Event) error {
+	_, facetSpan := tracing.Tracer().Start(ctx, "storage.InsertFacets")
+	defer facetSpan.End()
+
+	if err := s.insertFacets(ctx, projectID, issueID, evt); err != nil {
+		facetSpan.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := s.PersistFacets(ctx, issueID, extractFacets(evt)); err != nil {
+		facetSpan.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
 }
 
 // projectSlugByID returns the project's slug for a persisted issue. It is

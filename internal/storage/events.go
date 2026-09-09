@@ -238,7 +238,7 @@ LIMIT ?`, sinceStr, limit)
 
 func (s *core) insertEvent(
 	ctx context.Context, projectID int64, issueID int64, issueDisplayID string,
-	regressed bool, processed worker.ProcessedEvent,
+	regressed bool, sampleWeight int64, processed worker.ProcessedEvent,
 ) (Event, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {
@@ -265,8 +265,9 @@ INSERT INTO events (
 	severity,
 	message,
 	regressed,
-	event_json
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	event_json,
+	sample_weight
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		projectID,
 		issueID,
 		processed.Fingerprint,
@@ -278,6 +279,7 @@ INSERT INTO events (
 		processed.Event.Message,
 		boolToInt(regressed),
 		payload,
+		sampleWeight,
 	)
 	if err != nil {
 		return Event{}, err

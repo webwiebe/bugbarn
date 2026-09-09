@@ -28,7 +28,15 @@ import (
 type Store interface {
 	DeleteEventsBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 	CountEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
+	DeleteProjectEventsBefore(ctx context.Context, projectID int64, cutoff time.Time, limit int) (int64, error)
+	ProjectsWithRetentionOverride(ctx context.Context) (map[int64]int, error)
 }
+
+// deleteBatch removes up to limit expired rows and reports how many it deleted.
+// The global sweep and the per-project passes differ only in which statement
+// they run, so drainBatches takes the statement rather than reimplementing the
+// batching, pausing and budget discipline twice.
+type deleteBatch func(ctx context.Context, limit int) (int64, error)
 
 const (
 	// DefaultRetentionDays is the default event retention window.
@@ -233,7 +241,7 @@ type sweepResult struct {
 // drainBatches deletes expired events in batches until the backlog is drained,
 // a budget is spent, or the process is shutting down.
 func drainBatches(
-	ctx context.Context, store Store, cutoff time.Time, tun tuning, log *slog.Logger, m *workerMetrics,
+	ctx context.Context, del deleteBatch, cutoff time.Time, tun tuning, log *slog.Logger, m *workerMetrics,
 ) sweepResult {
 	res := sweepResult{stop: "row_budget"}
 	deadline := time.Now().Add(tun.budget)
@@ -244,7 +252,7 @@ func drainBatches(
 			return res
 		}
 		batchStart := time.Now()
-		n, err := store.DeleteEventsBefore(ctx, cutoff, tun.batchSize)
+		n, err := del(ctx, tun.batchSize)
 		batchDur := time.Since(batchStart)
 		res.deleteTime += batchDur
 		if err != nil {
@@ -285,10 +293,13 @@ func sweep(ctx context.Context, store Store, cfg Config, tun tuning, log *slog.L
 	cutoff := time.Now().UTC().AddDate(0, 0, -cfg.RetentionDays)
 	start := time.Now()
 
-	res := drainBatches(ctx, store, cutoff, tun, log, m)
+	res := drainBatches(ctx, func(ctx context.Context, limit int) (int64, error) {
+		return store.DeleteEventsBefore(ctx, cutoff, limit)
+	}, cutoff, tun, log, m)
 	if res.aborted {
 		return
 	}
+	defer sweepProjectOverrides(ctx, store, cfg, tun, log, m)
 	if res.deleted == 0 {
 		log.Debug("retention: nothing to expire", "cutoff", cutoff.Format(time.RFC3339))
 		return
@@ -325,4 +336,86 @@ func sweep(ctx context.Context, store Store, cfg Config, tun tuning, log *slog.L
 		"pause_ms", res.pauseTime.Milliseconds(),
 		"count_ms", countMS,
 	)
+}
+
+// sweepProjectOverrides expires events for projects that carry their own, shorter
+// retention window.
+//
+// It runs after the global pass, on whatever is left of the sweep budget, and
+// only visits projects that actually have an override — in practice a handful,
+// often none. A window longer than the global one is ignored rather than
+// honored: the global pass has already deleted anything past the deployment
+// window, so promising to keep it longer would be a lie. The API clamps on the
+// way in; this is the second half of that guarantee.
+func sweepProjectOverrides(
+	ctx context.Context, store Store, cfg Config, tun tuning, log *slog.Logger, m *workerMetrics,
+) {
+	if ctx.Err() != nil {
+		return
+	}
+	overrides, err := store.ProjectsWithRetentionOverride(ctx)
+	if err != nil {
+		if !shuttingDown(err) {
+			log.Warn("retention: could not read per-project retention windows", "error", err)
+		}
+		return
+	}
+	if len(overrides) == 0 {
+		return
+	}
+
+	deadline := time.Now().Add(tun.budget)
+	for projectID, days := range overrides {
+		if ctx.Err() != nil {
+			return
+		}
+		if days <= 0 || days >= cfg.RetentionDays {
+			continue
+		}
+		remaining := time.Until(deadline)
+		if tun.budget > 0 && remaining <= 0 {
+			log.Info("retention: per-project pass out of budget", "project_id", projectID)
+			return
+		}
+		if drainProject(ctx, store, projectID, days, withBudget(tun, remaining), log, m) {
+			return
+		}
+	}
+}
+
+// withBudget returns tun with its wall-clock budget replaced.
+func withBudget(tun tuning, budget time.Duration) tuning {
+	tun.budget = budget
+	return tun
+}
+
+// drainProject expires one project's events past its own window. It reports
+// whether the sweep was aborted and the caller should stop entirely.
+func drainProject(
+	ctx context.Context, store Store, projectID int64, days int,
+	tun tuning, log *slog.Logger, m *workerMetrics,
+) (aborted bool) {
+	cutoff := time.Now().UTC().AddDate(0, 0, -days)
+	start := time.Now()
+
+	res := drainBatches(ctx, func(ctx context.Context, limit int) (int64, error) {
+		return store.DeleteProjectEventsBefore(ctx, projectID, cutoff, limit)
+	}, cutoff, tun, log, m)
+	if res.aborted {
+		return true
+	}
+	if res.deleted == 0 {
+		return false
+	}
+	log.Info("retention: expired events for project",
+		"project_id", projectID,
+		"deleted", res.deleted,
+		"stop", res.stop,
+		"cutoff", cutoff.Format(time.RFC3339),
+		"retention_days", days,
+		"duration_ms", time.Since(start).Milliseconds(),
+		"delete_ms", res.deleteTime.Milliseconds(),
+		"pause_ms", res.pauseTime.Milliseconds(),
+	)
+	return false
 }

@@ -39,7 +39,7 @@ func (s *IssueStore) HourlyEventCounts(ctx context.Context, issueIDs []int64) (m
 SELECT
 	issue_id,
 	strftime('%Y-%m-%dT%H', observed_at) AS hour_bucket,
-	COUNT(*) AS cnt
+	SUM(sample_weight) AS cnt
 FROM events
 WHERE ` + projectFilter + `issue_id IN (` + strings.Join(placeholders, ",") + `)
   AND observed_at >= datetime('now', '-24 hours')

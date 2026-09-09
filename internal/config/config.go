@@ -60,6 +60,13 @@ type Config struct {
 	// payloads are. Events were unbounded before this existed, which is what
 	// grew the production database past 3M rows.
 	EventRetentionDays int
+	// EventSampleAfter is BUGBARN_EVENT_SAMPLE_AFTER — how many events an issue
+	// stores before it starts being sampled. Past it the write path keeps one
+	// event in K, K climbing a decade at a time, and records K on the row so
+	// counts still report real volume. 0 disables sampling; a project can opt
+	// out (or back in) on its own. It exists because one fingerprint reached
+	// 1.8M events in production and nothing bounded it.
+	EventSampleAfter int
 	FunnelBarnEndpoint     string // BUGBARN_FUNNELBARN_ENDPOINT
 	FunnelBarnAPIKey       string // BUGBARN_FUNNELBARN_API_KEY
 	AutoApproveProjects    bool   // BUGBARN_AUTO_APPROVE_PROJECTS
@@ -118,6 +125,11 @@ func Load() Config {
 		// Mirrors retention.DefaultRetentionDays; kept as a literal so config
 		// does not have to depend on the retention package.
 		EventRetentionDays: envIntPositive("BUGBARN_EVENT_RETENTION_DAYS", 30),
+		// Sampling is on by default: a deployment that configures nothing is
+		// still protected from a runaway fingerprint. envIntZeroOK, not
+		// envIntPositive, because 0 is a meaningful value here (sampling off)
+		// rather than a misconfiguration to ignore.
+		EventSampleAfter: envIntZeroOK("BUGBARN_EVENT_SAMPLE_AFTER", 1000),
 		PublicURL:              os.Getenv("BUGBARN_PUBLIC_URL"),
 		Environment:            getenv("BUGBARN_ENVIRONMENT", os.Getenv("BUGBARN_ENV")),
 		SelfEndpoint:           os.Getenv("BUGBARN_SELF_ENDPOINT"),
@@ -249,6 +261,18 @@ func envInt64Positive(key string, fallback int64) int64 {
 func envIntPositive(key string, fallback int) int {
 	if raw := os.Getenv(key); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// envIntZeroOK returns the parsed int at key when it is zero or positive, else
+// fallback. Unlike envIntPositive it treats 0 as a value rather than as a
+// misconfiguration, for settings where "off" is a legitimate choice.
+func envIntZeroOK(key string, fallback int) int {
+	if raw := os.Getenv(key); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
 			return parsed
 		}
 	}

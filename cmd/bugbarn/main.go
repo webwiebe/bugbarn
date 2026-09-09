@@ -107,6 +107,10 @@ func run() error {
 		return err
 	}
 	defer store.Close()
+	// Event sampling bounds what a single runaway fingerprint can cost. The
+	// writer is the only process that persists events, so this is the only place
+	// it needs setting.
+	store.SetSampleAfter(int64(cfg.EventSampleAfter))
 	// Runs before the deferred Close above (LIFO), so a clean shutdown folds the
 	// WAL back into the main database file.
 	defer store.FinalCheckpoint(logger)
@@ -251,6 +255,7 @@ func run() error {
 	apiServer.SetDBPath(cfg.DBPath)
 	apiServer.SetWorkerStatus(workerStatus)
 	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
+	apiServer.SetRetentionDays(cfg.EventRetentionDays)
 	apiServer.SetHeldReplayer(heldReplayer)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
 	if selfReporting {

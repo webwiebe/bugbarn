@@ -1131,6 +1131,81 @@ button:disabled {
   color: #818cf8;
 }
 
+/* Sampled issues: loud enough that only a fraction of their events are stored.
+   Deliberately quiet — it qualifies the row, it is not a problem with it. */
+.chip.chip-sampled {
+  background: #2a2438;
+  color: #b9a8e8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Volume settings ------------------------------------------------------ */
+
+.volume-table,
+.volume-ladder {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.volume-table th,
+.volume-ladder th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.volume-table td,
+.volume-ladder td {
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.volume-table tr:last-child td,
+.volume-ladder tr:last-child td {
+  border-bottom: none;
+}
+
+.volume-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.volume-project {
+  display: block;
+  color: var(--text);
+}
+
+.volume-sub {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.volume-days {
+  width: 5.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.volume-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.volume-ladder {
+  max-width: 26rem;
+  margin: 10px 0;
+}
+
+/* Wide tables scroll inside their own box rather than pushing the page sideways. */
+.table-scroll {
+  overflow-x: auto;
+}
+
 .setup-url-box {
   display: flex;
   align-items: center;

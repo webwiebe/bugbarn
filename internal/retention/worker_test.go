@@ -21,6 +21,55 @@ type fakeStore struct {
 	countErr    error
 	countCalls  int
 	deleteDelay time.Duration // simulates a batch that holds the writer
+
+	// Per-project retention overrides and what the per-project pass asked of them.
+	overrides       map[int64]int
+	overridesErr    error
+	projectRemain   map[int64]int64
+	projectCutoffs  map[int64][]time.Time
+	projectDeletes  map[int64]int64
+	projectsListed  int
+	projectDeleteFn func(projectID int64) (int64, error)
+}
+
+func (f *fakeStore) ProjectsWithRetentionOverride(context.Context) (map[int64]int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.projectsListed++
+	if f.overridesErr != nil {
+		return nil, f.overridesErr
+	}
+	out := make(map[int64]int, len(f.overrides))
+	for k, v := range f.overrides {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (f *fakeStore) DeleteProjectEventsBefore(
+	_ context.Context, projectID int64, cutoff time.Time, limit int,
+) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.projectCutoffs == nil {
+		f.projectCutoffs = make(map[int64][]time.Time)
+	}
+	f.projectCutoffs[projectID] = append(f.projectCutoffs[projectID], cutoff)
+	if f.projectDeleteFn != nil {
+		return f.projectDeleteFn(projectID)
+	}
+	n := int64(limit)
+	if remaining := f.projectRemain[projectID]; n > remaining {
+		n = remaining
+	}
+	if f.projectRemain != nil {
+		f.projectRemain[projectID] -= n
+	}
+	if f.projectDeletes == nil {
+		f.projectDeletes = make(map[int64]int64)
+	}
+	f.projectDeletes[projectID] += n
+	return n, nil
 }
 
 func (f *fakeStore) DeleteEventsBefore(_ context.Context, cutoff time.Time, limit int) (int64, error) {

@@ -14,7 +14,22 @@ import (
 type fakeRepo struct {
 	projects map[string]domain.Project
 	err      error
+
+	// Volume policy, recorded so the tests can assert what the service passed on.
+	limitsSlug      string
+	limitsRetention *int
+	limitsSampling  string
 }
+
+func (f *fakeRepo) UpdateProjectLimits(_ context.Context, slug string, retentionDays *int, sampling string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.limitsSlug, f.limitsRetention, f.limitsSampling = slug, retentionDays, sampling
+	return nil
+}
+
+func (f *fakeRepo) SampleAfter() int64 { return 1000 }
 
 func (f *fakeRepo) ListProjects(context.Context) ([]domain.Project, error) {
 	return nil, f.err

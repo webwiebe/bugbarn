@@ -39,6 +39,7 @@ BUGBARN_ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com
 | `BUGBARN_MAX_SPOOL_BYTES` | `0` (unlimited) | No | Maximum total size of the spool directory in bytes. When set and exceeded, ingest requests return `429 Too Many Requests` with a `Retry-After` header. Set this to protect disk space on constrained nodes. |
 | `BUGBARN_PUBLIC_URL` | — | No | Base URL of the BugBarn instance (e.g., `https://bugbarn.example.com`). Used to build links in alert notifications and digest emails. |
 | `BUGBARN_EVENT_RETENTION_DAYS` | `30` | No | How long individual event rows are kept before the hourly retention sweep deletes them. Issues and their lifetime event counts are never expired — only the per-event payloads. Values `<= 0` fall back to the 30-day default, so retention cannot be switched off by misconfiguration, only widened. |
+| `BUGBARN_EVENT_SAMPLE_AFTER` | `1000` | No | How many events one issue stores before BugBarn starts sampling it. Past this threshold one event in K is stored, K climbing a decade at a time (1 in 10, then 1 in 100, and so on), and each stored event records how many occurrences it stands for so counts still report real volume. `0` disables sampling; individual projects can opt out or back in. |
 
 #### BUGBARN_MAX_SPOOL_BYTES
 
@@ -66,6 +67,23 @@ Only the writer sweeps. Readers open the database read-only and skip retention e
 | `BUGBARN_ADMIN_PASSWORD_BCRYPT` | — | No | Admin password pre-hashed as a bcrypt string. Use this to avoid storing the plaintext password. |
 | `BUGBARN_SESSION_SECRET` | — | No | HMAC key used to sign session tokens. Must be a long, random string (at minimum 32 bytes of entropy). **If unset, a random key is generated at startup — sessions will not survive process restarts.** In production, always set this to a stable value so users are not logged out on redeploy. |
 | `BUGBARN_SESSION_TTL_SECONDS` | `43200` (12 h) | No | Session lifetime in seconds. After expiry the user must log in again. |
+
+A project can carry its own, shorter window — set it under Settings → Volume, or with `PUT /api/v1/projects/{slug}/limits`. It may only be shorter than this one: the global sweep expires anything past the deployment window regardless, so a longer per-project value would be a promise BugBarn cannot keep, and is capped on the way in.
+
+#### BUGBARN_EVENT_SAMPLE_AFTER
+
+Retention bounds how *long* events are kept. Sampling bounds how *many* of them one issue can be.
+
+An issue is a fingerprint, so every event under it is the same error. The first few hundred are evidence; the five hundred thousandth is storage. Production once carried 1,842,279 events for a single fingerprint, and `events` is the overwhelming majority of the database, so one client stuck in a loop decides the size of the whole file and crowds out every other project.
+
+Past this threshold the writer keeps one event in K and records K on the row, so `SUM(sample_weight)` — which is what the digest, the 24-hour sparkline and the per-project usage figures read — still reports how many events actually happened. What sampling costs you is individual copies of an error you already have hundreds of examples of. What it never costs you:
+
+- **`issues.event_count` stays exact.** It is incremented before the sampling decision, so an issue that fired 1.8M times still says 1.8M.
+- **Alerts are unaffected.** They read that count, not the number of stored rows.
+- **Every issue keeps a full example.** `issues.representative_event_json` holds a complete payload, so a heavily sampled issue still shows the error, its stack trace and the environments and hosts it was seen on.
+
+Per-project overrides live under Settings → Volume, or `PUT /api/v1/projects/{slug}/limits`.
+
 
 #### BUGBARN_SESSION_SECRET
 

@@ -54,6 +54,11 @@ type Server struct {
 	ingestHealth        func() ingesthealth.Snapshot
 	autoApproveProjects bool
 
+	// globalRetentionDays is the deployment-wide event retention window. The API
+	// clamps per-project overrides to it and reports it so the UI can show what
+	// "inherit" resolves to. 0 means unknown (a server built without it).
+	globalRetentionDays int
+
 	loginLimiter       sync.Map // map[string]*loginAttempt
 	setupLimiter       sync.Map // map[string]*loginAttempt — per-IP limiter for the setup endpoint
 	backchannelLimiter sync.Map // map[string]*loginAttempt — per-IP limiter for back-channel logout
@@ -194,6 +199,12 @@ func (s *Server) SetIngestHealth(snapshot func() ingesthealth.Snapshot) {
 // new projects instead of creating them with status=pending.
 func (s *Server) SetAutoApproveProjects(auto bool) {
 	s.autoApproveProjects = auto
+}
+
+// SetRetentionDays records the deployment-wide event retention window, which
+// bounds what a per-project override may be set to.
+func (s *Server) SetRetentionDays(days int) {
+	s.globalRetentionDays = days
 }
 
 // SetWriteForwarder configures the server to forward non-GET requests to

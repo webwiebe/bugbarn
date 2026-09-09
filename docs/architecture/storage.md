@@ -29,6 +29,8 @@ The connection pool is capped at one open connection (`db.SetMaxOpenConns(1)`) t
 | `id` | `INTEGER PK` | Auto-increment primary key |
 | `slug` | `TEXT UNIQUE` | URL-safe identifier used as routing key during ingest (`x-bugbarn-project` header) |
 | `name` | `TEXT` | Human-readable display name |
+| `retention_days` | `INTEGER` | Per-project event retention window. `NULL` inherits the deployment window, and a value may only be shorter than it; see [Event Retention](#event-retention) |
+| `sampling_mode` | `TEXT` | `''` inherits the deployment default, `'on'`, or `'off'`; see [Event Sampling](#event-sampling) |
 | `created_at` | `TEXT` | ISO 8601 timestamp |
 
 A `default` project is always created on first startup.
@@ -80,6 +82,7 @@ A `default` project is always created on first startup.
 | `message` | `TEXT` | Human-readable message |
 | `regressed` | `INTEGER` | `1` if this event caused a regression (issue re-opened after resolve); `0` otherwise |
 | `event_json` | `TEXT` | Full normalised event payload as JSON |
+| `sample_weight` | `INTEGER` | How many occurrences this stored row stands for. `1` unless the issue was being sampled when it arrived; see [Event Sampling](#event-sampling) |
 | `user_json` | `TEXT` | User context extracted from the event |
 | `breadcrumbs_json` | `TEXT` | Breadcrumbs extracted from the event |
 | `created_at` | `TEXT` | Row creation timestamp |
@@ -395,6 +398,37 @@ R2 bucket. See [the disaster-recovery guide](../deployment/disaster-recovery.md)
 for retention and restore steps.
 
 ---
+
+## Event Sampling
+
+An issue is a fingerprint, so every event under it is the same error. Past a threshold (`BUGBARN_EVENT_SAMPLE_AFTER`, default 1000) the write path stores one event in K rather than all of them, K climbing one decade per decade of volume:
+
+| Events on one issue | Stored |
+|---|---|
+| up to the threshold | every one |
+| up to 10x | 1 in 10 |
+| up to 100x | 1 in 100 |
+| up to 1000x | 1 in 1,000 |
+| beyond | 1 in 10,000 |
+
+The decision is made in `PersistProcessedEvent` between the issue upsert and the event insert, from `issues.event_count` alone — the count the upsert just incremented. That means no extra query, no counter and no coordination between writers: the same count always makes the same choice.
+
+Each stored row records its K in `events.sample_weight`, so anything that reports volume sums weights instead of counting rows — the weekly digest, the 24-hour sparkline and the per-project usage figures all do. A summed count trails the truth by less than one K (the events since the last stored row are not represented yet) and catches up when the next row lands.
+
+What sampling deliberately does not touch:
+
+- `issues.event_count` is incremented before the decision, so it counts every occurrence.
+- Alert evaluation reads that count, not stored rows.
+- `issues.representative_event_json` means every issue keeps a full example payload.
+- Facets are written for sampled-out events too, so an issue stays findable by an environment or host it was only ever seen on once.
+
+A project may opt out (or explicitly in) via `projects.sampling_mode`; the threshold itself is deployment-wide.
+
+## Event Retention
+
+Events are expired by an hourly sweep on the writer. The deployment-wide window is `BUGBARN_EVENT_RETENTION_DAYS`; a project may carry a shorter one in `projects.retention_days`, which the sweep honours in a second pass after the global one. A per-project window may only be shorter — the global pass has already deleted anything past the deployment window, so a longer value would promise data that is not there, and the API caps it.
+
+The two passes use different indexes on purpose. The global sweep is served by `idx_events_received_at (received_at, id)`; adding a `project_id` predicate to it would stop the scan short-circuiting at `LIMIT` and reintroduce the full-table scan that made the sweep take 98 seconds and starve ingest. The per-project pass is a separate statement shaped for `idx_events_project_received_at (project_id, received_at DESC, id DESC)`, whose leading column is the project.
 
 ## Index Strategy
 

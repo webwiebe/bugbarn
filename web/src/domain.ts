@@ -84,6 +84,20 @@ export function issueEventCount(issue: ApiIssue, fallback = 0): number {
   return readNumber(issue, ["eventCount", "EventCount", "event_count", "count"]) || fallback;
 }
 
+/** issueSampleRate is how many occurrences one stored event of this issue stands
+ * for. 1 (or absent) means every event is stored. */
+export function issueSampleRate(issue: ApiIssue): number {
+  return readNumber(issue, ["sampleRate", "SampleRate", "sample_rate"]) || 1;
+}
+
+/** renderSampledChip renders the "1 in N" badge for a sampled issue, or nothing
+ * when the issue stores everything. */
+export function sampledChipMarkup(rate: number, fontSize = "0.65rem"): string {
+  if (rate <= 1) return "";
+  const title = `Storing 1 event in ${rate}. The event count is still exact.`;
+  return `<span class="chip chip-sampled" style="font-size:${fontSize}" title="${title}">1 in ${rate}</span>`;
+}
+
 export function issueSeverity(issue: ApiIssue): string {
   // Try to read severity from the representative event embedded in the issue.
   const rep = issue.RepresentativeEvent ?? issue.representative_event;

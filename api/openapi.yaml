@@ -943,6 +943,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkResponse"
 
+  /api/v1/projects/{slug}/limits:
+    put:
+      operationId: updateProjectLimits
+      tags: [Projects]
+      summary: Set a project's event retention window and sampling mode
+      description: >
+        Volume policy for one project. `retention_days` is null to inherit the
+        deployment-wide window (`BUGBARN_EVENT_RETENTION_DAYS`) and is clamped to
+        it — the global retention sweep expires anything older regardless, so a
+        longer value cannot be honoured. `sampling_mode` is "" to inherit the
+        deployment default, "on", or "off"; when sampling applies, an issue
+        stores every event until it reaches the threshold
+        (`BUGBARN_EVENT_SAMPLE_AFTER`) and one event in K past it, K climbing a
+        decade at a time. Event counts remain exact either way.
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retention_days:
+                  type: integer
+                  minimum: 1
+                  nullable: true
+                  description: Days to keep events, or null to inherit the deployment window
+                sampling_mode:
+                  type: string
+                  enum: ["", "on", "off"]
+                  description: Event sampling for this project
+      responses:
+        "200":
+          description: Limits updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  retention_days:
+                    type: integer
+                    nullable: true
+                  sampling_mode:
+                    type: string
+                  clamped:
+                    type: boolean
+                    description: True when retention_days was reduced to the deployment window
+        "400":
+          description: Invalid retention window or sampling mode
+        "404":
+          description: Project not found
+
   /api/v1/projects/{slug}/merge:
     post:
       operationId: mergeProject
@@ -2155,6 +2210,14 @@ components:
         CreatedAt:
           type: string
           format: date-time
+        retention_days:
+          type: integer
+          nullable: true
+          description: Per-project event retention window; null inherits the deployment window
+        sampling_mode:
+          type: string
+          enum: ["", "on", "off"]
+          description: Per-project event sampling; "" inherits the deployment default
 
     ProjectWithUsage:
       allOf:
@@ -2173,9 +2236,11 @@ components:
               type: integer
               description: >
                 Events currently retained for this project. Events older than
-                the retention window (BUGBARN_EVENT_RETENTION_DAYS, default 30)
-                are expired, so this is a live count and not a lifetime total —
-                per-issue lifetime counts live on the issue itself.
+                the retention window (the project's own retention_days, else
+                BUGBARN_EVENT_RETENTION_DAYS, default 30) are expired, so this is
+                a live count and not a lifetime total — per-issue lifetime counts
+                live on the issue itself. Sampled events still count: this sums
+                what each stored event stands for, not how many rows survived.
             log_count:
               type: integer
               description: Log entries currently retained for this project.

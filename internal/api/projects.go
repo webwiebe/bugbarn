@@ -57,6 +57,11 @@ type projectWithUsage struct {
 	IssueCount   *int   `json:"issue_count,omitempty"`
 	EventCount   *int   `json:"event_count,omitempty"`
 	LogCount     *int   `json:"log_count,omitempty"`
+
+	// Volume policy. RetentionDays is null when the project inherits the
+	// deployment window; SamplingMode is "" when it inherits the default.
+	RetentionDays *int   `json:"retention_days"`
+	SamplingMode  string `json:"sampling_mode"`
 }
 
 func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +82,54 @@ func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// updateProjectLimits handles PUT /api/v1/projects/:slug/limits — a project's
+// event retention window and sampling mode.
+//
+// retention_days is null to inherit the deployment window and is clamped to it:
+// the global sweep deletes anything past that window regardless, so accepting a
+// longer value would be promising data we will not have. sampling_mode is "",
+// "on" or "off"; the storage layer rejects anything else as invalid input.
+func (s *Server) updateProjectLimits(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/limits")
+	if slug == "" {
+		http.Error(w, "project slug is required", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		RetentionDays *int   `json:"retention_days"`
+		SamplingMode  string `json:"sampling_mode"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		http.Error(w, "invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	clamped := false
+	if req.RetentionDays != nil {
+		if *req.RetentionDays < 1 {
+			http.Error(w, "retention_days must be at least 1 day", http.StatusBadRequest)
+			return
+		}
+		if max := s.globalRetentionDays; max > 0 && *req.RetentionDays > max {
+			capped := max
+			req.RetentionDays = &capped
+			clamped = true
+		}
+	}
+
+	if err := s.projects.UpdateLimits(r.Context(), slug, req.RetentionDays, strings.TrimSpace(req.SamplingMode)); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":             true,
+		"retention_days": req.RetentionDays,
+		"sampling_mode":  req.SamplingMode,
+		"clamped":        clamped,
+	})
 }
 
 // renameProject handles PUT /api/v1/projects/:slug
@@ -314,10 +367,22 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 			IssueCounter: p.IssueCounter,
 			GroupID:      p.GroupID,
 			CreatedAt:    p.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			// This struct is a whitelist, not a projection of domain.Project: a
+			// field missing here silently never reaches the UI.
+			RetentionDays: p.RetentionDays,
+			SamplingMode:  p.SamplingMode,
 		}
 	}
 
-	resp := map[string]any{"projects": out}
+	// The defaults every project inherits unless it overrides them, so the UI can
+	// render "inherit" as a real number instead of a blank.
+	resp := map[string]any{
+		"projects": out,
+		"defaults": map[string]any{
+			"retention_days": s.globalRetentionDays,
+			"sample_after":   s.projects.SampleAfter(),
+		},
+	}
 	if r.URL.Query().Get("usage") == "true" {
 		s.attachUsage(r, projects, out, resp)
 	}
