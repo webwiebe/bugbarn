@@ -27,13 +27,13 @@ func NewStatus() *Status {
 }
 
 type HealthReport struct {
-	Healthy        bool        `json:"healthy"`
-	Level          HealthLevel `json:"level"`
-	LastAdvance    *time.Time  `json:"lastAdvance"`
-	PendingRecords int64      `json:"pendingRecords"`
-	DeadLetterCount int64     `json:"deadLetterCount"`
-	ProcessedTotal int64      `json:"processedTotal"`
-	StaleSince     *time.Time `json:"staleSince"`
+	Healthy         bool        `json:"healthy"`
+	Level           HealthLevel `json:"level"`
+	LastAdvance     *time.Time  `json:"lastAdvance"`
+	PendingRecords  int64       `json:"pendingRecords"`
+	DeadLetterCount int64       `json:"deadLetterCount"`
+	ProcessedTotal  int64       `json:"processedTotal"`
+	StaleSince      *time.Time  `json:"staleSince"`
 }
 
 func (s *Status) RecordAdvance() {

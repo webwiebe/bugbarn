@@ -115,6 +115,8 @@ jobs:
           - dir: "sdks/typescript"
             tests: "yes"
     runs-on: [self-hosted, build]
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
     steps:
       - name: Reclaim workspaces (clear read-only Go cache from prior runs)
         shell: bash
@@ -134,21 +136,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
-          npm run lint
+          . "$GITHUB_WORKSPACE/scripts/use-pnpm.sh"
+          pnpm install --frozen-lockfile
+          pnpm run lint
           if [ "${{ matrix.tests }}" = "yes" ]; then
-            npm run test
+            pnpm run test
           fi
-          npm run build
+          pnpm run build
       - name: Frontend duplication (web only)
         if: ${{ matrix.dir == 'web' }}
         working-directory: web
         shell: bash
-        run: npx --yes jscpd@latest .
+        run: |
+          . "$GITHUB_WORKSPACE/scripts/use-pnpm.sh"
+          pnpm dlx jscpd@latest .
       # TypeScript size/complexity soak. Runs here, not in the quality job,
       # because it needs the web/node_modules this job just installed.
       - name: TypeScript budget soak (web only)
@@ -236,6 +237,7 @@ jobs:
       GOMODCACHE: /tmp/bugbarn-ci/gomodcache
       GOCACHE: /tmp/bugbarn-ci/gocache
       GOLANGCI_LINT_CACHE: /tmp/bugbarn-ci/golangci-lint
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
     steps:
       # Go writes its module cache read-only; if a prior run left one inside a
       # workspace, the next checkout cannot clean it (EACCES on unlink). Clear
@@ -286,4 +288,6 @@ jobs:
         run: sh scripts/check-coverage.sh
       - name: Duplication scan (jscpd)
         shell: bash
-        run: npx --yes jscpd@latest .
+        run: |
+          . "$GITHUB_WORKSPACE/scripts/use-pnpm.sh"
+          pnpm dlx jscpd@latest .

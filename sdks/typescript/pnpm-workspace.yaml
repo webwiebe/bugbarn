@@ -1,0 +1,3 @@
+# Makes this package its own pnpm root, so pnpm never walks up into a
+# pnpm-workspace.yaml in a parent directory (the CI hosts have one in $HOME).
+# This is a single package: there is no multi-package workspace in this repo.

@@ -8,26 +8,26 @@ import (
 
 // Issue represents a grouped error occurrence.
 type Issue struct {
-	ID                     string        `json:"id"`
-	IssueNumber            int           `json:"issue_number"`
-	Fingerprint            string        `json:"fingerprint"`
-	FingerprintMaterial    string        `json:"fingerprint_material"`
-	FingerprintExplanation []string      `json:"fingerprint_explanation"`
-	Title                  string        `json:"title"`
-	NormalizedTitle        string        `json:"normalized_title"`
-	ExceptionType          string        `json:"exception_type,omitempty"`
-	Status                 string        `json:"status"`
-	MuteMode               string        `json:"mute_mode,omitempty"`
-	ResolvedAt             time.Time     `json:"resolved_at"`
-	ReopenedAt             time.Time     `json:"reopened_at"`
-	LastRegressedAt        time.Time     `json:"last_regressed_at"`
-	RegressionCount        int           `json:"regression_count"`
-	FirstSeen              time.Time     `json:"first_seen"`
-	LastSeen               time.Time     `json:"last_seen"`
-	EventCount             int           `json:"event_count"`
-	RepresentativeEvent    event.Event   `json:"representative_event"`
-	ProjectSlug            string        `json:"project_slug,omitempty"`
-	ProjectID              int64         `json:"project_id,omitempty"`
+	ID                     string      `json:"id"`
+	IssueNumber            int         `json:"issue_number"`
+	Fingerprint            string      `json:"fingerprint"`
+	FingerprintMaterial    string      `json:"fingerprint_material"`
+	FingerprintExplanation []string    `json:"fingerprint_explanation"`
+	Title                  string      `json:"title"`
+	NormalizedTitle        string      `json:"normalized_title"`
+	ExceptionType          string      `json:"exception_type,omitempty"`
+	Status                 string      `json:"status"`
+	MuteMode               string      `json:"mute_mode,omitempty"`
+	ResolvedAt             time.Time   `json:"resolved_at"`
+	ReopenedAt             time.Time   `json:"reopened_at"`
+	LastRegressedAt        time.Time   `json:"last_regressed_at"`
+	RegressionCount        int         `json:"regression_count"`
+	FirstSeen              time.Time   `json:"first_seen"`
+	LastSeen               time.Time   `json:"last_seen"`
+	EventCount             int         `json:"event_count"`
+	RepresentativeEvent    event.Event `json:"representative_event"`
+	ProjectSlug            string      `json:"project_slug,omitempty"`
+	ProjectID              int64       `json:"project_id,omitempty"`
 
 	// SampleRate is how many occurrences one stored event of this issue stands
 	// for: 1 when everything is stored, 100 when the issue is loud enough that

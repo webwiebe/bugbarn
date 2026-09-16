@@ -57,7 +57,7 @@ steps:
           --output type=cacheonly \
           .
 
-  # `npm run lint` and `npm run build` are deliberately NOT --if-present. A
+  # `pnpm run lint` and `pnpm run build` are deliberately NOT --if-present. A
   # missing script used to read exactly like a clean package: sdks/typescript
   # had no lint script at all and was silently never linted. Every package
   # below now has both, and a package that loses one fails the build.
@@ -67,11 +67,12 @@ steps:
       - |
         set -euo pipefail
         cd web
-        if [ -f package-lock.json ]; then npm ci; else npm install; fi
-        npm run lint
-        npm run test
-        npm run build
-        npx --yes jscpd@latest .
+        . "$CI_WORKSPACE/scripts/use-pnpm.sh"
+        pnpm install --frozen-lockfile
+        pnpm run lint
+        pnpm run test
+        pnpm run build
+        pnpm dlx jscpd@latest .
         cd ..
         # TypeScript size/complexity soak. Lives here, not in the quality step,
         # because it needs the node_modules this step just installed.
@@ -83,13 +84,14 @@ steps:
       - |
         set -euo pipefail
         cd site
-        if [ -f package-lock.json ]; then npm ci; else npm install; fi
-        npm run lint
+        . "$CI_WORKSPACE/scripts/use-pnpm.sh"
+        pnpm install --frozen-lockfile
+        pnpm run lint
         # site is the one package with no test script: it is an Astro content
-        # site with no runtime logic, and `npm run lint` (astro check) plus the
+        # site with no runtime logic, and `pnpm run lint` (astro check) plus the
         # build are its whole check surface. Stated here rather than hidden
         # behind --if-present.
-        npm run build
+        pnpm run build
 
   - name: node-sdk-ts
     image: bash
@@ -97,10 +99,11 @@ steps:
       - |
         set -euo pipefail
         cd sdks/typescript
-        if [ -f package-lock.json ]; then npm ci; else npm install; fi
-        npm run lint
-        npm run test
-        npm run build
+        . "$CI_WORKSPACE/scripts/use-pnpm.sh"
+        pnpm install --frozen-lockfile
+        pnpm run lint
+        pnpm run test
+        pnpm run build
 
   - name: python
     image: bash
@@ -192,4 +195,5 @@ steps:
         sh scripts/check-go-lint.sh
         sh scripts/check-go-soak.sh
         sh scripts/check-coverage.sh
-        npx --yes jscpd@latest .
+        . "$CI_WORKSPACE/scripts/use-pnpm.sh"
+        pnpm dlx jscpd@latest .

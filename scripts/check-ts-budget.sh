@@ -22,14 +22,14 @@ RULES="complexity max-lines max-lines-per-function"
 REPORT="$(pwd)/.tools/eslint-web.json"
 
 test -d web/node_modules || {
-	echo "FAIL: web/node_modules is missing — run npm ci in web/ before this gate"
+	echo "FAIL: web/node_modules is missing — run pnpm install in web/ before this gate"
 	exit 1
 }
 mkdir -p "$(dirname "$REPORT")"
 rm -f "$REPORT"
 
 set +e
-(cd web && npx --no-install eslint src/ --format json --output-file "$REPORT")
+(cd web && pnpm exec eslint src/ --format json --output-file "$REPORT")
 rc=$?
 set -e
 # 0 = no errors, 1 = errors present (the budget rules are warnings, so this

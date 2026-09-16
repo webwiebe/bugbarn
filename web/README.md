@@ -8,12 +8,13 @@ Source lives in `src/` and the browser loads the generated output from `dist/`.
 
 ```bash
 cd web
-npm install
-npm run build
-npm run test
+corepack enable
+pnpm install
+pnpm run build
+pnpm run test
 ```
 
-`npm run build` compiles `src/app.ts` to `dist/app.js`. `npm run test` runs the TypeScript compiler in no-emit mode and is the fastest way to check the web package.
+`pnpm run build` compiles `src/app.ts` to `dist/app.js`. `pnpm run test` runs the TypeScript compiler in no-emit mode and is the fastest way to check the web package.
 
 ## Local Run
 

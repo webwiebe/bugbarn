@@ -21,7 +21,7 @@
 
 ### SC-005 — TypeScript and Python sample apps capture uncaught errors
 - **How to verify**:
-  - TypeScript: `cd sdks/typescript && npm test`
+  - TypeScript: `cd sdks/typescript && pnpm test`
   - Python: `cd sdks/python && python -m pytest`
   - End-to-end: run each sample app with a valid endpoint and API key, confirm the event arrives in the BugBarn UI.
 - **Status**: Passing. Both SDKs install uncaught-error handlers and send asynchronously with bounded flush timeouts.
@@ -44,11 +44,11 @@ All seven success criteria pass as of 2026-04-18.
 
 ### Pre-release
 
-- [ ] All tests pass in CI (`go test ./...`, TypeScript `npm test`, Python `pytest`).
+- [ ] All tests pass in CI (`go test ./...`, TypeScript `pnpm test`, Python `pytest`).
 - [ ] Lint clean (`go vet ./...`).
 - [ ] Docker images build for `linux/amd64` and `linux/arm64`.
 - [ ] `docker compose up` starts a working single-node deployment.
-- [ ] Smoke tests pass against a live instance: `cd web && npm run test:e2e`.
+- [ ] Smoke tests pass against a live instance: `cd web && pnpm run test:e2e`.
 - [ ] `docs/operations.md` is accurate: env vars, spool sizing, backup procedure.
 - [ ] `docs/architecture.md` reflects current package layout after storage/API refactor.
 - [ ] `docs/ci-integration.md` example commands are current.

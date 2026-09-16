@@ -2,36 +2,45 @@ FROM node:22-alpine AS web-build
 
 WORKDIR /app/web
 
-COPY web/package*.json ./
-RUN npm ci
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY web/ ./
-RUN npm run build
+RUN pnpm run build
 
 FROM node:22-alpine AS site-build
 
 WORKDIR /app/site
 
-COPY site/package*.json ./
-RUN npm ci
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+
+COPY site/package.json site/pnpm-lock.yaml site/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY site/ ./
-RUN npm run build
+RUN pnpm run build
 
 FROM node:22-alpine AS sdk-build
 
 WORKDIR /app/sdks/typescript
 
-COPY sdks/typescript/package*.json ./
-RUN npm ci
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+
+COPY sdks/typescript/package.json sdks/typescript/pnpm-lock.yaml sdks/typescript/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY sdks/typescript/ ./
 # Derive a stable 12-char content hash from source files. The same SDK source
 # always produces the same hash, so the tarball URL is immutable per content.
 # When the SDK source changes the hash changes, producing a new URL.
 RUN SDK_HASH=$(find src -type f | sort | xargs sha256sum | sha256sum | cut -c1-12) && \
-    npm version "0.1.0-${SDK_HASH}" --no-git-tag-version && \
-    npm run build && npm pack
+    pnpm pkg set version="0.1.0-${SDK_HASH}" && \
+    pnpm run build && pnpm pack
 
 FROM caddy:2.8-alpine
 

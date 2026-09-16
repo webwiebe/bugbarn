@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -147,7 +147,7 @@ func TestKeepRatioApproximate(t *testing.T) {
 
 	got := cap.count()
 	// Allow ±3% of n around the 10% target.
-	const lo, hi = n*7/100, n*13/100
+	const lo, hi = n * 7 / 100, n * 13 / 100
 	if got < lo || got > hi {
 		t.Fatalf("expected ~%d traces kept (10%%), got %d", n/10, got)
 	}

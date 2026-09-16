@@ -34,7 +34,7 @@ PROFILE="coverage/go.out"
 mkdir -p coverage
 
 # Measure OUR packages only. `go test ./...` does not skip node_modules, so once
-# a node step has run `npm ci` the tree contains vendored third-party Go code
+# a node step has run `pnpm install` the tree contains vendored third-party Go code
 # (e.g. web/node_modules/flatted/golang/...) which lands in the profile at 0%
 # and drags the total down. That made the number depend on whether an unrelated
 # step ran first: CI reported 46.4% where a clean local tree reported 47.3%, so

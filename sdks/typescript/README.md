@@ -28,9 +28,9 @@ For local testing without the deployed web container, build a local tarball from
 
 ```sh
 cd /Users/wiebe/webwiebe/temu-sentry/sdks/typescript
-npm install
-npm run build
-npm pack
+pnpm install
+pnpm run build
+pnpm pack
 ```
 
 Install it in Rapid Root or another local project:

@@ -4,7 +4,7 @@
  * These tests require a running BugBarn instance reachable at http://localhost:8080.
  * Start the server before running:
  *
- *   npm run test:e2e
+ *   pnpm run test:e2e
  *
  * Credentials are read from environment variables:
  *   BUGBARN_TEST_USER  (default: admin)

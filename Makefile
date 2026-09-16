@@ -7,6 +7,12 @@ FIND_PRUNE := \( -path './.git' -o -path './.cache' -o -path './.claude' -o -pat
 export XDG_CACHE_HOME := $(CURDIR)/.cache
 export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod
+export COREPACK_ENABLE_DOWNLOAD_PROMPT := 0
+# pnpm comes from corepack, with its shims kept inside the checkout (see
+# scripts/use-pnpm.sh for why they must not land next to the host's node).
+COREPACK_BIN := $(CURDIR)/.tools/corepack-bin
+export PATH := $(COREPACK_BIN):$(PATH)
+PNPM := $(COREPACK_BIN)/pnpm
 
 .PHONY: help setup test lint build dev docker-build spec-check \
 	lint-go check-file-length coverage dup quality test-gates go-soak ts-budget \
@@ -35,7 +41,7 @@ help:
 		'  woodpecker-secrets-edit  edit the SOPS-encrypted Woodpecker secrets' \
 		'  woodpecker-secrets-sync  push secrets into the Woodpecker server'
 
-setup:
+setup: $(PNPM)
 	@set -eu; \
 	for dir in $(LOCAL_DIRS) $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	found=0; \
@@ -49,10 +55,10 @@ setup:
 		found=1; \
 		dir=$$(dirname "$$pkg"); \
 		echo "[setup] node $$dir"; \
-		if [ -f "$$dir/package-lock.json" ]; then \
-			(cd "$$dir" && npm ci); \
+		if [ -f "$$dir/pnpm-lock.yaml" ]; then \
+			(cd "$$dir" && pnpm install --frozen-lockfile); \
 		else \
-			(cd "$$dir" && npm install); \
+			(cd "$$dir" && pnpm install); \
 		fi; \
 	done; \
 	for py in $$(find . $(FIND_PRUNE) \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
@@ -87,7 +93,7 @@ spec-check:
 	done
 	@python3 scripts/validate_openapi.py
 
-test: spec-check
+test: spec-check $(PNPM)
 	@set -eu; \
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	found=0; \
@@ -103,7 +109,7 @@ test: spec-check
 		found=1; \
 		dir=$$(dirname "$$pkg"); \
 		echo "[test] node $$dir"; \
-		(cd "$$dir" && npm run test --if-present); \
+		(cd "$$dir" && pnpm run --if-present test); \
 	done; \
 	for py in $$(find . $(FIND_PRUNE) \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
 		found=1; \
@@ -119,7 +125,7 @@ test: spec-check
 	done; \
 	if [ "$$found" -eq 0 ]; then echo "[test] no code manifests found yet"; fi
 
-lint:
+lint: $(PNPM)
 	@set -eu; \
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	found=0; \
@@ -140,7 +146,7 @@ lint:
 		found=1; \
 		dir=$$(dirname "$$pkg"); \
 		echo "[lint] node $$dir"; \
-		(cd "$$dir" && npm run lint --if-present); \
+		(cd "$$dir" && pnpm run --if-present lint); \
 	done; \
 	for py in $$(find . $(FIND_PRUNE) \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
 		found=1; \
@@ -171,7 +177,7 @@ go-soak:
 	sh scripts/check-go-soak.sh
 
 # TypeScript size/complexity soak. Needs web/node_modules (make setup).
-ts-budget:
+ts-budget: $(PNPM)
 	@sh scripts/check-ts-budget.sh
 
 # Tests for the gate scripts themselves.
@@ -186,15 +192,19 @@ coverage:
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	sh scripts/check-coverage.sh
 
-dup:
-	@npx --yes jscpd@latest .
+dup: $(PNPM)
+	@pnpm dlx jscpd@latest .
+
+$(PNPM):
+	@mkdir -p $(COREPACK_BIN)
+	@corepack enable --install-directory $(COREPACK_BIN) pnpm
 
 # Umbrella gate used by CI: every code-quality check in one target. The gate
 # scripts' own tests run first, so a gate that has stopped failing is reported
 # before the gates it protects are trusted.
 quality: test-gates check-file-length lint-go go-soak coverage ts-budget dup
 
-build:
+build: $(PNPM)
 	@set -eu; \
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	found=0; \
@@ -210,7 +220,7 @@ build:
 		found=1; \
 		dir=$$(dirname "$$pkg"); \
 		echo "[build] node $$dir"; \
-		(cd "$$dir" && npm run build --if-present); \
+		(cd "$$dir" && pnpm run --if-present build); \
 	done; \
 	for py in $$(find . $(FIND_PRUNE) \( -name pyproject.toml -o -name requirements.txt \) -print 2>/dev/null); do \
 		found=1; \

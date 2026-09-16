@@ -66,12 +66,12 @@ type Config struct {
 	// counts still report real volume. 0 disables sampling; a project can opt
 	// out (or back in) on its own. It exists because one fingerprint reached
 	// 1.8M events in production and nothing bounded it.
-	EventSampleAfter int
-	FunnelBarnEndpoint     string // BUGBARN_FUNNELBARN_ENDPOINT
-	FunnelBarnAPIKey       string // BUGBARN_FUNNELBARN_API_KEY
-	AutoApproveProjects    bool   // BUGBARN_AUTO_APPROVE_PROJECTS
-	Mode                   string // BUGBARN_MODE: "", "writer", or "reader"
-	WriterURL              string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
+	EventSampleAfter    int
+	FunnelBarnEndpoint  string // BUGBARN_FUNNELBARN_ENDPOINT
+	FunnelBarnAPIKey    string // BUGBARN_FUNNELBARN_API_KEY
+	AutoApproveProjects bool   // BUGBARN_AUTO_APPROVE_PROJECTS
+	Mode                string // BUGBARN_MODE: "", "writer", or "reader"
+	WriterURL           string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
 	// WALCheckpointInterval is BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS — how
 	// often the writer TRUNCATE-checkpoints the WAL. Nothing else checkpoints
 	// (wal_autocheckpoint is 0), so this is the only thing bounding WAL growth.
@@ -129,23 +129,23 @@ func Load() Config {
 		// still protected from a runaway fingerprint. envIntZeroOK, not
 		// envIntPositive, because 0 is a meaningful value here (sampling off)
 		// rather than a misconfiguration to ignore.
-		EventSampleAfter: envIntZeroOK("BUGBARN_EVENT_SAMPLE_AFTER", 1000),
-		PublicURL:              os.Getenv("BUGBARN_PUBLIC_URL"),
-		Environment:            getenv("BUGBARN_ENVIRONMENT", os.Getenv("BUGBARN_ENV")),
-		SelfEndpoint:           os.Getenv("BUGBARN_SELF_ENDPOINT"),
-		SelfAPIKey:             os.Getenv("BUGBARN_SELF_API_KEY"),
-		SelfProject:            os.Getenv("BUGBARN_SELF_PROJECT"),
-		FunnelBarnEndpoint:     os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
-		FunnelBarnAPIKey:       os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
-		AutoApproveProjects:    strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
-		Mode:                   os.Getenv("BUGBARN_MODE"),
-		WriterURL:              os.Getenv("BUGBARN_WRITER_URL"),
-		RedisQueueURL:          os.Getenv("BUGBARN_REDIS_QUEUE_URL"),
-		OIDCIssuer:             os.Getenv("BUGBARN_OIDC_ISSUER"),
-		OIDCClientID:           os.Getenv("BUGBARN_OIDC_CLIENT_ID"),
-		OIDCClientSecret:       os.Getenv("BUGBARN_OIDC_CLIENT_SECRET"),
-		OIDCRedirectURL:        os.Getenv("BUGBARN_OIDC_REDIRECT_URL"),
-		OIDCRequiredGroup:      getenv("BUGBARN_OIDC_REQUIRED_GROUP", "bugbarn-users"),
+		EventSampleAfter:    envIntZeroOK("BUGBARN_EVENT_SAMPLE_AFTER", 1000),
+		PublicURL:           os.Getenv("BUGBARN_PUBLIC_URL"),
+		Environment:         getenv("BUGBARN_ENVIRONMENT", os.Getenv("BUGBARN_ENV")),
+		SelfEndpoint:        os.Getenv("BUGBARN_SELF_ENDPOINT"),
+		SelfAPIKey:          os.Getenv("BUGBARN_SELF_API_KEY"),
+		SelfProject:         os.Getenv("BUGBARN_SELF_PROJECT"),
+		FunnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
+		FunnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
+		AutoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
+		Mode:                os.Getenv("BUGBARN_MODE"),
+		WriterURL:           os.Getenv("BUGBARN_WRITER_URL"),
+		RedisQueueURL:       os.Getenv("BUGBARN_REDIS_QUEUE_URL"),
+		OIDCIssuer:          os.Getenv("BUGBARN_OIDC_ISSUER"),
+		OIDCClientID:        os.Getenv("BUGBARN_OIDC_CLIENT_ID"),
+		OIDCClientSecret:    os.Getenv("BUGBARN_OIDC_CLIENT_SECRET"),
+		OIDCRedirectURL:     os.Getenv("BUGBARN_OIDC_REDIRECT_URL"),
+		OIDCRequiredGroup:   getenv("BUGBARN_OIDC_REQUIRED_GROUP", "bugbarn-users"),
 	}
 
 	cfg.Digest = parseDigestConfig(cfg.PublicURL)

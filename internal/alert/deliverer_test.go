@@ -16,11 +16,11 @@ import (
 
 func testIssue() storage.Issue {
 	return storage.Issue{
-		ID:         "issue-000001",
-		Title:      "TypeError: cannot read property of undefined",
+		ID:            "issue-000001",
+		Title:         "TypeError: cannot read property of undefined",
 		ExceptionType: "TypeError",
-		EventCount: 3,
-		FirstSeen:  time.Now().UTC(),
+		EventCount:    3,
+		FirstSeen:     time.Now().UTC(),
 	}
 }
 
