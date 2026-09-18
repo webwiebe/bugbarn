@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"mime"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"text/template"
@@ -36,21 +37,41 @@ func init() {
 // MailConfig holds SMTP settings. All fields are optional: when Enabled is
 // false (or Host/To are empty) the mailer is a no-op. Env vars follow the
 // same naming convention as rapid-root: SMTP_HOST, SMTP_PORT, SMTP_USER,
-// SMTP_PASS, SMTP_FROM — with BUGBARN_DIGEST_ENABLED and BUGBARN_DIGEST_TO
-// as the BugBarn-specific opt-in controls.
+// SMTP_PASS, SMTP_FROM, SMTP_FROM_NAME, SMTP_REPLY_TO — with
+// BUGBARN_DIGEST_ENABLED and BUGBARN_DIGEST_TO as the BugBarn-specific opt-in
+// controls.
+//
+// From is the mailbox we send as, and is what goes on the SMTP envelope; the
+// account BugBarn authenticates with is send-only, so FromName gives the
+// message a human label and ReplyTo points replies at a mailbox somebody
+// actually reads.
 type MailConfig struct {
-	Enabled bool
-	Host    string
-	Port    int
-	User    string
-	Pass    string
-	From    string
-	To      string
+	Enabled  bool
+	Host     string
+	Port     int
+	User     string
+	Pass     string
+	From     string
+	FromName string
+	ReplyTo  string
+	To       string
 }
 
 // active reports whether SMTP delivery is configured and enabled.
 func (m MailConfig) active() bool {
 	return m.Enabled && m.Host != "" && m.To != ""
+}
+
+// formatAddress renders an address header value. Without a display name it
+// stays the bare address, which is exactly what every deployment sent before
+// FromName existed; with one it becomes `"Name" <addr>`, RFC 2047-encoded when
+// the name is not plain ASCII. The envelope sender is always the bare address,
+// so this only ever affects what the recipient sees.
+func formatAddress(name, addr string) string {
+	if name == "" {
+		return addr
+	}
+	return (&mail.Address{Name: name, Address: addr}).String()
 }
 
 // transientSMTPError returns true for network-level errors that are safe to
@@ -75,16 +96,20 @@ func DeliverEmail(ctx context.Context, mc MailConfig, to, subject, plain, html s
 	return deliverEmail(ctx, mc, subject, plain, html)
 }
 
-func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html string) error {
-	from := mc.From
-	if from == "" {
-		from = mc.User
-	}
-
+// buildMessage renders the RFC 5322 message. from is the bare sending address,
+// already resolved from From/User; it appears here wrapped in the display name
+// while the caller hands the bare form to the SMTP envelope.
+func buildMessage(mc MailConfig, from, subject, plain, html string) []byte {
 	boundary := "==BugBarnDigest=="
 	var msg strings.Builder
-	msg.WriteString("From: " + from + "\r\n")
+	msg.WriteString("From: " + formatAddress(mc.FromName, from) + "\r\n")
 	msg.WriteString("To: " + mc.To + "\r\n")
+	if mc.ReplyTo != "" {
+		// Bare address: the display name describes the sending instance, and
+		// repeating it here would mislabel a reply mailbox that is somebody
+		// else's.
+		msg.WriteString("Reply-To: " + mc.ReplyTo + "\r\n")
+	}
 	msg.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", subject) + "\r\n")
 	msg.WriteString("MIME-Version: 1.0\r\n")
 	msg.WriteString(`Content-Type: multipart/alternative; boundary="` + boundary + `"` + "\r\n\r\n")
@@ -95,6 +120,16 @@ func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html strin
 	msg.WriteString("Content-Type: text/html; charset=utf-8\r\n\r\n")
 	msg.WriteString(html + "\r\n")
 	msg.WriteString("--" + boundary + "--\r\n")
+	return []byte(msg.String())
+}
+
+func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html string) error {
+	from := mc.From
+	if from == "" {
+		from = mc.User
+	}
+
+	raw := buildMessage(mc, from, subject, plain, html)
 
 	addr := fmt.Sprintf("%s:%d", mc.Host, mc.Port)
 	// Only authenticate when credentials are actually configured. Building an
@@ -107,7 +142,6 @@ func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html strin
 	if mc.User != "" {
 		auth = smtp.PlainAuth("", mc.User, mc.Pass, mc.Host)
 	}
-	raw := []byte(msg.String())
 
 	delays := []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
 	var lastErr error

@@ -100,6 +100,45 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultFromName(t *testing.T) {
+	cases := map[string]string{
+		"":           "BugBarn",
+		"production": "BugBarn",
+		"Production": "BugBarn",
+		"prod":       "BugBarn",
+		"staging":    "BugBarn (staging)",
+		"testing":    "BugBarn (testing)",
+	}
+	for env, want := range cases {
+		if got := defaultFromName(env); got != want {
+			t.Errorf("defaultFromName(%q) = %q want %q", env, got, want)
+		}
+	}
+}
+
+func TestMailIdentityFromEnv(t *testing.T) {
+	t.Run("name derives from the environment", func(t *testing.T) {
+		t.Setenv("BUGBARN_ENVIRONMENT", "staging")
+		t.Setenv("SMTP_FROM_NAME", "")
+		t.Setenv("SMTP_REPLY_TO", "ops@example.com")
+		cfg := Load()
+		if cfg.Digest.Mail.FromName != "BugBarn (staging)" {
+			t.Errorf("FromName = %q", cfg.Digest.Mail.FromName)
+		}
+		if cfg.Digest.Mail.ReplyTo != "ops@example.com" {
+			t.Errorf("ReplyTo = %q", cfg.Digest.Mail.ReplyTo)
+		}
+	})
+	t.Run("SMTP_FROM_NAME overrides the derived name", func(t *testing.T) {
+		t.Setenv("BUGBARN_ENVIRONMENT", "staging")
+		t.Setenv("SMTP_FROM_NAME", "Custom Sender")
+		cfg := Load()
+		if cfg.Digest.Mail.FromName != "Custom Sender" {
+			t.Errorf("FromName = %q", cfg.Digest.Mail.FromName)
+		}
+	})
+}
+
 func TestEnvironmentAndIsProduction(t *testing.T) {
 	t.Run("BUGBARN_ENVIRONMENT wins over BUGBARN_ENV", func(t *testing.T) {
 		t.Setenv("BUGBARN_ENV", "staging")

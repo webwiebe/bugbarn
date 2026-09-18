@@ -128,6 +128,8 @@ These variables do not use the `BUGBARN_` prefix, matching conventions used by o
 | `SMTP_USER` | — | Yes (if digest enabled) | SMTP authentication username. |
 | `SMTP_PASS` | — | Yes (if digest enabled) | SMTP authentication password. |
 | `SMTP_FROM` | value of `SMTP_USER` | No | From address used in outgoing digest emails. Defaults to `SMTP_USER` if not set. |
+| `SMTP_FROM_NAME` | `BugBarn` in production, `BugBarn (<env>)` elsewhere | No | Display name on the From header, derived from `BUGBARN_ENVIRONMENT`. The SMTP envelope always uses the bare `SMTP_FROM` address. |
+| `SMTP_REPLY_TO` | unset | No | Reply-To address on outgoing mail. Set it when `SMTP_FROM` is a send-only notification mailbox; with no value, no Reply-To header is sent. |
 
 ---
 

@@ -92,6 +92,16 @@ BUGBARN_SPOOL_DIR=/var/lib/bugbarn/spool
 #SMTP_PASS=
 #SMTP_FROM=bugbarn@example.com
 
+# Display name on the From header. Defaults to "BugBarn" in production and
+# "BugBarn (<env>)" elsewhere, taken from BUGBARN_ENVIRONMENT, so staging mail
+# is recognizable in an inbox that also gets the real thing. The SMTP envelope
+# always uses the bare SMTP_FROM address.
+#SMTP_FROM_NAME=BugBarn
+
+# Where replies go. Set this when SMTP_FROM is a send-only notification
+# mailbox; unset, no Reply-To header is sent and replies land on SMTP_FROM.
+#SMTP_REPLY_TO=ops@example.com
+
 # --- Self-reporting (send errors to another BugBarn instance) ---
 #BUGBARN_SELF_ENDPOINT=https://bugs.example.com
 #BUGBARN_SELF_API_KEY=

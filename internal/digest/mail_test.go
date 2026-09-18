@@ -170,7 +170,7 @@ func TestTransientSMTPError(t *testing.T) {
 func TestDeliverEmailBuildsMultipart(t *testing.T) {
 	t.Parallel()
 
-	captured := make(chan string, 1)
+	captured := make(chan capturedMail, 1)
 	host, port := recordingSMTP(t, captured)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -181,27 +181,100 @@ func TestDeliverEmailBuildsMultipart(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 
-	select {
-	case data := <-captured:
-		for _, want := range []string{
-			"To: ops@example.com",
-			"Subject: weekly digest",
-			"multipart/alternative",
-			"PLAINBODY",
-			"<p>HTMLBODY</p>",
-		} {
-			if !strings.Contains(data, want) {
-				t.Errorf("message missing %q:\n%s", want, data)
-			}
+	got := awaitMail(t, captured)
+	for _, want := range []string{
+		"From: bb@example.com",
+		"To: ops@example.com",
+		"Subject: weekly digest",
+		"multipart/alternative",
+		"PLAINBODY",
+		"<p>HTMLBODY</p>",
+	} {
+		if !strings.Contains(got.Data, want) {
+			t.Errorf("message missing %q:\n%s", want, got.Data)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("server never received the message")
+	}
+	// No name and no reply-to configured: the headers stay exactly as they
+	// were before those fields existed.
+	if strings.Contains(got.Data, "Reply-To:") {
+		t.Errorf("unconfigured reply-to should emit no header:\n%s", got.Data)
 	}
 }
 
+// A configured display name and reply-to must reach the recipient, while the
+// SMTP envelope keeps the bare sending address — a relay that sees a display
+// name in MAIL FROM rejects the message outright.
+func TestDeliverEmailSetsFromNameAndReplyTo(t *testing.T) {
+	t.Parallel()
+
+	captured := make(chan capturedMail, 1)
+	host, port := recordingSMTP(t, captured)
+
+	cfg := mailCfg(host, port)
+	cfg.FromName = "BugBarn (staging)"
+	cfg.ReplyTo = "humans@example.com"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := DeliverEmail(ctx, cfg, "ops@example.com", "subj", "plain", "<p>html</p>"); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	got := awaitMail(t, captured)
+	if !strings.Contains(got.Data, `From: "BugBarn (staging)" <bb@example.com>`) {
+		t.Errorf("From header missing the display name:\n%s", got.Data)
+	}
+	if !strings.Contains(got.Data, "Reply-To: humans@example.com") {
+		t.Errorf("Reply-To header missing:\n%s", got.Data)
+	}
+	if !strings.Contains(got.EnvelopeFrom, "<bb@example.com>") ||
+		strings.Contains(got.EnvelopeFrom, "BugBarn") {
+		t.Errorf("envelope sender must stay the bare address, got %q", got.EnvelopeFrom)
+	}
+}
+
+// A non-ASCII display name has to be RFC 2047-encoded rather than written raw
+// into the header.
+func TestFormatAddress(t *testing.T) {
+	t.Parallel()
+
+	if got := formatAddress("", "bb@example.com"); got != "bb@example.com" {
+		t.Errorf("no name should stay bare, got %q", got)
+	}
+	if got := formatAddress("BugBarn", "bb@example.com"); got != `"BugBarn" <bb@example.com>` {
+		t.Errorf("got %q", got)
+	}
+	got := formatAddress("BugBarn ✱", "bb@example.com")
+	if strings.Contains(got, "✱") {
+		t.Errorf("non-ASCII name must be encoded, got %q", got)
+	}
+	if !strings.Contains(got, "<bb@example.com>") {
+		t.Errorf("encoded name lost the address, got %q", got)
+	}
+}
+
+func awaitMail(t *testing.T, captured <-chan capturedMail) capturedMail {
+	t.Helper()
+	select {
+	case got := <-captured:
+		return got
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never received the message")
+		return capturedMail{}
+	}
+}
+
+// capturedMail is what the recording server saw. Envelope and headers are kept
+// apart on purpose: the display name belongs in the From header only.
+type capturedMail struct {
+	EnvelopeFrom string
+	Data         string
+}
+
 // recordingSMTP is a minimal SMTP server that accepts one message and hands
-// its DATA payload back on the channel.
-func recordingSMTP(t *testing.T, out chan<- string) (host string, port int) {
+// its envelope sender and DATA payload back on the channel.
+func recordingSMTP(t *testing.T, out chan<- capturedMail) (host string, port int) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -223,6 +296,7 @@ func recordingSMTP(t *testing.T, out chan<- string) (host string, port int) {
 		buf := make([]byte, 4096)
 		var body strings.Builder
 		inData := false
+		envelopeFrom := ""
 		var pending strings.Builder
 		for {
 			n, err := conn.Read(buf)
@@ -243,7 +317,7 @@ func recordingSMTP(t *testing.T, out chan<- string) (host string, port int) {
 				if inData {
 					if line == "." {
 						inData = false
-						out <- body.String()
+						out <- capturedMail{EnvelopeFrom: envelopeFrom, Data: body.String()}
 						write("250 ok")
 						continue
 					}
@@ -255,7 +329,10 @@ func recordingSMTP(t *testing.T, out chan<- string) (host string, port int) {
 				case strings.HasPrefix(upper, "EHLO"), strings.HasPrefix(upper, "HELO"):
 					write("250-test")
 					write("250 SIZE 10240000")
-				case strings.HasPrefix(upper, "MAIL FROM"), strings.HasPrefix(upper, "RCPT TO"):
+				case strings.HasPrefix(upper, "MAIL FROM"):
+					envelopeFrom = strings.TrimSpace(strings.TrimPrefix(line[len("MAIL FROM"):], ":"))
+					write("250 ok")
+				case strings.HasPrefix(upper, "RCPT TO"):
 					write("250 ok")
 				case upper == "DATA":
 					inData = true

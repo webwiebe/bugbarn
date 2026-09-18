@@ -152,6 +152,8 @@ All SMTP settings are supplied via environment variables:
 | `SMTP_USER` | — | SMTP authentication username |
 | `SMTP_PASS` | — | SMTP authentication password |
 | `SMTP_FROM` | falls back to `SMTP_USER` | From address in the email envelope |
+| `SMTP_FROM_NAME` | `BugBarn`, or `BugBarn (<env>)` outside production | Display name on the From header. The envelope keeps the bare `SMTP_FROM` address. |
+| `SMTP_REPLY_TO` | unset | Reply-To address. Set it when `SMTP_FROM` is a send-only mailbox; unset, no header is sent. |
 | `BUGBARN_DIGEST_TO` | — | Recipient address |
 
 BugBarn uses `smtp.PlainAuth` for authentication and sends the MIME message constructed in-process. No external library beyond the Go standard library is used.

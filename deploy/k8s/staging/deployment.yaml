@@ -114,6 +114,12 @@ spec:
                   name: smtp-secret
                   key: SMTP_FROM
                   optional: true
+            - name: SMTP_REPLY_TO
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-secret
+                  key: SMTP_REPLY_TO
+                  optional: true
             - name: BUGBARN_DIGEST_ENABLED
               valueFrom:
                 secretKeyRef:

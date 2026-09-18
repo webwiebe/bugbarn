@@ -148,7 +148,7 @@ func Load() Config {
 		OIDCRequiredGroup:   getenv("BUGBARN_OIDC_REQUIRED_GROUP", "bugbarn-users"),
 	}
 
-	cfg.Digest = parseDigestConfig(cfg.PublicURL)
+	cfg.Digest = parseDigestConfig(cfg.PublicURL, cfg.Environment)
 
 	// Global admin alert recipient. Every new issue and regression across all
 	// projects is emailed here. Falls back to the weekly-digest recipient so a
@@ -175,7 +175,7 @@ func Load() Config {
 // parseDigestConfig builds the weekly-digest configuration from env. SMTP vars
 // use the same unprefixed names as rapid-root; BUGBARN_DIGEST_ENABLED toggles
 // email independent of credentials.
-func parseDigestConfig(publicURL string) digest.Config {
+func parseDigestConfig(publicURL, environment string) digest.Config {
 	return digest.Config{
 		Day:        envIntInRange("BUGBARN_DIGEST_DAY", 0, 0, 6),
 		Hour:       envIntInRange("BUGBARN_DIGEST_HOUR", 8, 0, 23),
@@ -186,14 +186,29 @@ func parseDigestConfig(publicURL string) digest.Config {
 		ProjectBudget: envDurationSeconds(
 			"BUGBARN_DIGEST_PROJECT_BUDGET_SECONDS", digest.DefaultProjectBudget),
 		Mail: digest.MailConfig{
-			Enabled: os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
-			Host:    os.Getenv("SMTP_HOST"),
-			Port:    envIntPositive("SMTP_PORT", 587),
-			User:    os.Getenv("SMTP_USER"),
-			Pass:    os.Getenv("SMTP_PASS"),
-			From:    os.Getenv("SMTP_FROM"),
-			To:      os.Getenv("BUGBARN_DIGEST_TO"),
+			Enabled:  os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
+			Host:     os.Getenv("SMTP_HOST"),
+			Port:     envIntPositive("SMTP_PORT", 587),
+			User:     os.Getenv("SMTP_USER"),
+			Pass:     os.Getenv("SMTP_PASS"),
+			From:     os.Getenv("SMTP_FROM"),
+			FromName: getenv("SMTP_FROM_NAME", defaultFromName(environment)),
+			ReplyTo:  os.Getenv("SMTP_REPLY_TO"),
+			To:       os.Getenv("BUGBARN_DIGEST_TO"),
 		},
+	}
+}
+
+// defaultFromName labels outgoing mail with the instance that sent it, so a
+// staging alert is recognizable in an inbox that also receives the real ones.
+// Production and an unlabeled instance both send as plain "BugBarn".
+// SMTP_FROM_NAME overrides it.
+func defaultFromName(environment string) string {
+	switch strings.ToLower(environment) {
+	case "", "production", "prod":
+		return "BugBarn"
+	default:
+		return "BugBarn (" + environment + ")"
 	}
 }
 

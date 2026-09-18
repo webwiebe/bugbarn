@@ -84,6 +84,7 @@ Contains SMTP credentials and digest configuration:
 - `SMTP_USER`
 - `SMTP_PASS`
 - `SMTP_FROM`
+- `SMTP_REPLY_TO`
 - `BUGBARN_DIGEST_ENABLED`
 - `BUGBARN_DIGEST_TO`
 - `BUGBARN_DIGEST_WEBHOOK_URL`
