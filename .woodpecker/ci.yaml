@@ -178,6 +178,7 @@ steps:
         # The gates' own tests run first: a gate that has stopped failing must
         # be reported before the gates it protects are trusted.
         sh scripts/gates_test.sh
+        bash scripts/ghcr-prune_test.sh
         sh scripts/check-file-length.sh
         # Create the origin/* remote-tracking refs (a plain `git fetch origin main`
         # only updates FETCH_HEAD), with enough depth for the diff base. Without
