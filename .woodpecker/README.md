@@ -19,6 +19,7 @@ keychain-free `DOCKER_CONFIG` trick all work unchanged.
 | `release.yaml` | tag `v*` | `release.yml` (retag + deploy staging) |
 | `deploy-production.yaml` | manual | `deploy-production.yml` |
 | `tag-check.yaml` | tag | `tag-check.yml` |
+| `ghcr-prune.yaml` | cron `ghcr-prune` (daily) | new: deletes GHCR versions older than 7 days |
 | `binary-release.yaml` | push main, manual | `binary-release.yml` (GitHub Releases + Homebrew tap + rapid-root APT dispatch) |
 
 ### Still on GitHub Actions (intentionally)
@@ -54,6 +55,7 @@ pipelines can't read them.
 | `r2_secret_key` | Cloudflare R2 S3 secret key | binary-release (brew CDN) |
 | `r2_endpoint` | R2 account S3 endpoint | binary-release (brew CDN) |
 | `r2_bucket` | R2 bucket name, `webwiebe-apt-repository-production` | binary-release (brew CDN) |
+| `ghcr_prune_token` | GitHub PAT with **read:packages + delete:packages**, `cron` event only | ghcr-prune |
 
 SSH keys are **not** secrets — they're already on the Mac Mini host (`~/.ssh`),
 reused by the local backend. `BUGBARN_ENDPOINT` is hardcoded (`https://bugbarn.wiebe.xyz`).

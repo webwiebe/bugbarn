@@ -1,0 +1,36 @@
+# GHCR prune: delete bugbarn container versions older than a week, so the
+# service/web/buildcache packages stop filling the account's shared storage
+# quota. Runs daily from the `ghcr-prune` Woodpecker cron.
+# scripts/ghcr-prune.sh documents what is kept. The images running in testing,
+# staging and production are read from the clusters first and always kept; if
+# that read fails, the step fails before anything is deleted.
+# NB: local backend = one shell per `commands` entry, and Woodpecker pre-
+# substitutes braced variables; so the step is ONE block and all vars use $VAR.
+when:
+  - event: cron
+    cron: ghcr-prune
+
+labels:
+  type: build
+
+steps:
+  - name: prune
+    image: bash
+    environment:
+      GHCR_TOKEN:
+        from_secret: ghcr_prune_token
+      KEEP_DAYS: "7"
+      KEEP_RELEASES: "3"
+      MAX_DELETE: "300"
+    commands:
+      - |
+        set -euo pipefail
+        SSH="ssh -o StrictHostKeyChecking=no -o BatchMode=yes"
+        COLS='{range .items[*]}{.spec.template.spec.containers[*].image} {.spec.jobTemplate.spec.template.spec.containers[*].image}{"\n"}{end}'
+        export PROTECT_FILE="$(mktemp)"
+        # k3s1 hosts testing and staging, layer7 hosts production.
+        $SSH root@k3s1.nijmegen.wiebe.xyz "kubectl get deploy,statefulset,daemonset,cronjob -A -o jsonpath='$COLS'" >> "$PROTECT_FILE"
+        $SSH deployer@layer7.wiebe.xyz "kubectl get deploy,statefulset,daemonset,cronjob -A -o jsonpath='$COLS'" >> "$PROTECT_FILE"
+        echo "Running bugbarn images (kept):"
+        tr ' ' '\n' < "$PROTECT_FILE" | grep 'ghcr.io/webwiebe/bugbarn/' | sort -u
+        ./scripts/ghcr-prune.sh

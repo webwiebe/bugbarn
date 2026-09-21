@@ -183,6 +183,7 @@ ts-budget: $(PNPM)
 # Tests for the gate scripts themselves.
 test-gates:
 	@sh scripts/gates_test.sh
+	@bash scripts/ghcr-prune_test.sh
 
 check-file-length:
 	@sh scripts/check-file-length.sh
@@ -282,8 +283,8 @@ woodpecker-secrets-sync:
 	get() { sops -d --extract "[\"$$1\"]" "$(WOODPECKER_SECRETS_FILE)"; }; \
 	put() { \
 		case "$$2" in REPLACE_ME|"") echo "ERROR: secret '$$1' is unset — run 'make woodpecker-secrets-edit'"; exit 1;; esac; \
-		woodpecker-cli repo secret add    --repository "$(WOODPECKER_REPO)" --name "$$1" --value "$$2" $(WOODPECKER_SECRET_EVENTS) >/dev/null 2>&1 \
-		|| woodpecker-cli repo secret update --repository "$(WOODPECKER_REPO)" --name "$$1" --value "$$2" $(WOODPECKER_SECRET_EVENTS) >/dev/null; \
+		woodpecker-cli repo secret add    --repository "$(WOODPECKER_REPO)" --name "$$1" --value "$$2" $${3:-$(WOODPECKER_SECRET_EVENTS)} >/dev/null 2>&1 \
+		|| woodpecker-cli repo secret update --repository "$(WOODPECKER_REPO)" --name "$$1" --value "$$2" $${3:-$(WOODPECKER_SECRET_EVENTS)} >/dev/null; \
 		echo "  synced $$1"; \
 	}; \
 	AGE_KEY=$$(grep -E 'AGE-SECRET-KEY' "$$SOPS_AGE_KEY_FILE" | head -1); \
@@ -296,6 +297,7 @@ woodpecker-secrets-sync:
 	put r2_secret_key         "$$(get r2_secret_key)"; \
 	put r2_endpoint           "$$(get r2_endpoint)"; \
 	put r2_bucket             "$$(get r2_bucket)"; \
+	put ghcr_prune_token      "$$(get ghcr_prune_token)" "--event cron"; \
 	put sops_age_key_testing    "$$AGE_KEY"; \
 	put sops_age_key_staging    "$$AGE_KEY"; \
 	put sops_age_key_production  "$$AGE_KEY"; \
