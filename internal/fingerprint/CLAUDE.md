@@ -64,15 +64,18 @@ rewrites the fingerprint in place. Merges cannot be undone. A change here is a d
 migration of every issue in production: say so in the PR and expect the merge storm on the
 first writer start after deploy.
 
-The same migration ignores SDK-supplied fingerprints: `Fingerprint(evt)` hashes the event
-material, so an override like `alertmanager:abc` is recomputed and rewritten on writer
-start. Tests that set explicit fingerprints open the store with `autoMigrate=false` for
-this reason.
+The migration only touches issues whose fingerprint is `sha256(fingerprint_material)`,
+i.e. ones BugBarn computed (`isComputedFingerprint`). SDK-supplied overrides such as
+`alertmanager:<fp>` fail that check and are left alone (#188); an issue from an older
+algorithm passes, because its stored hash matches its stored, older material. Tests that
+set explicit fingerprints still open the store with `autoMigrate=false` so the background
+run does not race them.
 
 ## Tests
 
 `fingerprint_test.go` pins grouping as equal/different pairs (volatile ids, source
 locations, bare hex, count variance, raw-scrubbed fallback).
-`worker/processor_test.go` covers the SDK override. `migrateFingerprints` and
-`internal/sourcemap` have no tests. Add a pair to `fingerprint_test.go` for any grouping
+`worker/processor_test.go` covers the SDK override and
+`storage/migrate_fingerprints_test.go` the migration (rewrite, merge, overrides kept).
+`internal/sourcemap` has no tests. Add a pair to `fingerprint_test.go` for any grouping
 change, both the case that should now merge and one that must stay apart.
