@@ -141,8 +141,13 @@ namespace: bugbarn-production
 resources:
   - namespace.yaml
   - pvc.yaml
-  - deployment.yaml
-  - service.yaml
+  - writer-deployment.yaml
+  - writer-service.yaml
+  - reader-deployment.yaml
+  - reader-service.yaml
+  - reader-hpa.yaml
+  - redis-queue-deployment.yaml
+  - redis-queue-service.yaml
   - web-deployment.yaml
   - web-service.yaml
   - ingress.yaml
