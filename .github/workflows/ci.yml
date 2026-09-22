@@ -217,8 +217,9 @@ jobs:
         run: |
           set -euo pipefail
           command -v docker >/dev/null 2>&1 || { echo "FAIL: docker is required to run the PHP SDK tests"; exit 1; }
-          docker run --rm -v "$(pwd):/app" -w /app composer:2.8 \
-            sh -c 'set -eu; composer install --no-interaction --prefer-dist; ./vendor/bin/phpunit'
+          # Read-only mount, vendor/ in the container: see .woodpecker/ci.yaml.
+          docker run --rm -v "$(pwd):/src:ro" composer:2.8 \
+            sh -c 'set -eu; cp -R /src/. /app; cd /app; composer install --no-interaction --prefer-dist --no-progress; ./vendor/bin/phpunit'
 
   # Code-quality gates. Runs on the runner (not in Docker) so golangci-lint can
   # use full git history for diff-mode and the coverage profile can escape the

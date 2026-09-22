@@ -149,8 +149,14 @@ steps:
         DOCKER_CONFIG_DIR="$(mktemp -d)"
         printf '{}\n' > "$DOCKER_CONFIG_DIR/config.json"
         export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+        #
+        # The SDK is mounted read-only and copied into the container, so
+        # composer writes vendor/ to the container's own filesystem. Installing
+        # into a bind mount of the macOS workspace failed mid-extraction under
+        # host load ("Install of phpunit/php-code-coverage failed ... Failed to
+        # open directory /app/vendor/...", pipelines 283 and 288).
         cd sdks/php
-        docker run --rm -v "$(pwd):/app" -w /app composer:2.8 sh -c 'set -eu; composer install --no-interaction --prefer-dist; ./vendor/bin/phpunit'
+        docker run --rm -v "$(pwd):/src:ro" composer:2.8 sh -c 'set -eu; cp -R /src/. /app; cd /app; composer install --no-interaction --prefer-dist --no-progress; ./vendor/bin/phpunit'
 
   # Quality gates run directly on the host so golangci-lint can use full git
   # history for diff-mode and the coverage profile can escape.
