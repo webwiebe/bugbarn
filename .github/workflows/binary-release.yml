@@ -165,7 +165,7 @@ jobs:
         with:
           name: debs-${{ matrix.arch }}
           path: debs/*.deb
-          retention-days: 30
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # macOS: build versioned tarballs
@@ -222,7 +222,7 @@ jobs:
         with:
           name: darwin-${{ matrix.arch }}
           path: dist/*.tar.gz*
-          retention-days: 30
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Attach release assets to GitHub Release, then trigger rapid-root APT update
