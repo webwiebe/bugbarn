@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 
@@ -51,6 +53,9 @@ func (s *core) migrateFingerprints(ctx context.Context) error {
 
 	var updates []fingerprintUpdate
 	for _, r := range issues {
+		if !isComputedFingerprint(r.fingerprint, r.material) {
+			continue
+		}
 		var evt event.Event
 		if err := json.Unmarshal(r.eventJSON, &evt); err != nil {
 			continue
@@ -86,6 +91,21 @@ func (s *core) migrateFingerprints(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// isComputedFingerprint reports whether fp is the hash BugBarn derived from
+// material, as opposed to a fingerprint the SDK or reporter supplied (e.g.
+// Alertmanager's "alertmanager:<fp>"). The ingest path stores the material
+// for both, so a non-empty material alone does not tell them apart.
+//
+// Only computed fingerprints may be recomputed: an override groups on
+// something the material does not contain, so re-hashing it would split the
+// issue from its future events and merge distinct overrides that share
+// material (#188). An issue from an older algorithm still passes, because its
+// stored fingerprint is the hash of its stored, older material.
+func isComputedFingerprint(fp, material string) bool {
+	sum := sha256.Sum256([]byte(material))
+	return fp == hex.EncodeToString(sum[:])
 }
 
 func (s *core) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpdate) error {
