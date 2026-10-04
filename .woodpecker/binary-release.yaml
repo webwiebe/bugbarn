@@ -72,6 +72,9 @@ steps:
       - |
         set -euo pipefail
         . ./.relver
+        # See the quality step in ci.yaml: keep Go's $WORK out of the janitor's reach.
+        export GOTMPDIR="$PWD/.gotmp"
+        mkdir -p "$GOTMPDIR"
         export GOTOOLCHAIN=auto
         command -v nfpm >/dev/null 2>&1 || go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
         export PATH="$PATH:$(go env GOPATH)/bin"
@@ -93,6 +96,8 @@ steps:
       - |
         set -euo pipefail
         . ./.relver
+        export GOTMPDIR="$PWD/.gotmp"
+        mkdir -p "$GOTMPDIR"
         BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         mkdir -p dist
         for A in amd64 arm64; do

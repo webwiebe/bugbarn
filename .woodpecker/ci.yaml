@@ -180,6 +180,10 @@ steps:
     commands:
       - |
         set -euo pipefail
+        # Go's $WORK dirs live in the workspace: the agent's janitor deletes
+        # $TMPDIR/go-build* when disk runs low, including those of running builds.
+        export GOTMPDIR="$PWD/.gotmp"
+        mkdir -p "$GOTMPDIR"
         sh scripts/heal-go-modcache.sh
         # The gates' own tests run first: a gate that has stopped failing must
         # be reported before the gates it protects are trusted.
