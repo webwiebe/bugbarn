@@ -50,6 +50,9 @@ linters:
           files:
             - "**/internal/**"
             - "!**/internal/storage/**"
+            # The storage layer of the telemetry side files (security.db,
+            # metrics.db); it wraps DB errors into apperr like storage does.
+            - "!**/internal/telemetrydb/**"
             - "!$test"
           deny:
             - pkg: database/sql

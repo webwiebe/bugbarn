@@ -107,11 +107,7 @@ func TestSpoolForwarder_DrainOnce_ForwardsRecords(t *testing.T) {
 func TestSpoolForwarder_DrainOnce_ReturnsErrorWhenWriterDown(t *testing.T) {
 	t.Parallel()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	closedURL := srv.URL
-	srv.Close()
-
-	sf := newTestSpool(t, closedURL)
+	sf := newTestSpool(t, deadWriterURL(t))
 	spoolRecord(t, sf)
 	pendingBefore := sf.Pending()
 

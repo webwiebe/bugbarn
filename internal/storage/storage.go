@@ -72,6 +72,10 @@ func tracedDriver() string {
 	return registeredDriver
 }
 
+// DriverName returns the otelsql-wrapped SQLite driver name, so other SQLite
+// files (internal/telemetrydb) get the same tracing as the main database.
+func DriverName() string { return tracedDriver() }
+
 // dbStatsRegs tracks the otelsql connection-pool metric registrations keyed
 // by the *sql.DB they observe, so Close can unregister the callback and stop
 // the gauges from reporting stats for a closed pool.

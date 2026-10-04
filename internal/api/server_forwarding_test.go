@@ -264,13 +264,24 @@ func TestWriteForwarder_DeleteForwarded(t *testing.T) {
 	}
 }
 
+// deadWriterURL returns the URL of a writer that drops every connection
+// without answering. The URL of a closed httptest server is not dead: a
+// parallel test can bind the freed port and answer 200.
+func deadWriterURL(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+			_ = conn.Close()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
 func TestWriteForwarder_WriterDown502(t *testing.T) {
 	t.Parallel()
 
-	// Create and immediately close a server to get a dead URL.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	deadURL := srv.URL
-	srv.Close()
+	deadURL := deadWriterURL(t)
 
 	store := mustOpenStore(t)
 	defer store.Close()
