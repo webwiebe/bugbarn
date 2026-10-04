@@ -1,0 +1,23 @@
+tests:
+  - name: macos log stream line is tagged
+    inputs:
+      - insert_at: log_tag
+        type: log
+        log_fields:
+          message: '{"eventMessage":"Invalid user test from 192.0.2.20 port 5000","processImagePath":"/usr/sbin/sshd"}'
+    outputs:
+      - extract_from: log_tag
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.source, "macos")
+              assert!(starts_with(string!(.message), "{\"eventMessage\""))
+              assert!(is_string(.host))
+
+  - name: macos log stream header is dropped
+    inputs:
+      - insert_at: log_tag
+        type: log
+        log_fields:
+          message: 'Filtering the log data using "process == \"sshd\""'
+    no_outputs_from: [log_tag]

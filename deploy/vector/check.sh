@@ -14,7 +14,8 @@ printf 'placeholder' > "$work/secrets/api_key"
 
 run() {
 	docker run --rm -e NODE_NAME=check \
-		-v "$work/secrets:/etc/vector-secrets:ro" -v "$here:/v:ro" "$image" "$@"
+		-v "$work/secrets:/etc/vector-secrets:ro" -v "$work/secrets:/etc/vector/secrets:ro" \
+		-v "$work/secrets:/vh/secrets:ro" -v "$work:/w:ro" -v "$here:/v:ro" "$image" "$@"
 }
 
 run test /v/k8s/base/vector.yaml /v/tests/transforms.yaml
@@ -23,4 +24,15 @@ for sinks in "$here"/k8s/*/sinks.yaml; do
 	echo "== $overlay"
 	run validate --no-environment /v/k8s/base/vector.yaml "/v/k8s/$overlay/sinks.yaml"
 done
+
+# Host agents. The macOS file carries a placeholder for its home directory,
+# which install.sh fills in; the Linux image cannot run `log stream`, so only
+# the config and transforms are checked.
+sed 's|__VECTOR_HOME__|/vh|g' "$here/host/macos/vector.yaml" > "$work/macos.yaml"
+echo "== host/macos"
+run test /w/macos.yaml /v/tests/host.yaml
+run validate --no-environment /w/macos.yaml
+echo "== host/linux"
+run test /v/host/linux/vector.yaml /v/tests/host-linux.yaml
+run validate --no-environment /v/host/linux/vector.yaml
 rm -rf "$work"

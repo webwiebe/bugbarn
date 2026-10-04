@@ -1,0 +1,17 @@
+tests:
+  - name: journald sshd entry becomes a syslog record
+    inputs:
+      - insert_at: journal_tag
+        type: log
+        log_fields:
+          message: "Failed password for root from 192.0.2.7 port 4022 ssh2"
+          SYSLOG_IDENTIFIER: sshd
+          timestamp: "2026-10-04T14:48:33.904908Z"
+    outputs:
+      - extract_from: journal_tag
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.source, "syslog")
+              assert_eq!(.appname, "sshd")
+              assert_eq!(.message, "Failed password for root from 192.0.2.7 port 4022 ssh2")
