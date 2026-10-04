@@ -87,6 +87,7 @@ type Config struct {
 	OIDCRedirectURL   string        // BUGBARN_OIDC_REDIRECT_URL
 	OIDCRequiredGroup string        // BUGBARN_OIDC_REQUIRED_GROUP — defaults to "bugbarn-users"
 	OIDCRefreshGrace  time.Duration // BUGBARN_OIDC_REFRESH_GRACE_SECONDS — bounded grace for transient refresh failures (default 1h)
+	Telemetry         Telemetry
 }
 
 // IsProduction reports whether this instance runs in the production tier.
@@ -149,6 +150,7 @@ func Load() Config {
 	}
 
 	cfg.Digest = parseDigestConfig(cfg.PublicURL, cfg.Environment)
+	cfg.Telemetry = parseTelemetryConfig(cfg.DBPath)
 
 	// Global admin alert recipient. Every new issue and regression across all
 	// projects is emailed here. Falls back to the weekly-digest recipient so a

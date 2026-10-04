@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"time"
 )
@@ -71,6 +72,14 @@ func (s *core) RunPeriodicCheckpoint(ctx context.Context, interval time.Duration
 	if s == nil || s.db == nil {
 		return // read-only store: nothing to checkpoint.
 	}
+	RunCheckpointLoop(ctx, s.db, interval, log)
+}
+
+// RunCheckpointLoop is RunPeriodicCheckpoint for any WAL-mode database opened
+// with wal_autocheckpoint(0) on a single write connection. The telemetry
+// databases (internal/telemetrydb) use it so each file keeps exactly one
+// TRUNCATE checkpointer with the same bounded retry as the main database.
+func RunCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, log *slog.Logger) {
 	if interval <= 0 {
 		interval = DefaultCheckpointInterval
 	}
@@ -90,7 +99,7 @@ func (s *core) RunPeriodicCheckpoint(ctx context.Context, interval time.Duration
 			// connection. Giving up early only leaves the WAL untruncated
 			// until the next tick, which then retries from scratch.
 			tickCtx, cancel := context.WithTimeout(ctx, checkpointTickBudget)
-			s.checkpoint(tickCtx, checkpointRetryInterval, log)
+			CheckpointDB(tickCtx, db, checkpointRetryInterval, log)
 			cancel()
 		}
 	}
@@ -119,6 +128,12 @@ func (s *core) FinalCheckpoint(log *slog.Logger) {
 // When retryInterval > 0 it retries while the pragma reports busy, so the WAL is
 // actually reset once the blocking reader releases its snapshot.
 func (s *core) checkpoint(ctx context.Context, retryInterval time.Duration, log *slog.Logger) int {
+	return CheckpointDB(ctx, s.db, retryInterval, log)
+}
+
+// CheckpointDB is one TRUNCATE checkpoint of db's main schema with the retry
+// semantics described on checkpoint.
+func CheckpointDB(ctx context.Context, db *sql.DB, retryInterval time.Duration, log *slog.Logger) int {
 	for {
 		// wal_checkpoint returns (busy, log, checkpointed): busy=1 means a
 		// reader blocked backfill, log = WAL frames, checkpointed = frames
@@ -128,7 +143,7 @@ func (s *core) checkpoint(ctx context.Context, retryInterval time.Duration, log 
 		// EVERY attached database, so with a read-only database ATTACHed (as
 		// SnapshotSettings does) it fails the whole call with a disk I/O error.
 		var busy, walFrames, checkpointed int
-		if err := s.db.QueryRowContext(ctx, `PRAGMA main.wal_checkpoint(TRUNCATE)`).Scan(&busy, &walFrames, &checkpointed); err != nil {
+		if err := db.QueryRowContext(ctx, `PRAGMA main.wal_checkpoint(TRUNCATE)`).Scan(&busy, &walFrames, &checkpointed); err != nil {
 			if ctx.Err() == nil {
 				log.Warn("wal checkpoint error", "error", err)
 			}

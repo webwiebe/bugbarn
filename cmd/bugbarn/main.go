@@ -189,6 +189,11 @@ func run() error {
 		RetentionDays: cfg.EventRetentionDays,
 	}, logger, &bgWg)
 
+	// Infrastructure telemetry files (security logs, host metrics). Writer-only
+	// for the same reason as retention: readers open them read-only.
+	_, closeTelemetry := openTelemetry(ctx, cfg.Telemetry, &bgWg, logger)
+	defer closeTelemetry()
+
 	// Spec 007: when a Redis write queue is configured, a single consumer drains
 	// it into the DB. This decouples ingest producers (reader pods) from the
 	// writer so a slow writer can't trigger the HTTP-forward retry storm that
