@@ -10,6 +10,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/detect"
 	"github.com/wiebe-xyz/bugbarn/internal/hostmetrics"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
+	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetry"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetrydb"
@@ -63,10 +64,10 @@ func openTelemetryDB(ctx context.Context, spec telemetrydb.Spec, path string, ma
 }
 
 // startDetections runs the detection engine over the ingester's telemetry:
-// built-in rules, the heartbeat ticker and the emitter that persists each
+// the given rules, the heartbeat ticker and the emitter that persists each
 // detection as an event in the telemetry project through proc.
-func startDetections(ctx context.Context, ing *telemetry.Ingester, proc *ingestproc.Processor, project string, wg *sync.WaitGroup, log *slog.Logger) *detect.Engine {
-	engine := detect.NewEngine(detect.Defaults(), detectionBuffer, log)
+func startDetections(ctx context.Context, ing *telemetry.Ingester, proc *ingestproc.Processor, rules []detect.Rule, project string, wg *sync.WaitGroup, log *slog.Logger) *detect.Engine {
+	engine := detect.NewEngine(rules, detectionBuffer, log)
 	if met := ing.Metrics(); met != nil {
 		hosts, err := met.Hosts(ctx)
 		if err != nil {
@@ -129,4 +130,15 @@ func wireReaderTelemetryViews(srv telemetryViewer, cfg config.Telemetry) func() 
 		_ = sec.Close()
 		_ = met.Close()
 	}
+}
+
+// detectionRules returns the rule set to start the engine with: built-ins
+// plus stored overrides. If the stored rules cannot be read the engine still
+// starts on the built-ins; the service has logged the failure.
+func detectionRules(ctx context.Context, svc *detectionrules.Service) []detect.Rule {
+	rules, err := svc.Effective(ctx)
+	if err != nil {
+		return detect.Defaults()
+	}
+	return rules
 }

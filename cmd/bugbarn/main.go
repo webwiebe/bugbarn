@@ -31,6 +31,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/retention"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
+	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
@@ -212,7 +213,8 @@ func run() error {
 	// Detections persist through the same pipeline as SDK events, so each one
 	// becomes an issue in the telemetry project. Started before the consumer so
 	// the first telemetry batch is already observed.
-	startDetections(ctx, telemetryIngester, eventProc, cfg.Telemetry.Project, &bgWg, logger)
+	ruleSvc := detectionrules.New(store.DetectionRuleStore, logger)
+	engine := startDetections(ctx, telemetryIngester, eventProc, detectionRules(ctx, ruleSvc), cfg.Telemetry.Project, &bgWg, logger)
 
 	if cfg.RedisQueueURL != "" {
 		bgWg.Add(1)
@@ -251,6 +253,8 @@ func run() error {
 	apiServer.SetLogHub(logHub)
 	apiServer.SetTelemetry(telemetryIngester, cfg.Telemetry.Project)
 	wireWriterTelemetryViews(apiServer, telemetryIngester)
+	// Rule changes through the API (forwarded here by readers) reload the engine.
+	apiServer.DetectionRules().OnChange(engine.SetRules)
 	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
 	apiServer.SetAuthEnvironment(cfg.Environment)
 	apiServer.SetOIDCRefreshGrace(cfg.OIDCRefreshGrace)

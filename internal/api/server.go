@@ -17,6 +17,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	alertsvc "github.com/wiebe-xyz/bugbarn/internal/service/alerts"
 	analyticssvc "github.com/wiebe-xyz/bugbarn/internal/service/analytics"
+	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
 	issuesvc "github.com/wiebe-xyz/bugbarn/internal/service/issues"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
@@ -30,14 +31,15 @@ import (
 const defaultMaxSourceMapBytes = 32 << 20 // 32 MiB
 
 type Server struct {
-	ingestHandler *ingest.Handler
-	issues        *issuesvc.Service
-	projects      *projectsvc.Service
-	releases      *releasesvc.Service
-	alerts        *alertsvc.Service
-	logs          *logsvc.Service
-	analytics     *analyticssvc.Service
-	logger        *slog.Logger
+	ingestHandler  *ingest.Handler
+	issues         *issuesvc.Service
+	projects       *projectsvc.Service
+	releases       *releasesvc.Service
+	alerts         *alertsvc.Service
+	logs           *logsvc.Service
+	analytics      *analyticssvc.Service
+	detectionRules *detectionrules.Service
+	logger         *slog.Logger
 
 	users               *auth.UserAuthenticator
 	sessions            *auth.SessionManager
@@ -252,6 +254,7 @@ func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog
 		alerts:            alertsvc.New(d.Alerts, logger),
 		logs:              logsvc.New(d.Logs, logger),
 		analytics:         analyticssvc.New(d.Analytics, logger),
+		detectionRules:    detectionrules.New(d.DetectionRules, logger),
 		logger:            logger.With("component", "api"),
 		maxSourceMapBytes: defaultMaxSourceMapBytes,
 	}
@@ -271,6 +274,7 @@ func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, user
 		alerts:            alertsvc.New(d.Alerts, logger),
 		logs:              logsvc.New(d.Logs, logger),
 		analytics:         analyticssvc.New(d.Analytics, logger),
+		detectionRules:    detectionrules.New(d.DetectionRules, logger),
 		logger:            logger.With("component", "api"),
 		users:             users,
 		sessions:          sessions,
