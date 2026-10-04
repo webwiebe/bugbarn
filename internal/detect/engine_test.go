@@ -151,6 +151,8 @@ func TestK8sSecretRead(t *testing.T) {
 	e.ObserveSecurity(context.Background(), []secnorm.Record{
 		read("system:kube-controller-manager"),
 		read("system:node:k3s1"),
+		read("system:k3s-supervisor"),
+		read("system:serviceaccount:kube-system:helm-traefik"),
 		read("system:serviceaccount:default:intruder"),
 	})
 	got := drain(e)
