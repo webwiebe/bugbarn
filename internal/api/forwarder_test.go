@@ -82,12 +82,7 @@ func TestWriteForwarder_Forward(t *testing.T) {
 }
 
 func TestWriteForwarder_WriterDown(t *testing.T) {
-	// Create a server and immediately close it to get a port that refuses connections.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	closedURL := srv.URL
-	srv.Close()
-
-	fwd := NewWriteForwarder(closedURL)
+	fwd := NewWriteForwarder(deadWriterURL(t))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", nil)
 	rec := httptest.NewRecorder()
