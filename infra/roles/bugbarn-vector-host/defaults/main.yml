@@ -1,0 +1,6 @@
+---
+# Root of the bugbarn checkout on the control machine; the role installs from
+# its deploy/vector/host files.
+bugbarn_vector_repo: "{{ playbook_dir }}/.."
+# Age key that decrypts deploy/vector/host/secret.yaml (production recipient).
+bugbarn_vector_age_key_file: "{{ lookup('env', 'HOME') }}/Library/Application Support/sops/age/keys.txt"

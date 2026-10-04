@@ -57,7 +57,15 @@ shared ingest key of the `infra` project (`vector-hosts`), SOPS-encrypted in
 | `host/macos/vector.yaml` | macOS, per-user LaunchAgent | `log stream` for sshd, sshd-session, sudo, su | `macos` |
 | `host/linux/vector.yaml` | Linux with systemd | journald for sshd, sudo, account changes | `syslog` |
 
-Both also run `host_metrics`. On a mac, from a checkout of this repo:
+Both also run `host_metrics`. The macOS runners get the agent from Ansible
+(`infra/roles/bugbarn-vector-host`), which decrypts the key and runs
+`install.sh` when the files change or the agent is not loaded:
+
+```
+cd infra && make setup-vector-host
+```
+
+By hand on a mac, from a checkout of this repo:
 
 ```
 sops -d --extract '["stringData"]["api_key"]' deploy/vector/host/secret.yaml |
