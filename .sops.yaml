@@ -5,6 +5,8 @@ creation_rules:
     age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
   - path_regex: deploy/k8s/production/.*secret.*\.yaml$
     age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
+  - path_regex: deploy/vector/k8s/[^/]+/secret\.yaml$
+    age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
   - path_regex: deploy/ci-secrets\.yaml$
     age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
   - path_regex: deploy/woodpecker-secrets\.yaml$

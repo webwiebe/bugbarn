@@ -1,0 +1,68 @@
+# Vector agents (deploy/vector): checks on a PR, deploys the DaemonSet to both
+# clusters when a change to deploy/vector lands on main. Independent of the
+# BugBarn release chain: the agents only need the telemetry endpoints to exist,
+# and their disk buffers hold events while BugBarn is unreachable.
+# NB: local backend = one shell per `commands` entry, and Woodpecker pre-
+# substitutes braced variables; so each step is ONE block and all vars use $VAR.
+when:
+  - event: pull_request
+    path:
+      include: ['deploy/vector/**', '.woodpecker/vector.yaml']
+  - event: push
+    branch: main
+    path:
+      include: ['deploy/vector/**', '.woodpecker/vector.yaml']
+  - event: manual
+
+labels:
+  type: build
+
+steps:
+  - name: check
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        # Keychain-free DOCKER_CONFIG so the Docker Hub pull never touches the
+        # credential helper.
+        export DOCKER_CONFIG="$(mktemp -d)"
+        echo '{}' > "$DOCKER_CONFIG/config.json"
+        ./deploy/vector/check.sh
+
+  - name: deploy-k3s1
+    image: bash
+    when:
+      - event: [push, manual]
+    environment:
+      HOST: root@k3s1.nijmegen.wiebe.xyz
+      OVERLAY: k3s1
+      SOPS_AGE_KEY:
+        from_secret: sops_age_key_testing
+    commands: &deploy
+      - |
+        set -euo pipefail
+        SSH="ssh -o StrictHostKeyChecking=no"
+        $SSH "$HOST" "rm -rf /tmp/vector-deploy && mkdir -p /tmp/vector-deploy"
+        scp -o StrictHostKeyChecking=no -r deploy/vector/k8s "$HOST:/tmp/vector-deploy/k8s"
+        # rbac.yaml holds the namespace, which the secret needs first.
+        $SSH "$HOST" "kubectl apply -f /tmp/vector-deploy/k8s/base/rbac.yaml"
+        sops -d "deploy/vector/k8s/$OVERLAY/secret.yaml" | $SSH "$HOST" "kubectl apply -f -"
+        # The config map name carries a content hash, so a config change rolls
+        # the pods by itself; the restart picks up a rotated key.
+        $SSH "$HOST" "
+          set -euo pipefail
+          kubectl apply -k /tmp/vector-deploy/k8s/$OVERLAY
+          kubectl -n vector rollout restart daemonset/vector
+          kubectl -n vector rollout status daemonset/vector --timeout=300s
+        "
+
+  - name: deploy-layer7
+    image: bash
+    when:
+      - event: [push, manual]
+    environment:
+      HOST: deployer@layer7.wiebe.xyz
+      OVERLAY: layer7
+      SOPS_AGE_KEY:
+        from_secret: sops_age_key_production
+    commands: *deploy

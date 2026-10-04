@@ -1,0 +1,70 @@
+# `vector test` cases for the transforms in k8s/base/vector.yaml. Run by the
+# vector pipeline before it deploys (see .woodpecker/vector.yaml).
+tests:
+  - name: sshd failure from auth.log
+    inputs:
+      - insert_at: auth_parse
+        type: log
+        log_fields:
+          message: "2026-10-04T14:48:33.904908+00:00 de sshd[2983894]: Failed password for root from 203.0.113.9 port 4022 ssh2"
+    outputs:
+      - extract_from: auth_filter
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.source, "syslog")
+              assert_eq!(.appname, "sshd")
+              assert_eq!(.timestamp, "2026-10-04T14:48:33.904908+00:00")
+              assert_eq!(.message, "Failed password for root from 203.0.113.9 port 4022 ssh2")
+
+  - name: sudo command keeps its message
+    inputs:
+      - insert_at: auth_parse
+        type: log
+        log_fields:
+          message: "2026-10-04T14:48:34.027400+00:00 de sudo: deployer : PWD=/home/deployer ; USER=root ; COMMAND=/usr/bin/tail -n 4 /var/log/auth.log"
+    outputs:
+      - extract_from: auth_filter
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.appname, "sudo")
+              assert_eq!(.message, "deployer : PWD=/home/deployer ; USER=root ; COMMAND=/usr/bin/tail -n 4 /var/log/auth.log")
+
+  - name: logind noise is dropped
+    inputs:
+      - insert_at: auth_parse
+        type: log
+        log_fields:
+          message: "2026-10-04T14:48:33.910197+00:00 de systemd-logind[769]: New session 3124 of user deployer."
+    no_outputs_from: [auth_filter]
+
+  - name: traefik CLF line is dropped
+    inputs:
+      - insert_at: traefik_tag
+        type: log
+        log_fields:
+          message: '10.42.0.1 - - [04/Oct/2026:14:00:00 +0000] "GET / HTTP/1.1" 200 12 "-" "-" 1 "web@kubernetes" "http://10.42.0.9:80" 3ms'
+    no_outputs_from: [traefik_tag]
+
+  - name: traefik line for the agents' own telemetry POST is dropped
+    inputs:
+      - insert_at: traefik_tag
+        type: log
+        log_fields:
+          message: '{"DownstreamStatus":202,"RequestMethod":"POST","RequestPath":"/api/v1/telemetry/security"}'
+    no_outputs_from: [traefik_tag]
+
+  - name: traefik JSON line is tagged
+    inputs:
+      - insert_at: traefik_tag
+        type: log
+        log_fields:
+          message: '{"DownstreamStatus":401,"RequestMethod":"POST","RequestPath":"/login"}'
+    outputs:
+      - extract_from: traefik_tag
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.source, "traefik")
+              assert!(starts_with!(.message, "{"))
