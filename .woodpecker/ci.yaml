@@ -70,7 +70,9 @@ steps:
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
         pnpm install --frozen-lockfile
         node scripts/oxlint-ratchet.test.mjs
-        node scripts/oxlint-ratchet.mjs --report-only
+        # oxlint is the linter (eslint cannot load against TS 7); `pnpm run
+        # lint` is the tsc type check.
+        node scripts/oxlint-ratchet.mjs
         pnpm run lint
         pnpm run test
         pnpm run build

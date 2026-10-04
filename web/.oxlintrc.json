@@ -7,7 +7,7 @@
     "correctness": "warn"
   },
   "rules": {
-    // typescript-eslint's recommended set, as eslint.config.js enabled it.
+    // typescript-eslint's recommended set, as the former web/eslint.config.js enabled it.
     "typescript/no-explicit-any": "warn",
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     "typescript/ban-ts-comment": "error",
