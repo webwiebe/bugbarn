@@ -87,3 +87,4 @@ sdks/php/.phpunit.result.cache
 # Docker and compose state
 docker-compose.override.yml
 .tools/
+.gotmp/
