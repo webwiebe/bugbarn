@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -91,10 +92,7 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	endpoint := s.publicURL
-	if endpoint == "" {
-		endpoint = "https://" + r.Host
-	}
+	endpoint, dashboard := s.setupEndpoints(r)
 
 	status := proj.Status
 	if status == "" {
@@ -108,10 +106,11 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 
 New projects are created pending approval. Send events now — they are accepted
 (HTTP 202) and queued. They are ingested into the dashboard once an admin
-approves the project at:
-  %s
-`, endpoint)
+approves the project%s
+`, dashboardSuffix(dashboard, " at:\n  %s", "."))
 	}
+
+	viewSection := dashboardSuffix(dashboard, "\n## View your project\n\n%s/#/issues\n", "")
 
 	page := fmt.Sprintf(`# BugBarn Integration: %s
 
@@ -265,11 +264,7 @@ curl -X POST %s/api/v1/logs \
   -H "X-BugBarn-Project: %s" \
   -d '{"level": "warn", "message": "cache miss", "key": "user:42", "ttl": 300}'
 ~~~
-
-## View your project
-
-%s/#/issues
-
+%s
 ---
 Generated %s
 `,
@@ -284,13 +279,73 @@ Generated %s
 		rawKey, endpoint, // 20,21: python (no project_slug param — routed by API key)
 		endpoint, rawKey, slug, // 22,23,24: release curl
 		endpoint, rawKey, slug, // 25,26,27: logs curl
-		endpoint,                              // 28: view link
+		viewSection,                           // 28: view link
 		time.Now().UTC().Format(time.RFC3339), // 29: generated timestamp
 	)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Robots-Tag", "noindex")
 	fmt.Fprint(w, page)
+}
+
+// setupEndpoints returns the ingest endpoint the setup page documents and the
+// dashboard URL it links to. A request on a bb.<domain> vanity alias documents
+// that alias, so an integrator only ever sees the host they were given; the
+// alias serves ingest paths only, so the dashboard URL is empty there.
+// Otherwise BUGBARN_PUBLIC_URL wins, falling back to the request host.
+func (s *Server) setupEndpoints(r *http.Request) (endpoint, dashboard string) {
+	host, scheme := s.requestHost(r)
+	if vanity, ok := vanityIngestHost(host); ok {
+		return "https://" + vanity, ""
+	}
+	if s.publicURL != "" {
+		base := strings.TrimRight(s.publicURL, "/")
+		return base, base
+	}
+	base := scheme + "://" + host
+	return base, base
+}
+
+// requestHost returns the host and scheme the client used. X-Forwarded-Host and
+// X-Forwarded-Proto are only honored from a trusted proxy, like clientIP.
+func (s *Server) requestHost(r *http.Request) (host, scheme string) {
+	host, scheme = r.Host, "https"
+	if len(s.trustedProxies) > 0 && isTrustedProxy(remoteHost(r.RemoteAddr), s.trustedProxies) {
+		if fh := firstHeaderValue(r.Header.Get("X-Forwarded-Host")); fh != "" {
+			host = fh
+		}
+		if fp := firstHeaderValue(r.Header.Get("X-Forwarded-Proto")); fp == "http" || fp == "https" {
+			scheme = fp
+		}
+	}
+	return host, scheme
+}
+
+func firstHeaderValue(v string) string {
+	if i := strings.Index(v, ","); i >= 0 {
+		v = v[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(v))
+}
+
+// vanityIngestHost returns host without its port when it is a bb.<domain>
+// alias, the pattern the production IngressRoute bugbarn-forward-domains routes
+// to BugBarn. The alias is always served over HTTPS on the default port.
+func vanityIngestHost(host string) (string, bool) {
+	host = strings.ToLower(host)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return host, strings.HasPrefix(host, "bb.") && len(host) > len("bb.")
+}
+
+// dashboardSuffix formats withURL around the dashboard URL, or returns without
+// when there is no dashboard to link to.
+func dashboardSuffix(dashboard, withURL, without string) string {
+	if dashboard == "" {
+		return without
+	}
+	return fmt.Sprintf(withURL, dashboard)
 }
 
 func sha256Sum(s string) []byte {

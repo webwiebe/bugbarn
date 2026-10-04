@@ -140,7 +140,7 @@ func (s *Server) SetInternalSessionSecret(secret string) {
 	}
 }
 
-// SetTrustedProxies sets the CIDRs from which X-Forwarded-For is trusted.
+// SetTrustedProxies sets the CIDRs from which X-Forwarded-For, -Host and -Proto are trusted.
 func (s *Server) SetTrustedProxies(cidrs []*net.IPNet) {
 	s.trustedProxies = cidrs
 }
