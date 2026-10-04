@@ -1,0 +1,95 @@
+# Vector agent for a macOS host (the CI mac-mini and laptop). It ships:
+#   - sshd, sudo and su lines from the unified log (`log stream`)
+#   - host_metrics (load, CPU, memory, filesystems, network)
+# to production BugBarn's public telemetry endpoints. BugBarn parses the lines
+# (internal/secnorm, internal/hostmetrics); this file only tags them with
+# `source` and `host`. Traefik on layer7 drops these POSTs from its own
+# access-log stream, so shipping never feeds itself.
+#
+# install.sh writes this file to ~/.vector/vector.yaml with __VECTOR_HOME__
+# replaced by that directory (Vector does not expand env vars); the key comes from
+# ~/.vector/secrets/api_key through the directory secret backend.
+data_dir: __VECTOR_HOME__/data
+
+secret:
+  bugbarn:
+    type: directory
+    path: __VECTOR_HOME__/secrets
+
+api:
+  enabled: false
+
+sources:
+  unified_log:
+    type: exec
+    mode: streaming
+    command:
+      - /usr/bin/log
+      - stream
+      - --style
+      - ndjson
+      - --predicate
+      - 'process == "sshd" OR process == "sshd-session" OR process == "sudo" OR process == "su"'
+    streaming:
+      respawn_on_exit: true
+      respawn_interval_secs: 5
+
+  host:
+    type: host_metrics
+    scrape_interval_secs: 60
+    collectors: [cpu, filesystem, load, memory, network]
+    filesystem:
+      mountpoints:
+        # APFS system volumes and simulator images mirror the data volume.
+        excludes: ["/System/Volumes/*", "/Library/Developer/*", "/private/var/*", "/dev"]
+      devices:
+        excludes: [devfs, autofs]
+    network:
+      devices:
+        excludes: ["lo*", "utun*", "awdl*", "llw*", "bridge*", "gif*", "stf*", "anpi*", "ap*"]
+
+transforms:
+  log_tag:
+    type: remap
+    inputs: [unified_log]
+    # `log stream` prints a "Filtering the log data ..." header first.
+    source: |
+      line = strip_whitespace(string!(.message))
+      if !starts_with(line, "{") { abort }
+      . = {"source": "macos", "host": get_hostname() ?? "", "message": line}
+
+  host_tag:
+    type: remap
+    inputs: [host]
+    source: |
+      .tags.host = get_hostname() ?? ""
+
+sinks:
+  security:
+    type: http
+    inputs: [log_tag]
+    uri: https://bugbarn.wiebe.xyz/api/v1/telemetry/security
+    encoding: {codec: json}
+    framing: {method: newline_delimited}
+    request:
+      headers:
+        x-bugbarn-api-key: "SECRET[bugbarn.api_key]"
+        content-type: application/x-ndjson
+      timeout_secs: 30
+    # Below BugBarn's 1MiB ingest body limit.
+    batch: {max_bytes: 900000, timeout_secs: 10}
+    buffer: {type: disk, max_size: 268435488, when_full: drop_newest}
+
+  metrics:
+    type: http
+    inputs: [host_tag]
+    uri: https://bugbarn.wiebe.xyz/api/v1/telemetry/metrics
+    encoding: {codec: json}
+    framing: {method: newline_delimited}
+    request:
+      headers:
+        x-bugbarn-api-key: "SECRET[bugbarn.api_key]"
+        content-type: application/x-ndjson
+      timeout_secs: 30
+    batch: {max_bytes: 900000, timeout_secs: 30}
+    buffer: {type: disk, max_size: 268435488, when_full: drop_newest}

@@ -1,0 +1,91 @@
+# Vector agent for a Linux host outside Kubernetes (systemd, journald). It
+# ships sshd, sudo and account-change lines from the journal, and
+# host_metrics, to production BugBarn's public telemetry endpoints. BugBarn
+# parses the lines; this file only tags them with `source` and `host`.
+#
+# Install Vector from its apt/rpm repository, put this file at
+# /etc/vector/vector.yaml and the ingest key at /etc/vector/secrets/api_key
+# (mode 0600, owner vector), and add the vector user to systemd-journal.
+data_dir: /var/lib/vector
+
+secret:
+  bugbarn:
+    type: directory
+    path: /etc/vector/secrets
+
+api:
+  enabled: false
+
+sources:
+  journal:
+    type: journald
+    include_units: [ssh, sshd]
+    include_matches:
+      SYSLOG_IDENTIFIER: [sshd, sshd-session, sudo, su, passwd, chpasswd, useradd, usermod, userdel, groupadd, gpasswd]
+    since_now: true
+
+  host:
+    type: host_metrics
+    scrape_interval_secs: 60
+    collectors: [cpu, disk, filesystem, load, memory, network]
+    filesystem:
+      mountpoints:
+        excludes: ["*/proc/*", "*/sys/*", "*/run/*", "*/snap/*", "*/boot/efi"]
+      devices:
+        excludes: [binfmt_misc, overlay, tmpfs, shm]
+    network:
+      devices:
+        excludes: ["veth*", "docker*", "br-*", "lo"]
+    disk:
+      devices:
+        excludes: ["loop*", "ram*", "dm-*", "nbd*", "zram*"]
+
+transforms:
+  journal_tag:
+    type: remap
+    inputs: [journal]
+    # Same shape as the k8s agents' auth.log lines: BugBarn's syslog parser
+    # reads appname and message.
+    source: |
+      . = {
+        "source": "syslog",
+        "host": get_hostname() ?? "",
+        "timestamp": .timestamp,
+        "appname": .SYSLOG_IDENTIFIER,
+        "message": .message,
+      }
+
+  host_tag:
+    type: remap
+    inputs: [host]
+    source: |
+      .tags.host = get_hostname() ?? ""
+
+sinks:
+  security:
+    type: http
+    inputs: [journal_tag]
+    uri: https://bugbarn.wiebe.xyz/api/v1/telemetry/security
+    encoding: {codec: json}
+    framing: {method: newline_delimited}
+    request:
+      headers:
+        x-bugbarn-api-key: "SECRET[bugbarn.api_key]"
+        content-type: application/x-ndjson
+      timeout_secs: 30
+    batch: {max_bytes: 900000, timeout_secs: 10}
+    buffer: {type: disk, max_size: 268435488, when_full: drop_newest}
+
+  metrics:
+    type: http
+    inputs: [host_tag]
+    uri: https://bugbarn.wiebe.xyz/api/v1/telemetry/metrics
+    encoding: {codec: json}
+    framing: {method: newline_delimited}
+    request:
+      headers:
+        x-bugbarn-api-key: "SECRET[bugbarn.api_key]"
+        content-type: application/x-ndjson
+      timeout_secs: 30
+    batch: {max_bytes: 900000, timeout_secs: 30}
+    buffer: {type: disk, max_size: 268435488, when_full: drop_newest}
