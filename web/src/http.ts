@@ -236,7 +236,7 @@ export async function apiFetch(path: string, init: RequestInit = {}, _retried = 
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
-    ...(init.headers as Record<string, string> ?? {}),
+    ...(init.headers as Record<string, string> | undefined),
   };
   if (csrf) {
     headers["X-BugBarn-CSRF"] = csrf;
