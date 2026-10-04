@@ -44,6 +44,9 @@ var (
 	ErrConflict     = &Error{Code: "conflict"}
 	ErrInvalidInput = &Error{Code: "invalid_input"}
 	ErrInternal     = &Error{Code: "internal"}
+	// ErrUnavailable marks a dependency that is not ready yet (for example a
+	// file another process has still to create). The API answers 503.
+	ErrUnavailable = &Error{Code: "unavailable"}
 )
 
 func NotFound(msg string, cause error) *Error {
@@ -60,4 +63,8 @@ func InvalidInput(msg string, cause error) *Error {
 
 func Internal(msg string, cause error) *Error {
 	return &Error{Code: "internal", Message: msg, Err: cause}
+}
+
+func Unavailable(msg string, cause error) *Error {
+	return &Error{Code: "unavailable", Message: msg, Err: cause}
 }

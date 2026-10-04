@@ -21,6 +21,7 @@ import (
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
+	"github.com/wiebe-xyz/bugbarn/internal/service/telemetryview"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
@@ -64,6 +65,7 @@ type Server struct {
 	backchannelLimiter sync.Map // map[string]*loginAttempt — per-IP limiter for back-channel logout
 	telemetryIngester  TelemetryIngester
 	telemetryProject   string
+	telemetryView      *telemetryview.Service
 	writeForwarder     *WriteForwarder
 	ingestSpool        *SpoolForwarder
 	mutQueue           *mutqueue.Queue

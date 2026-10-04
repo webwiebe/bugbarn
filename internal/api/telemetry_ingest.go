@@ -39,15 +39,17 @@ func telemetryKind(path string) string {
 	return ""
 }
 
-// serveTelemetryIngestEndpoint handles POST /api/v1/telemetry/{security,metrics}.
+// serveTelemetryIngestEndpoint handles POST /api/v1/telemetry/{security,metrics}
+// and answers 405 to methods other than GET and POST.
 // No CORS: the senders are Vector agents, never browsers.
 func (s *Server) serveTelemetryIngestEndpoint(w http.ResponseWriter, r *http.Request) bool {
 	kind := telemetryKind(r.URL.Path)
-	if kind == "" {
+	// GET on the same path is the authenticated read API (telemetry_read.go).
+	if kind == "" || r.Method == http.MethodGet {
 		return false
 	}
 	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
+		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true
 	}

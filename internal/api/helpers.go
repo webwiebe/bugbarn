@@ -33,6 +33,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 			http.Error(w, "conflict", http.StatusConflict)
 		case "invalid_input":
 			http.Error(w, appErr.Message, http.StatusBadRequest)
+		case "unavailable":
+			http.Error(w, appErr.Message, http.StatusServiceUnavailable)
 		default:
 			http.Error(w, "internal error", http.StatusInternalServerError)
 		}

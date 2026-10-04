@@ -37,6 +37,50 @@ paths:
         '503':
           description: Ingest is temporarily unavailable
   /api/v1/telemetry/security:
+    get:
+      summary: Search stored security log lines
+      description: |
+        Newest first, keyset paged: pass `next_cursor` from one page as
+        `cursor` to get the next. `from`/`to` default to the last 24 hours.
+        Readers open the telemetry files read-only once the writer has
+        created them; until then this answers 503.
+      operationId: searchSecurityTelemetry
+      security:
+        - SessionCookie: []
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TelemetryFrom'
+        - $ref: '#/components/parameters/TelemetryTo'
+        - {name: source, in: query, schema: {type: string}, description: 'Exact source, e.g. sshd, traefik, k8saudit'}
+        - {name: host, in: query, schema: {type: string}}
+        - {name: src_ip, in: query, schema: {type: string}}
+        - {name: user, in: query, schema: {type: string}}
+        - {name: kind, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {type: integer, minimum: 100, maximum: 599}}
+        - {name: q, in: query, schema: {type: string}, description: Substring of the message or path}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: cursor, in: query, schema: {type: string}, description: next_cursor of the previous page}
+      responses:
+        '200':
+          description: One page of rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows, next_cursor]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SecurityLogRow'
+                  next_cursor:
+                    type: [string, 'null']
+        '400':
+          description: Invalid parameter
+        '401':
+          description: Not signed in
+        '503':
+          $ref: '#/components/responses/TelemetryNotReady'
     post:
       summary: Accept a batch of security log lines from a Vector agent
       description: |
@@ -93,8 +137,127 @@ paths:
           description: Payload exceeds configured size limit
         '503':
           description: Telemetry storage is unavailable; sender should retry later
+  /api/v1/telemetry/hosts:
+    get:
+      summary: List the hosts that report metrics
+      operationId: listTelemetryHosts
+      security:
+        - SessionCookie: []
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Hosts, most recently seen first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [hosts]
+                properties:
+                  hosts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TelemetryHost'
+        '401':
+          description: Not signed in
+        '503':
+          $ref: '#/components/responses/TelemetryNotReady'
+  /api/v1/telemetry/hosts/{host}/metrics:
+    get:
+      summary: List the metric names a host reported in the last 7 days
+      operationId: listTelemetryHostMetrics
+      security:
+        - SessionCookie: []
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TelemetryHost'
+      responses:
+        '200':
+          description: Metric names
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [host, metrics]
+                properties:
+                  host:
+                    type: string
+                  metrics:
+                    type: array
+                    items:
+                      type: string
+                    examples: [[cpu.util, load1, mem.avail_pct, fs./.used_pct, net.eth0.rx_bytes_per_s]]
+        '401':
+          description: Not signed in
+        '503':
+          $ref: '#/components/responses/TelemetryNotReady'
+  /api/v1/telemetry/hosts/{host}/series:
+    get:
+      summary: One metric of one host over a time range
+      description: |
+        Ranges up to 7 days return per-minute samples (`resolution: 1m`).
+        Longer ranges, up to 90 days, return hourly rollups
+        (`resolution: 1h`, avg as `value` plus `min` and `max`).
+      operationId: getTelemetryHostSeries
+      security:
+        - SessionCookie: []
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TelemetryHost'
+        - {name: metric, in: query, required: true, schema: {type: string}}
+        - $ref: '#/components/parameters/TelemetryFrom'
+        - $ref: '#/components/parameters/TelemetryTo'
+      responses:
+        '200':
+          description: Points in time order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [host, metric, resolution, points]
+                properties:
+                  host:
+                    type: string
+                  metric:
+                    type: string
+                  resolution:
+                    type: string
+                    enum: ['1m', '1h']
+                  points:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TelemetryPoint'
+        '400':
+          description: Missing metric, invalid time, or a range over 90 days
+        '401':
+          description: Not signed in
+        '503':
+          $ref: '#/components/responses/TelemetryNotReady'
 components:
+  parameters:
+    TelemetryFrom:
+      name: from
+      in: query
+      description: Range start, RFC 3339 or unix milliseconds. Defaults to 24 hours before `to`.
+      schema:
+        type: string
+    TelemetryTo:
+      name: to
+      in: query
+      description: Range end, RFC 3339 or unix milliseconds. Defaults to now.
+      schema:
+        type: string
+    TelemetryHost:
+      name: host
+      in: path
+      required: true
+      description: Host name, path-escaped
+      schema:
+        type: string
   responses:
+    TelemetryNotReady:
+      description: |
+        The telemetry file does not exist yet (a reader started before the
+        writer created it) or did not open on this server.
     TelemetryAccepted:
       description: |
         Batch accepted. Raw rows are best-effort: a batch is still accepted
@@ -108,6 +271,10 @@ components:
       type: apiKey
       in: header
       name: x-bugbarn-api-key
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: bugbarn_session
   schemas:
     IngestEnvelope:
       type: object
@@ -188,3 +355,57 @@ components:
         retryAfterMs:
           type: integer
           description: Present only for soft backpressure responses in future variants
+    SecurityLogRow:
+      type: object
+      properties:
+        id:
+          type: integer
+        ts:
+          type: string
+          format: date-time
+        source:
+          type: string
+        host:
+          type: string
+        kind:
+          type: string
+        src_ip:
+          type: string
+        user:
+          type: string
+        action:
+          type: string
+        status:
+          type: integer
+        method:
+          type: string
+        path:
+          type: string
+        message:
+          type: string
+        raw:
+          type: string
+          description: The original log line, up to 8 KB
+    TelemetryHost:
+      type: object
+      properties:
+        host:
+          type: string
+        cores:
+          type: integer
+          description: 0 when unknown
+        lastSeen:
+          type: string
+          format: date-time
+    TelemetryPoint:
+      type: object
+      properties:
+        ts:
+          type: string
+          format: date-time
+        value:
+          type: number
+        min:
+          type: number
+        max:
+          type: number

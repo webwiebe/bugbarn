@@ -90,7 +90,7 @@ func TestTelemetryIngestEndpoint(t *testing.T) {
 		{"full key of any project", http.MethodPost, telemetrySecurityPath, full, "{}", http.StatusAccepted},
 		{"ingest key of another project", http.MethodPost, telemetrySecurityPath, otherIngest, "{}", http.StatusUnauthorized},
 		{"no key", http.MethodPost, telemetrySecurityPath, "", "{}", http.StatusUnauthorized},
-		{"GET", http.MethodGet, telemetrySecurityPath, infraIngest, "", http.StatusMethodNotAllowed},
+		{"PUT", http.MethodPut, telemetrySecurityPath, infraIngest, "", http.StatusMethodNotAllowed},
 		{"body over the limit", http.MethodPost, telemetrySecurityPath, infraIngest, strings.Repeat("x", 2<<10), http.StatusRequestEntityTooLarge},
 	}
 	for _, c := range cases {

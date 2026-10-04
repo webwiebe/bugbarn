@@ -38,6 +38,10 @@ var migrationFiles embed.FS
 // ErrFull is returned by inserts while the file is at its size cap.
 var ErrFull = errors.New("telemetry database is at its size cap")
 
+// ErrNotCreated is returned by OpenReadOnly while the writer has not created
+// the file (or its schema) yet.
+var ErrNotCreated = errors.New("telemetry database not created yet")
+
 // Spec describes one telemetry file: its migrations and the table the size
 // cap evicts from.
 type Spec struct {
@@ -102,16 +106,27 @@ func OpenReadOnly(ctx context.Context, spec Spec, path string) (*DB, error) {
 		return nil, err
 	}
 	if _, err := os.Stat(abs); err != nil {
-		return nil, fmt.Errorf("%s db not created yet: %w", spec.Name, err)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%s db: %w", spec.Name, ErrNotCreated)
+		}
+		return nil, err
 	}
 	r, err := sql.Open(storage.DriverName(), readDSN(abs))
 	if err != nil {
 		return nil, err
 	}
 	r.SetMaxOpenConns(4)
-	if err := r.PingContext(ctx); err != nil {
+	// The writer creates the file and then migrates it, so a reader can see
+	// the file before its tables exist. Treat that window as not created.
+	var n int
+	if err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
+		spec.evictTable).Scan(&n); err != nil {
 		_ = r.Close()
 		return nil, err
+	}
+	if n == 0 {
+		_ = r.Close()
+		return nil, fmt.Errorf("%s db has no schema yet: %w", spec.Name, ErrNotCreated)
 	}
 	return &DB{spec: spec, path: abs, read: r}, nil
 }
