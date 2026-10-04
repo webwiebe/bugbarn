@@ -2708,3 +2708,14 @@ button.settings-nav-item:last-child {
 .host-chart .section-head span {
   font-size: 0.75rem;
 }
+
+.rule-json {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.rule-actions {
+  white-space: nowrap;
+}

@@ -21,6 +21,7 @@ import { loadVolume, renderVolumeView } from "./views-volume.js";
 import { renderAccountView } from "./views-account.js";
 import { loadSecurity, renderSecurityView, securityStatus } from "./views-security.js";
 import { hostsStatus, loadHosts, renderHostsView, setSelectedHost } from "./views-hosts.js";
+import { loadRules, renderRulesView, rulesStatus } from "./views-rules.js";
 
 type Route = typeof state.currentRoute;
 
@@ -32,6 +33,7 @@ const simpleRoutes: Partial<Record<string, { route: Route; title: string }>> = {
   logs: { route: "logs", title: "Logs" },
   account: { route: "account", title: "Account" },
   security: { route: "security", title: "Security" },
+  rules: { route: "rules", title: "Detection rules" },
 };
 
 interface ViewHandlers { render: () => void; load: () => Promise<void>; status: () => string }
@@ -39,6 +41,7 @@ interface ViewHandlers { render: () => void; load: () => Promise<void>; status: 
 const telemetryViews: Partial<Record<Route, ViewHandlers>> = {
   security: { render: renderSecurityView, load: loadSecurity, status: securityStatus },
   hosts: { render: renderHostsView, load: loadHosts, status: hostsStatus },
+  rules: { render: renderRulesView, load: loadRules, status: rulesStatus },
 };
 
 export function route(): void {
