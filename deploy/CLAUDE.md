@@ -68,6 +68,10 @@ Pods do not restart on a Secret change; the deploy restarts them.
    revision that `apply -k` leaves behind, which is why the rollback sets images
    explicitly.
 
+`vector` deploys the Vector agents (`deploy/vector/`, namespace `vector`) to k3s1 and
+layer7 when `deploy/vector/**` changes on main, outside the release chain; see
+`deploy/vector/README.md`.
+
 `ghcr-prune` is a daily cron. `.github/workflows/` still holds mirrors; only `ci.yml` and
 `deploy-site.yml` are enabled on GitHub, and the deploy chain there is disabled.
 

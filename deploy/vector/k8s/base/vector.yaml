@@ -1,0 +1,100 @@
+# Vector agent for BugBarn infrastructure telemetry. One pod per node ships:
+#   - sshd/sudo lines from the host's /var/log/auth.log
+#   - Kubernetes audit events (k3s servers, once auditing is on)
+#   - Traefik access logs (JSON format only)
+#   - host_metrics (load, CPU, memory, filesystems, disk and network IO)
+# to POST /api/v1/telemetry/{security,metrics}. BugBarn parses the lines; this
+# file only tags them with `source` and `host`.
+#
+# The sinks live in each cluster overlay's sinks.yaml (Vector merges every
+# file in --config-dir): the target URL differs per cluster, and Vector 0.58
+# interpolates neither env vars (off by default) nor secrets in a sink `uri`.
+# The API key comes from the vector-bugbarn Secret through the directory
+# secret backend; NODE_NAME is read at runtime with get_env_var.
+data_dir: /var/lib/vector
+
+secret:
+  bugbarn:
+    type: directory
+    path: /etc/vector-secrets
+
+api:
+  enabled: false
+
+sources:
+  auth_log:
+    type: file
+    include: [/host/var/log/auth.log]
+    # Start at the end on first run; the checkpoint in data_dir carries it
+    # across restarts.
+    read_from: end
+
+  k8s_audit:
+    type: file
+    include: [/host/var/lib/rancher/k3s/server/logs/audit.log]
+    read_from: end
+
+  traefik:
+    type: kubernetes_logs
+    extra_label_selector: app.kubernetes.io/name=traefik
+    extra_field_selector: metadata.namespace=kube-system
+
+  host:
+    type: host_metrics
+    scrape_interval_secs: 60
+    collectors: [cpu, disk, filesystem, load, memory, network]
+    filesystem:
+      mountpoints:
+        excludes: ["*/proc/*", "*/sys/*", "*/run/*", "*/var/lib/kubelet/*", "*/var/lib/rancher/k3s/agent/*", "*/snap/*", "*/boot/efi"]
+      devices:
+        excludes: [binfmt_misc, overlay, tmpfs, shm]
+    network:
+      devices:
+        excludes: ["veth*", "cni*", "flannel*", "lo", "vxlan*", "kube-*"]
+    disk:
+      devices:
+        excludes: ["loop*", "ram*", "dm-*", "nbd*", "zram*"]
+
+transforms:
+  auth_parse:
+    type: remap
+    inputs: [auth_log]
+    # rsyslog on Ubuntu 24.04: "2026-10-04T14:48:33.904908+00:00 host sshd[123]: msg"
+    source: |
+      parsed, err = parse_regex(.message, r'^(?P<ts>\S+) \S+ (?P<ident>[^\[:\s]+)(?:\[\d+\])?: (?P<msg>.*)$')
+      if err != null { abort }
+      . = {
+        "source": "syslog",
+        "host": get_env_var("NODE_NAME") ?? "",
+        "timestamp": parsed.ts,
+        "appname": parsed.ident,
+        "message": parsed.msg,
+      }
+
+  auth_filter:
+    type: filter
+    inputs: [auth_parse]
+    condition: 'includes(["sshd", "sshd-session", "sudo", "su", "passwd", "chpasswd", "useradd", "usermod", "userdel", "groupadd", "gpasswd"], .appname)'
+
+  audit_tag:
+    type: remap
+    inputs: [k8s_audit]
+    source: |
+      . = {"source": "k8saudit", "host": get_env_var("NODE_NAME") ?? "", "message": .message}
+
+  traefik_tag:
+    type: remap
+    inputs: [traefik]
+    # CLF lines are dropped: they carry no real client IP behind Cloudflare.
+    # The agents' own telemetry POSTs are dropped so shipping never feeds itself.
+    source: |
+      line = strip_whitespace(string!(.message))
+      if !starts_with(line, "{") { abort }
+      if contains(line, "/api/v1/telemetry/") { abort }
+      . = {"source": "traefik", "host": get_env_var("NODE_NAME") ?? "", "message": line}
+
+  host_tag:
+    type: remap
+    inputs: [host]
+    source: |
+      .tags.host = get_env_var("NODE_NAME") ?? ""

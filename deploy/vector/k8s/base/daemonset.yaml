@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vector
+  namespace: vector
+  labels:
+    app.kubernetes.io/name: vector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vector
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vector
+    spec:
+      serviceAccountName: vector
+      # Run on control-plane nodes too: that is where the audit log lives.
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: vector
+          image: timberio/vector:0.58.0-distroless-libc
+          args: ["--config-dir", "/etc/vector/"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: VECTOR_SELF_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: PROCFS_ROOT
+              value: /host/proc
+            - name: SYSFS_ROOT
+              value: /host/sys
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+            # Read by the directory secret backend: SECRET[bugbarn.api_key].
+            - name: secrets
+              mountPath: /etc/vector-secrets
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/vector
+            # Host root for host_metrics (procfs, sysfs, filesystems) and the
+            # auth and audit log files.
+            - name: host
+              mountPath: /host
+              readOnly: true
+              mountPropagation: HostToContainer
+            # kubernetes_logs reads pod logs at their host paths.
+            - name: var-log
+              mountPath: /var/log
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: vector-config
+        - name: secrets
+          secret:
+            secretName: vector-bugbarn
+        - name: data
+          hostPath:
+            path: /var/lib/vector
+            type: DirectoryOrCreate
+        - name: host
+          hostPath:
+            path: /
+        - name: var-log
+          hostPath:
+            path: /var/log

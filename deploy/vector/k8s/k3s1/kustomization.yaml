@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# k3s1 + k3s2, the homelab cluster that runs testing and staging.
+# secret.yaml (SOPS) is applied by the pipeline, never through Kustomize.
+resources:
+  - ../base
+configMapGenerator:
+  - name: vector-config
+    namespace: vector
+    behavior: merge
+    files:
+      - sinks.yaml

@@ -1,0 +1,31 @@
+# k3s1 + k3s2 ship to the testing monolith in-cluster while the pipeline is
+# proven out. Keep in step with ../layer7/sinks.yaml; only the URIs differ.
+sinks:
+  security:
+    type: http
+    inputs: [auth_filter, audit_tag, traefik_tag]
+    uri: http://bugbarn.bugbarn-production.svc.cluster.local:8080/api/v1/telemetry/security
+    encoding: {codec: json}
+    framing: {method: newline_delimited}
+    request:
+      headers:
+        x-bugbarn-api-key: "SECRET[bugbarn.api_key]"
+        content-type: application/x-ndjson
+      timeout_secs: 30
+    # Below BugBarn's 1MiB ingest body limit.
+    batch: {max_bytes: 900000, timeout_secs: 10}
+    buffer: {type: disk, max_size: 268435488, when_full: drop_newest}
+
+  metrics:
+    type: http
+    inputs: [host_tag]
+    uri: http://bugbarn.bugbarn-production.svc.cluster.local:8080/api/v1/telemetry/metrics
+    encoding: {codec: json}
+    framing: {method: newline_delimited}
+    request:
+      headers:
+        x-bugbarn-api-key: "SECRET[bugbarn.api_key]"
+        content-type: application/x-ndjson
+      timeout_secs: 30
+    batch: {max_bytes: 900000, timeout_secs: 30}
+    buffer: {type: disk, max_size: 268435488, when_full: drop_newest}
