@@ -143,6 +143,8 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	logHub := logstream.NewHub()
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
+	// Readers authorize telemetry and forward it; the writer stores it.
+	apiServer.SetTelemetry(nil, cfg.Telemetry.Project)
 	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
 	apiServer.SetAuthEnvironment(cfg.Environment)
 	apiServer.SetOIDCRefreshGrace(cfg.OIDCRefreshGrace)

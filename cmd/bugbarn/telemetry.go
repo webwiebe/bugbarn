@@ -6,26 +6,22 @@ import (
 	"sync"
 
 	"github.com/wiebe-xyz/bugbarn/internal/config"
+	"github.com/wiebe-xyz/bugbarn/internal/telemetry"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetrydb"
 )
 
-// telemetryDBs are the writer's infrastructure telemetry files. Either may be
-// nil: telemetry is an add-on, so a file that fails to open disables its
-// feature and is reported, but never keeps the writer from serving events.
-type telemetryDBs struct {
-	Security *telemetrydb.DB
-	Metrics  *telemetrydb.DB
-}
-
-// openTelemetry opens both files, starts their maintenance loops (checkpoint
-// and size cap) on wg, and returns a close func that checkpoints and closes
-// them; call it after the loops have stopped.
-func openTelemetry(ctx context.Context, cfg config.Telemetry, wg *sync.WaitGroup, log *slog.Logger) (telemetryDBs, func()) {
-	var t telemetryDBs
-	t.Security = openTelemetryDB(ctx, telemetrydb.Security, cfg.SecurityDBPath, cfg.SecurityMaxBytes, wg, log)
-	t.Metrics = openTelemetryDB(ctx, telemetrydb.Metrics, cfg.MetricsDBPath, cfg.MetricsMaxBytes, wg, log)
-	return t, func() {
-		for _, d := range []*telemetrydb.DB{t.Security, t.Metrics} {
+// openTelemetry opens the writer's infrastructure telemetry files, starts
+// their maintenance loops (checkpoint and size cap) on wg, and returns the
+// ingester over them plus a close func that checkpoints and closes the files;
+// call it after the loops have stopped.
+//
+// Telemetry is an add-on: a file that fails to open disables its kind and is
+// reported, but never keeps the writer from serving events.
+func openTelemetry(ctx context.Context, cfg config.Telemetry, wg *sync.WaitGroup, log *slog.Logger) (*telemetry.Ingester, func()) {
+	sec := openTelemetryDB(ctx, telemetrydb.Security, cfg.SecurityDBPath, cfg.SecurityMaxBytes, wg, log)
+	met := openTelemetryDB(ctx, telemetrydb.Metrics, cfg.MetricsDBPath, cfg.MetricsMaxBytes, wg, log)
+	return telemetry.New(sec, met, log), func() {
+		for _, d := range []*telemetrydb.DB{sec, met} {
 			if d != nil {
 				d.FinalCheckpoint(log)
 				_ = d.Close()

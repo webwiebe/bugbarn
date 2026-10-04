@@ -449,7 +449,9 @@ func kindForPath(path string) string {
 	case strings.HasPrefix(path, "/api/v1/logs"):
 		return queue.KindLog
 	default:
-		return ""
+		// Telemetry paths match exactly; RequestURI may carry a query string.
+		p, _, _ := strings.Cut(path, "?")
+		return telemetryKind(p)
 	}
 }
 

@@ -191,7 +191,7 @@ func run() error {
 
 	// Infrastructure telemetry files (security logs, host metrics). Writer-only
 	// for the same reason as retention: readers open them read-only.
-	_, closeTelemetry := openTelemetry(ctx, cfg.Telemetry, &bgWg, logger)
+	telemetryIngester, closeTelemetry := openTelemetry(ctx, cfg.Telemetry, &bgWg, logger)
 	defer closeTelemetry()
 
 	// Spec 007: when a Redis write queue is configured, a single consumer drains
@@ -221,6 +221,7 @@ func run() error {
 			}
 			defer writeQueue.Close()
 			consumer := ingestproc.NewConsumer(writeQueue, eventProc, logService, nil, logger)
+			consumer.SetTelemetry(telemetryIngester)
 			logger.Info("redis write-queue consumer started", "url", cfg.RedisQueueURL)
 			consumer.Run(ctx)
 		}()
@@ -244,6 +245,7 @@ func run() error {
 	logHub := logstream.NewHub()
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
+	apiServer.SetTelemetry(telemetryIngester, cfg.Telemetry.Project)
 	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
 	apiServer.SetAuthEnvironment(cfg.Environment)
 	apiServer.SetOIDCRefreshGrace(cfg.OIDCRefreshGrace)

@@ -219,6 +219,18 @@ A project must be determinable from either the API key or the `X-BugBarn-Project
 
 ---
 
+#### POST /api/v1/telemetry/security and POST /api/v1/telemetry/metrics
+
+Infrastructure telemetry from Vector agents: security log lines (Traefik access logs, k8s audit events, journald/syslog, macOS `log stream`) and `host_metrics` samples.
+
+**Auth:** a `full` key, or an `ingest` key of the telemetry project (`BUGBARN_TELEMETRY_PROJECT`, default `infra`). Ingest keys of other projects get `401`, because browser SDK keys are public.
+
+**Body:** newline-delimited JSON or a JSON array, at most `BUGBARN_MAX_BODY_BYTES`. Lines may carry `source` and `host` tags; lines that do not parse are skipped.
+
+**Response:** `202 Accepted`. Rows are stored in size-capped side files (`security.db`, 2GiB; `metrics.db`, 256MiB) and the oldest rows are evicted first. A batch is still accepted when a file is at its cap. `503` means the file failed to open on the writer.
+
+---
+
 ### Issues
 
 **Auth:** Session cookie or full-scope API key.
