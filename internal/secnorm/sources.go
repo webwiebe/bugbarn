@@ -1,8 +1,10 @@
 package secnorm
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // traefik maps a Traefik JSON access-log line. Behind Cloudflare, ClientHost
@@ -85,4 +87,14 @@ func cloudflare(base Record, in map[string]any) (Record, bool) {
 	base.Message = strings.TrimSpace(fmt.Sprintf("%s %s %s%s (%s, rule %s)",
 		base.Action, base.Method, host, base.Path, str(in, "clientCountryName"), str(in, "ruleId")))
 	return base, true
+}
+
+// Cloudflare normalizes one firewallEventsAdaptive node as returned by the
+// GraphQL Analytics API (internal/cfpoller polls it). It shares the field
+// mapping with Vector-shipped Cloudflare events. now is the fallback time for
+// a node without a parsable datetime.
+func Cloudflare(node map[string]any, now time.Time) (Record, bool) {
+	raw, _ := json.Marshal(node)
+	base := Record{TS: now.UTC(), Raw: truncate(string(raw), MaxRawBytes)}
+	return cloudflare(base, node)
 }

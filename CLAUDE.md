@@ -45,6 +45,7 @@ internal/
     telemetrydb/      Size-capped security.db and metrics.db next to the main DB
     secnorm/          Security log normalizers (sshd, Traefik, k8s audit, Cloudflare)
     hostmetrics/      Vector host_metrics to per-minute samples
+    cfpoller/         Writer-only poller for Cloudflare firewall events (GraphQL Analytics API)
     detect/           Detection rules and engine; each hit becomes an issue in the telemetry project
   HTTP and auth
     api/              HTTP handlers and routing; reader-to-writer forwarders

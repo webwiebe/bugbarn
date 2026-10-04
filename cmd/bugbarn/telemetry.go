@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/cfpoller"
 	"github.com/wiebe-xyz/bugbarn/internal/config"
 	"github.com/wiebe-xyz/bugbarn/internal/detect"
 	"github.com/wiebe-xyz/bugbarn/internal/hostmetrics"
@@ -141,4 +142,22 @@ func detectionRules(ctx context.Context, svc *detectionrules.Service) []detect.R
 		return detect.Defaults()
 	}
 	return rules
+}
+
+// startCloudflarePoller pulls Cloudflare firewall events into the security
+// telemetry file when a token and zones are configured.
+func startCloudflarePoller(ctx context.Context, cfg config.Cloudflare, ing *telemetry.Ingester, wg *sync.WaitGroup, log *slog.Logger) {
+	if !cfg.Enabled() {
+		return
+	}
+	if ing.Security() == nil {
+		log.Warn("cloudflare poller not started: security telemetry file unavailable")
+		return
+	}
+	p := cfpoller.New(cfpoller.Config{Token: cfg.APIToken, Zones: cfg.ZoneIDs, Interval: cfg.PollInterval}, ing, log)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		p.Run(ctx)
+	}()
 }
