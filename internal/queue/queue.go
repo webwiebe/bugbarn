@@ -61,6 +61,10 @@ const (
 const (
 	KindEvent = "event"
 	KindLog   = "log"
+	// KindSecurity and KindMetrics carry Vector NDJSON batches for the
+	// telemetry files (internal/telemetry). They are not project-scoped.
+	KindSecurity = "security"
+	KindMetrics  = "metrics"
 )
 
 // Item is a single decoupled write. It mirrors the relevant fields of

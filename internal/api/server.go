@@ -62,6 +62,8 @@ type Server struct {
 	loginLimiter       sync.Map // map[string]*loginAttempt
 	setupLimiter       sync.Map // map[string]*loginAttempt — per-IP limiter for the setup endpoint
 	backchannelLimiter sync.Map // map[string]*loginAttempt — per-IP limiter for back-channel logout
+	telemetryIngester  TelemetryIngester
+	telemetryProject   string
 	writeForwarder     *WriteForwarder
 	ingestSpool        *SpoolForwarder
 	mutQueue           *mutqueue.Queue

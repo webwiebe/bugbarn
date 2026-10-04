@@ -16,6 +16,10 @@ type Telemetry struct {
 	MetricsDBPath string
 	// MetricsMaxBytes is BUGBARN_METRICS_MAX_BYTES (default 256MiB).
 	MetricsMaxBytes int64
+	// Project is BUGBARN_TELEMETRY_PROJECT (default "infra"): ingest-scoped
+	// keys of this project may post telemetry, and detections file their
+	// issues in it.
+	Project string
 }
 
 func parseTelemetryConfig(dbPath string) Telemetry {
@@ -25,5 +29,6 @@ func parseTelemetryConfig(dbPath string) Telemetry {
 		SecurityMaxBytes: envInt64Positive("BUGBARN_SECURITY_MAX_BYTES", 2<<30),
 		MetricsDBPath:    getenv("BUGBARN_METRICS_DB_PATH", filepath.Join(dir, "metrics.db")),
 		MetricsMaxBytes:  envInt64Positive("BUGBARN_METRICS_MAX_BYTES", 256<<20),
+		Project:          getenv("BUGBARN_TELEMETRY_PROJECT", "infra"),
 	}
 }

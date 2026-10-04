@@ -36,7 +36,73 @@ paths:
           description: Durable spool is full; sender should retry later
         '503':
           description: Ingest is temporarily unavailable
+  /api/v1/telemetry/security:
+    post:
+      summary: Accept a batch of security log lines from a Vector agent
+      description: |
+        Newline-delimited JSON (or a JSON array) of Traefik access logs, k8s
+        audit events, journald/syslog lines or macOS `log stream` lines. Each
+        line may carry `source` and `host` tags. Lines that do not parse are
+        skipped. Requires a full-scope key or an ingest-scoped key of the
+        telemetry project (BUGBARN_TELEMETRY_PROJECT, default `infra`).
+      operationId: ingestSecurityTelemetry
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema:
+              type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/TelemetryAccepted'
+        '401':
+          description: Missing key, or an ingest key of another project
+        '405':
+          description: Method other than POST
+        '413':
+          description: Payload exceeds configured size limit
+        '503':
+          description: Telemetry storage is unavailable; sender should retry later
+  /api/v1/telemetry/metrics:
+    post:
+      summary: Accept a batch of Vector host_metrics samples
+      description: |
+        Newline-delimited JSON (or a JSON array) of Vector `host_metrics`
+        events in their native JSON encoding (`name`, `tags.host`,
+        `timestamp`, `gauge`/`counter`). Same authorization as
+        /api/v1/telemetry/security.
+      operationId: ingestMetricsTelemetry
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema:
+              type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/TelemetryAccepted'
+        '401':
+          description: Missing key, or an ingest key of another project
+        '405':
+          description: Method other than POST
+        '413':
+          description: Payload exceeds configured size limit
+        '503':
+          description: Telemetry storage is unavailable; sender should retry later
 components:
+  responses:
+    TelemetryAccepted:
+      description: |
+        Batch accepted. Raw rows are best-effort: a batch is still accepted
+        when the telemetry file is at its size cap.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestAccepted'
   securitySchemes:
     ApiKeyAuth:
       type: apiKey

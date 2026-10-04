@@ -41,6 +41,8 @@ type Consumer struct {
 	logger  *slog.Logger
 	writeMu *sync.Mutex
 	metrics *consumerMetrics
+	// telemetry handles security and metrics items; nil drops them.
+	telemetry TelemetryIngester
 }
 
 // NewConsumer builds a queue consumer. logs may be nil (log items are then
@@ -142,6 +144,8 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) {
 			outcome = c.persistEvent(ctx, item)
 		case queue.KindLog:
 			outcome = c.persistLog(ctx, item)
+		case queue.KindSecurity, queue.KindMetrics:
+			outcome = c.persistTelemetry(ctx, item)
 		default:
 			c.logger.Warn("dropping unknown queue item kind", "kind", item.Kind)
 			outcome = "unknown_kind"

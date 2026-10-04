@@ -14,14 +14,15 @@ import (
 // theme manifest, analytics snippet). It returns true when it has written a
 // response and the caller should stop.
 func (s *Server) serveSpecialEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	if s.serveEventsIngestEndpoint(w, r) {
-		return true
-	}
-	if s.serveAlertmanagerIngestEndpoint(w, r) {
-		return true
-	}
-	if s.serveLogsIngestEndpoint(w, r) {
-		return true
+	for _, serve := range []func(http.ResponseWriter, *http.Request) bool{
+		s.serveEventsIngestEndpoint,
+		s.serveAlertmanagerIngestEndpoint,
+		s.serveLogsIngestEndpoint,
+		s.serveTelemetryIngestEndpoint,
+	} {
+		if serve(w, r) {
+			return true
+		}
 	}
 
 	// Setup endpoint — public, no auth required.
