@@ -1,0 +1,9 @@
+---
+# BugBarn host Vector agent on the macOS runners: host metrics and sshd/sudo
+# logs to production BugBarn (Hosts and Security views). No root needed.
+# Run with: make setup-vector-host
+
+- hosts: macos_runners
+  become: no
+  roles:
+    - bugbarn-vector-host
