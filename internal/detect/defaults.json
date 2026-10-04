@@ -1,0 +1,131 @@
+[
+  {
+    "id": "ssh-bruteforce",
+    "name": "SSH brute force",
+    "enabled": true,
+    "severity": "WARNING",
+    "track": "security",
+    "match": [
+      {"field": "source", "op": "eq", "value": "sshd"},
+      {"field": "kind", "op": "in", "value": ["auth_failure", "invalid_user"]}
+    ],
+    "group_by": ["src_ip"],
+    "threshold": 30,
+    "window": "5m",
+    "cooldown": "1h"
+  },
+  {
+    "id": "ssh-login",
+    "name": "SSH login",
+    "enabled": false,
+    "severity": "WARNING",
+    "track": "security",
+    "match": [
+      {"field": "source", "op": "eq", "value": "sshd"},
+      {"field": "kind", "op": "eq", "value": "auth_success"}
+    ],
+    "group_by": ["host", "user", "src_ip"],
+    "threshold": 1,
+    "cooldown": "24h"
+  },
+  {
+    "id": "http-auth-denied",
+    "name": "Repeated 401/403 from one client",
+    "enabled": true,
+    "severity": "WARNING",
+    "track": "security",
+    "match": [
+      {"field": "source", "op": "in", "value": ["traefik", "cloudflare"]},
+      {"field": "status", "op": "in", "value": ["401", "403"]}
+    ],
+    "group_by": ["src_ip"],
+    "threshold": 100,
+    "window": "5m",
+    "cooldown": "1h"
+  },
+  {
+    "id": "k8s-secret-read",
+    "name": "Kubernetes secret read by an unexpected user",
+    "enabled": true,
+    "severity": "ERROR",
+    "track": "security",
+    "match": [
+      {"field": "source", "op": "eq", "value": "k8saudit"},
+      {"field": "kind", "op": "eq", "value": "secrets"},
+      {"field": "action", "op": "in", "value": ["get", "list", "watch"]},
+      {"field": "user", "op": "not_prefix", "value": "system:node:"},
+      {"field": "user", "op": "not_in", "value": [
+        "system:apiserver",
+        "system:kube-controller-manager",
+        "system:kube-scheduler",
+        "system:k3s-controller",
+        "system:serviceaccount:kube-system:helm-controller",
+        "system:serviceaccount:kube-system:traefik",
+        "system:serviceaccount:kube-system:coredns"
+      ]}
+    ],
+    "group_by": ["user"],
+    "threshold": 1,
+    "cooldown": "1h"
+  },
+  {
+    "id": "cloudflare-blocks",
+    "name": "Cloudflare blocking a burst of requests",
+    "enabled": true,
+    "severity": "WARNING",
+    "track": "security",
+    "match": [
+      {"field": "source", "op": "eq", "value": "cloudflare"},
+      {"field": "action", "op": "in", "value": ["block", "challenge", "managed_challenge", "jschallenge"]}
+    ],
+    "group_by": ["host"],
+    "threshold": 200,
+    "window": "10m",
+    "cooldown": "1h"
+  },
+  {
+    "id": "disk-full",
+    "name": "Filesystem over 90% full",
+    "enabled": true,
+    "severity": "ERROR",
+    "track": "metrics",
+    "metric": "fs.*.used_pct",
+    "op": "gt",
+    "threshold": 90,
+    "for": "10m",
+    "cooldown": "6h"
+  },
+  {
+    "id": "load-high",
+    "name": "Load above twice the core count",
+    "enabled": true,
+    "severity": "WARNING",
+    "track": "metrics",
+    "metric": "load1",
+    "op": "gt",
+    "per_core": true,
+    "threshold": 2,
+    "for": "10m",
+    "cooldown": "1h"
+  },
+  {
+    "id": "memory-low",
+    "name": "Less than 5% memory available",
+    "enabled": true,
+    "severity": "ERROR",
+    "track": "metrics",
+    "metric": "mem.avail_pct",
+    "op": "lt",
+    "threshold": 5,
+    "for": "10m",
+    "cooldown": "1h"
+  },
+  {
+    "id": "host-silent",
+    "name": "Host stopped reporting",
+    "enabled": true,
+    "severity": "ERROR",
+    "track": "heartbeat",
+    "window": "5m"
+  }
+]

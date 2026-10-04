@@ -25,12 +25,18 @@ func Validate(raw []byte) error {
 }
 
 func Normalize(raw []byte, ingestID string, receivedAt time.Time) (event.Event, error) {
+	return NormalizeWith(raw, ingestID, receivedAt, privacy.Options{})
+}
+
+// NormalizeWith is Normalize with explicit scrub options. Only in-process
+// producers (spool.Record.Internal) relax them.
+func NormalizeWith(raw []byte, ingestID string, receivedAt time.Time, scrub privacy.Options) (event.Event, error) {
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return event.Event{}, err
 	}
 
-	scrubbed, ok := privacy.Scrub(payload).(map[string]any)
+	scrubbed, ok := privacy.ScrubWith(payload, scrub).(map[string]any)
 	if !ok {
 		return event.Event{}, errors.New("scrubbed payload is not an object")
 	}
