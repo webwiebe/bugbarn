@@ -215,6 +215,9 @@ func run() error {
 	// the first telemetry batch is already observed.
 	ruleSvc := detectionrules.New(store.DetectionRuleStore, logger)
 	engine := startDetections(ctx, telemetryIngester, eventProc, detectionRules(ctx, ruleSvc), cfg.Telemetry.Project, &bgWg, logger)
+	// Cloudflare firewall events. Writer-only like retention; started after
+	// the detection engine is wired so it observes the first page.
+	startCloudflarePoller(ctx, cfg.Cloudflare, telemetryIngester, &bgWg, logger)
 
 	if cfg.RedisQueueURL != "" {
 		bgWg.Add(1)

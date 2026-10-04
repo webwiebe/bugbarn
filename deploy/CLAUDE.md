@@ -50,6 +50,24 @@ SOPS with age (`.sops.yaml`), applied by the pipelines with
 
 Pods do not restart on a Secret change; the deploy restarts them.
 
+## Cloudflare poller
+
+`internal/cfpoller` pulls Cloudflare firewall events (`firewallEventsAdaptive` from the
+GraphQL Analytics API) into `security.db`, where detections see them. It runs on the
+writer (and the testing monolith) and starts only when both of these are set:
+
+| Env var | Source | Notes |
+|---|---|---|
+| `BUGBARN_CLOUDFLARE_API_TOKEN` | `bugbarn-secrets` key `cloudflare-api-token`, `optional: true` | API token with **Zone > Analytics > Read** on each zone |
+| `BUGBARN_CLOUDFLARE_ZONE_IDS` | plain env in `writer-deployment.yaml` | comma-separated zone tags (zone IDs) |
+| `BUGBARN_CLOUDFLARE_POLL_INTERVAL` | optional | Go duration or seconds; default `60s`, minimum `10s` |
+
+Staging and production wire both; the zone list is empty until the zones are chosen
+(GitHub issue #192). Each zone keeps a cursor in `security.db`'s `meta` table
+(`cloudflare.cursor.<zone>`). The poller reads up to 2 minutes behind now, and after an
+outage it starts at most 24 hours back. On HTTP 429 or a GraphQL error it waits longer
+before the next poll, doubling up to 15 minutes.
+
 ## Pipeline chain (Woodpecker, `.woodpecker/`)
 
 1. Push to `main`: `ci` (tests and quality gates). `build-and-test` and `binary-release`
