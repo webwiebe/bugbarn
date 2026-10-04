@@ -144,6 +144,22 @@ BugBarn can report its own unhandled errors to a BugBarn instance (including its
 
 ---
 
+### Infrastructure Telemetry
+
+Security logs and host metrics live in their own SQLite files next to the main database (see `POST /api/v1/telemetry/*` in the API reference). Each file has a hard size cap: the writer evicts the oldest rows past 90% of it and refuses inserts at 100%.
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `BUGBARN_SECURITY_DB_PATH` | `security.db` next to `BUGBARN_DB_PATH` | No | Path of the security log database. |
+| `BUGBARN_SECURITY_MAX_BYTES` | `2147483648` (2 GiB) | No | Size cap of the security log database. |
+| `BUGBARN_METRICS_DB_PATH` | `metrics.db` next to `BUGBARN_DB_PATH` | No | Path of the host metrics database. |
+| `BUGBARN_METRICS_MAX_BYTES` | `268435456` (256 MiB) | No | Size cap of the host metrics database. |
+| `BUGBARN_METRICS_RAW_RETENTION_DAYS` | `7` | No | How long per-minute host samples are kept. The writer rolls each finished hour into an hourly min/avg/max row first, so older ranges stay visible at hourly resolution. |
+| `BUGBARN_METRICS_HOURLY_RETENTION_DAYS` | `90` | No | How long hourly host metric rollups are kept. Hosts that have not reported for this long are removed from the host list. |
+| `BUGBARN_TELEMETRY_PROJECT` | `infra` | No | Project whose ingest keys may post telemetry, and where detections file their issues. |
+
+---
+
 ## CLI Commands
 
 ```

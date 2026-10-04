@@ -16,6 +16,13 @@ type Telemetry struct {
 	MetricsDBPath string
 	// MetricsMaxBytes is BUGBARN_METRICS_MAX_BYTES (default 256MiB).
 	MetricsMaxBytes int64
+	// MetricsRawRetentionDays is BUGBARN_METRICS_RAW_RETENTION_DAYS (default
+	// 7): how long per-minute host samples are kept.
+	MetricsRawRetentionDays int
+	// MetricsHourlyRetentionDays is BUGBARN_METRICS_HOURLY_RETENTION_DAYS
+	// (default 90): how long hourly rollups are kept. Hosts that have not
+	// reported for this long are dropped from the host list.
+	MetricsHourlyRetentionDays int
 	// Project is BUGBARN_TELEMETRY_PROJECT (default "infra"): ingest-scoped
 	// keys of this project may post telemetry, and detections file their
 	// issues in it.
@@ -30,5 +37,8 @@ func parseTelemetryConfig(dbPath string) Telemetry {
 		MetricsDBPath:    getenv("BUGBARN_METRICS_DB_PATH", filepath.Join(dir, "metrics.db")),
 		MetricsMaxBytes:  envInt64Positive("BUGBARN_METRICS_MAX_BYTES", 256<<20),
 		Project:          getenv("BUGBARN_TELEMETRY_PROJECT", "infra"),
+
+		MetricsRawRetentionDays:    envIntPositive("BUGBARN_METRICS_RAW_RETENTION_DAYS", 7),
+		MetricsHourlyRetentionDays: envIntPositive("BUGBARN_METRICS_HOURLY_RETENTION_DAYS", 90),
 	}
 }
