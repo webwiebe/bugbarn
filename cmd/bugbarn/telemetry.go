@@ -16,7 +16,8 @@ import (
 )
 
 // openTelemetry opens the writer's infrastructure telemetry files, starts
-// their maintenance loops (checkpoint and size cap) on wg, and returns the
+// their maintenance loops (checkpoint and size cap, plus the hourly rollup and
+// retention for metrics.db) on wg, and returns the
 // ingester over them plus a close func that checkpoints and closes the files;
 // call it after the loops have stopped.
 //
@@ -25,6 +26,17 @@ import (
 func openTelemetry(ctx context.Context, cfg config.Telemetry, wg *sync.WaitGroup, log *slog.Logger) (*telemetry.Ingester, func()) {
 	sec := openTelemetryDB(ctx, telemetrydb.Security, cfg.SecurityDBPath, cfg.SecurityMaxBytes, wg, log)
 	met := openTelemetryDB(ctx, telemetrydb.Metrics, cfg.MetricsDBPath, cfg.MetricsMaxBytes, wg, log)
+	if met != nil {
+		ret := telemetrydb.Retention{
+			Raw:    time.Duration(cfg.MetricsRawRetentionDays) * 24 * time.Hour,
+			Hourly: time.Duration(cfg.MetricsHourlyRetentionDays) * 24 * time.Hour,
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			met.RunMetricsJobs(ctx, telemetrydb.DefaultMaintenanceInterval, ret, log)
+		}()
+	}
 	return telemetry.New(sec, met, log), func() {
 		for _, d := range []*telemetrydb.DB{sec, met} {
 			if d != nil {
