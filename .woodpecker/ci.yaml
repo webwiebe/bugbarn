@@ -69,6 +69,8 @@ steps:
         cd web
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
         pnpm install --frozen-lockfile
+        node scripts/oxlint-ratchet.test.mjs
+        node scripts/oxlint-ratchet.mjs --report-only
         pnpm run lint
         pnpm run test
         pnpm run build

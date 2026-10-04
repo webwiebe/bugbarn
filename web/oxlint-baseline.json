@@ -1,0 +1,8 @@
+{
+  "total": 4,
+  "counts": {
+    "eslint(prefer-const)": 2,
+    "unicorn(no-useless-fallback-in-spread)": 1,
+    "eslint(no-useless-assignment)": 1
+  }
+}

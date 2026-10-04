@@ -1,0 +1,59 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["dist", "node_modules"],
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "env": { "browser": true, "es2021": true },
+  "categories": {
+    "correctness": "warn"
+  },
+  "rules": {
+    // typescript-eslint's recommended set, as eslint.config.js enabled it.
+    "typescript/no-explicit-any": "warn",
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-array-constructor": "error",
+    "typescript/no-duplicate-enum-values": "error",
+    "typescript/no-empty-object-type": "error",
+    "typescript/no-extra-non-null-assertion": "error",
+    "typescript/no-misused-new": "error",
+    "typescript/no-namespace": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-require-imports": "error",
+    "typescript/no-this-alias": "error",
+    "typescript/no-unnecessary-type-constraint": "error",
+    "typescript/no-unsafe-declaration-merging": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "no-unused-expressions": "error",
+    "typescript/no-wrapper-object-types": "error",
+    "typescript/prefer-as-const": "error",
+    "typescript/prefer-namespace-keyword": "error",
+    "typescript/triple-slash-reference": "error",
+
+    // These eleven sit outside oxlint's default "correctness" bundle.
+    // eslint's js.configs.recommended enforced every one of them, so they are
+    // turned on explicitly rather than lost in the swap.
+    "no-var": "error",
+    "prefer-const": "error",
+    "prefer-rest-params": "error",
+    "prefer-spread": "error",
+    "no-fallthrough": "error",
+    "no-empty": "error",
+    "no-case-declarations": "error",
+    "no-prototype-builtins": "error",
+    "no-regex-spaces": "error",
+    "no-useless-assignment": "error",
+    "preserve-caught-error": "error",
+
+    // TypeScript checks undefined variables itself.
+    "no-undef": "off",
+
+    // Size/complexity budgets. scripts/check-ts-budget.sh counts exactly these
+    // three rules and ratchets the count against scripts/ts-budget-baseline.txt,
+    // which may only fall; scripts/oxlint-ratchet.mjs leaves them to that soak.
+    // ENFORCE-AT: 0. When the budget baseline reaches 0, drop BUDGET_RULES from
+    // the oxlint ratchet and delete the soak script and its baseline.
+    "max-lines": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }],
+    "max-lines-per-function": ["warn", { "max": 80, "skipBlankLines": true, "skipComments": true, "IIFEs": true }],
+    "complexity": ["warn", 15]
+  }
+}
