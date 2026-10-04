@@ -232,6 +232,88 @@ paths:
           description: Not signed in
         '503':
           $ref: '#/components/responses/TelemetryNotReady'
+  /api/v1/detection/rules:
+    get:
+      summary: List the effective detection rules
+      description: |
+        Built-in rules merged with stored overrides and custom rules. A stored
+        rule with a built-in id replaces that rule; any other id is a custom rule.
+      operationId: listDetectionRules
+      security:
+        - SessionCookie: []
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Built-in rules in their fixed order, then custom rules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rules]
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DetectionRuleView'
+        '401':
+          description: Not signed in
+        '503':
+          description: Detection rules are not available on this server
+  /api/v1/detection/rules/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    put:
+      summary: Store a rule override or a custom rule
+      description: |
+        Validates and stores the rule, then reloads the detection engine. A
+        reload resets the rule counters and cooldowns; host heartbeat state is
+        kept. Readers forward this request to the writer.
+      operationId: putDetectionRule
+      security:
+        - SessionCookie: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetectionRule'
+      responses:
+        '200':
+          description: The stored rule
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rule]
+                properties:
+                  rule:
+                    $ref: '#/components/schemas/DetectionRuleView'
+        '400':
+          description: Invalid rule, or the body id differs from the path id; the body says why
+        '401':
+          description: Not signed in
+    delete:
+      summary: Remove a custom rule or restore a built-in
+      operationId: deleteDetectionRule
+      security:
+        - SessionCookie: []
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: boolean
+        '401':
+          description: Not signed in
+        '404':
+          description: No rule with this id is stored
 components:
   parameters:
     TelemetryFrom:
@@ -409,3 +491,47 @@ components:
           type: number
         max:
           type: number
+    DetectionRule:
+      type: object
+      description: |
+        Security rules count matching log rows per `group_by` key in `window`
+        and fire at `threshold`. Metric rules fire when `metric` stays past
+        `threshold` for `for`. Heartbeat rules fire when a host is silent
+        longer than `window`. Durations are Go durations ("5m", "1h").
+      required: [id, name, enabled, severity, track, threshold]
+      properties:
+        id: {type: string, examples: [ssh-bruteforce]}
+        name: {type: string}
+        enabled: {type: boolean}
+        severity: {type: string, enum: [WARNING, ERROR, CRITICAL]}
+        track: {type: string, enum: [security, metrics, heartbeat]}
+        match:
+          type: array
+          items:
+            type: object
+            required: [field, op, value]
+            properties:
+              field: {type: string, examples: [kind]}
+              op: {type: string, enum: [eq, ne, in, not_in, prefix, not_prefix, contains]}
+              value:
+                description: A string, or an array of strings for in and not_in
+        group_by:
+          type: array
+          items: {type: string}
+          examples: [[src_ip]]
+        metric: {type: string, description: 'Metric name; `*` matches one segment', examples: [fs.*.used_pct]}
+        op: {type: string, enum: [gt, lt]}
+        per_core: {type: boolean, description: Multiply the threshold by the host's core count}
+        for: {type: string, examples: [10m]}
+        threshold: {type: number}
+        window: {type: string, examples: [5m]}
+        cooldown: {type: string, examples: [1h]}
+    DetectionRuleView:
+      allOf:
+        - $ref: '#/components/schemas/DetectionRule'
+        - type: object
+          required: [builtin, overridden]
+          properties:
+            builtin: {type: boolean, description: The id is a built-in rule}
+            overridden: {type: boolean, description: A stored rule replaces the built-in}
+            updated_at: {type: string, format: date-time, description: When the stored rule was last written}
