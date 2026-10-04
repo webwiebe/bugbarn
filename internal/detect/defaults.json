@@ -54,14 +54,13 @@
       {"field": "kind", "op": "eq", "value": "secrets"},
       {"field": "action", "op": "in", "value": ["get", "list", "watch"]},
       {"field": "user", "op": "not_prefix", "value": "system:node:"},
+      {"field": "user", "op": "not_prefix", "value": "system:serviceaccount:kube-system:"},
       {"field": "user", "op": "not_in", "value": [
         "system:apiserver",
         "system:kube-controller-manager",
         "system:kube-scheduler",
         "system:k3s-controller",
-        "system:serviceaccount:kube-system:helm-controller",
-        "system:serviceaccount:kube-system:traefik",
-        "system:serviceaccount:kube-system:coredns"
+        "system:k3s-supervisor"
       ]}
     ],
     "group_by": ["user"],
