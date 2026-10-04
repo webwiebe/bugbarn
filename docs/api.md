@@ -231,6 +231,74 @@ Infrastructure telemetry from Vector agents: security log lines (Traefik access 
 
 ---
 
+### Telemetry (read)
+
+**Auth:** Session cookie or full-scope API key, like the other dashboard endpoints. The dashboard shows these under **Security** and **Hosts**.
+
+Times (`from`, `to`) are RFC 3339 or unix milliseconds. Without them the range is the last 24 hours. On reader pods the telemetry files are opened read-only on first use; until the writer has created them these endpoints answer `503` with a message saying so.
+
+#### GET /api/v1/telemetry/security
+
+Search stored security log lines, newest first.
+
+| Parameter | Description |
+|---|---|
+| `from`, `to` | Time range. |
+| `source`, `host`, `src_ip`, `user`, `kind` | Exact match. |
+| `status` | HTTP status code. |
+| `q` | Substring of the message or path. |
+| `limit` | 1 to 500, default 100. |
+| `cursor` | `next_cursor` from the previous page. |
+
+**Response:**
+```json
+{
+  "rows": [
+    {
+      "id": 812,
+      "ts": "2026-10-04T12:00:00Z",
+      "source": "sshd",
+      "host": "k3s1",
+      "kind": "auth_failure",
+      "src_ip": "203.0.113.7",
+      "user": "root",
+      "action": "password",
+      "status": 0,
+      "method": "",
+      "path": "",
+      "message": "Failed password for root from 203.0.113.7",
+      "raw": "{...original line...}"
+    }
+  ],
+  "next_cursor": "812"
+}
+```
+
+`next_cursor` is `null` on the last page.
+
+#### GET /api/v1/telemetry/hosts
+
+Hosts that report metrics, most recently seen first: `{"hosts": [{"host": "k3s1", "cores": 8, "lastSeen": "2026-10-04T12:00:00Z"}]}`. `cores` is `0` when unknown.
+
+#### GET /api/v1/telemetry/hosts/{host}/metrics
+
+Metric names the host reported in the last 7 days, for example `cpu.util`, `load1`, `mem.avail_pct`, `fs./.used_pct`, `net.eth0.rx_bytes_per_s`.
+
+#### GET /api/v1/telemetry/hosts/{host}/series
+
+One metric over a range: `metric` (required), `from`, `to`. Ranges up to 7 days return per-minute samples (`"resolution": "1m"`); longer ranges, up to 90 days, return hourly rollups (`"resolution": "1h"`, the average as `value` plus `min` and `max`).
+
+```json
+{
+  "host": "k3s1",
+  "metric": "load1",
+  "resolution": "1m",
+  "points": [{"ts": "2026-10-04T11:59:00Z", "value": 0.7, "min": 0.7, "max": 0.7}]
+}
+```
+
+---
+
 ### Issues
 
 **Auth:** Session cookie or full-scope API key.

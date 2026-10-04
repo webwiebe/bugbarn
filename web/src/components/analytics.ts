@@ -1,4 +1,5 @@
 import { escapeAttr, escapeHtml, errorMessage } from "../format.js";
+import { renderLineChart } from "./chart.js";
 import type { AnalyticsBucket, AnalyticsOverview, AnalyticsPage, AnalyticsReferrer, AnalyticsSegmentBucket, DropoutStat, FlowEntry, PageFlowResult, ScrollDepthResult } from "../types.js";
 
 export function renderAnalyticsViewMarkup(
@@ -60,49 +61,16 @@ function renderAnalyticsTimeline(buckets: AnalyticsBucket[]): string {
     return `<div class="section"><div class="empty">No timeline data available.</div></div>`;
   }
 
-  const maxPv = buckets.reduce((m, b) => Math.max(m, b.pageviews), 1);
-  const w = 800;
-  const h = 120;
-  const padTop = 8;
-  const padBottom = 8;
-  const innerH = h - padTop - padBottom;
-  const step = w / Math.max(buckets.length - 1, 1);
-
-  const points = buckets.map((b, i) => {
-    const x = Math.round(i * step);
-    const y = Math.round(padTop + innerH - (b.pageviews / maxPv) * innerH);
-    return `${x},${y}`;
-  }).join(" ");
-
-  // Vertical grid lines at each bucket (only if few buckets, else every ~7)
-  const gridInterval = buckets.length > 14 ? 7 : 1;
-  const gridLines = buckets
-    .filter((_, i) => i % gridInterval === 0)
-    .map((_, idx) => {
-      const i = idx * gridInterval;
-      const x = Math.round(i * step);
-      return `<line x1="${x}" y1="${padTop}" x2="${x}" y2="${h - padBottom}" stroke="var(--line,#21262d)" stroke-width="1"/>`;
-    })
-    .join("");
-
-  // Date labels — first and last
-  const firstLabel = buckets[0]?.date ?? "";
-  const lastLabel = buckets[buckets.length - 1]?.date ?? "";
-  const _lastX = Math.round((buckets.length - 1) * step);
+  const chart = renderLineChart(buckets.map(b => b.pageviews), {
+    ariaLabel: "Pageviews timeline",
+    startLabel: buckets[0]?.date ?? "",
+    endLabel: buckets[buckets.length - 1]?.date ?? "",
+  });
 
   return `
     <div class="section analytics-timeline-section">
       <h3>Pageviews over time</h3>
-      <div class="analytics-chart" style="position:relative">
-        <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" aria-label="Pageviews timeline" role="img" style="display:block;overflow:visible">
-          ${gridLines}
-          <polyline points="${escapeAttr(points)}" fill="none" stroke="#d4a054" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-        </svg>
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted,#8b949e);margin-top:2px">
-          <span>${escapeHtml(firstLabel)}</span>
-          <span>${escapeHtml(lastLabel)}</span>
-        </div>
-      </div>
+      <div class="analytics-chart">${chart}</div>
     </div>
   `;
 }

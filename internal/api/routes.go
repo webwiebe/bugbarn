@@ -272,6 +272,7 @@ func (s *Server) dispatchProtected(w http.ResponseWriter, r *http.Request) {
 		s.dispatchProjectItemRoutes,
 		s.dispatchGroupAliasRoutes,
 		s.dispatchAPIKeyFacetAnalyticsRoutes,
+		s.dispatchTelemetryRoutes,
 		s.dispatchMiscRoutes,
 	}
 	for _, d := range dispatchers {

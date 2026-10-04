@@ -105,3 +105,28 @@ func startDetections(ctx context.Context, ing *telemetry.Ingester, proc *ingestp
 // detectionBuffer bounds detections waiting for the emitter. Cooldowns keep
 // the rate low; a full buffer means persisting is stuck.
 const detectionBuffer = 1024
+
+// telemetryViewer is the part of *api.Server the read endpoints need.
+type telemetryViewer interface {
+	SetTelemetryViews(security, metrics telemetrydb.Source)
+}
+
+// wireWriterTelemetryViews serves the read endpoints from the handles the
+// writer (or monolith) already writes through.
+func wireWriterTelemetryViews(srv telemetryViewer, ing *telemetry.Ingester) {
+	srv.SetTelemetryViews(telemetrydb.Fixed(ing.Security()), telemetrydb.Fixed(ing.Metrics()))
+}
+
+// wireReaderTelemetryViews serves the read endpoints on a reader pod. The
+// writer creates the files on the shared volume, so they are opened
+// read-only on first use; until then the endpoints answer 503. The returned
+// func closes whatever was opened.
+func wireReaderTelemetryViews(srv telemetryViewer, cfg config.Telemetry) func() {
+	sec := telemetrydb.NewLazy(telemetrydb.Security, cfg.SecurityDBPath)
+	met := telemetrydb.NewLazy(telemetrydb.Metrics, cfg.MetricsDBPath)
+	srv.SetTelemetryViews(sec, met)
+	return func() {
+		_ = sec.Close()
+		_ = met.Close()
+	}
+}

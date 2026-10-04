@@ -19,6 +19,27 @@ import { connectLogSSE, disconnectLogSSE, loadLogs, renderLogsView } from "./vie
 import { loadSdkInfo, loadSettings, renderSettingsView } from "./views-settings.js";
 import { loadVolume, renderVolumeView } from "./views-volume.js";
 import { renderAccountView } from "./views-account.js";
+import { loadSecurity, renderSecurityView, securityStatus } from "./views-security.js";
+import { hostsStatus, loadHosts, renderHostsView, setSelectedHost } from "./views-hosts.js";
+
+type Route = typeof state.currentRoute;
+
+// Routes that are one view with no selection: the hash kind, its title, and
+// (for the telemetry views) how to render, load and describe them.
+const simpleRoutes: Partial<Record<string, { route: Route; title: string }>> = {
+  releases: { route: "releases", title: "Releases" },
+  alerts: { route: "alerts", title: "Alerts" },
+  logs: { route: "logs", title: "Logs" },
+  account: { route: "account", title: "Account" },
+  security: { route: "security", title: "Security" },
+};
+
+interface ViewHandlers { render: () => void; load: () => Promise<void>; status: () => string }
+
+const telemetryViews: Partial<Record<Route, ViewHandlers>> = {
+  security: { render: renderSecurityView, load: loadSecurity, status: securityStatus },
+  hosts: { render: renderHostsView, load: loadHosts, status: hostsStatus },
+};
 
 export function route(): void {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
@@ -42,30 +63,15 @@ export function route(): void {
     state.selectedReleaseId = decodeURIComponent(id);
     setPageTitle("Releases");
     setRouteChip("Release detail");
-  } else if (kind === "releases") {
-    state.currentRoute = "releases";
-    setPageTitle("Releases");
-    setRouteChip("Releases");
-  } else if (kind === "alerts") {
-    state.currentRoute = "alerts";
-    setPageTitle("Alerts");
-    setRouteChip("Alerts");
-  } else if (kind === "logs") {
-    state.currentRoute = "logs";
-    setPageTitle("Logs");
-    setRouteChip("Logs");
-  } else if (kind === "account") {
-    state.currentRoute = "account";
-    setPageTitle("Account");
-    setRouteChip("Account");
+  } else if (kind === "hosts") {
+    routeHosts(id);
+  } else if (kind && simpleRoutes[kind]) {
+    const simple = simpleRoutes[kind];
+    state.currentRoute = simple.route;
+    setPageTitle(simple.title);
+    setRouteChip(simple.title);
   } else if (kind === "settings") {
-    state.currentRoute = "settings";
-    const validTabs: SettingsTab[] = ["overview", "projects", "volume", "preferences", "keys", "system"];
-    state.settingsTab = (validTabs.includes(id as SettingsTab) ? id : "overview") as SettingsTab;
-    const subPageTitles: Record<string, string> = { projects: "Projects", volume: "Volume", preferences: "Preferences", keys: "API Keys", system: "System" };
-    const subTitle = subPageTitles[state.settingsTab];
-    setPageTitle(subTitle ? `Settings — ${subTitle}` : "Settings");
-    setRouteChip(subTitle ?? "Settings");
+    routeSettings(id);
   } else {
     state.currentRoute = "issues";
     setPageTitle("Issues");
@@ -77,8 +83,29 @@ export function route(): void {
   renderCurrentRoute();
 }
 
+function routeHosts(id: string | undefined): void {
+  const host = id ? decodeURIComponent(id) : null;
+  state.currentRoute = "hosts";
+  setSelectedHost(host);
+  setPageTitle("Hosts");
+  setRouteChip(host ?? "Hosts");
+}
+
+function routeSettings(id: string | undefined): void {
+  state.currentRoute = "settings";
+  const validTabs: SettingsTab[] = ["overview", "projects", "volume", "preferences", "keys", "system"];
+  state.settingsTab = (validTabs.includes(id as SettingsTab) ? id : "overview") as SettingsTab;
+  const subPageTitles: Record<string, string> = { projects: "Projects", volume: "Volume", preferences: "Preferences", keys: "API Keys", system: "System" };
+  const subTitle = subPageTitles[state.settingsTab];
+  setPageTitle(subTitle ? `Settings — ${subTitle}` : "Settings");
+  setRouteChip(subTitle ?? "Settings");
+}
+
 export function setRouteStatus(): void {
-  if (state.currentRoute === "issues") {
+  const telemetry = telemetryViews[state.currentRoute];
+  if (telemetry) {
+    setStatus(telemetry.status());
+  } else if (state.currentRoute === "issues") {
     setStatus(`${state.issues.length} issue${state.issues.length === 1 ? "" : "s"} loaded.`);
   } else if (state.currentRoute === "releases") {
     setStatus(`${state.releases.length} release${state.releases.length === 1 ? "" : "s"} loaded.`);
@@ -95,7 +122,10 @@ export function setRouteStatus(): void {
 
 function renderCurrentRoute(): void {
   setRouteStatus();
-  if (state.currentRoute === "releases") {
+  const telemetry = telemetryViews[state.currentRoute];
+  if (telemetry) {
+    telemetry.render();
+  } else if (state.currentRoute === "releases") {
     renderReleasesView();
     if (state.selectedReleaseId && state.releases.length) {
       void loadReleaseDetail(state.selectedReleaseId);
@@ -141,6 +171,12 @@ async function loadCurrentRouteData(): Promise<void> {
     disconnectLogSSE();
   }
   setStatus("Refreshing…");
+  const telemetry = telemetryViews[state.currentRoute];
+  if (telemetry) {
+    await telemetry.load();
+    setRouteStatus();
+    return;
+  }
   if (state.currentRoute === "releases") {
     await loadReleases();
     if (state.selectedReleaseId) {

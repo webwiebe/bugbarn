@@ -2615,3 +2615,96 @@ button.settings-nav-item:last-child {
   --iambarn-width: 640px;
   max-width: 640px;
 }
+
+/* --- Shared line chart ---------------------------------------------------- */
+
+.line-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted, #8b949e);
+  margin-top: 2px;
+}
+
+/* --- Security log search -------------------------------------------------- */
+
+.sec-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: flex-end;
+}
+
+.sec-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.sec-field input,
+.sec-field select {
+  width: 10rem;
+  max-width: 100%;
+}
+
+.sec-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sec-row {
+  cursor: pointer;
+}
+
+.sec-row:hover td,
+.sec-row:focus-visible td {
+  background: var(--accent-soft);
+}
+
+.sec-ts {
+  white-space: nowrap;
+}
+
+.sec-mono,
+.sec-raw {
+  font-family: monospace;
+}
+
+.sec-summary {
+  max-width: 32rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sec-raw {
+  margin: 0;
+  max-height: 24rem;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.sec-more {
+  padding-top: 10px;
+}
+
+/* --- Host health ---------------------------------------------------------- */
+
+.host-row {
+  cursor: pointer;
+}
+
+.host-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+  gap: 12px;
+}
+
+.host-chart .section-head span {
+  font-size: 0.75rem;
+}

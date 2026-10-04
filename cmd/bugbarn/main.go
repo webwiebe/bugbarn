@@ -250,6 +250,7 @@ func run() error {
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
 	apiServer.SetTelemetry(telemetryIngester, cfg.Telemetry.Project)
+	wireWriterTelemetryViews(apiServer, telemetryIngester)
 	apiServer.SetSetupConfig(cfg.SessionSecret, cfg.PublicURL)
 	apiServer.SetAuthEnvironment(cfg.Environment)
 	apiServer.SetOIDCRefreshGrace(cfg.OIDCRefreshGrace)
