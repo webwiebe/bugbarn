@@ -35,6 +35,11 @@ type Record struct {
 	// ProjectID is the resolved project for non-event records (e.g. releases),
 	// captured at enqueue time so the worker need not re-resolve it.
 	ProjectID int64 `json:"projectId,omitempty"`
+	// Internal marks a record built in-process by BugBarn itself (detections).
+	// It keeps IP addresses in the event, which the scrubber otherwise
+	// rewrites. Never serialized: a record read from the spool, the write
+	// queue or a request can never carry it.
+	Internal bool `json:"-"`
 }
 
 // cursor tracks the byte offset of the last successfully processed record.

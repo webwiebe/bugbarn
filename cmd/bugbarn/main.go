@@ -209,6 +209,10 @@ func run() error {
 	eventProc := ingestproc.NewProcessor(store, eventPub, logger, cfg.AutoApproveProjects)
 	logService := logsvc.New(store.LogStore, logger)
 	heldReplayer := ingestproc.NewReplayer(store, eventProc, logService, logger)
+	// Detections persist through the same pipeline as SDK events, so each one
+	// becomes an issue in the telemetry project. Started before the consumer so
+	// the first telemetry batch is already observed.
+	startDetections(ctx, telemetryIngester, eventProc, cfg.Telemetry.Project, &bgWg, logger)
 
 	if cfg.RedisQueueURL != "" {
 		bgWg.Add(1)

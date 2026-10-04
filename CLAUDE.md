@@ -40,6 +40,12 @@ internal/
     digest/           Periodic project summaries (mail, webhook)
     analytics/        Analytics types, queries and the rollup worker
     logstream/        SSE fan-out for live log tailing
+  Infrastructure telemetry (Vector agents, deploy/vector)
+    telemetry/        Writer-side ingester: normalize, observe (detections), store
+    telemetrydb/      Size-capped security.db and metrics.db next to the main DB
+    secnorm/          Security log normalizers (sshd, Traefik, k8s audit, Cloudflare)
+    hostmetrics/      Vector host_metrics to per-minute samples
+    detect/           Detection rules and engine; each hit becomes an issue in the telemetry project
   HTTP and auth
     api/              HTTP handlers and routing; reader-to-writer forwarders
     apperr/           Shared error types (NotFound, Conflict, InvalidInput, Internal)

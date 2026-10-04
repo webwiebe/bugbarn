@@ -12,6 +12,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
 	"github.com/wiebe-xyz/bugbarn/internal/normalize"
+	"github.com/wiebe-xyz/bugbarn/internal/privacy"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -45,7 +46,7 @@ func ProcessRecordCtx(ctx context.Context, record spool.Record) (ProcessedEvent,
 	decodeSpan.End()
 
 	_, normalizeSpan := tracing.Tracer().Start(ctx, "worker.Normalize")
-	evt, err := normalize.Normalize(body, record.IngestID, record.ReceivedAt)
+	evt, err := normalize.NormalizeWith(body, record.IngestID, record.ReceivedAt, privacy.Options{KeepIPs: record.Internal})
 	if err != nil {
 		normalizeSpan.SetStatus(codes.Error, err.Error())
 		normalizeSpan.End()

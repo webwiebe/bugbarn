@@ -26,7 +26,18 @@ var sensitiveKeyParts = []string{
 	"email",
 }
 
-func Scrub(value any) any {
+// Options relaxes scrubbing for trusted, in-process producers.
+type Options struct {
+	// KeepIPs leaves IPv4 addresses in strings. Detections set it: the source
+	// address is what a security detection is about. Key-based redaction and
+	// the other value patterns still apply.
+	KeepIPs bool
+}
+
+func Scrub(value any) any { return ScrubWith(value, Options{}) }
+
+// ScrubWith is Scrub with options.
+func ScrubWith(value any, opts Options) any {
 	switch typed := value.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(typed))
@@ -35,25 +46,29 @@ func Scrub(value any) any {
 				out[key] = "[redacted]"
 				continue
 			}
-			out[key] = Scrub(child)
+			out[key] = ScrubWith(child, opts)
 		}
 		return out
 	case []any:
 		out := make([]any, len(typed))
 		for i, child := range typed {
-			out[i] = Scrub(child)
+			out[i] = ScrubWith(child, opts)
 		}
 		return out
 	case string:
-		return ScrubString(typed)
+		return scrubString(typed, opts)
 	default:
 		return value
 	}
 }
 
-func ScrubString(value string) string {
+func ScrubString(value string) string { return scrubString(value, Options{}) }
+
+func scrubString(value string, opts Options) string {
 	value = emailPattern.ReplaceAllString(value, "[redacted-email]")
-	value = ipv4Pattern.ReplaceAllString(value, "[redacted-ip]")
+	if !opts.KeepIPs {
+		value = ipv4Pattern.ReplaceAllString(value, "[redacted-ip]")
+	}
 	value = uuidPattern.ReplaceAllString(value, "[redacted-id]")
 	value = tokenPattern.ReplaceAllString(value, "[redacted-secret]")
 	return value

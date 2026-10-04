@@ -4,8 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/config"
+	"github.com/wiebe-xyz/bugbarn/internal/detect"
+	"github.com/wiebe-xyz/bugbarn/internal/hostmetrics"
+	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
+	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetry"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetrydb"
 )
@@ -44,3 +49,47 @@ func openTelemetryDB(ctx context.Context, spec telemetrydb.Spec, path string, ma
 	}()
 	return d
 }
+
+// startDetections runs the detection engine over the ingester's telemetry:
+// built-in rules, the heartbeat ticker and the emitter that persists each
+// detection as an event in the telemetry project through proc.
+func startDetections(ctx context.Context, ing *telemetry.Ingester, proc *ingestproc.Processor, project string, wg *sync.WaitGroup, log *slog.Logger) *detect.Engine {
+	engine := detect.NewEngine(detect.Defaults(), detectionBuffer, log)
+	if met := ing.Metrics(); met != nil {
+		hosts, err := met.Hosts(ctx)
+		if err != nil {
+			log.Warn("detect: could not seed hosts for the heartbeat", "error", err)
+		}
+		seed := make([]hostmetrics.HostInfo, len(hosts))
+		for i, h := range hosts {
+			seed[i] = hostmetrics.HostInfo{Host: h.Host, Cores: h.Cores, LastSeen: h.LastSeen}
+		}
+		engine.SeedHosts(seed)
+	}
+	ing.SetObserver(engine)
+
+	emitter := detect.NewEmitter(engine.Detections(), func(ctx context.Context, rec spool.Record) (bool, error) {
+		res := proc.PersistRecord(ctx, rec)
+		switch res.Outcome {
+		case ingestproc.OutcomeSuccess, ingestproc.OutcomeHeld:
+			return false, nil
+		case ingestproc.OutcomeTransient:
+			return true, res.Err
+		}
+		return false, res.Err
+	}, project, log)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		emitter.Run(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		engine.RunHeartbeat(ctx, time.Minute)
+	}()
+	return engine
+}
+
+// detectionBuffer bounds detections waiting for the emitter. Cooldowns keep
+// the rate low; a full buffer means persisting is stuck.
+const detectionBuffer = 1024
