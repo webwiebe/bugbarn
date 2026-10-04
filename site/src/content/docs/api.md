@@ -583,6 +583,78 @@ Delete an alert.
 
 ---
 
+### Detection Rules
+
+**Auth:** Session cookie or full-scope API key.
+
+Detection rules turn infrastructure telemetry into issues in the telemetry project (`BUGBARN_TELEMETRY_PROJECT`, default `infra`). The built-in rules ship with the server. A stored rule with a built-in id replaces that rule, so you tune or disable a built-in by storing your own version of it. Any other id adds a custom rule. A change takes effect on the writer immediately and resets the counters of every rule.
+
+#### GET /api/v1/detection/rules
+
+List the effective rules: built-ins with overrides applied, then custom rules.
+
+**Response:**
+```json
+{"rules": [{
+  "id": "disk-full",
+  "name": "Filesystem over 90% full",
+  "enabled": true,
+  "severity": "ERROR",
+  "track": "metrics",
+  "metric": "fs.*.used_pct",
+  "op": "gt",
+  "threshold": 90,
+  "for": "10m",
+  "cooldown": "6h",
+  "builtin": true,
+  "overridden": false
+}]}
+```
+
+`builtin` says the id ships with the server; `overridden` says a stored version replaces it. Stored rules also carry `updated_at`.
+
+Rule fields:
+
+| Field | Applies to | Meaning |
+|---|---|---|
+| `track` | all | `security` (log records), `metrics` (host samples) or `heartbeat` (host silence) |
+| `severity` | all | `WARNING`, `ERROR` or `CRITICAL` |
+| `match` | security | list of `{field, op, value}`; ops `eq`, `ne`, `in`, `not_in`, `prefix`, `not_prefix`, `contains` |
+| `group_by` | security | record fields that make up one group, e.g. `["src_ip"]` |
+| `threshold` | security, metrics | matching records per `window` (security) or the sample value limit (metrics) |
+| `window` | security, heartbeat | counting window (security) or allowed silence (heartbeat) |
+| `metric` | metrics | metric name glob, `*` matches any run of characters |
+| `op` | metrics | `gt` or `lt` |
+| `per_core` | metrics | multiply the threshold by the host's core count |
+| `for` | metrics | how long the value must stay past the threshold |
+| `cooldown` | all | minimum time between two detections for one group |
+
+Durations are strings like `"5m"` or a number of seconds.
+
+---
+
+#### PUT /api/v1/detection/rules/{id}
+
+Store a rule under `{id}`: an override for a built-in, or a custom rule. The body is a rule object; `id` may be left out and must match the path when given. An invalid rule gets `400` with the reason.
+
+**Response:**
+```json
+{"rule": { ...rule object... }}
+```
+
+---
+
+#### DELETE /api/v1/detection/rules/{id}
+
+Delete the stored rule. A custom rule is removed; a built-in returns to its shipped definition. `404` when nothing is stored under `{id}`.
+
+**Response:**
+```json
+{"deleted": true}
+```
+
+---
+
 ### Logs
 
 **Auth:** Session cookie or full-scope API key.

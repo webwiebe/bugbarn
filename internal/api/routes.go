@@ -266,6 +266,7 @@ func (s *Server) dispatchProtected(w http.ResponseWriter, r *http.Request) {
 		s.dispatchSourceMapRoutes,
 		s.dispatchSettingsReleaseRoutes,
 		s.dispatchAlertRoutes,
+		s.dispatchDetectionRoutes,
 		s.dispatchIssueRoutes,
 		s.dispatchLogEventRoutes,
 		s.dispatchProjectRoutes,

@@ -37,6 +37,7 @@ var settingsTables = []string{
 	"api_keys",
 	"alerts",
 	"settings",
+	"detection_rules",
 }
 
 // SnapshotSettings builds a fresh, ready-to-serve SQLite database at destPath
