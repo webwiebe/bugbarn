@@ -206,7 +206,7 @@ function wireProjectListControls(): void {
     const byName = (a: HTMLElement, b: HTMLElement, dir: 1 | -1): number =>
       (a.dataset["name"] ?? "").localeCompare(b.dataset["name"] ?? "") * dir;
 
-    let sorted = [...visible];
+    const sorted = [...visible];
     switch (sortVal) {
       case "name-asc": sorted.sort((a, b) => byName(a, b, 1)); break;
       case "name-desc": sorted.sort((a, b) => byName(a, b, -1)); break;

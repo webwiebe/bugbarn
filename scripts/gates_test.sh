@@ -72,13 +72,15 @@ printf '{"Issues":[{"FromLinter":"unused"},{"FromLinter":"depguard"},{"FromLinte
 printf '{"Issues":null}\n' >"$WORK/gl-clean.json"
 printf 'not json at all\n' >"$WORK/gl-broken.json"
 printf '{"Report":{}}\n' >"$WORK/gl-wrong.json"
-printf '[{"filePath":"/web/src/a.ts","messages":[{"ruleId":"complexity","line":1},{"ruleId":"no-undef","line":2},{"ruleId":"max-lines","line":3}]}]\n' >"$WORK/es.json"
+printf '[{"code":"eslint(complexity)"},{"code":"eslint(no-undef)"},{"code":"eslint(max-lines)"}]\n' >"$WORK/ox.json"
+printf '{"diagnostics":[]}\n' >"$WORK/ox-wrong.json"
 
 expect 1 "count: a missing report fails (did not run != clean)" -- python3 "$COUNT" golangci "$WORK/absent.json"
 expect 1 "count: a malformed report fails" -- python3 "$COUNT" golangci "$WORK/gl-broken.json"
 expect 1 "count: a report with no Issues key fails" -- python3 "$COUNT" golangci "$WORK/gl-wrong.json"
 expect 0 "count: a clean report is accepted" -- python3 "$COUNT" golangci "$WORK/gl-clean.json"
-expect 1 "count: a missing eslint report fails" -- python3 "$COUNT" eslint "$WORK/absent.json" complexity
+expect 1 "count: a missing oxlint report fails" -- python3 "$COUNT" oxlint "$WORK/absent.json" "eslint(complexity)"
+expect 1 "count: an oxlint report that is not an array fails" -- python3 "$COUNT" oxlint "$WORK/ox-wrong.json" "eslint(complexity)"
 
 check_value() {
 	_name="$1"
@@ -97,7 +99,7 @@ check_value() {
 check_value "count: golangci total" 3 python3 "$COUNT" golangci "$WORK/gl.json"
 check_value "count: golangci filtered by linter" 2 python3 "$COUNT" golangci "$WORK/gl.json" unused
 check_value "count: golangci clean report is zero" 0 python3 "$COUNT" golangci "$WORK/gl-clean.json"
-check_value "count: eslint counts only the named rules" 2 python3 "$COUNT" eslint "$WORK/es.json" complexity max-lines
+check_value "count: oxlint counts only the named rules" 2 python3 "$COUNT" oxlint "$WORK/ox.json" "eslint(complexity)" "eslint(max-lines)"
 
 # ------------------------------------------------------- check-file-length.sh
 # The 500-line cap is already blocking with an empty allowlist, so the

@@ -23,7 +23,7 @@ export function renderSettingsViewMarkup(
     ? `<a href="#/settings/overview" class="back-link">← Settings</a><h2>${escapeHtml(subTitle)}${tab === "projects" && pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</h2>`
     : `<h2>Settings</h2><span class="chip">${escapeHtml(username || "signed in")}</span>`;
 
-  let content = "";
+  let content: string;
   if (tab === "overview") {
     content = renderSettingsOverview(settings, username, activeProjects, groups, apiKeys, pendingProjects, error);
   } else if (tab === "projects") {

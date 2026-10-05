@@ -8,7 +8,11 @@ a count of zero.
 
 Usage:
   count-findings.py golangci <report.json> [linter]
-  count-findings.py eslint   <report.json> <rule> [rule ...]
+  count-findings.py oxlint   <report.json> <rule> [rule ...]
+
+oxlint mode reads the array `node web/scripts/oxlint-ratchet.mjs --budget`
+prints: one object per finding, with the rule in `code`, e.g.
+"eslint(complexity)".
 """
 
 import json
@@ -44,29 +48,24 @@ def count_golangci(argv):
     return len(issues)
 
 
-def count_eslint(argv):
+def count_oxlint(argv):
     if len(argv) < 2:
-        die("eslint mode needs a report path and at least one rule id")
+        die("oxlint mode needs a report path and at least one rule code")
     doc = load(argv[0])
     if not isinstance(doc, list):
-        die(f"report {argv[0]} is not an eslint JSON report")
+        die(f"report {argv[0]} is not an oxlint findings array")
     rules = set(argv[1:])
-    total = 0
-    for result in doc:
-        for message in result.get("messages", []):
-            if message.get("ruleId") in rules:
-                total += 1
-    return total
+    return sum(1 for finding in doc if isinstance(finding, dict) and finding.get("code") in rules)
 
 
 def main():
     if len(sys.argv) < 2:
-        die("usage: count-findings.py <golangci|eslint> <report.json> [...]")
+        die("usage: count-findings.py <golangci|oxlint> <report.json> [...]")
     mode, argv = sys.argv[1], sys.argv[2:]
     if mode == "golangci":
         print(count_golangci(argv))
-    elif mode == "eslint":
-        print(count_eslint(argv))
+    elif mode == "oxlint":
+        print(count_oxlint(argv))
     else:
         die(f"unknown mode '{mode}'")
 

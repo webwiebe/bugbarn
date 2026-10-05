@@ -18,7 +18,7 @@ interface SpanPayload {
   attributes?: Record<string, string | number | boolean>;
 }
 
-let spanQueue: SpanPayload[] = [];
+const spanQueue: SpanPayload[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 let pageTraceId = hex(16);
 let pageSpanId = hex(8);
