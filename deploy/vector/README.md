@@ -8,7 +8,7 @@ record with `source` and `host`, batches and buffers.
 
 ```
 k8s/base/      DaemonSet, RBAC, namespace and the shared pipeline (vector.yaml)
-k8s/k3s1/      homelab cluster (k3s1 + k3s2): sinks.yaml, secret.yaml
+k8s/k3s1/      homelab cluster (k3s1 + k3s2), ships to testing and production
 k8s/layer7/    production node: sinks.yaml, secret.yaml
 host/          agents for hosts outside the clusters (macOS, Linux), see below
 tests/         `vector test` cases for the transforms
@@ -44,6 +44,11 @@ kubectl -n <namespace> exec deploy/<bugbarn or bugbarn-writer> -c bugbarn -- \
 Encrypt it straight into `secret.yaml` without writing plaintext to disk. Vector
 0.58 reads the key with its `directory` secret backend (`SECRET[bugbarn.api_key]`),
 which works in headers only, which is why each overlay spells out its URIs.
+
+k3s1 ships to testing in-cluster (for the end-to-end checks) and to production
+over `https://bugbarn.wiebe.xyz`, so k3s1 and k3s2 show up in the production
+Hosts and Security views. Its secret carries a second key, `prod_api_key`, which
+is the production `vector-hosts` key from `host/secret.yaml`.
 
 ## Hosts outside the clusters
 

@@ -1,5 +1,5 @@
-# k3s1 + k3s2 ship to the testing monolith in-cluster while the pipeline is
-# proven out. Keep in step with ../layer7/sinks.yaml; only the URIs differ.
+# layer7 ships to production in-cluster.
+# Keep in step with the testing/prod blocks in ../k3s1/sinks.yaml.
 sinks:
   security:
     type: http
