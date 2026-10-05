@@ -62,8 +62,9 @@ writer (and the testing monolith) and starts only when both of these are set:
 | `BUGBARN_CLOUDFLARE_ZONE_IDS` | plain env in `writer-deployment.yaml` | comma-separated zone tags (zone IDs) |
 | `BUGBARN_CLOUDFLARE_POLL_INTERVAL` | optional | Go duration or seconds; default `60s`, minimum `10s` |
 
-Staging and production wire both; the zone list is empty until the zones are chosen
-(GitHub issue #192). Each zone keeps a cursor in `security.db`'s `meta` table
+Production polls every zone on the account (#192); staging wires both variables but
+leaves the zone list empty, so the shared token's rate-limit budget goes to production
+alone. The token lives only in the production `secret.yaml`. Each zone keeps a cursor in `security.db`'s `meta` table
 (`cloudflare.cursor.<zone>`). The poller reads up to 2 minutes behind now, and after an
 outage it starts at most 24 hours back. On HTTP 429 or a GraphQL error it waits longer
 before the next poll, doubling up to 15 minutes.
