@@ -57,9 +57,13 @@ shared ingest key of the `infra` project (`vector-hosts`), SOPS-encrypted in
 | `host/macos/vector.yaml` | macOS, per-user LaunchAgent | `log stream` for sshd, sshd-session, sudo, su | `macos` |
 | `host/linux/vector.yaml` | Linux with systemd | journald for sshd, sudo, account changes | `syslog` |
 
-Both also run `host_metrics`. The macOS runners get the agent from Ansible
-(`infra/roles/bugbarn-vector-host`), which decrypts the key and runs
-`install.sh` when the files change or the agent is not loaded:
+Both also run `host_metrics`. Every host in the `vector_hosts` inventory group
+(the macOS runners, `mini.local` and `ssd.wiebe.xyz`) gets the agent from
+Ansible (`infra/roles/bugbarn-vector-host`), which decrypts the key locally. On
+macOS it runs `install.sh` when the files change or the agent is not loaded. On
+Debian/Ubuntu it installs the pinned Vector deb, writes the key and config to
+`/etc/vector`, adds the vector user to `systemd-journal` and enables the
+systemd service. Add a host by listing it under `[vector_hosts]`:
 
 ```
 cd infra && make setup-vector-host
@@ -75,10 +79,9 @@ sops -d --extract '["stringData"]["api_key"]' deploy/vector/host/secret.yaml |
 `install.sh` downloads the pinned Vector into `~/.vector`, writes the key to
 `~/.vector/secrets/api_key` (0600), fills in the `__VECTOR_HOME__` placeholder
 (Vector does not expand env vars), validates and (re)loads the LaunchAgent
-`xyz.wiebe.bugbarn.vector`. Re-run it to upgrade. On Linux, install the Vector
-package, copy `host/linux/vector.yaml` to `/etc/vector/vector.yaml`, put the key
-in `/etc/vector/secrets/api_key` (0600, owned by the vector user) and add the
-vector user to the `systemd-journal` group.
+`xyz.wiebe.bugbarn.vector`. Re-run it to upgrade. The Linux deb version is
+`bugbarn_vector_version` in the role defaults; keep it in step with `VERSION` in
+`install.sh`.
 
 ## Deploying
 

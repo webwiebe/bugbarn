@@ -1,0 +1,60 @@
+---
+# Vector deb (pinned) with its systemd service, reading
+# deploy/vector/host/linux/vector.yaml from /etc/vector. Debian/Ubuntu only.
+
+- name: Install Vector on Linux
+  become: true
+  block:
+    - name: Check the installed Vector version
+      ansible.builtin.command: vector --version
+      register: bugbarn_vector_installed
+      changed_when: false
+      failed_when: false
+
+    - name: Install the pinned Vector deb
+      ansible.builtin.apt:
+        deb: "https://packages.timber.io/vector/{{ bugbarn_vector_version }}/vector_{{ bugbarn_vector_version }}-1_{{ bugbarn_vector_deb_arch[ansible_facts.architecture] }}.deb"
+      when: bugbarn_vector_version not in (bugbarn_vector_installed.stdout | default(''))
+      notify: Restart vector
+
+    # journald access for the sshd/sudo/account-change lines.
+    - name: Add the vector user to systemd-journal
+      ansible.builtin.user:
+        name: vector
+        groups: systemd-journal
+        append: true
+      notify: Restart vector
+
+    - name: Create the secrets dir
+      ansible.builtin.file:
+        path: /etc/vector/secrets
+        state: directory
+        owner: vector
+        group: vector
+        mode: "0700"
+
+    - name: Write the ingest key
+      ansible.builtin.copy:
+        content: "{{ bugbarn_vector_key.stdout }}"
+        dest: /etc/vector/secrets/api_key
+        owner: vector
+        group: vector
+        mode: "0600"
+      no_log: true
+      notify: Restart vector
+
+    - name: Install the config
+      ansible.builtin.copy:
+        src: "{{ bugbarn_vector_repo }}/deploy/vector/host/linux/vector.yaml"
+        dest: /etc/vector/vector.yaml
+        owner: root
+        group: root
+        mode: "0644"
+        validate: vector validate --no-environment %s
+      notify: Restart vector
+
+    - name: Enable and start vector
+      ansible.builtin.systemd:
+        name: vector
+        enabled: true
+        state: started

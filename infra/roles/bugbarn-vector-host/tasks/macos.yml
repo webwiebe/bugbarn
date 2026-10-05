@@ -1,0 +1,33 @@
+---
+# Per-user LaunchAgent through deploy/vector/host/macos/install.sh; no root.
+
+- name: Create the installer staging dir
+  ansible.builtin.file:
+    path: "{{ ansible_facts.env.HOME }}/.vector/install"
+    state: directory
+    mode: "0755"
+
+- name: Copy the installer and config
+  ansible.builtin.copy:
+    src: "{{ bugbarn_vector_repo }}/deploy/vector/host/macos/{{ item }}"
+    dest: "{{ ansible_facts.env.HOME }}/.vector/install/{{ item }}"
+    mode: "{{ '0755' if item.endswith('.sh') else '0644' }}"
+  loop:
+    - install.sh
+    - vector.yaml
+  register: bugbarn_vector_files
+
+- name: Check the agent is loaded
+  ansible.builtin.command: launchctl print "gui/{{ ansible_facts.user_uid }}/xyz.wiebe.bugbarn.vector"
+  register: bugbarn_vector_loaded
+  changed_when: false
+  failed_when: false
+
+# install.sh pins the Vector version, validates the config and reloads the
+# LaunchAgent; run it on a new host or when the files changed.
+- name: Install or upgrade the agent
+  ansible.builtin.command:
+    cmd: "{{ ansible_facts.env.HOME }}/.vector/install/install.sh"
+    stdin: "{{ bugbarn_vector_key.stdout }}"
+  when: bugbarn_vector_files.changed or bugbarn_vector_loaded.rc != 0
+  no_log: true

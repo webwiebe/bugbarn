@@ -4,3 +4,9 @@
 bugbarn_vector_repo: "{{ playbook_dir }}/.."
 # Age key that decrypts deploy/vector/host/secret.yaml (production recipient).
 bugbarn_vector_age_key_file: "{{ lookup('env', 'HOME') }}/Library/Application Support/sops/age/keys.txt"
+# Vector release for the Linux deb; keep in step with VERSION in
+# deploy/vector/host/macos/install.sh.
+bugbarn_vector_version: "0.58.0"
+bugbarn_vector_deb_arch:
+  x86_64: amd64
+  aarch64: arm64
