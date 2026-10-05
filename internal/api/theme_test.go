@@ -28,21 +28,23 @@ func TestServeThemeManifest(t *testing.T) {
 		t.Fatalf("content-type: got %q want it to contain application/json", ct)
 	}
 
-	type manifest struct {
-		Name            string `json:"name"`
-		LogoURL         string `json:"logo_url"`
-		PrimaryColor    string `json:"primary_color"`
-		BackgroundColor string `json:"background_color"`
-		CardColor       string `json:"card_color"`
-		BodyTextColor   string `json:"body_text_color"`
-		SupportURL      string `json:"support_url"`
-		Locale          string `json:"locale"`
-	}
-	var m manifest
+	// Decode into a map so a field dropped from the Go struct shows up as
+	// missing rather than as a zero value.
+	var m map[string]any
 	if err := json.NewDecoder(rr.Body).Decode(&m); err != nil {
 		t.Fatalf("decode manifest: %v", err)
 	}
-	if m.Name == "" {
-		t.Errorf("name should be populated, got empty")
+	// The 13 fields of iambarn's theme.Manifest.
+	for _, field := range []string{
+		"name", "logo_url", "primary_color", "background_color", "card_color",
+		"body_text_color", "support_url", "locale", "default_locale",
+		"supported_locales", "from_address", "from_name", "dark",
+	} {
+		if v, ok := m[field]; !ok || v == "" {
+			t.Errorf("field %q missing or empty", field)
+		}
+	}
+	if got := m["from_address"]; got != "bugbarn@wiebe.xyz" {
+		t.Errorf("from_address: got %v want bugbarn@wiebe.xyz", got)
 	}
 }

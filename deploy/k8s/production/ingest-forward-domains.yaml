@@ -106,6 +106,15 @@ spec:
       services:
         - name: bugbarn
           port: 8080
+    # iambarn relying-party theme, fetched from the origin of the OIDC
+    # redirect. Without it the request falls through to the redirect and
+    # iambarn renders an unbranded login page.
+    - match: HostRegexp(`^bb\..+$`) && Path(`/.well-known/iambarn-theme.json`)
+      kind: Rule
+      priority: 200
+      services:
+        - name: bugbarn
+          port: 8080
 
     # ---------------------------------------------------------------------------
     # Catch-all: any other request (root, dashboard SPA, non-ingest API) gets a
