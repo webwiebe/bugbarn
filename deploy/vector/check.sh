@@ -11,6 +11,7 @@ work="$here/.check"
 rm -rf "$work"
 mkdir -p "$work/secrets"
 printf 'placeholder' > "$work/secrets/api_key"
+printf 'placeholder' > "$work/secrets/prod_api_key"
 
 run() {
 	docker run --rm -e NODE_NAME=check \
