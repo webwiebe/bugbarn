@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/oidctest"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -40,7 +41,7 @@ func newOIDCServer(t *testing.T) (*Server, *oidctest.IdP, *storage.Store) {
 }
 
 // insertSessionCookie persists a session row and returns the matching cookie.
-func insertSessionCookie(t *testing.T, store *storage.Store, ws storage.WebSession) *http.Cookie {
+func insertSessionCookie(t *testing.T, store *storage.Store, ws domain.WebSession) *http.Cookie {
 	t.Helper()
 	handle := auth.NewSessionHandle()
 	ws.IDHash = auth.HashSessionHandle(handle)
@@ -69,9 +70,9 @@ func getMe(server *Server, cookie *http.Cookie) *httptest.ResponseRecorder {
 func TestSessionMiddlewareRefreshOnExpiry(t *testing.T) {
 	server, idp, store := newOIDCServer(t)
 	now := time.Now().UTC()
-	cookie := insertSessionCookie(t, store, storage.WebSession{
+	cookie := insertSessionCookie(t, store, domain.WebSession{
 		Username:        "alice",
-		AuthMethod:      storage.WebSessionAuthOIDC,
+		AuthMethod:      domain.WebSessionAuthOIDC,
 		IdpSub:          "sub-1",
 		IdpSid:          "sid-1",
 		RefreshToken:    "rt-1",
@@ -108,8 +109,8 @@ func TestSessionMiddlewareRefreshOnExpiry(t *testing.T) {
 func TestSessionMiddlewareInvalidGrant401(t *testing.T) {
 	server, idp, store := newOIDCServer(t)
 	now := time.Now().UTC()
-	cookie := insertSessionCookie(t, store, storage.WebSession{
-		Username: "alice", AuthMethod: storage.WebSessionAuthOIDC,
+	cookie := insertSessionCookie(t, store, domain.WebSession{
+		Username: "alice", AuthMethod: domain.WebSessionAuthOIDC,
 		IdpSub: "sub-1", RefreshToken: "rt-dead",
 		AccessExpiresAt: now.Add(-time.Minute),
 	})
@@ -134,8 +135,8 @@ func TestSessionMiddlewareOutageGrace(t *testing.T) {
 	now := time.Now().UTC()
 
 	t.Run("stale served within grace", func(t *testing.T) {
-		cookie := insertSessionCookie(t, store, storage.WebSession{
-			Username: "alice", AuthMethod: storage.WebSessionAuthOIDC,
+		cookie := insertSessionCookie(t, store, domain.WebSession{
+			Username: "alice", AuthMethod: domain.WebSessionAuthOIDC,
 			IdpSub: "sub-1", RefreshToken: "rt-1",
 			AccessExpiresAt: now.Add(-time.Minute),
 		})
@@ -145,8 +146,8 @@ func TestSessionMiddlewareOutageGrace(t *testing.T) {
 	})
 
 	t.Run("401 past the grace ceiling", func(t *testing.T) {
-		cookie := insertSessionCookie(t, store, storage.WebSession{
-			Username: "bob", AuthMethod: storage.WebSessionAuthOIDC,
+		cookie := insertSessionCookie(t, store, domain.WebSession{
+			Username: "bob", AuthMethod: domain.WebSessionAuthOIDC,
 			IdpSub: "sub-2", IdpSid: "sid-2", RefreshToken: "rt-2",
 			AccessExpiresAt:     now.Add(-3 * time.Hour),
 			RefreshFailingSince: now.Add(-2 * time.Hour), // default grace is 1h
@@ -159,8 +160,8 @@ func TestSessionMiddlewareOutageGrace(t *testing.T) {
 	t.Run("custom grace ceiling honored", func(t *testing.T) {
 		server.SetOIDCRefreshGrace(3 * time.Hour)
 		defer server.SetOIDCRefreshGrace(time.Hour)
-		cookie := insertSessionCookie(t, store, storage.WebSession{
-			Username: "carol", AuthMethod: storage.WebSessionAuthOIDC,
+		cookie := insertSessionCookie(t, store, domain.WebSession{
+			Username: "carol", AuthMethod: domain.WebSessionAuthOIDC,
 			IdpSub: "sub-3", IdpSid: "sid-3", RefreshToken: "rt-3",
 			AccessExpiresAt:     now.Add(-3 * time.Hour),
 			RefreshFailingSince: now.Add(-2 * time.Hour),
@@ -174,8 +175,8 @@ func TestSessionMiddlewareOutageGrace(t *testing.T) {
 func TestSessionMiddlewareAbsoluteCap(t *testing.T) {
 	server, _, store := newOIDCServer(t)
 	now := time.Now().UTC()
-	cookie := insertSessionCookie(t, store, storage.WebSession{
-		Username: "alice", AuthMethod: storage.WebSessionAuthLocal,
+	cookie := insertSessionCookie(t, store, domain.WebSession{
+		Username: "alice", AuthMethod: domain.WebSessionAuthLocal,
 		CreatedAt:         now.Add(-13 * time.Hour),
 		AbsoluteExpiresAt: now.Add(-time.Hour),
 	})

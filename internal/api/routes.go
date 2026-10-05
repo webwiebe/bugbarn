@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // serveSpecialEndpoint handles the unauthenticated endpoints that must run
@@ -162,7 +162,7 @@ func (s *Server) handleLogsIngestPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if logProjectID > 0 {
-		r = r.WithContext(storage.WithProjectID(r.Context(), logProjectID))
+		r = r.WithContext(domain.WithProjectID(r.Context(), logProjectID))
 	}
 	s.serveLogsIngest(w, r)
 }

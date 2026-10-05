@@ -10,6 +10,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
@@ -60,7 +61,7 @@ func TestPersistRecordHeldForPendingProject(t *testing.T) {
 	if n != 1 {
 		t.Errorf("held count = %d, want 1", n)
 	}
-	issues, err := store.ListIssues(storage.WithProjectID(ctx, proj.ID))
+	issues, err := store.ListIssues(domain.WithProjectID(ctx, proj.ID))
 	if err != nil {
 		t.Fatalf("list issues: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestReplayHeldEventsOnApproval(t *testing.T) {
 		t.Errorf("held count after replay = %d, want 0", n)
 	}
 	// Both events share a fingerprint → one issue, two events on it.
-	issues, err := store.ListIssues(storage.WithProjectID(ctx, proj.ID))
+	issues, err := store.ListIssues(domain.WithProjectID(ctx, proj.ID))
 	if err != nil {
 		t.Fatalf("list issues: %v", err)
 	}

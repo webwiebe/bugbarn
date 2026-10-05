@@ -12,7 +12,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // ErrNotFound is returned when no session row exists for the handle hash.
@@ -32,14 +32,14 @@ var ErrTransient = errors.New("sessionstore: transient refresh failure")
 // single-process/writer (Direct) and reader (Remote) implementations.
 type Store interface {
 	// Create persists a new session row.
-	Create(ctx context.Context, ws storage.WebSession) error
+	Create(ctx context.Context, ws domain.WebSession) error
 	// Get loads a session row by handle hash without side effects.
-	Get(ctx context.Context, idHash string) (storage.WebSession, error)
+	Get(ctx context.Context, idHash string) (domain.WebSession, error)
 	// Refresh renews the session's IdP tokens when they are (nearly) expired
 	// and returns the current row. On invalid_grant the row is deleted and
 	// ErrRevoked returned. On transient failure it returns the stale row
 	// (refresh_failing_since set) together with an error wrapping ErrTransient.
-	Refresh(ctx context.Context, idHash string) (storage.WebSession, error)
+	Refresh(ctx context.Context, idHash string) (domain.WebSession, error)
 	// Delete removes a session row.
 	Delete(ctx context.Context, idHash string) error
 	// DeleteBySID removes all sessions bound to an IdP session id.

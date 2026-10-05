@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -29,13 +30,13 @@ func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter)
 
 	facetFilters := collectFacetFilters(filter)
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}
 	allProjects := projectID == 0
 
-	groupIDs, hasGroupFilter := ProjectIDsFromContext(ctx)
+	groupIDs, hasGroupFilter := domain.ProjectIDsFromContext(ctx)
 
 	conditions, whereArgs := issueWhereConditions(filter, projectID, allProjects, groupIDs, hasGroupFilter)
 

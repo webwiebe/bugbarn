@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -97,7 +98,7 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 				}
 				return Result{Outcome: OutcomeHeld, ProjectID: proj.ID}
 			}
-			persistCtx = storage.WithProjectID(ctx, proj.ID)
+			persistCtx = domain.WithProjectID(ctx, proj.ID)
 		}
 	}
 
@@ -113,7 +114,7 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 	}
 
 	var projectID int64
-	if pid, ok := storage.ProjectIDFromContext(persistCtx); ok {
+	if pid, ok := domain.ProjectIDFromContext(persistCtx); ok {
 		projectID = pid
 	}
 	p.publisher.PublishIssueEvent(issue, projectID, isNew, isRegressed)

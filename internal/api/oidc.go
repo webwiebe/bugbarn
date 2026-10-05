@@ -12,7 +12,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 const (
@@ -190,9 +190,9 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	// Persist the tokens + claims snapshot server-side; the cookie is only an
 	// opaque handle. On a CQRS reader this Create is delegated to the writer.
 	claimsJSON, _ := json.Marshal(claims)
-	handle, expires, err := s.createWebSession(r.Context(), storage.WebSession{
+	handle, expires, err := s.createWebSession(r.Context(), domain.WebSession{
 		Username:        username,
-		AuthMethod:      storage.WebSessionAuthOIDC,
+		AuthMethod:      domain.WebSessionAuthOIDC,
 		IdpSub:          claims.Subject,
 		IdpSid:          claims.SessionID,
 		IDToken:         result.IDToken,

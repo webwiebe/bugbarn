@@ -24,7 +24,6 @@ import (
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
 	"github.com/wiebe-xyz/bugbarn/internal/service/telemetryview"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
@@ -238,52 +237,6 @@ func (s *Server) SetIngestSpool(sp *SpoolForwarder) {
 // SetDBPath sets the path to the SQLite database file for the backup endpoint.
 func (s *Server) SetDBPath(path string) {
 	s.dbPath = path
-}
-
-func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog.Logger) *Server {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	d := store.Domains()
-	issues, releases, projects := newServiceRepos(d)
-	return &Server{
-		ingestHandler:     ingestHandler,
-		issues:            issuesvc.New(issues, logger),
-		projects:          projectsvc.New(projects, logger),
-		releases:          releasesvc.New(releases, logger),
-		alerts:            alertsvc.New(d.Alerts, logger),
-		logs:              logsvc.New(d.Logs, logger),
-		analytics:         analyticssvc.New(d.Analytics, logger),
-		detectionRules:    detectionrules.New(d.DetectionRules, logger),
-		logger:            logger.With("component", "api"),
-		maxSourceMapBytes: defaultMaxSourceMapBytes,
-	}
-}
-
-func NewServerWithAuth(ingestHandler *ingest.Handler, store *storage.Store, users *auth.UserAuthenticator, sessions *auth.SessionManager, allowedOrigins []string, logger *slog.Logger) *Server {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	d := store.Domains()
-	issues, releases, projects := newServiceRepos(d)
-	s := &Server{
-		ingestHandler:     ingestHandler,
-		issues:            issuesvc.New(issues, logger),
-		projects:          projectsvc.New(projects, logger),
-		releases:          releasesvc.New(releases, logger),
-		alerts:            alertsvc.New(d.Alerts, logger),
-		logs:              logsvc.New(d.Logs, logger),
-		analytics:         analyticssvc.New(d.Analytics, logger),
-		detectionRules:    detectionrules.New(d.DetectionRules, logger),
-		logger:            logger.With("component", "api"),
-		users:             users,
-		sessions:          sessions,
-		allowedOrigins:    allowedOrigins,
-		maxSourceMapBytes: defaultMaxSourceMapBytes,
-		sessionStore:      sessionstore.NewDirect(store, nil),
-		oidcRefreshGrace:  time.Hour,
-	}
-	return s
 }
 
 // Start launches background goroutines that require a context for clean

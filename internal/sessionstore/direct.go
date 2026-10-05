@@ -11,6 +11,7 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -44,15 +45,15 @@ func NewDirect(db *storage.Store, oidc TokenRefresher) *Direct {
 func (d *Direct) SetRefresher(oidc TokenRefresher) { d.oidc = oidc }
 
 // Create persists a new session row.
-func (d *Direct) Create(ctx context.Context, ws storage.WebSession) error {
+func (d *Direct) Create(ctx context.Context, ws domain.WebSession) error {
 	return d.db.InsertWebSession(ctx, ws)
 }
 
 // Get loads a session row by handle hash.
-func (d *Direct) Get(ctx context.Context, idHash string) (storage.WebSession, error) {
+func (d *Direct) Get(ctx context.Context, idHash string) (domain.WebSession, error) {
 	ws, err := d.db.GetWebSession(ctx, idHash)
 	if errors.Is(err, apperr.ErrNotFound) {
-		return storage.WebSession{}, ErrNotFound
+		return domain.WebSession{}, ErrNotFound
 	}
 	return ws, err
 }
@@ -74,8 +75,8 @@ func (d *Direct) DeleteBySub(ctx context.Context, sub string) (int64, error) {
 
 // NeedsRefresh reports whether the session's access token is within the skew
 // window of expiry (or past it). Local sessions never refresh.
-func NeedsRefresh(ws storage.WebSession, now time.Time) bool {
-	if ws.AuthMethod != storage.WebSessionAuthOIDC {
+func NeedsRefresh(ws domain.WebSession, now time.Time) bool {
+	if ws.AuthMethod != domain.WebSessionAuthOIDC {
 		return false
 	}
 	if ws.AccessExpiresAt.IsZero() {
@@ -86,13 +87,13 @@ func NeedsRefresh(ws storage.WebSession, now time.Time) bool {
 
 // refreshResult carries a session + sticky error pair through singleflight.
 type refreshResult struct {
-	ws  storage.WebSession
+	ws  domain.WebSession
 	err error
 }
 
 // Refresh renews the session's tokens if needed. Concurrent callers for the
 // same session share one flight so the single-use refresh token is used once.
-func (d *Direct) Refresh(ctx context.Context, idHash string) (storage.WebSession, error) {
+func (d *Direct) Refresh(ctx context.Context, idHash string) (domain.WebSession, error) {
 	// Detach from the caller's cancellation: if the browser disconnects after
 	// the IdP has rotated the refresh token but before we stored it, the
 	// session would be stranded with a dead token. The OIDC client applies its
@@ -107,10 +108,10 @@ func (d *Direct) Refresh(ctx context.Context, idHash string) (storage.WebSession
 }
 
 // refreshLocked runs under the per-session singleflight.
-func (d *Direct) refreshLocked(ctx context.Context, idHash string) (storage.WebSession, error) {
+func (d *Direct) refreshLocked(ctx context.Context, idHash string) (domain.WebSession, error) {
 	ws, err := d.Get(ctx, idHash)
 	if err != nil {
-		return storage.WebSession{}, err
+		return domain.WebSession{}, err
 	}
 	now := d.now().UTC()
 	if !NeedsRefresh(ws, now) {
@@ -121,7 +122,7 @@ func (d *Direct) refreshLocked(ctx context.Context, idHash string) (storage.WebS
 		// An OIDC session that cannot be renewed is dead once its access token
 		// expires: fail closed rather than serving an unverifiable session.
 		_ = d.db.DeleteWebSession(ctx, idHash)
-		return storage.WebSession{}, ErrRevoked
+		return domain.WebSession{}, ErrRevoked
 	}
 
 	refreshed, err := d.oidc.Refresh(ctx, ws.RefreshToken)
@@ -129,7 +130,7 @@ func (d *Direct) refreshLocked(ctx context.Context, idHash string) (storage.WebS
 		// The IdP killed this grant (revocation, suspension, rotation replay).
 		// The session dies with it, immediately and without grace.
 		_ = d.db.DeleteWebSession(ctx, idHash)
-		return storage.WebSession{}, ErrRevoked
+		return domain.WebSession{}, ErrRevoked
 	}
 	if err != nil {
 		// Transient (network/5xx): record when the outage started so the
@@ -147,8 +148,8 @@ func (d *Direct) refreshLocked(ctx context.Context, idHash string) (storage.WebS
 // expiry, and — when the response carried a fresh id_token — a re-snapshot of
 // identity and groups/roles (losing access centrally revokes the session).
 func (d *Direct) applyRefreshedTokens(
-	ctx context.Context, ws storage.WebSession, refreshed auth.RefreshedTokens, now time.Time,
-) (storage.WebSession, error) {
+	ctx context.Context, ws domain.WebSession, refreshed auth.RefreshedTokens, now time.Time,
+) (domain.WebSession, error) {
 	ws.AccessToken = refreshed.AccessToken
 	ws.RefreshToken = refreshed.RefreshToken
 	ws.AccessExpiresAt = refreshed.ExpiresAt.UTC()
@@ -157,7 +158,7 @@ func (d *Direct) applyRefreshedTokens(
 	if refreshed.Claims != nil {
 		if !d.oidc.Allowed(*refreshed.Claims) {
 			_ = d.db.DeleteWebSession(ctx, ws.IDHash)
-			return storage.WebSession{}, ErrRevoked
+			return domain.WebSession{}, ErrRevoked
 		}
 		ws.IDToken = refreshed.IDToken
 		if name := refreshed.Claims.PreferredName(); name != "" {
@@ -170,9 +171,9 @@ func (d *Direct) applyRefreshedTokens(
 	if err := d.db.UpdateWebSessionTokens(ctx, ws); err != nil {
 		if errors.Is(err, apperr.ErrNotFound) {
 			// Deleted underneath us (back-channel logout won the race).
-			return storage.WebSession{}, ErrRevoked
+			return domain.WebSession{}, ErrRevoked
 		}
-		return storage.WebSession{}, err
+		return domain.WebSession{}, err
 	}
 	return ws, nil
 }

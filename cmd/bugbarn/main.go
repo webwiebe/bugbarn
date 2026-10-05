@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -55,7 +54,8 @@ const funnelbarnProjectName = "bugbarn"
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		slog.Error("bugbarn stopped", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -139,7 +139,7 @@ func run() error {
 
 	// Wire the domain event bus and alert evaluator.
 	bus := &domainevents.Bus{}
-	alertRepo := alert.NewSQLiteRepository(store.DB())
+	alertRepo := alert.NewStoreRepository(store.Domains().Alerts)
 	deliverer := alert.NewDeliverer(cfg.Digest.Mail)
 	deliverer.SetEventVolumeSource(issueVolumeSource{store: store})
 	deliverer.SetEnvironment(cfg.Environment)

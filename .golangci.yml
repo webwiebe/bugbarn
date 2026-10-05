@@ -27,6 +27,10 @@ linters:
     - funlen       # function length
     - lll          # line length
     - dupl         # Go duplication (jscpd owns the other languages)
+    # architectural import boundaries. Zero-tolerance: scripts/check-go-lint.sh
+    # fails on any depguard finding, outside the shared count ratchet, so a new
+    # boundary violation cannot hide behind an unrelated fix.
+    - depguard
   settings:
     gocyclo:
       min-complexity: 12
@@ -55,6 +59,84 @@ linters:
       rules:
         - name: unreachable-code
         - name: empty-block
+    depguard:
+      # The layering CLAUDE.md already documents as an architecture rule:
+      # "Storage wraps DB errors into apperr types. Services log errors and pass
+      # through. API maps apperr codes to HTTP status codes. Never leak
+      # sql.ErrNoRows or raw DB errors past the storage layer." Nothing enforced
+      # it. Test files are exempt: integration tests legitimately wire the real
+      # store up to the real handlers.
+      rules:
+        api-storage-boundary:
+          files:
+            - "**/internal/api/**"
+            # compose.go is the API layer's composition root: it turns the
+            # store into services. CLAUDE.md names cmd/ and internal/api as the
+            # only composition points; every handler goes through a service.
+            - "!**/internal/api/compose.go"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/storage
+              desc: "the API layer must go through internal/service, not reach into internal/storage"
+        sql-outside-storage:
+          files:
+            - "**/internal/**"
+            - "!**/internal/storage/**"
+            # The storage layer of the telemetry side files (security.db,
+            # metrics.db); it wraps DB errors into apperr like storage does.
+            - "!**/internal/telemetrydb/**"
+            - "!$test"
+          deny:
+            - pkg: database/sql
+              desc: "only internal/storage may touch database/sql; everything else takes a repository interface"
+            - pkg: modernc.org/sqlite
+              desc: "only internal/storage may bind the sqlite driver"
+        # Dependencies point down: api -> service -> storage. Storage owns the
+        # DB error domain and never reaches back up into the layers that call it.
+        storage-points-down:
+          files:
+            - "**/internal/storage/**"
+            - "**/internal/telemetrydb/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/api
+              desc: "storage is the bottom layer; it may not import the API layer"
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/service
+              desc: "storage is the bottom layer; it may not import the service layer"
+        # Only cmd/ and internal/api compose services into a running server.
+        # A service that imports the API layer, or any process entrypoint,
+        # becomes a second composition point.
+        service-does-not-compose:
+          files:
+            - "**/internal/service/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/api
+              desc: "services are composed by cmd/ and internal/api; they may not import the API layer"
+            - pkg: github.com/wiebe-xyz/bugbarn/cmd
+              desc: "services may not import a process entrypoint"
+        # domain, apperr and event are the shared vocabulary every layer
+        # imports, so they import nothing from internal/ themselves. domain may
+        # use the event type: event is itself a leaf.
+        # Strict: anything not on the allow list is denied.
+        leaf-packages:
+          list-mode: strict
+          files:
+            - "**/internal/domain/**"
+            - "**/internal/apperr/**"
+            - "**/internal/event/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/wiebe-xyz/bugbarn/internal/event
+        # Dogfooding: internal/selflog only sees records that go through slog.
+        # A stdlib log call at error level never reaches BugBarn's own dashboard.
+        no-stdlib-log:
+          files:
+            - $all
+          deny:
+            - pkg: log$
+              desc: "use log/slog; selflog only reports what goes through slog"
   exclusions:
     generated: lax
     # Vendored third-party Go inside node_modules (web/node_modules/flatted/

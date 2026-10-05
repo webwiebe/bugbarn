@@ -23,7 +23,7 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 	t.Parallel()
 
 	srv, store := setupTestServer(t)
-	ctx := storage.WithProjectID(context.Background(), store.DefaultProjectID())
+	ctx := domain.WithProjectID(context.Background(), store.DefaultProjectID())
 
 	// Fingerprint the events the way the pipeline does. A hand-written
 	// fingerprint would be rewritten under the test by the store's own

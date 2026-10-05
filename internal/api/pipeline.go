@@ -9,7 +9,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // authenticateAndResolve enforces authentication, API-key scope, and CSRF for
@@ -115,7 +114,7 @@ func (s *Server) refreshCSRFCookie(w http.ResponseWriter, r *http.Request, using
 // returns the request augmented with the resolved IDs in its context.
 func (s *Server) resolveProjectScope(r *http.Request, usingSession, usingAPIKey bool, apiKeyProjectID int64) *http.Request {
 	resolvedProjectID := s.resolveProjectID(r, usingSession, usingAPIKey, apiKeyProjectID)
-	r = r.WithContext(storage.WithProjectID(r.Context(), resolvedProjectID))
+	r = r.WithContext(domain.WithProjectID(r.Context(), resolvedProjectID))
 
 	// Group-scoped filtering: when a GET carries X-BugBarn-Group and no
 	// specific project was selected, resolve the group to its member IDs so that
@@ -163,7 +162,7 @@ func (s *Server) applyGroupScope(r *http.Request) *http.Request {
 			for i, p := range members {
 				ids[i] = p.ID
 			}
-			r = r.WithContext(storage.WithProjectIDs(r.Context(), ids))
+			r = r.WithContext(domain.WithProjectIDs(r.Context(), ids))
 		}
 	}
 	return r

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/oidctest"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -109,9 +110,9 @@ func TestReaderModeRefreshDelegatesToWriter(t *testing.T) {
 	now := time.Now().UTC()
 
 	handle := auth.NewSessionHandle()
-	if err := h.writerStore.InsertWebSession(t.Context(), storage.WebSession{
+	if err := h.writerStore.InsertWebSession(t.Context(), domain.WebSession{
 		IDHash: auth.HashSessionHandle(handle), Username: "alice",
-		AuthMethod: storage.WebSessionAuthOIDC,
+		AuthMethod: domain.WebSessionAuthOIDC,
 		IdpSub:     "sub-1", IdpSid: "sid-1", RefreshToken: "rt-1",
 		AccessExpiresAt: now.Add(-time.Minute),
 		CreatedAt:       now, AbsoluteExpiresAt: now.Add(12 * time.Hour),
@@ -143,9 +144,9 @@ func TestReaderModeRefreshDelegatesToWriter(t *testing.T) {
 
 	// invalid_grant on a second session → 401 via the remote store.
 	deadHandle := auth.NewSessionHandle()
-	if err := h.writerStore.InsertWebSession(t.Context(), storage.WebSession{
+	if err := h.writerStore.InsertWebSession(t.Context(), domain.WebSession{
 		IDHash: auth.HashSessionHandle(deadHandle), Username: "bob",
-		AuthMethod: storage.WebSessionAuthOIDC, IdpSub: "sub-2", RefreshToken: "rt-dead",
+		AuthMethod: domain.WebSessionAuthOIDC, IdpSub: "sub-2", RefreshToken: "rt-dead",
 		AccessExpiresAt: now.Add(-time.Minute),
 		CreatedAt:       now, AbsoluteExpiresAt: now.Add(12 * time.Hour),
 	}); err != nil {
@@ -160,9 +161,9 @@ func TestReaderModeBackchannelForwarded(t *testing.T) {
 	h := newReaderHarness(t)
 	now := time.Now().UTC()
 	handle := auth.NewSessionHandle()
-	if err := h.writerStore.InsertWebSession(t.Context(), storage.WebSession{
+	if err := h.writerStore.InsertWebSession(t.Context(), domain.WebSession{
 		IDHash: auth.HashSessionHandle(handle), Username: "alice",
-		AuthMethod: storage.WebSessionAuthOIDC,
+		AuthMethod: domain.WebSessionAuthOIDC,
 		IdpSub:     "sub-1", IdpSid: "sid-1", RefreshToken: "rt-1",
 		AccessExpiresAt: now.Add(15 * time.Minute),
 		CreatedAt:       now, AbsoluteExpiresAt: now.Add(12 * time.Hour),

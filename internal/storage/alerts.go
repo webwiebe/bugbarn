@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 const alertIDPrefix = "alert-"
 
 func (s *AlertStore) ListAlerts(ctx context.Context) ([]Alert, error) {
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -88,7 +89,7 @@ func (s *AlertStore) GetAlert(ctx context.Context, alertID string) (Alert, error
 	if err != nil {
 		return Alert{}, err
 	}
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -136,7 +137,7 @@ func (s *AlertStore) CreateAlert(ctx context.Context, alert Alert) (Alert, error
 		alert.Rule = map[string]any{}
 	}
 	now := time.Now().UTC()
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -190,7 +191,7 @@ func (s *AlertStore) UpdateAlert(ctx context.Context, alertID string, alert Aler
 	if alert.Rule == nil {
 		alert.Rule = map[string]any{}
 	}
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -223,7 +224,7 @@ func (s *AlertStore) DeleteAlert(ctx context.Context, alertID string) error {
 	if err != nil {
 		return err
 	}
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}

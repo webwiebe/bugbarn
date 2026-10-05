@@ -13,7 +13,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/logparse"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // Bounds for the log-ingest endpoint. maxLogsBodyBytes falls back to this when
@@ -35,7 +34,7 @@ func (s *Server) maxLogsBodyBytes() int64 {
 }
 
 func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := storage.ProjectIDFromContext(r.Context())
+	projectID, ok := domain.ProjectIDFromContext(r.Context())
 	if !ok || projectID == 0 {
 		http.Error(w, "project required: provide X-BugBarn-Project header or use a project-scoped API key", http.StatusBadRequest)
 		return
@@ -141,7 +140,7 @@ func (s *Server) writeLogReadError(w http.ResponseWriter, err error) bool {
 }
 
 func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := storage.ProjectIDFromContext(r.Context())
+	projectID, _ := domain.ProjectIDFromContext(r.Context())
 
 	limit := 200
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -190,7 +189,7 @@ func (s *Server) serveLogsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, _ := storage.ProjectIDFromContext(r.Context())
+	projectID, _ := domain.ProjectIDFromContext(r.Context())
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

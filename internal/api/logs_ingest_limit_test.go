@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // TestServeLogsIngestBodyCap verifies the log-ingest endpoint rejects an
@@ -25,7 +25,7 @@ func TestServeLogsIngestBodyCap(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/logs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(storage.WithProjectID(req.Context(), 1))
+	req = req.WithContext(domain.WithProjectID(req.Context(), 1))
 
 	server.serveLogsIngest(rr, req)
 
@@ -56,7 +56,7 @@ func TestServeLogsIngestEntryCap(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/logs", strings.NewReader(sb.String()))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(storage.WithProjectID(req.Context(), 1))
+	req = req.WithContext(domain.WithProjectID(req.Context(), 1))
 
 	server.serveLogsIngest(rr, req)
 

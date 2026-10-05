@@ -10,7 +10,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +37,7 @@ func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "invalid release payload", http.StatusBadRequest)
 				return
 			}
-			projectID, _ := storage.ProjectIDFromContext(r.Context())
+			projectID, _ := domain.ProjectIDFromContext(r.Context())
 			ingestID, err := s.ingestHandler.SpoolRelease(projectID, r.Header.Get("Content-Type"), r.RemoteAddr, body)
 			if err != nil {
 				if errors.Is(err, spool.ErrFull) {

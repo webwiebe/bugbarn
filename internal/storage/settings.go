@@ -3,10 +3,12 @@ package storage
 import (
 	"context"
 	"strings"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *SettingsStore) GetSettings(ctx context.Context) (map[string]string, error) {
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -34,7 +36,7 @@ WHERE project_id = ?`,
 }
 
 func (s *SettingsStore) UpdateSettings(ctx context.Context, values map[string]string) error {
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}

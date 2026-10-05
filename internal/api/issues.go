@@ -11,7 +11,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 const mutateTimeout = 5 * time.Second
@@ -71,7 +70,7 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	// This lets the CLI and other clients filter by project without needing to set the header.
 	if slug := q.Get("project_slug"); slug != "" && r.Header.Get("X-BugBarn-Project") == "" {
 		if proj, err := s.projects.Ensure(r.Context(), slug); err == nil {
-			r = r.WithContext(storage.WithProjectID(r.Context(), proj.ID))
+			r = r.WithContext(domain.WithProjectID(r.Context(), proj.ID))
 		}
 	}
 

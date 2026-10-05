@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
@@ -25,7 +26,7 @@ func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit 
 		return nil, false, err
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}
@@ -109,7 +110,7 @@ func (s *EventStore) GetEvent(ctx context.Context, eventID string) (Event, error
 		return Event{}, err
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}
@@ -178,7 +179,7 @@ func (s *EventStore) ListRecentEvents(ctx context.Context, limit int, since time
 		since = time.Now().UTC().Add(-15 * time.Minute)
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}

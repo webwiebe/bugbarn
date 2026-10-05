@@ -66,6 +66,18 @@ total=$((root_count + sdk_count))
 echo "golangci-lint findings: root=$root_count sdks/go=$sdk_count total=$total"
 sh scripts/ratchet.sh "go-lint" "$BASELINE_FILE" "$total" "$ENFORCE_AT"
 
+# Import boundaries (depguard) are enforced at zero, not ratcheted with the
+# rest: they encode the error and logging rules in CLAUDE.md, and selflog only
+# reports what reaches slog.
+boundaries=$(($(python3 scripts/count-findings.py golangci "$REPORTS/root.json" depguard) +
+	$(python3 scripts/count-findings.py golangci "$REPORTS/sdks-go.json" depguard)))
+if [ "$boundaries" -ne 0 ]; then
+	echo "FAIL (boundaries): $boundaries depguard findings; the import boundaries allow none."
+	echo "  The rules and their reasons are in .golangci.yml (linters.settings.depguard)."
+	exit 1
+fi
+echo "boundaries (depguard): OK (0 findings)"
+
 echo "--- golangci-lint, diff-scoped ---"
 event="${CI_PIPELINE_EVENT:-${GITHUB_EVENT_NAME:-}}"
 base="${CI_COMMIT_TARGET_BRANCH:-${GITHUB_BASE_REF:-}}"

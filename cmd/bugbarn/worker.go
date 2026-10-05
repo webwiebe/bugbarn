@@ -135,7 +135,7 @@ func persistReleaseRecord(ctx context.Context, store *storage.Store, record spoo
 		release.ObservedAt = parsed
 	}
 	if record.ProjectID > 0 {
-		ctx = storage.WithProjectID(ctx, record.ProjectID)
+		ctx = domain.WithProjectID(ctx, record.ProjectID)
 	}
 	_, err = store.CreateRelease(ctx, release)
 	return err
@@ -340,7 +340,7 @@ func (w *spoolWorker) processEventEntry(ctx context.Context, span trace.Span, en
 
 	// Publish domain events after successful persistence.
 	var projectID int64
-	if pid, ok := storage.ProjectIDFromContext(persistCtx); ok {
+	if pid, ok := domain.ProjectIDFromContext(persistCtx); ok {
 		projectID = pid
 	}
 	w.svc.PublishIssueEvent(issue, projectID, isNew, isRegressed)
@@ -370,7 +370,7 @@ func (w *spoolWorker) resolveProject(ctx context.Context, record spool.Record) c
 		return ctx
 	}
 	resolveSpan.SetAttributes(attribute.Int64("project_id", proj.ID))
-	return storage.WithProjectID(ctx, proj.ID)
+	return domain.WithProjectID(ctx, proj.ID)
 }
 
 // markProcessed clears retry state and advances the cursor past a record that was
