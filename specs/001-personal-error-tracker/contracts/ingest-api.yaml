@@ -497,7 +497,9 @@ components:
         Security rules count matching log rows per `group_by` key in `window`
         and fire at `threshold`. Metric rules fire when `metric` stays past
         `threshold` for `for`. Heartbeat rules fire when a host is silent
-        longer than `window`. Durations are Go durations ("5m", "1h").
+        longer than `window`. Metric and heartbeat rules accept `match`
+        conditions on `host` only, to include or exclude hosts. Durations are
+        Go durations ("5m", "1h").
       required: [id, name, enabled, severity, track, threshold]
       properties:
         id: {type: string, examples: [ssh-bruteforce]}

@@ -199,7 +199,7 @@ func (e *Engine) ObserveMetrics(ctx context.Context, samples []hostmetrics.Sampl
 			continue
 		}
 		for _, s := range samples {
-			if globMatch(r.Metric, s.Metric) {
+			if globMatch(r.Metric, s.Metric) && r.matchesHost(s.Host) {
 				e.evalSample(ctx, r, s)
 			}
 		}
@@ -291,7 +291,7 @@ func (e *Engine) CheckHeartbeats(ctx context.Context) {
 			continue
 		}
 		for _, r := range e.rules {
-			if !r.Enabled || r.Track != TrackHeartbeat || silence <= r.Window.D() || st.silent[r.ID] {
+			if !r.Enabled || r.Track != TrackHeartbeat || silence <= r.Window.D() || st.silent[r.ID] || !r.matchesHost(host) {
 				continue
 			}
 			st.silent[r.ID] = true

@@ -59,6 +59,20 @@ func TestValidateRejects(t *testing.T) {
 	if m.Validate() == nil {
 		t.Error("metric op ge accepted")
 	}
+	m = rule(t, "disk-full")
+	m.Match = []Cond{{Field: "source", Op: "eq", Value: "x"}}
+	if m.Validate() == nil {
+		t.Error("metric rule matching on source accepted")
+	}
+	h := rule(t, "host-silent")
+	h.Match = []Cond{{Field: "host", Op: "in", Value: "x"}}
+	if h.Validate() == nil {
+		t.Error("heartbeat host in without a list accepted")
+	}
+	h.Match = []Cond{{Field: "host", Op: "ne", Value: "laptop"}}
+	if err := h.Validate(); err != nil {
+		t.Errorf("heartbeat host ne rejected: %v", err)
+	}
 }
 
 func TestDurationJSON(t *testing.T) {
