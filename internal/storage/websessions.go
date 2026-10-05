@@ -7,33 +7,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
-)
-
-// WebSession is one server-side browser session row. The browser only holds an
-// opaque random handle; IDHash is the SHA-256 hex digest of that handle. For
-// OIDC sessions the iambarn tokens live here (never in the browser); local
-// admin sessions have empty token columns.
-type WebSession struct {
-	IDHash              string    `json:"id_hash"`
-	Username            string    `json:"username"`
-	AuthMethod          string    `json:"auth_method"` // "oidc" or "local"
-	IdpSub              string    `json:"idp_sub"`
-	IdpSid              string    `json:"idp_sid"`
-	IDToken             string    `json:"id_token"`
-	AccessToken         string    `json:"access_token"`
-	RefreshToken        string    `json:"refresh_token"`
-	AccessExpiresAt     time.Time `json:"access_expires_at"`
-	ClaimsJSON          string    `json:"claims_json"`
-	CreatedAt           time.Time `json:"created_at"`
-	AbsoluteExpiresAt   time.Time `json:"absolute_expires_at"`
-	LastRefreshAt       time.Time `json:"last_refresh_at"`
-	RefreshFailingSince time.Time `json:"refresh_failing_since"`
-}
-
-// Auth methods for web sessions.
-const (
-	WebSessionAuthOIDC  = "oidc"
-	WebSessionAuthLocal = "local"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 const webSessionColumns = `id_hash, username, auth_method, idp_sub, idp_sid,
@@ -41,7 +15,7 @@ const webSessionColumns = `id_hash, username, auth_method, idp_sub, idp_sid,
 	created_at, absolute_expires_at, last_refresh_at, refresh_failing_since`
 
 // InsertWebSession persists a new session row.
-func (s *WebSessionStore) InsertWebSession(ctx context.Context, ws WebSession) error {
+func (s *WebSessionStore) InsertWebSession(ctx context.Context, ws domain.WebSession) error {
 	if s == nil || s.db == nil {
 		return apperr.Internal("storage is read-only", errors.New("no write connection"))
 	}
@@ -60,19 +34,19 @@ func (s *WebSessionStore) InsertWebSession(ctx context.Context, ws WebSession) e
 }
 
 // GetWebSession loads a session row by handle hash. Works on read-only stores.
-func (s *WebSessionStore) GetWebSession(ctx context.Context, idHash string) (WebSession, error) {
+func (s *WebSessionStore) GetWebSession(ctx context.Context, idHash string) (domain.WebSession, error) {
 	row := s.readDB().QueryRowContext(ctx,
 		`SELECT `+webSessionColumns+` FROM web_sessions WHERE id_hash = ?`, idHash)
-	var ws WebSession
+	var ws domain.WebSession
 	var accessExp, createdAt, absoluteExp, lastRefresh, failingSince string
 	err := row.Scan(&ws.IDHash, &ws.Username, &ws.AuthMethod, &ws.IdpSub, &ws.IdpSid,
 		&ws.IDToken, &ws.AccessToken, &ws.RefreshToken, &accessExp, &ws.ClaimsJSON,
 		&createdAt, &absoluteExp, &lastRefresh, &failingSince)
 	if errors.Is(err, sql.ErrNoRows) {
-		return WebSession{}, apperr.NotFound("web session not found", nil)
+		return domain.WebSession{}, apperr.NotFound("web session not found", nil)
 	}
 	if err != nil {
-		return WebSession{}, apperr.Internal("get web session", err)
+		return domain.WebSession{}, apperr.Internal("get web session", err)
 	}
 	ws.AccessExpiresAt, _ = parseTime(accessExp)
 	ws.CreatedAt, _ = parseTime(createdAt)
@@ -85,7 +59,7 @@ func (s *WebSessionStore) GetWebSession(ctx context.Context, idHash string) (Web
 // UpdateWebSessionTokens stores the outcome of a successful refresh: new token
 // material, expiry, optionally refreshed identity claims, and clears any
 // refresh-failure marker.
-func (s *WebSessionStore) UpdateWebSessionTokens(ctx context.Context, ws WebSession) error {
+func (s *WebSessionStore) UpdateWebSessionTokens(ctx context.Context, ws domain.WebSession) error {
 	if s == nil || s.db == nil {
 		return apperr.Internal("storage is read-only", errors.New("no write connection"))
 	}

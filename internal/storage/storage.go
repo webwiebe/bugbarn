@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	_ "modernc.org/sqlite"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
@@ -257,7 +258,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 		return Issue{}, Event{}, false, false, errors.New("storage is nil")
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}

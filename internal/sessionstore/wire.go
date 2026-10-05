@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // The reader replicas call writer-internal HTTP endpoints for every session
@@ -28,21 +28,21 @@ const RequestMaxSkew = 5 * time.Minute
 // Request is the signed body of a writer-internal session call. TS is the
 // sender's unix time; exactly one of the operation fields is set.
 type Request struct {
-	TS      int64               `json:"ts"`
-	IDHash  string              `json:"id_hash,omitempty"`
-	SID     string              `json:"sid,omitempty"`
-	Sub     string              `json:"sub,omitempty"`
-	Session *storage.WebSession `json:"session,omitempty"`
+	TS      int64              `json:"ts"`
+	IDHash  string             `json:"id_hash,omitempty"`
+	SID     string             `json:"sid,omitempty"`
+	Sub     string             `json:"sub,omitempty"`
+	Session *domain.WebSession `json:"session,omitempty"`
 }
 
 // Response is the writer's answer. Status "ok" carries a current session;
 // "transient" carries the stale session during an IdP outage (bounded grace
 // applies on the caller side).
 type Response struct {
-	Status  string              `json:"status,omitempty"`
-	Error   string              `json:"error,omitempty"`
-	Session *storage.WebSession `json:"session,omitempty"`
-	Deleted int64               `json:"deleted,omitempty"`
+	Status  string             `json:"status,omitempty"`
+	Error   string             `json:"error,omitempty"`
+	Session *domain.WebSession `json:"session,omitempty"`
+	Deleted int64              `json:"deleted,omitempty"`
 }
 
 // Response status values.

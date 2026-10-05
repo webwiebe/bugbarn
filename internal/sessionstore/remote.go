@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -40,29 +41,29 @@ func NewRemote(local *storage.Store, writerURL, secret string) *Remote {
 }
 
 // Get loads a session row from the local read-only SQLite.
-func (r *Remote) Get(ctx context.Context, idHash string) (storage.WebSession, error) {
+func (r *Remote) Get(ctx context.Context, idHash string) (domain.WebSession, error) {
 	ws, err := r.local.GetWebSession(ctx, idHash)
 	if errors.Is(err, apperr.ErrNotFound) {
-		return storage.WebSession{}, ErrNotFound
+		return domain.WebSession{}, ErrNotFound
 	}
 	return ws, err
 }
 
 // Create persists a new session row via the writer.
-func (r *Remote) Create(ctx context.Context, ws storage.WebSession) error {
+func (r *Remote) Create(ctx context.Context, ws domain.WebSession) error {
 	_, err := r.call(ctx, "create", Request{Session: &ws})
 	return err
 }
 
 // Refresh delegates to the writer, whose singleflight guarantees the
 // single-use refresh token is exchanged exactly once.
-func (r *Remote) Refresh(ctx context.Context, idHash string) (storage.WebSession, error) {
+func (r *Remote) Refresh(ctx context.Context, idHash string) (domain.WebSession, error) {
 	resp, err := r.call(ctx, "get-or-refresh", Request{IDHash: idHash})
 	if err != nil {
-		return storage.WebSession{}, err
+		return domain.WebSession{}, err
 	}
 	if resp.Session == nil {
-		return storage.WebSession{}, fmt.Errorf("%w: writer returned no session", ErrTransient)
+		return domain.WebSession{}, fmt.Errorf("%w: writer returned no session", ErrTransient)
 	}
 	if resp.Status == StatusTransient {
 		return *resp.Session, fmt.Errorf("%w: %s", ErrTransient, resp.Error)

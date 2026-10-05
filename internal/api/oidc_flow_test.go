@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/oidctest"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // startOIDCLogin drives GET /api/v1/oidc/login and returns the authorize URL
@@ -88,7 +88,7 @@ func TestOIDCLoginCallbackFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ws.AuthMethod != storage.WebSessionAuthOIDC || ws.IdpSub != "sub-1" || ws.IdpSid != "sid-1" {
+	if ws.AuthMethod != domain.WebSessionAuthOIDC || ws.IdpSub != "sub-1" || ws.IdpSid != "sid-1" {
 		t.Errorf("row identity = %+v", ws)
 	}
 	if ws.RefreshToken != "rt-1" || ws.AccessToken != "at-1" || ws.IDToken != idToken {
@@ -136,8 +136,8 @@ func TestBackchannelLogout(t *testing.T) {
 	}
 
 	t.Run("kills sessions by sid", func(t *testing.T) {
-		cookie := insertSessionCookie(t, store, storage.WebSession{
-			Username: "alice", AuthMethod: storage.WebSessionAuthOIDC,
+		cookie := insertSessionCookie(t, store, domain.WebSession{
+			Username: "alice", AuthMethod: domain.WebSessionAuthOIDC,
 			IdpSub: "sub-1", IdpSid: "sid-1", RefreshToken: "rt-1",
 			AccessExpiresAt: now.Add(15 * time.Minute),
 		})
@@ -150,8 +150,8 @@ func TestBackchannelLogout(t *testing.T) {
 	})
 
 	t.Run("falls back to sub", func(t *testing.T) {
-		cookie := insertSessionCookie(t, store, storage.WebSession{
-			Username: "bob", AuthMethod: storage.WebSessionAuthOIDC,
+		cookie := insertSessionCookie(t, store, domain.WebSession{
+			Username: "bob", AuthMethod: domain.WebSessionAuthOIDC,
 			IdpSub: "sub-2", IdpSid: "sid-2", RefreshToken: "rt-2",
 			AccessExpiresAt: now.Add(15 * time.Minute),
 		})
@@ -187,8 +187,8 @@ func TestBackchannelLogout(t *testing.T) {
 func TestServerDrivenLogout(t *testing.T) {
 	server, idp, store := newOIDCServer(t)
 	now := time.Now().UTC()
-	cookie := insertSessionCookie(t, store, storage.WebSession{
-		Username: "alice", AuthMethod: storage.WebSessionAuthOIDC,
+	cookie := insertSessionCookie(t, store, domain.WebSession{
+		Username: "alice", AuthMethod: domain.WebSessionAuthOIDC,
 		IdpSub: "sub-1", IdpSid: "sid-1",
 		IDToken: "idt-1", RefreshToken: "rt-1",
 		AccessExpiresAt: now.Add(15 * time.Minute),
@@ -225,8 +225,8 @@ func TestServerDrivenLogout(t *testing.T) {
 		t.Error("session row must be deleted on logout")
 	}
 	// Local sessions produce no logout_url.
-	localCookie := insertSessionCookie(t, store, storage.WebSession{
-		Username: "admin", AuthMethod: storage.WebSessionAuthLocal,
+	localCookie := insertSessionCookie(t, store, domain.WebSession{
+		Username: "admin", AuthMethod: domain.WebSessionAuthLocal,
 	})
 	rr2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/logout", nil)
@@ -243,8 +243,8 @@ func TestServerDrivenLogout(t *testing.T) {
 
 func TestOIDCLoggedOutClearsRow(t *testing.T) {
 	server, _, store := newOIDCServer(t)
-	cookie := insertSessionCookie(t, store, storage.WebSession{
-		Username: "alice", AuthMethod: storage.WebSessionAuthOIDC,
+	cookie := insertSessionCookie(t, store, domain.WebSession{
+		Username: "alice", AuthMethod: domain.WebSessionAuthOIDC,
 		IdpSub: "sub-1", AccessExpiresAt: time.Now().UTC().Add(15 * time.Minute),
 	})
 	rr := httptest.NewRecorder()

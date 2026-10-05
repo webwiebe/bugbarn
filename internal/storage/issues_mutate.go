@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // MuteIssue sets an issue to muted status with the given mute mode.
@@ -17,7 +18,7 @@ func (s *IssueStore) MuteIssue(ctx context.Context, issueID string, muteMode str
 	if err != nil {
 		return Issue{}, err
 	}
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}
@@ -42,7 +43,7 @@ func (s *IssueStore) UnmuteIssue(ctx context.Context, issueID string) (Issue, er
 	if err != nil {
 		return Issue{}, err
 	}
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}

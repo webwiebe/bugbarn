@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
@@ -122,7 +123,7 @@ func (s *core) PersistFacets(ctx context.Context, issueID int64, facets map[stri
 		return nil
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}

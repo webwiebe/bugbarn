@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -55,11 +56,11 @@ func newDirect(t *testing.T, oidc TokenRefresher) (*Direct, *storage.Store) {
 	return NewDirect(db, oidc), db
 }
 
-func oidcSession(idHash string, now time.Time, accessExpires time.Time) storage.WebSession {
-	return storage.WebSession{
+func oidcSession(idHash string, now time.Time, accessExpires time.Time) domain.WebSession {
+	return domain.WebSession{
 		IDHash:            idHash,
 		Username:          "alice",
-		AuthMethod:        storage.WebSessionAuthOIDC,
+		AuthMethod:        domain.WebSessionAuthOIDC,
 		IdpSub:            "sub-1",
 		IdpSid:            "sid-1",
 		AccessToken:       "at-1",
@@ -268,10 +269,10 @@ func TestDirectLocalSessionsNeverRefresh(t *testing.T) {
 	d, db := newDirect(t, fr)
 	ctx := context.Background()
 	now := time.Now().UTC()
-	local := storage.WebSession{
+	local := domain.WebSession{
 		IDHash:            "h-local",
 		Username:          "admin",
-		AuthMethod:        storage.WebSessionAuthLocal,
+		AuthMethod:        domain.WebSessionAuthLocal,
 		CreatedAt:         now,
 		AbsoluteExpiresAt: now.Add(12 * time.Hour),
 	}

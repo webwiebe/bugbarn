@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // HourlyEventCounts returns 24-hour event counts per issue for the given issue row IDs.
@@ -15,7 +17,7 @@ func (s *IssueStore) HourlyEventCounts(ctx context.Context, issueIDs []int64) (m
 		return map[int64][24]int{}, nil
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok {
 		projectID = s.defaultProjectID
 	}

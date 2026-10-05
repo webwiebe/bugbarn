@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // authEnabled reports whether any browser-auth mechanism is configured. The
@@ -33,24 +33,24 @@ func (s *Server) sessionUser(r *http.Request) (string, bool) {
 // cap, and — for OIDC sessions whose access token is (nearly) expired —
 // refresh the tokens through the store. invalid_grant kills the session
 // immediately; IdP outages get bounded grace on the stale session.
-func (s *Server) resolveSession(r *http.Request) (storage.WebSession, bool) {
+func (s *Server) resolveSession(r *http.Request) (domain.WebSession, bool) {
 	if s == nil || s.sessionStore == nil {
-		return storage.WebSession{}, false
+		return domain.WebSession{}, false
 	}
 	cookie, err := r.Cookie("bugbarn_session")
 	if err != nil || strings.TrimSpace(cookie.Value) == "" {
-		return storage.WebSession{}, false
+		return domain.WebSession{}, false
 	}
 	ctx := r.Context()
 	idHash := auth.HashSessionHandle(cookie.Value)
 	ws, err := s.sessionStore.Get(ctx, idHash)
 	if err != nil {
-		return storage.WebSession{}, false
+		return domain.WebSession{}, false
 	}
 	now := time.Now().UTC()
 	if !ws.AbsoluteExpiresAt.IsZero() && now.After(ws.AbsoluteExpiresAt) {
 		s.deleteSessionRow(ctx, idHash)
-		return storage.WebSession{}, false
+		return domain.WebSession{}, false
 	}
 	if !sessionstore.NeedsRefresh(ws, now) {
 		return ws, true
@@ -61,7 +61,7 @@ func (s *Server) resolveSession(r *http.Request) (storage.WebSession, bool) {
 		return refreshed, true
 	case errors.Is(rerr, sessionstore.ErrRevoked), errors.Is(rerr, sessionstore.ErrNotFound):
 		s.logger.Info("session: revoked by IdP", "username", ws.Username)
-		return storage.WebSession{}, false
+		return domain.WebSession{}, false
 	default:
 		return s.staleSessionWithinGrace(ws, refreshed, rerr, now)
 	}
@@ -70,7 +70,7 @@ func (s *Server) resolveSession(r *http.Request) (storage.WebSession, bool) {
 // staleSessionWithinGrace applies the bounded-grace outage policy: a session
 // whose refresh keeps failing transiently (IdP down, writer unreachable) is
 // served stale until the grace ceiling, anchored at the first failure.
-func (s *Server) staleSessionWithinGrace(ws, refreshed storage.WebSession, rerr error, now time.Time) (storage.WebSession, bool) {
+func (s *Server) staleSessionWithinGrace(ws, refreshed domain.WebSession, rerr error, now time.Time) (domain.WebSession, bool) {
 	stale := ws
 	if refreshed.IDHash != "" {
 		stale = refreshed
@@ -81,7 +81,7 @@ func (s *Server) staleSessionWithinGrace(ws, refreshed storage.WebSession, rerr 
 	}
 	if !anchor.IsZero() && now.Sub(anchor) > s.refreshGrace() {
 		s.logger.Warn("session: refresh grace exceeded", "username", stale.Username, "error", rerr)
-		return storage.WebSession{}, false
+		return domain.WebSession{}, false
 	}
 	s.logger.Warn("session: serving stale session during refresh outage", "username", stale.Username, "error", rerr)
 	return stale, true
@@ -107,7 +107,7 @@ func (s *Server) deleteSessionRow(ctx context.Context, idHash string) {
 // createWebSession mints an opaque handle, fills in the lifecycle columns,
 // and persists the row (via the writer in reader mode). Returns the handle
 // for the cookie and the absolute expiry.
-func (s *Server) createWebSession(ctx context.Context, ws storage.WebSession) (string, time.Time, error) {
+func (s *Server) createWebSession(ctx context.Context, ws domain.WebSession) (string, time.Time, error) {
 	if s.sessionStore == nil {
 		return "", time.Time{}, errors.New("session store unavailable")
 	}

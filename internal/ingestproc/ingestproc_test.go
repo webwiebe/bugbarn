@@ -12,6 +12,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/service"
@@ -79,7 +80,7 @@ func projectCtx(t *testing.T, ctx context.Context, store *storage.Store, slug st
 	if err != nil {
 		t.Fatalf("project by slug %q: %v", slug, err)
 	}
-	return storage.WithProjectID(ctx, proj.ID)
+	return domain.WithProjectID(ctx, proj.ID)
 }
 
 func TestPersistRecordParseError(t *testing.T) {
@@ -132,7 +133,7 @@ func TestConsumerDrainsEventQueue(t *testing.T) {
 		n, _ := q.Len(ctx)
 		var issueCount int
 		if proj, err := store.ProjectBySlug(ctx, "test-svc"); err == nil {
-			issues, _ := store.ListIssues(storage.WithProjectID(ctx, proj.ID))
+			issues, _ := store.ListIssues(domain.WithProjectID(ctx, proj.ID))
 			issueCount = len(issues)
 		}
 		if n == 0 && issueCount == 1 {

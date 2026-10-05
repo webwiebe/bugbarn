@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func newWebSessionStore(t *testing.T) (*Store, string) {
@@ -21,11 +22,11 @@ func newWebSessionStore(t *testing.T) (*Store, string) {
 	return store, dbPath
 }
 
-func sampleWebSession(idHash string, now time.Time) WebSession {
-	return WebSession{
+func sampleWebSession(idHash string, now time.Time) domain.WebSession {
+	return domain.WebSession{
 		IDHash:            idHash,
 		Username:          "alice",
-		AuthMethod:        WebSessionAuthOIDC,
+		AuthMethod:        domain.WebSessionAuthOIDC,
 		IdpSub:            "sub-1",
 		IdpSid:            "sid-1",
 		IDToken:           "idt",
@@ -91,7 +92,7 @@ func TestWebSessionCRUD(t *testing.T) {
 		t.Error("last_refresh_at should be set")
 	}
 
-	if err := store.UpdateWebSessionTokens(ctx, WebSession{IDHash: "missing"}); !errors.Is(err, apperr.ErrNotFound) {
+	if err := store.UpdateWebSessionTokens(ctx, domain.WebSession{IDHash: "missing"}); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("update of missing row: got %v, want not_found", err)
 	}
 
@@ -139,7 +140,7 @@ func TestWebSessionBulkDeletesAndPrune(t *testing.T) {
 	expired := sampleWebSession("hash-old", now.Add(-24*time.Hour))
 	expired.IdpSub, expired.IdpSid = "sub-3", "sid-4"
 	expired.AbsoluteExpiresAt = now.Add(-12 * time.Hour)
-	for _, ws := range []WebSession{a, b, c, expired} {
+	for _, ws := range []domain.WebSession{a, b, c, expired} {
 		if err := store.InsertWebSession(ctx, ws); err != nil {
 			t.Fatal(err)
 		}

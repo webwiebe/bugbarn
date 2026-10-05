@@ -2,7 +2,6 @@ package config
 
 import (
 	"bufio"
-	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -222,10 +221,12 @@ func validateMode(cfg Config) {
 	switch cfg.Mode {
 	case "", "writer", "reader":
 	default:
-		log.Fatalf("invalid BUGBARN_MODE %q: must be \"\", \"writer\", or \"reader\"", cfg.Mode)
+		slog.Error(`invalid BUGBARN_MODE: must be "", "writer", or "reader"`, "mode", cfg.Mode)
+		os.Exit(1)
 	}
 	if cfg.Mode == "reader" && cfg.WriterURL == "" {
-		log.Fatalf("BUGBARN_WRITER_URL is required when BUGBARN_MODE is \"reader\"")
+		slog.Error(`BUGBARN_WRITER_URL is required when BUGBARN_MODE is "reader"`)
+		os.Exit(1)
 	}
 }
 

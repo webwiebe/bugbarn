@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 const sourceMapPrefix = "sourcemap-"
@@ -20,7 +21,7 @@ func (s *SourceMapStore) UploadSourceMap(ctx context.Context, upload SourceMapUp
 		return SourceMap{}, apperr.InvalidInput("source map bundle URL is required", nil)
 	}
 	now := time.Now().UTC()
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -66,7 +67,7 @@ INSERT INTO source_maps (
 // FindSourceMap looks up the raw source map blob for the given release, dist, and bundleURL.
 // Returns nil, nil if no matching row is found.
 func (s *SourceMapStore) FindSourceMap(ctx context.Context, release, dist, bundleURL string) ([]byte, error) {
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -93,7 +94,7 @@ LIMIT 1`,
 
 // ListSourceMaps returns metadata for all source maps in the project (no blob).
 func (s *SourceMapStore) ListSourceMaps(ctx context.Context) ([]SourceMapMeta, error) {
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}

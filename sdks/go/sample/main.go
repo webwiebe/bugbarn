@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -15,7 +15,8 @@ func main() {
 	endpoint := os.Getenv("BUGBARN_ENDPOINT")
 	apiKey := os.Getenv("BUGBARN_API_KEY")
 	if endpoint == "" || apiKey == "" {
-		log.Fatal("Set BUGBARN_ENDPOINT and BUGBARN_API_KEY")
+		slog.Error("Set BUGBARN_ENDPOINT and BUGBARN_API_KEY")
+		os.Exit(1)
 	}
 
 	bugbarn.Init(bugbarn.Options{

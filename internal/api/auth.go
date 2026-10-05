@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // loginAttempt tracks the rate-limit window for a single IP.
@@ -105,9 +105,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	// Local admin logins get a web_sessions row too (empty token columns) so
 	// one middleware and one revocation story cover both auth methods.
-	handle, expires, err := s.createWebSession(r.Context(), storage.WebSession{
+	handle, expires, err := s.createWebSession(r.Context(), domain.WebSession{
 		Username:   s.users.Username(),
-		AuthMethod: storage.WebSessionAuthLocal,
+		AuthMethod: domain.WebSessionAuthLocal,
 	})
 	if err != nil {
 		if !clientGone(err) {
@@ -128,7 +128,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("bugbarn_session"); err == nil && cookie.Value != "" && s.sessionStore != nil {
 		idHash := auth.HashSessionHandle(cookie.Value)
 		if ws, gerr := s.sessionStore.Get(r.Context(), idHash); gerr == nil {
-			if ws.AuthMethod == storage.WebSessionAuthOIDC && s.oidc != nil {
+			if ws.AuthMethod == domain.WebSessionAuthOIDC && s.oidc != nil {
 				// Best-effort server-side revocation: the refresh-token family
 				// dies at iambarn instead of merely being forgotten locally.
 				if rerr := s.oidc.RevokeRefreshToken(r.Context(), ws.RefreshToken); rerr != nil {

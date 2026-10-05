@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -153,7 +154,7 @@ func TestRemoteWriterUnreachableIsTransient(t *testing.T) {
 	if _, err := remote.Refresh(context.Background(), "h1"); !errors.Is(err, ErrTransient) {
 		t.Errorf("unreachable writer = %v, want ErrTransient", err)
 	}
-	if err := remote.Create(context.Background(), storage.WebSession{IDHash: "x"}); !errors.Is(err, ErrTransient) {
+	if err := remote.Create(context.Background(), domain.WebSession{IDHash: "x"}); !errors.Is(err, ErrTransient) {
 		t.Errorf("unreachable create = %v, want ErrTransient", err)
 	}
 }

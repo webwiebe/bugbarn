@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 const releaseIDPrefix = "release-"
 
 func (s *ReleaseStore) ListReleases(ctx context.Context) ([]Release, error) {
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -55,7 +56,7 @@ func (s *ReleaseStore) GetRelease(ctx context.Context, releaseID string) (Releas
 		return Release{}, apperr.InvalidInput("invalid release ID", err)
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -92,7 +93,7 @@ func (s *ReleaseStore) CreateRelease(ctx context.Context, release Release) (Rele
 		release.ObservedAt = time.Now().UTC()
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -143,7 +144,7 @@ func (s *ReleaseStore) UpdateRelease(ctx context.Context, releaseID string, rele
 		release.ObservedAt = time.Now().UTC()
 	}
 
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
@@ -174,7 +175,7 @@ func (s *ReleaseStore) DeleteRelease(ctx context.Context, releaseID string) erro
 	if err != nil {
 		return err
 	}
-	projectID, ok := ProjectIDFromContext(ctx)
+	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}

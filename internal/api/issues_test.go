@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
 	alertsvc "github.com/wiebe-xyz/bugbarn/internal/service/alerts"
@@ -342,7 +343,7 @@ func TestResolveIssueInNonDefaultProject(t *testing.T) {
 		Fingerprint:         "fp-cross-project",
 		FingerprintMaterial: "TestError: cross-project error",
 	}
-	projCtx := storage.WithProjectID(ctx, proj.ID)
+	projCtx := domain.WithProjectID(ctx, proj.ID)
 	issue, _, _, _, err := store.PersistProcessedEvent(projCtx, pe)
 	if err != nil {
 		t.Fatalf("persist: %v", err)

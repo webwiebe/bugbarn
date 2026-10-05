@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 const analyticsMaxDays = 366
@@ -56,7 +56,7 @@ func (s *Server) resolveAnalyticsProjectID(r *http.Request) int64 {
 			return proj.ID
 		}
 	}
-	if id, ok := storage.ProjectIDFromContext(r.Context()); ok && id > 0 {
+	if id, ok := domain.ProjectIDFromContext(r.Context()); ok && id > 0 {
 		return id
 	}
 	return s.projects.DefaultProjectID()

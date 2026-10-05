@@ -2,11 +2,9 @@ package alert
 
 import (
 	"context"
-	"database/sql"
-	"errors"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // Repository defines the data access contract for alert rules and firings.
@@ -17,181 +15,69 @@ type Repository interface {
 	UpdateLastFired(ctx context.Context, alertID string, firedAt time.Time) error
 }
 
-// SQLiteRepository implements Repository backed by a *sql.DB (SQLite).
-type SQLiteRepository struct {
-	db *sql.DB
+// AlertSource is the slice of the storage layer the evaluator reads and writes.
+// *storage.AlertStore satisfies it.
+type AlertSource interface {
+	ListAlertsForProject(ctx context.Context, projectID int64) ([]domain.Alert, error)
+	RecordAlertFiring(ctx context.Context, alertID, issueID string) error
+	LastAlertFiring(ctx context.Context, alertID, issueID string) (time.Time, error)
+	UpdateAlertLastFired(ctx context.Context, alertID string, firedAt time.Time) error
 }
 
-// NewSQLiteRepository creates a new SQLiteRepository using the given database connection.
-func NewSQLiteRepository(db *sql.DB) *SQLiteRepository {
-	return &SQLiteRepository{db: db}
+// StoreRepository adapts an AlertSource to Repository, converting stored alerts
+// into evaluator rules.
+type StoreRepository struct {
+	src AlertSource
 }
 
-// ListForProject returns all enabled alert rules for a given project.
-func (r *SQLiteRepository) ListForProject(ctx context.Context, projectID int64) ([]Rule, error) {
-	rows, err := r.db.QueryContext(ctx, `
-SELECT
-	id,
-	name,
-	enabled,
-	webhook_url,
-	email_to,
-	condition,
-	param,
-	threshold,
-	cooldown_minutes,
-	last_fired_at,
-	created_at,
-	updated_at
-FROM alerts
-WHERE project_id = ?
-ORDER BY id DESC`,
-		projectID,
-	)
+// NewStoreRepository wraps the storage layer's alert store.
+func NewStoreRepository(src AlertSource) *StoreRepository {
+	return &StoreRepository{src: src}
+}
+
+// ListForProject returns all alert rules for a project, newest first.
+func (r *StoreRepository) ListForProject(ctx context.Context, projectID int64) ([]Rule, error) {
+	alerts, err := r.src.ListAlertsForProject(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var rules []Rule
-	for rows.Next() {
-		rule, err := scanRule(rows)
-		if err != nil {
-			return nil, err
-		}
-		rule.ProjectID = projectID
-		rules = append(rules, rule)
+	rules := make([]Rule, 0, len(alerts))
+	for _, a := range alerts {
+		rules = append(rules, ruleFromAlert(a, projectID))
 	}
-	return rules, rows.Err()
+	return rules, nil
 }
 
-// RecordFiring inserts a new firing record for the alert/issue pair.
-func (r *SQLiteRepository) RecordFiring(ctx context.Context, alertID, issueID string) error {
-	_, err := r.db.ExecContext(ctx, `
-INSERT INTO alert_firings (alert_id, issue_id, fired_at)
-VALUES (?, ?, CURRENT_TIMESTAMP)`,
-		alertID,
-		issueID,
-	)
-	return err
+// RecordFiring stores a firing for the alert/issue pair.
+func (r *StoreRepository) RecordFiring(ctx context.Context, alertID, issueID string) error {
+	return r.src.RecordAlertFiring(ctx, alertID, issueID)
 }
 
-// LastFiring returns the timestamp of the most recent firing for a given alert/issue pair.
-// Returns a zero time.Time if no firing has been recorded.
-func (r *SQLiteRepository) LastFiring(ctx context.Context, alertID, issueID string) (time.Time, error) {
-	var firedAt string
-	err := r.db.QueryRowContext(ctx, `
-SELECT fired_at
-FROM alert_firings
-WHERE alert_id = ? AND issue_id = ?
-ORDER BY fired_at DESC
-LIMIT 1`,
-		alertID,
-		issueID,
-	).Scan(&firedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return time.Time{}, nil
-	}
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	parsed, err := time.Parse(time.RFC3339, firedAt)
-	if err != nil {
-		// Try alternate SQLite timestamp format.
-		parsed, err = time.Parse("2006-01-02 15:04:05", firedAt)
-		if err != nil {
-			return time.Time{}, err
-		}
-	}
-	return parsed.UTC(), nil
+// LastFiring returns the most recent firing time for the alert/issue pair, or
+// the zero time when it never fired.
+func (r *StoreRepository) LastFiring(ctx context.Context, alertID, issueID string) (time.Time, error) {
+	return r.src.LastAlertFiring(ctx, alertID, issueID)
 }
 
-// UpdateLastFired updates the last_fired_at column on the alert row.
-func (r *SQLiteRepository) UpdateLastFired(ctx context.Context, alertID string, firedAt time.Time) error {
-	rowID, err := parseAlertID(alertID)
-	if err != nil {
-		return err
-	}
-	_, err = r.db.ExecContext(ctx, `
-UPDATE alerts SET last_fired_at = ? WHERE id = ?`,
-		firedAt.UTC().Format(time.RFC3339Nano),
-		rowID,
-	)
-	return err
+// UpdateLastFired sets last_fired_at on the alert.
+func (r *StoreRepository) UpdateLastFired(ctx context.Context, alertID string, firedAt time.Time) error {
+	return r.src.UpdateAlertLastFired(ctx, alertID, firedAt)
 }
 
-func scanRule(scanner interface {
-	Scan(dest ...any) error
-}) (Rule, error) {
-	var (
-		id              int64
-		rule            Rule
-		enabled         int
-		webhookURL      string
-		emailTo         string
-		condition       string
-		param           string
-		threshold       int
-		cooldownMinutes int
-		lastFiredAt     string
-		createdAt       string
-		updatedAt       string
-	)
-	if err := scanner.Scan(
-		&id,
-		&rule.Name,
-		&enabled,
-		&webhookURL,
-		&emailTo,
-		&condition,
-		&param,
-		&threshold,
-		&cooldownMinutes,
-		&lastFiredAt,
-		&createdAt,
-		&updatedAt,
-	); err != nil {
-		return Rule{}, err
+func ruleFromAlert(a domain.Alert, projectID int64) Rule {
+	return Rule{
+		ID:              a.ID,
+		Name:            a.Name,
+		Enabled:         a.Enabled,
+		ProjectID:       projectID,
+		WebhookURL:      a.WebhookURL,
+		EmailTo:         a.EmailTo,
+		Condition:       a.Condition,
+		Param:           a.Param,
+		Threshold:       a.Threshold,
+		CooldownMinutes: a.CooldownMinutes,
+		LastFiredAt:     a.LastFiredAt,
+		CreatedAt:       a.CreatedAt,
+		UpdatedAt:       a.UpdatedAt,
 	}
-	rule.ID = formatAlertID(id)
-	rule.Enabled = enabled != 0
-	rule.WebhookURL = webhookURL
-	rule.EmailTo = emailTo
-	rule.Condition = condition
-	rule.Param = param
-	rule.Threshold = threshold
-	rule.CooldownMinutes = cooldownMinutes
-	rule.LastFiredAt, _ = parseAlertTime(lastFiredAt)
-	rule.CreatedAt, _ = parseAlertTime(createdAt)
-	rule.UpdatedAt, _ = parseAlertTime(updatedAt)
-	return rule, nil
-}
-
-func formatAlertID(id int64) string {
-	return "alert-" + strconv.FormatInt(id, 10)
-}
-
-func parseAlertID(id string) (int64, error) {
-	id = strings.TrimPrefix(id, "alert-")
-	n, err := strconv.ParseInt(strings.TrimLeft(id, "0"), 10, 64)
-	if err != nil {
-		// Try raw numeric string (e.g. "000001")
-		n, err = strconv.ParseInt(id, 10, 64)
-	}
-	return n, err
-}
-
-func parseAlertTime(value string) (time.Time, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Time{}, nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, value); err == nil {
-		return t.UTC(), nil
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05", value); err == nil {
-		return t.UTC(), nil
-	}
-	return time.Time{}, nil
 }

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
@@ -12,7 +12,7 @@ func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
 	suffix = strings.TrimPrefix(suffix, "/")
 
 	if suffix == "" {
-		projectID, ok := storage.ProjectIDFromContext(r.Context())
+		projectID, ok := domain.ProjectIDFromContext(r.Context())
 		if !ok {
 			projectID = s.projects.DefaultProjectID()
 		}
@@ -28,7 +28,7 @@ func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, ok := storage.ProjectIDFromContext(r.Context())
+	projectID, ok := domain.ProjectIDFromContext(r.Context())
 	if !ok {
 		projectID = s.projects.DefaultProjectID()
 	}
