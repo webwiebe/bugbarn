@@ -198,8 +198,13 @@ spec:
                   name: bugbarn-secrets
                   key: cloudflare-api-token
                   optional: true
+            # Every zone on the account (#192): bananasketch.nl, brandtrace.net,
+            # huisjesmelk.nl, koppelkoop.nl, languagetrainer.nl,
+            # maatwerksoftwarenijmegen.nl, pensioenfeest.nl, profotograaf.nl,
+            # scanbarelinks.nl, scanoo.nl, scherpstel.nl, speakdutchnow.nl,
+            # webwiebe.nl, wiebe.xyz (in that order).
             - name: BUGBARN_CLOUDFLARE_ZONE_IDS
-              value: ""
+              value: "4a3726e3999200653a35309ef545cdec,b5b3e9d96882a222c99109f261b39b22,433eff34019884e0eac725c230b9fe1c,a821c13236510328a65fa4102ea9553d,c9ec733e461104257b03cbe9255537e3,e42c3bb7be67ea91a0f56c47b087a0e2,40a1c355b25593469f8ce56b3807bca3,0ad8066a411371e7657e5491c744b2c6,d5af245460b25c87bd1d7e504f6675cf,dd414919a80d5020f4f21fb2664cc452,49dc2382c8a840e0232f7bbd47776334,d49b9adea6f8cb765de384fde9ff569c,56849c4fb3df90e9c72432ee97fd083d,6756ebc43ddad4f597da71e8a3c8a23a"
           resources:
             requests:
               cpu: 100m
