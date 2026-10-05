@@ -106,14 +106,41 @@ func (r Rule) Validate() error {
 	case TrackSecurity:
 		return r.validateSecurity()
 	case TrackMetrics:
+		if err := r.validateHostMatch(); err != nil {
+			return err
+		}
 		return r.validateMetrics()
 	case TrackHeartbeat:
 		if r.Window <= 0 {
 			return errors.New("heartbeat rules need a window")
 		}
-		return nil
+		return r.validateHostMatch()
 	}
 	return errors.New("track must be security, metrics or heartbeat")
+}
+
+// validateHostMatch checks the match conditions of a metric or heartbeat
+// rule: those see a host, not a log record, so host is the only field.
+func (r Rule) validateHostMatch() error {
+	for _, c := range r.Match {
+		if c.Field != "host" {
+			return fmt.Errorf("%s rules can only match on host, not %q", r.Track, c.Field)
+		}
+		if err := c.validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// matchesHost reports whether every match condition accepts host.
+func (r Rule) matchesHost(host string) bool {
+	for _, c := range r.Match {
+		if !c.matches(host) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r Rule) validateSecurity() error {

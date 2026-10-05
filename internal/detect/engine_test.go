@@ -246,6 +246,39 @@ func TestDiskFullHoldsForDuration(t *testing.T) {
 	}
 }
 
+func TestMetricRuleSkipsExcludedHost(t *testing.T) {
+	r := rule(t, "disk-full")
+	r.Match = []Cond{{Field: "host", Op: "ne", Value: "laptop"}}
+	e := testEngine(t, []Rule{r}, t0.Add(time.Hour))
+	ctx := context.Background()
+	for m := range 11 {
+		at := t0.Add(time.Duration(m) * time.Minute)
+		e.ObserveMetrics(ctx, []hostmetrics.Sample{
+			sample("laptop", "fs./.used_pct", at, 95),
+			sample("k3s1", "fs./.used_pct", at, 95),
+		}, nil)
+	}
+	got := drain(e)
+	if len(got) != 1 || got[0].GroupKey() != "host=k3s1,metric=fs./.used_pct" {
+		t.Fatalf("detections = %+v, want one for k3s1 only", got)
+	}
+}
+
+func TestHeartbeatSkipsExcludedHost(t *testing.T) {
+	now := t0
+	r := rule(t, "host-silent")
+	r.Match = []Cond{{Field: "host", Op: "not_in", Value: []any{"laptop"}}}
+	e := testEngine(t, []Rule{r}, now)
+	e.now = func() time.Time { return now }
+	ctx := context.Background()
+	e.ObserveMetrics(ctx, nil, []hostmetrics.HostInfo{{Host: "laptop", LastSeen: t0}, {Host: "k3s1", LastSeen: t0}})
+	now = t0.Add(6 * time.Minute)
+	e.CheckHeartbeats(ctx)
+	if got := drain(e); len(got) != 1 || got[0].GroupKey() != "host=k3s1" {
+		t.Fatalf("detections = %+v, want one for k3s1 only", got)
+	}
+}
+
 func TestMetricDipResetsDuration(t *testing.T) {
 	e := testEngine(t, []Rule{rule(t, "memory-low")}, t0.Add(time.Hour))
 	ctx := context.Background()
