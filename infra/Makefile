@@ -20,6 +20,6 @@ help:
 	@echo "Available targets:"
 	@echo "  setup-runners        Provision Linux GitHub Actions runners"
 	@echo "  setup-runners-macos  Provision macOS GitHub Actions runners"
-	@echo "  setup-vector-host    Install the BugBarn host Vector agent on the macOS runners"
+	@echo "  setup-vector-host    Install the BugBarn host Vector agent (vector_hosts)"
 	@echo "  ping                 Test runner host connectivity"
 
