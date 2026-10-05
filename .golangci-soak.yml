@@ -56,3 +56,47 @@ linters:
               desc: "only internal/storage may touch database/sql; everything else takes a repository interface"
             - pkg: modernc.org/sqlite
               desc: "only internal/storage may bind the sqlite driver"
+        # Storage is the bottom layer: it wraps DB errors into apperr and hands
+        # them up. It must not know who calls it.
+        storage-is-a-leaf:
+          files:
+            - "**/internal/storage/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/api
+              desc: "internal/storage may not import the API layer"
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/service
+              desc: "internal/storage may not import the service layer"
+        # domain and apperr are the shared vocabulary every layer imports, so
+        # they import nothing from internal/ themselves.
+        vocabulary-imports-nothing:
+          files:
+            - "**/internal/domain/**"
+            - "**/internal/apperr/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal
+              desc: "internal/domain and internal/apperr may not import other internal packages"
+        # Composition (binding the concrete store to the services that use it)
+        # happens in cmd/ and internal/api only. internal/api is held to the
+        # stricter api-storage-boundary above; internal/cli is exempt because it
+        # is cmd/bugbarn's `user|project` subcommand wiring.
+        composition-root:
+          files:
+            - "**/internal/**"
+            - "!**/internal/storage/**"
+            - "!**/internal/api/**"
+            - "!**/internal/cli/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/storage
+              desc: "only cmd/ composes the concrete store; take a repository interface instead"
+        # Dogfooding: internal/selflog only sees slog records, so an error
+        # written through stdlib log never reaches BugBarn's own dashboard.
+        # `log$` is an exact match; a bare `log` prefix would also deny log/slog.
+        no-stdlib-log:
+          files:
+            - "$all"
+          deny:
+            - pkg: log$
+              desc: "use log/slog; internal/selflog cannot capture stdlib log output"

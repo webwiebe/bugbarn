@@ -72,6 +72,11 @@ Readers forward every write to the writer. Details: `internal/ingest/CLAUDE.md` 
 
 **Logging**: Services are the log boundary. Storage doesn't log. API doesn't log errors. Services use `*slog.Logger` (constructor-injected). Structured JSON output.
 
+**Checked by depguard**: the import side of these rules (storage is a leaf, API goes through
+services, domain/apperr import nothing internal, only `cmd/` composes the store, no stdlib `log`)
+lives in `.golangci-soak.yml`. `make go-soak` ratchets the finding count in
+`scripts/boundaries-baseline.txt` down to 0; at 0 the rules move into `.golangci.yml` and block.
+
 **Testing**: Use real SQLite databases in tests (no mocks for storage). Service tests use fake repos. API tests use the full stack.
 
 ## Dogfooding
