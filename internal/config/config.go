@@ -71,6 +71,11 @@ type Config struct {
 	AutoApproveProjects bool   // BUGBARN_AUTO_APPROVE_PROJECTS
 	Mode                string // BUGBARN_MODE: "", "writer", or "reader"
 	WriterURL           string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
+	// WriterSpoolDir is BUGBARN_WRITER_SPOOL_DIR: where a reader finds the
+	// writer's spool on the shared volume, read-only, so its ingest-health
+	// monitor can see whether the writer's spool worker is advancing. Unset on
+	// a reader skips that check; the writer and the monolith use SpoolDir.
+	WriterSpoolDir string
 	// WALCheckpointInterval is BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS — how
 	// often the writer TRUNCATE-checkpoints the WAL. Nothing else checkpoints
 	// (wal_autocheckpoint is 0), so this is the only thing bounding WAL growth.
@@ -164,8 +169,16 @@ func Load() Config {
 		cfg.AdminAlertEmail = cfg.Digest.Mail.To
 	}
 
-	// Out-of-band ingest-health alerting. Defaults to the admin recipient so an
-	// instance that already mails alerts gets the stall alarm without new config.
+	loadIngestHealth(&cfg)
+
+	validateMode(cfg)
+	return cfg
+}
+
+// loadIngestHealth reads the ingest-health monitor's settings. Out-of-band
+// alerting defaults to the admin recipient so an instance that already mails
+// alerts gets the stall alarm without new config.
+func loadIngestHealth(cfg *Config) {
 	cfg.IngestAlertWebhookURL = os.Getenv("BUGBARN_INGEST_ALERT_WEBHOOK_URL")
 	cfg.IngestAlertEmail = os.Getenv("BUGBARN_INGEST_ALERT_EMAIL")
 	if cfg.IngestAlertEmail == "" {
@@ -173,9 +186,7 @@ func Load() Config {
 	}
 	// 0 (unset) lets the monitor apply its 30m default.
 	cfg.IngestStaleAfter = envDurationSeconds("BUGBARN_INGEST_STALE_AFTER_SECONDS", 0)
-
-	validateMode(cfg)
-	return cfg
+	cfg.WriterSpoolDir = os.Getenv("BUGBARN_WRITER_SPOOL_DIR")
 }
 
 // parseDigestConfig builds the weekly-digest configuration from env. SMTP vars

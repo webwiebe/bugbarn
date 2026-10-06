@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"time"
 )
 
 type workerReport struct {
@@ -28,6 +29,10 @@ type ingestReport struct {
 	QueueDepth          int64    `json:"queueDepth"`
 	QueueDepthKnown     bool     `json:"queueDepthKnown"`
 	WALSizeBytes        int64    `json:"walSizeBytes"`
+	SpoolBacklogKnown   bool     `json:"spoolBacklogKnown"`
+	SpoolBacklogBytes   int64    `json:"spoolBacklogBytes"`
+	SpoolStalledSeconds float64  `json:"spoolStalledSeconds"`
+	SpoolLastAdvanceAt  *string  `json:"spoolLastAdvanceAt,omitempty"`
 }
 
 type detailedHealth struct {
@@ -80,7 +85,7 @@ func (s *Server) ingestHealthReport() (*ingestReport, bool) {
 	if !snap.Sampled {
 		return nil, false
 	}
-	return &ingestReport{
+	report := &ingestReport{
 		Healthy:             snap.Healthy,
 		Reasons:             snap.Reasons,
 		LastEventAgeSeconds: snap.LastEventAgeSeconds,
@@ -88,7 +93,15 @@ func (s *Server) ingestHealthReport() (*ingestReport, bool) {
 		QueueDepth:          snap.QueueDepth,
 		QueueDepthKnown:     snap.QueueDepthKnown,
 		WALSizeBytes:        snap.WALSizeBytes,
-	}, !snap.Healthy
+		SpoolBacklogKnown:   snap.SpoolBacklogKnown,
+		SpoolBacklogBytes:   snap.SpoolBacklogBytes,
+		SpoolStalledSeconds: snap.SpoolStalledSeconds,
+	}
+	if !snap.SpoolLastAdvanceAt.IsZero() {
+		t := snap.SpoolLastAdvanceAt.Format(time.RFC3339)
+		report.SpoolLastAdvanceAt = &t
+	}
+	return report, !snap.Healthy
 }
 
 // workerHealthReport returns the worker sub-report (nil when absent) and its

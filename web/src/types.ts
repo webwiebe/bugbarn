@@ -235,6 +235,10 @@ export interface IngestHealth extends RawRecord {
   queueDepth: number;
   queueDepthKnown: boolean;
   walSizeBytes: number;
+  spoolBacklogKnown?: boolean;
+  spoolBacklogBytes?: number;
+  spoolStalledSeconds?: number;
+  spoolLastAdvanceAt?: string;
 }
 
 export interface SystemHealth extends RawRecord {

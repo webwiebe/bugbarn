@@ -85,6 +85,12 @@ BUGBARN_SPOOL_DIR=/var/lib/bugbarn/spool
 # paging on an idle box.
 #BUGBARN_INGEST_STALE_AFTER_SECONDS=1800
 
+# Reader mode only: the writer's spool directory on a shared volume. The
+# ingest-health monitor reads it (read-only) and reports unhealthy when the
+# writer's spool worker holds a backlog without advancing for 30 minutes.
+# The writer and single-process mode check their own BUGBARN_SPOOL_DIR.
+#BUGBARN_WRITER_SPOOL_DIR=/var/lib/bugbarn/spool
+
 # SMTP settings for email delivery
 #SMTP_HOST=smtp.example.com
 #SMTP_PORT=587

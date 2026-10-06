@@ -374,11 +374,13 @@ function renderSettingsSystem(health: import("../types.js").SystemHealth | null)
     : "—";
   const backlog = ingest && ingest.queueDepthKnown ? String(ingest.queueDepth) : "n/a";
   const wal = ingest ? fmtBytes(ingest.walSizeBytes) : "—";
+  const spool = ingest && ingest.spoolBacklogKnown ? fmtBytes(ingest.spoolBacklogBytes ?? 0) : "n/a";
 
   const stats = ingest ? `
     <div class="stats-bar">
       <div class="stat"><span class="stat-value">${escapeHtml(lastEvent)}</span><span class="stat-label">Last event ingested</span></div>
       <div class="stat"><span class="stat-value">${escapeHtml(backlog)}</span><span class="stat-label">Write-queue backlog</span></div>
+      <div class="stat"><span class="stat-value">${escapeHtml(spool)}</span><span class="stat-label">Spool backlog</span></div>
       <div class="stat"><span class="stat-value">${escapeHtml(wal)}</span><span class="stat-label">WAL size</span></div>
     </div>` : `<p class="muted">Ingest health is reported by reader and writer instances; no data available.</p>`;
 

@@ -89,7 +89,20 @@ Runs in every role. Every 60s it samples `MAX(received_at)` of events, Redis `LL
 - stale last event with a known queue depth of 0 is idle and healthy
 - stale with depth > 0, or stale with no queue (monolith), is unhealthy
 - depth above 50,000 is always unhealthy
+- writer spool backlog (`spool.ReadBacklog`: unprocessed bytes after the cursor, in the
+  rotated segment being drained plus the active segment) with the cursor not moved for
+  30 minutes (`SpoolStallAfter`) is unhealthy; an empty spool is healthy however old the
+  cursor is
 - WAL size only logs a warning
+
+The Redis consumer persists without touching the writer spool, so a stalled spool worker
+leaves the queue depth at 0 (#95). The spool check covers it. "Cursor not moved" is the
+newer of `cursor.json`'s mtime (rewritten after every record) and the monitor's last
+sample that found the spool empty or its first sample, so neither an idle instance nor a
+reader that restarted during a rollout counts hours of idle time as stall. The writer and
+the monolith read their own `BUGBARN_SPOOL_DIR`; readers read the writer's spool on the
+shared volume through `BUGBARN_WRITER_SPOOL_DIR` (read-only) and skip the check when it
+is unset or unreadable.
 
 A verdict only counts once it holds for 3 consecutive samples (`ConfirmSamples`); until
 then the sample logs at WARN and the snapshot stays healthy. The queue also carries
