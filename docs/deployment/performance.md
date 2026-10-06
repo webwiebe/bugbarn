@@ -90,7 +90,7 @@ Read latency under normal conditions:
 
 ## Spool sizing
 
-The spool is an append-only NDJSON file. Its size grows as events are ingested and shrinks only when the file rotates (at ~64 MiB). The cursor tracks the last-processed position — file size alone does not indicate backlog depth.
+The spool is an append-only NDJSON file. Its size grows as events are ingested and shrinks only when the file rotates (at ~64 MiB); the worker deletes the rotated segment once it has processed it. The cursor tracks the last-processed position — file size alone does not indicate backlog depth.
 
 Set `BUGBARN_MAX_SPOOL_BYTES` to protect against disk exhaustion under sustained overload. When the limit is reached, ingest returns `429 Too Many Requests` with a `Retry-After` header.
 
