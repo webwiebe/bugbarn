@@ -49,6 +49,11 @@ type Config struct {
 	// never flips a queue-backed instance unhealthy; the queue depth must
 	// corroborate it.
 	StaleAfter time.Duration
+	// SpoolStallAfter is how long the writer spool may hold unprocessed bytes
+	// without the worker's cursor moving before the worker counts as stalled.
+	// Default 30m. Separate from StaleAfter, which idle instances raise; see
+	// spool.go.
+	SpoolStallAfter time.Duration
 	// MaxQueueDepth is the write-queue backlog (entries) above which ingest is
 	// considered backed up. Default 50_000. Zero disables the check.
 	MaxQueueDepth int64
@@ -81,6 +86,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.StaleAfter <= 0 {
 		c.StaleAfter = 30 * time.Minute
+	}
+	if c.SpoolStallAfter <= 0 {
+		c.SpoolStallAfter = 30 * time.Minute
 	}
 	if c.MaxQueueDepth == 0 {
 		c.MaxQueueDepth = 50_000
@@ -117,16 +125,25 @@ type Snapshot struct {
 	// that found the pipeline unhealthy. Healthy turns false once it reaches
 	// Config.ConfirmSamples.
 	UnhealthySamples int `json:"unhealthySamples,omitempty"`
+	// SpoolBacklogBytes is what the writer's spool worker has not processed
+	// yet; SpoolStalledSeconds is how long that backlog has waited without the
+	// worker's cursor moving (0 when the spool is empty). See spool.go.
+	SpoolBacklogKnown   bool      `json:"spoolBacklogKnown"`
+	SpoolBacklogBytes   int64     `json:"spoolBacklogBytes"`
+	SpoolStalledSeconds float64   `json:"spoolStalledSeconds"`
+	SpoolLastAdvanceAt  time.Time `json:"spoolLastAdvanceAt"`
 }
 
 // Deps are the data sources the monitor samples. QueueDepth may be nil (e.g. a
 // writer not fronted by a Redis queue), in which case the backlog check is
 // skipped. dbPath, when non-empty, locates the SQLite file whose "-wal" sibling
-// is measured.
+// is measured. SpoolBacklog may be nil (no access to the writer's spool), in
+// which case the spool worker check is skipped.
 type Deps struct {
-	LastEventAt func(ctx context.Context) (time.Time, error)
-	QueueDepth  func(ctx context.Context) (int64, error)
-	DBPath      string
+	LastEventAt  func(ctx context.Context) (time.Time, error)
+	QueueDepth   func(ctx context.Context) (int64, error)
+	SpoolBacklog func(ctx context.Context) (SpoolBacklog, error)
+	DBPath       string
 }
 
 // Monitor samples ingest liveness on a cadence and publishes a Snapshot.
@@ -143,6 +160,9 @@ type Monitor struct {
 	// streak counts consecutive unhealthy samples; only the sample loop
 	// touches it.
 	streak int
+	// spoolClearAt is the last sample that found the spool empty, or the
+	// first sample; only the sample loop touches it.
+	spoolClearAt time.Time
 
 	notifiers []Notifier
 
@@ -245,6 +265,8 @@ func (m *Monitor) sample(ctx context.Context) {
 		}
 	}
 
+	m.sampleSpool(ctx, &snap, now)
+
 	if m.deps.DBPath != "" {
 		if info, err := os.Stat(m.deps.DBPath + "-wal"); err == nil {
 			snap.WALSizeBytes = info.Size()
@@ -300,6 +322,8 @@ func (m *Monitor) evaluate(snap *Snapshot, now time.Time) {
 		snap.Reasons = append(snap.Reasons, fmt.Sprintf(
 			"write-queue backlog %d over threshold %d", snap.QueueDepth, m.cfg.MaxQueueDepth))
 	}
+
+	m.evaluateSpool(snap)
 }
 
 // confirm holds back an unhealthy verdict until it has held for
@@ -316,7 +340,7 @@ func (m *Monitor) confirm(snap *Snapshot) {
 	if m.streak >= m.cfg.ConfirmSamples {
 		return
 	}
-	m.logger.Warn("ingest-health: unhealthy sample, waiting for confirmation",
+	attrs := []any{
 		"environment", m.cfg.Environment,
 		"reasons", snap.Reasons,
 		"unhealthy_samples", m.streak,
@@ -324,7 +348,9 @@ func (m *Monitor) confirm(snap *Snapshot) {
 		"last_event_age_seconds", snap.LastEventAgeSeconds,
 		"queue_depth", snap.QueueDepth,
 		"queue_depth_known", snap.QueueDepthKnown,
-	)
+	}
+	m.logger.Warn("ingest-health: unhealthy sample, waiting for confirmation",
+		append(attrs, spoolLogAttrs(*snap)...)...)
 	snap.Healthy = true
 	snap.Reasons = nil
 }
@@ -351,7 +377,7 @@ func (m *Monitor) maybeAlert(ctx context.Context, snap Snapshot) {
 		return
 	}
 
-	m.logger.Error("ingest pipeline unhealthy",
+	attrs := []any{
 		"environment", m.cfg.Environment,
 		"reasons", snap.Reasons,
 		"unhealthy_samples", snap.UnhealthySamples,
@@ -360,7 +386,8 @@ func (m *Monitor) maybeAlert(ctx context.Context, snap Snapshot) {
 		"queue_depth", snap.QueueDepth,
 		"queue_depth_known", snap.QueueDepthKnown,
 		"wal_bytes", snap.WALSizeBytes,
-	)
+	}
+	m.logger.Error("ingest pipeline unhealthy", append(attrs, spoolLogAttrs(snap)...)...)
 	m.notify(ctx, snap)
 }
 
@@ -409,7 +436,11 @@ func (m *Monitor) registerGauges() {
 		"bugbarn.ingest.healthy",
 		metric.WithDescription("1 when the ingest pipeline is healthy, 0 otherwise."),
 	)
-	if err1 != nil || err2 != nil || err3 != nil {
+	backlog, err4 := meter.Int64ObservableGauge(
+		"bugbarn.ingest.spool_backlog_bytes",
+		metric.WithDescription("Bytes in the writer spool the worker has not processed yet."),
+	)
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
 		return
 	}
 	reg, err := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
@@ -419,13 +450,16 @@ func (m *Monitor) registerGauges() {
 		}
 		o.ObserveFloat64(age, s.LastEventAgeSeconds)
 		o.ObserveInt64(wal, s.WALSizeBytes)
+		if s.SpoolBacklogKnown {
+			o.ObserveInt64(backlog, s.SpoolBacklogBytes)
+		}
 		if s.Healthy {
 			o.ObserveInt64(healthy, 1)
 		} else {
 			o.ObserveInt64(healthy, 0)
 		}
 		return nil
-	}, age, wal, healthy)
+	}, age, wal, healthy, backlog)
 	if err == nil {
 		m.reg = reg
 	}

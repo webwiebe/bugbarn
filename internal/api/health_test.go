@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/ingesthealth"
 )
@@ -62,6 +63,38 @@ func TestDetailedHealthReflectsIngestStall(t *testing.T) {
 
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200 for healthy ingest, got %d", rr.Code)
+		}
+	})
+
+	t.Run("spool backlog is reported", func(t *testing.T) {
+		advanced := time.Date(2026, 10, 6, 20, 0, 0, 0, time.UTC)
+		server.SetIngestHealth(func() ingesthealth.Snapshot {
+			return ingesthealth.Snapshot{
+				Sampled: true, Healthy: true, HasEvents: true,
+				SpoolBacklogKnown: true, SpoolBacklogBytes: 4096,
+				SpoolStalledSeconds: 42, SpoolLastAdvanceAt: advanced,
+			}
+		})
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/health?detail=true", nil)
+		server.ServeHTTP(rr, req)
+
+		var body struct {
+			Ingest struct {
+				SpoolBacklogKnown   bool    `json:"spoolBacklogKnown"`
+				SpoolBacklogBytes   int64   `json:"spoolBacklogBytes"`
+				SpoolStalledSeconds float64 `json:"spoolStalledSeconds"`
+				SpoolLastAdvanceAt  string  `json:"spoolLastAdvanceAt"`
+			} `json:"ingest"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		got := body.Ingest
+		if !got.SpoolBacklogKnown || got.SpoolBacklogBytes != 4096 || got.SpoolStalledSeconds != 42 ||
+			got.SpoolLastAdvanceAt != "2026-10-06T20:00:00Z" {
+			t.Fatalf("unexpected spool fields: %+v", got)
 		}
 	})
 }

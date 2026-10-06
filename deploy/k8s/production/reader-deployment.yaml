@@ -55,6 +55,10 @@ spec:
               value: /var/lib/bugbarn/bugbarn.db
             - name: BUGBARN_SPOOL_DIR
               value: /var/spool/bugbarn
+            # The writer's spool on the shared volume, read by the ingest-health
+            # monitor to see whether the writer's spool worker is advancing.
+            - name: BUGBARN_WRITER_SPOOL_DIR
+              value: /var/lib/bugbarn/spool
             - name: BUGBARN_SESSION_TTL_SECONDS
               value: "43200"
             - name: BUGBARN_OIDC_REFRESH_GRACE_SECONDS

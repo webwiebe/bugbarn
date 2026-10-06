@@ -35,6 +35,8 @@ type alertPayload struct {
 	LastEventAgeSeconds float64   `json:"lastEventAgeSeconds"`
 	QueueDepth          int64     `json:"queueDepth,omitempty"`
 	WALSizeBytes        int64     `json:"walSizeBytes,omitempty"`
+	SpoolBacklogBytes   int64     `json:"spoolBacklogBytes,omitempty"`
+	SpoolStalledSeconds float64   `json:"spoolStalledSeconds,omitempty"`
 }
 
 // WebhookNotifier POSTs the snapshot as JSON. It is the cheapest out-of-band
@@ -71,6 +73,8 @@ func (n *WebhookNotifier) Notify(ctx context.Context, env string, snap Snapshot)
 		LastEventAgeSeconds: snap.LastEventAgeSeconds,
 		QueueDepth:          snap.QueueDepth,
 		WALSizeBytes:        snap.WALSizeBytes,
+		SpoolBacklogBytes:   snap.SpoolBacklogBytes,
+		SpoolStalledSeconds: snap.SpoolStalledSeconds,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
@@ -141,6 +145,10 @@ func alertLines(env string, snap Snapshot) []string {
 	}
 	if snap.WALSizeBytes > 0 {
 		lines = append(lines, fmt.Sprintf("WAL size: %d bytes", snap.WALSizeBytes))
+	}
+	if snap.SpoolBacklogBytes > 0 {
+		lines = append(lines, fmt.Sprintf("Spool backlog: %d bytes, cursor not advanced for %s",
+			snap.SpoolBacklogBytes, time.Duration(snap.SpoolStalledSeconds)*time.Second))
 	}
 	for _, r := range snap.Reasons {
 		lines = append(lines, "Reason: "+r)
