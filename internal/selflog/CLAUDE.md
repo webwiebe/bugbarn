@@ -1,7 +1,8 @@
 # selflog: BugBarn reporting to itself
 
 `Handler` wraps the process's `slog.Handler`. On every record at `Level >= Error` it calls
-`bb.CaptureMessage` (message plus the `error` attr) before passing the record on. Capture is
+`bb.CaptureMessage` (message plus the `error` attr, with the record's attrs as event
+attributes) before passing the record on. Capture is
 fire-and-forget with a 2s timeout, so a slow or down ingest endpoint delays a log call by
 at most 2s and never fails it.
 
@@ -29,5 +30,8 @@ itself. They show up as issues in project `bugbarn-service`
   shutdowns, 404s and client disconnects file bugs against ourselves if logged at ERROR;
   log them at WARN or below. Loops over projects must stop on `ctx.Err()` instead of
   logging one ERROR per remaining project.
-- Every ERROR creates or bumps an issue. Only the message and the `error` attr are sent;
-  other attrs stay in the local log line.
+- Every ERROR creates or bumps an issue. The message plus the `error` attr is the issue
+  title and fingerprint. All attrs, including ones bound with `With`/`WithGroup` (group
+  keys flattened to `group.key`), are sent as event attributes, and the SDK adds
+  `environment` and `release`. Keep variable data in attrs, out of the message, or every
+  occurrence becomes a new issue.

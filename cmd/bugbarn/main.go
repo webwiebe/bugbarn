@@ -168,6 +168,8 @@ func run() error {
 			APIKey:      cfg.SelfAPIKey,
 			Endpoint:    cfg.SelfEndpoint,
 			ProjectSlug: cfg.SelfProject,
+			Release:     Version,
+			Environment: cfg.Environment,
 		})
 		logger = slog.New(selflog.NewHandler(logHandler))
 		slog.SetDefault(logger)

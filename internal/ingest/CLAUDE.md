@@ -91,6 +91,12 @@ Runs in every role. Every 60s it samples `MAX(received_at)` of events, Redis `LL
 - depth above 50,000 is always unhealthy
 - WAL size only logs a warning
 
+A verdict only counts once it holds for 3 consecutive samples (`ConfirmSamples`); until
+then the sample logs at WARN and the snapshot stays healthy. The queue also carries
+logs, security and metrics batches, so it is briefly non-empty during every rollout
+(the writer restarts, the readers keep queueing), and production can go 30 minutes
+without an error event. One sample of that paged as BS2-107.
+
 Unhealthy makes `/api/v1/health?detail=true` return 503, logs a throttled ERROR, and
 notifies out of band (`BUGBARN_INGEST_ALERT_WEBHOOK_URL`, `BUGBARN_INGEST_ALERT_EMAIL`).
 The out-of-band path exists because self-reporting goes through the pipeline that has
