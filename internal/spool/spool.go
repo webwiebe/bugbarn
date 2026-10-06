@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -42,9 +41,12 @@ type Record struct {
 	Internal bool `json:"-"`
 }
 
-// cursor tracks the byte offset of the last successfully processed record.
+// cursor is the on-disk form of Position (see segments.go): the byte offset
+// just past the last handled record, in the active segment or in the rotated
+// segment it names.
 type cursor struct {
-	Offset int64 `json:"offset"`
+	Segment string `json:"segment,omitempty"`
+	Offset  int64  `json:"offset"`
 }
 
 func New(dir string) (*Spool, error) {
@@ -184,79 +186,6 @@ func (s *Spool) Close() error {
 	return s.file.Close()
 }
 
-// Rotate renames the current active segment to ingest-TIMESTAMP.ndjson and
-// opens a fresh ingest.ndjson. ReadRecordsFrom detects the stale cursor.
-func (s *Spool) Rotate() error {
-	if s == nil {
-		return errors.New("spool is nil")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.rotateLocked()
-}
-
-// rotateLocked performs rotation; caller must hold s.mu.
-func (s *Spool) rotateLocked() error {
-	if err := s.file.Close(); err != nil {
-		return fmt.Errorf("spool rotate close: %w", err)
-	}
-	// Use nanosecond precision so rapid successive rotations never collide.
-	ts := time.Now().UTC().Format("20060102T150405.000000000Z")
-	archived := filepath.Join(s.dir, fmt.Sprintf("ingest-%s.ndjson", ts))
-	if err := os.Rename(s.path, archived); err != nil {
-		return fmt.Errorf("spool rotate rename: %w", err)
-	}
-	file, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("spool rotate open: %w", err)
-	}
-	s.file = file
-	return nil
-}
-
-// RotateIfExceeds rotates the active segment when it exceeds the given byte
-// threshold. The stat check and the rename+reopen are performed under a single
-// lock acquisition so no appends can land on the stale file handle.
-func (s *Spool) RotateIfExceeds(maxBytes int64) error {
-	if s == nil {
-		return errors.New("spool is nil")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	info, err := s.file.Stat()
-	if err != nil {
-		return err
-	}
-	if info.Size() <= maxBytes {
-		return nil
-	}
-	return s.rotateLocked()
-}
-
-// RotateIfExceedsPath checks the active spool file in dir and renames it when
-// it exceeds maxBytes. Unlike RotateIfExceeds it does not require a live *Spool
-// handle and is safe to call from the worker goroutine without coordinating with
-// the ingest handler (it uses OS-level rename atomicity).
-func RotateIfExceedsPath(dir string, maxBytes int64) error {
-	if dir == "" {
-		dir = ".data/spool"
-	}
-	path := filepath.Join(dir, DefaultFileName)
-	info, err := os.Stat(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	if info.Size() <= maxBytes {
-		return nil
-	}
-	ts := time.Now().UTC().Format("20060102T150405.000000000Z")
-	archived := filepath.Join(dir, fmt.Sprintf("ingest-%s.ndjson", ts))
-	return os.Rename(path, archived)
-}
-
 // ReadCursor reads the persisted byte offset from cursor.json in dir.
 // Returns 0 if the file does not exist.
 func ReadCursor(dir string) (int64, error) {
@@ -278,17 +207,10 @@ func ReadCursor(dir string) (int64, error) {
 	return c.Offset, nil
 }
 
-// WriteCursor persists the byte offset to cursor.json in dir.
+// WriteCursor persists the byte offset on the active segment to cursor.json in
+// dir. It is WritePosition for a position without a rotated segment.
 func WriteCursor(dir string, offset int64) error {
-	if dir == "" {
-		dir = ".data/spool"
-	}
-	path := filepath.Join(dir, cursorFileName)
-	data, err := json.Marshal(cursor{Offset: offset})
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o600)
+	return WritePosition(dir, Position{Offset: offset})
 }
 
 // ResetCursor removes the cursor file, causing the next startup to reprocess from the beginning.

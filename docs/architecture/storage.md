@@ -360,17 +360,20 @@ Records are stored as append-only newline-delimited JSON (NDJSON) in `.data/spoo
 
 ### Cursor
 
-`.data/spool/cursor.json` stores a single byte offset:
+`.data/spool/cursor.json` stores a byte offset and, while a rotated segment is being drained, the name of that segment:
 
 ```json
 {"offset": 1048576}
+{"segment": "ingest-20261006T145210.189340378Z.ndjson", "offset": 1048576}
 ```
 
 On startup the background worker reads this file to resume from where it left off. After each successfully processed record the worker writes the new offset to `cursor.json`. This ensures that a crash between processing and writing the cursor causes at-most-once re-processing of the last record rather than silent loss.
 
 ### Rotation
 
-When the active spool file exceeds **64 MiB**, the worker renames `ingest.ndjson` to `ingest-YYYYMMDDTHHMMSSZ.ndjson` (UTC timestamp) and opens a fresh `ingest.ndjson`. The cursor is not reset on rotation; old rotated segments are left in the spool directory for manual archival or deletion.
+When the active spool file exceeds **64 MiB**, the worker renames `ingest.ndjson` to `ingest-YYYYMMDDTHHMMSS.nnnnnnnnnZ.ndjson` (UTC timestamp) and opens a fresh `ingest.ndjson`, all under the spool lock so no append lands in the renamed file. Before the rename it durably writes a cursor that names the rotated segment at its current offset, so records not yet processed are read from the rotated segment first. Once every record in it is handled, the worker durably moves the cursor to offset 0 of `ingest.ndjson` and deletes the rotated segment.
+
+Crash safety: a cursor naming a segment that does not exist means the process stopped between the cursor write and the rename, so the worker resumes `ingest.ndjson` at that offset. A rotated segment the cursor does not name is fully processed, so the worker deletes it at startup. An unreadable cursor leaves every segment in place.
 
 ### Dead-Letter File
 

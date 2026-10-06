@@ -8,9 +8,9 @@ BugBarn uses an append-only NDJSON spool to decouple ingest from storage. Accept
 
 **Active file**: `ingest.ndjson` — appended to by the ingest handler.
 
-**Rotation**: The worker rotates the active file to `ingest-YYYYMMDDTHHMMSSZ.ndjson` once it exceeds 64 MiB. Archived segments can be deleted once the cursor has advanced past them (i.e. the worker has processed them). Set `BUGBARN_MAX_SPOOL_BYTES` to cap total spool growth and trigger 503 backpressure instead.
+**Rotation**: The worker rotates the active file to `ingest-YYYYMMDDTHHMMSS.nnnnnnnnnZ.ndjson` once it exceeds 64 MiB, finishes processing the records left in that rotated segment, and then deletes it. At most one rotated segment exists at a time. Rotated segments the cursor does not name (for example ones left behind by versions before this behaviour) are deleted when the worker starts. Set `BUGBARN_MAX_SPOOL_BYTES` to cap total spool growth and trigger 503 backpressure instead.
 
-**Cursor**: `cursor.json` tracks the byte offset of the last successfully processed record. Delete it to force a full replay from the beginning of `ingest.ndjson` on next startup. The cursor is reset to 0 after each rotation.
+**Cursor**: `cursor.json` holds the byte offset just past the last handled record and, while a rotated segment is being drained, that segment's file name (`{"segment": "ingest-....ndjson", "offset": N}`). Without a segment the offset refers to `ingest.ndjson`. Delete it to force a full replay from the beginning of `ingest.ndjson` on next startup.
 
 **Dead-letter**: `deadletter.ndjson` receives records that fail processing 3 times. Inspect and replay manually if needed.
 
@@ -24,7 +24,7 @@ When the spool file reaches `BUGBARN_MAX_SPOOL_BYTES`, the ingest endpoint retur
 
 Events and issues are kept indefinitely — there is no automatic TTL. Disk usage grows with the SQLite database at `BUGBARN_DB_PATH`.
 
-To reclaim space from the spool, delete processed archived segments (any file in `BUGBARN_SPOOL_DIR` matching `ingest-*.ndjson` that predates the current `cursor.json` offset — safe to remove once the cursor is past them).
+The worker deletes rotated spool segments once it has processed them, so the spool holds at most the active file plus one rotated segment.
 
 ## Backup and Recovery
 

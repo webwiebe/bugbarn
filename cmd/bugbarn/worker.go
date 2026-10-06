@@ -183,17 +183,13 @@ type spoolWorker struct {
 	metrics       *workerMetrics
 
 	retryCounts map[string]int // per-ingest-ID failure counts within this process
-	offset      int64          // spool cursor
+	pos         spool.Position // spool cursor: segment being read and offset in it
 	stallWarned bool
+	// rotateThreshold overrides workerRotateThreshold; zero means the default.
+	rotateThreshold int64
 }
 
 func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.EventPublisher, selfReporting bool, ws *worker.Status, mq *mutqueue.Queue) {
-	// Restore cursor position from disk so we never re-process already-handled records.
-	offset, err := spool.ReadCursor(spoolDir)
-	if err != nil {
-		slog.Error("worker failed to read cursor, starting from 0", "error", err)
-		offset = 0
-	}
 	w := &spoolWorker{
 		eventSpool:    eventSpool,
 		spoolDir:      spoolDir,
@@ -205,8 +201,10 @@ func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir 
 		tracer:        tracing.Tracer(),
 		metrics:       newWorkerMetrics(),
 		retryCounts:   make(map[string]int),
-		offset:        offset,
 	}
+	// Restore the cursor from disk so already-handled records are not
+	// re-processed, then delete rotated segments the worker is done with.
+	w.restorePosition()
 	w.run(ctx)
 }
 
@@ -233,25 +231,33 @@ func (w *spoolWorker) tick(ctx context.Context) {
 		slog.Error("worker failed to drain mutation queue", "error", err)
 	}
 
-	entries, err := spool.ReadRecordsFrom(spool.Path(w.spoolDir), w.offset)
+	entries, err := spool.ReadRecordsFrom(spool.SegmentPath(w.spoolDir, w.pos.Segment), w.pos.Offset)
 	if err != nil {
-		slog.Error("worker failed to read spool", "error", err)
+		slog.Error("worker failed to read spool", "segment", w.pos.Segment, "error", err)
 		return
 	}
 
+	drained := true
 	for _, entry := range entries {
 		// A record that fails stops the batch; remaining records retry next tick.
 		if w.processEntry(ctx, entry) {
+			drained = false
 			break
 		}
 	}
 
+	// A rotated segment receives no appends, so one read that was processed to
+	// the end means every record in it has been handled.
+	if drained && w.pos.Segment != "" {
+		w.finishSegment()
+	}
+
 	w.reportStatus()
 
-	// Rotate the active spool file once it exceeds the threshold, so old segments
-	// can eventually be archived or deleted.
-	if err := w.eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
-		slog.Error("worker failed to rotate spool", "error", err)
+	// Rotate the active segment once it exceeds the threshold. Never while a
+	// rotated segment is still being drained: one rotated segment at a time.
+	if w.pos.Segment == "" {
+		w.rotate()
 	}
 }
 
@@ -392,10 +398,11 @@ func (w *spoolWorker) markProcessed(record spool.Record, endOffset int64, extraA
 	}
 }
 
-// advanceCursor persists the new spool offset and records the advance.
+// advanceCursor persists the new offset in the current segment and records the
+// advance.
 func (w *spoolWorker) advanceCursor(endOffset int64) {
-	w.offset = endOffset
-	if err := spool.WriteCursor(w.spoolDir, w.offset); err != nil {
+	w.pos.Offset = endOffset
+	if err := spool.WritePosition(w.spoolDir, w.pos); err != nil {
 		slog.Error("worker failed to write cursor", "error", err)
 	}
 	if w.ws != nil {
@@ -449,8 +456,7 @@ func (w *spoolWorker) reportStatus() {
 	if w.ws == nil {
 		return
 	}
-	remaining, _ := spool.ReadRecordsFrom(spool.Path(w.spoolDir), w.offset)
-	w.ws.SetPendingRecords(int64(len(remaining)))
+	w.ws.SetPendingRecords(w.pendingRecords())
 	snap := w.ws.Snapshot()
 	switch {
 	case !snap.Healthy && !w.stallWarned:

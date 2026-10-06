@@ -214,7 +214,7 @@ func TestRotate(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 
-	if err := sp.Rotate(); err != nil {
+	if _, err := sp.RotateIfExceedsAt(0, 0); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 
@@ -270,9 +270,6 @@ func TestReadRecordsFromOffsets(t *testing.T) {
 	}
 }
 
-// TestRotateIfExceedsConcurrentAppend verifies that every record appended
-// concurrently with RotateIfExceeds ends up in exactly one segment and is
-// not silently discarded.
 func TestReadRecordsFromResetsCursorAfterRotation(t *testing.T) {
 	dir := t.TempDir()
 	s, err := New(dir)
@@ -293,7 +290,7 @@ func TestReadRecordsFromResetsCursorAfterRotation(t *testing.T) {
 	staleCursor := preRecords[len(preRecords)-1].EndOffset
 
 	// Rotate the spool — active file is now empty.
-	if err := s.Rotate(); err != nil {
+	if _, err := s.RotateIfExceedsAt(0, staleCursor); err != nil {
 		t.Fatal(err)
 	}
 
@@ -316,6 +313,9 @@ func TestReadRecordsFromResetsCursorAfterRotation(t *testing.T) {
 	}
 }
 
+// TestRotateIfExceedsConcurrentAppend verifies that every record appended
+// concurrently with RotateIfExceedsAt ends up in exactly one segment and is
+// not silently discarded.
 func TestRotateIfExceedsConcurrentAppend(t *testing.T) {
 	dir := t.TempDir()
 	s, err := New(dir)
@@ -336,8 +336,8 @@ func TestRotateIfExceedsConcurrentAppend(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < total; i++ {
 			// Threshold of 1 byte forces rotation on almost every call.
-			if err := s.RotateIfExceeds(1); err != nil {
-				t.Errorf("RotateIfExceeds: %v", err)
+			if _, err := s.RotateIfExceedsAt(1, 0); err != nil {
+				t.Errorf("RotateIfExceedsAt: %v", err)
 				return
 			}
 		}
