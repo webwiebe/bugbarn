@@ -339,6 +339,13 @@ function renderSettingsKeys(apiKeys: ApiApiKey[]): string {
     </div>`;
 }
 
+// spoolBacklogLabel shows the writer spool's unprocessed bytes, or "n/a" when
+// this instance cannot see the writer's spool.
+function spoolBacklogLabel(ingest: import("../types.js").IngestHealth | null, fmtBytes: (n: number) => string): string {
+  if (!ingest || !ingest.spoolBacklogKnown) return "n/a";
+  return fmtBytes(ingest.spoolBacklogBytes ?? 0);
+}
+
 function renderSettingsSystem(health: import("../types.js").SystemHealth | null): string {
   if (!health) {
     return `<div class="section"><h3>System health</h3><p class="muted">Loading…</p></div>`;
@@ -374,7 +381,7 @@ function renderSettingsSystem(health: import("../types.js").SystemHealth | null)
     : "—";
   const backlog = ingest && ingest.queueDepthKnown ? String(ingest.queueDepth) : "n/a";
   const wal = ingest ? fmtBytes(ingest.walSizeBytes) : "—";
-  const spool = ingest && ingest.spoolBacklogKnown ? fmtBytes(ingest.spoolBacklogBytes ?? 0) : "n/a";
+  const spool = spoolBacklogLabel(ingest, fmtBytes);
 
   const stats = ingest ? `
     <div class="stats-bar">
