@@ -77,7 +77,9 @@ type Config struct {
 	// Exposed as an env knob so it can be tuned during an incident without a
 	// rebuild.
 	WALCheckpointInterval time.Duration
-	RedisQueueURL         string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
+	// Compact is the one-time storage compaction at writer start (compact.go).
+	Compact       Compact
+	RedisQueueURL string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
 	// OIDCIssuer is BUGBARN_OIDC_ISSUER — when all four OIDC vars are set,
 	// OIDC login is offered alongside local auth.
 	OIDCIssuer        string
@@ -152,6 +154,7 @@ func Load() Config {
 	cfg.Digest = parseDigestConfig(cfg.PublicURL, cfg.Environment)
 	cfg.Telemetry = parseTelemetryConfig(cfg.DBPath)
 	cfg.Cloudflare = parseCloudflareConfig()
+	cfg.Compact = parseCompactConfig()
 
 	// Global admin alert recipient. Every new issue and regression across all
 	// projects is emailed here. Falls back to the weekly-digest recipient so a

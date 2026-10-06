@@ -43,6 +43,17 @@ sole checkpointer and must stay TRUNCATE with a bounded retry per tick. Reader p
 snapshots continuously, so a PASSIVE checkpoint never completes. Do not add a second
 checkpointer, and keep WAL mode: the readers depend on it.
 
+## Free space
+
+bugbarn.db was created with `auto_vacuum=NONE`, so rows the retention sweep deletes leave
+freelist pages and the file never shrinks. `Compact` (`compact.go`) rewrites the file once
+in `auto_vacuum=INCREMENTAL` mode; after that the checkpoint loop runs
+`PRAGMA incremental_vacuum` on every tick and freed pages go back to the volume. The
+writer runs it at start when `BUGBARN_COMPACT_ON_START=true` (testing and staging), and
+skips it when live data exceeds `BUGBARN_COMPACT_MAX_LIVE_BYTES` (default 1 GiB), since
+VACUUM holds the write connection. The same switch deletes the `.bugbarn.db-litestream`
+shadow directory Litestream left behind.
+
 ## Migrations
 
 `migrations/NNNNN_name.sql`, goose format, applied on writer start before the pod is
