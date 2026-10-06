@@ -43,6 +43,24 @@ spec:
               value: staging
             - name: BUGBARN_ENVIRONMENT
               value: staging
+            # One week of retention: staging shares k3s1's disk with testing
+            # and the CI runners' images (webwiebe/k3s-infra#61). Production
+            # keeps the code defaults.
+            - name: BUGBARN_EVENT_RETENTION_DAYS
+              value: "7"
+            - name: BUGBARN_ANALYTICS_RETENTION_DAYS
+              value: "7"
+            - name: BUGBARN_SECURITY_MAX_BYTES
+              value: "268435456"
+            - name: BUGBARN_METRICS_RAW_RETENTION_DAYS
+              value: "7"
+            - name: BUGBARN_METRICS_HOURLY_RETENTION_DAYS
+              value: "30"
+            # Rewrite bugbarn.db in auto_vacuum=INCREMENTAL mode once, so pages
+            # freed by retention go back to the volume, and drop Litestream's
+            # leftover shadow directory. A no-op once done.
+            - name: BUGBARN_COMPACT_ON_START
+              value: "true"
             - name: BUGBARN_SPOOL_DIR
               value: /var/lib/bugbarn/spool
             - name: BUGBARN_DB_PATH

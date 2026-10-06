@@ -72,7 +72,7 @@ func (s *core) RunPeriodicCheckpoint(ctx context.Context, interval time.Duration
 	if s == nil || s.db == nil {
 		return // read-only store: nothing to checkpoint.
 	}
-	RunCheckpointLoop(ctx, s.db, interval, log)
+	runCheckpointLoop(ctx, s.db, interval, log, checkpointVacuumPages)
 }
 
 // RunCheckpointLoop is RunPeriodicCheckpoint for any WAL-mode database opened
@@ -80,6 +80,14 @@ func (s *core) RunPeriodicCheckpoint(ctx context.Context, interval time.Duration
 // databases (internal/telemetrydb) use it so each file keeps exactly one
 // TRUNCATE checkpointer with the same bounded retry as the main database.
 func RunCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, log *slog.Logger) {
+	runCheckpointLoop(ctx, db, interval, log, 0)
+}
+
+// runCheckpointLoop is RunCheckpointLoop that also returns up to vacuumPages
+// freelist pages to the filesystem after each checkpoint. The main database
+// passes checkpointVacuumPages; the telemetry databases pass 0 because
+// internal/telemetrydb paces its own incremental vacuum.
+func runCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, log *slog.Logger, vacuumPages int) {
 	if interval <= 0 {
 		interval = DefaultCheckpointInterval
 	}
@@ -100,6 +108,9 @@ func RunCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, 
 			// until the next tick, which then retries from scratch.
 			tickCtx, cancel := context.WithTimeout(ctx, checkpointTickBudget)
 			CheckpointDB(tickCtx, db, checkpointRetryInterval, log)
+			if vacuumPages > 0 {
+				incrementalVacuum(tickCtx, db, vacuumPages, log)
+			}
 			cancel()
 		}
 	}

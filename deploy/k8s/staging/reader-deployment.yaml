@@ -48,6 +48,9 @@ spec:
               value: staging
             - name: BUGBARN_ENVIRONMENT
               value: staging
+            # Shown in the UI; matches the writer, which runs the sweep.
+            - name: BUGBARN_EVENT_RETENTION_DAYS
+              value: "7"
             - name: BUGBARN_DB_PATH
               value: /var/lib/bugbarn/bugbarn.db
             - name: BUGBARN_SESSION_TTL_SECONDS

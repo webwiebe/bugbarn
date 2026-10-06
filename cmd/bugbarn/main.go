@@ -115,6 +115,9 @@ func run() error {
 	// Runs before the deferred Close above (LIFO), so a clean shutdown folds the
 	// WAL back into the main database file.
 	defer store.FinalCheckpoint(logger)
+	if cfg.Compact.OnStart {
+		compactStorage(context.Background(), store, cfg, logger)
+	}
 
 	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
 	if err != nil {
