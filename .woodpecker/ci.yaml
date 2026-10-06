@@ -45,7 +45,25 @@ steps:
         export BUILDX_CONFIG="$HOME/.docker/buildx"
         # Ensure a working docker-container builder: bootstrap it if it exists but
         # is stopped; recreate if its container is gone/wedged.
-        docker buildx inspect bugbarn-ci --bootstrap >/dev/null 2>&1 || { docker buildx rm bugbarn-ci >/dev/null 2>&1 || true; docker buildx create --name bugbarn-ci --driver docker-container --bootstrap >/dev/null; }
+        ensure_builder() {
+          docker buildx inspect bugbarn-ci --bootstrap >/dev/null 2>&1 || { docker buildx rm bugbarn-ci >/dev/null 2>&1 || true; docker buildx create --name bugbarn-ci --driver docker-container --buildkitd-config deploy/docker/buildkitd-ci.toml --bootstrap >/dev/null; }
+        }
+        ensure_builder
+        # Cap the cache at 3 GB via BuildKit GC (#195). The local backend gives
+        # each workflow its own HOME, so `buildx create` reattaches to the
+        # long-lived buildx_buildkit_bugbarn-ci0 container, which keeps the GC
+        # policy it was first started with. Check the live policy and replace a
+        # container that predates the cap.
+        case "$(docker buildx inspect bugbarn-ci 2>/dev/null || true)" in
+          *'Max Used Space: 3GiB'*) ;;
+          *)
+            docker rm -f buildx_buildkit_bugbarn-ci0 >/dev/null 2>&1 || true
+            docker buildx rm bugbarn-ci >/dev/null 2>&1 || true
+            ensure_builder
+            ;;
+        esac
+        # Cap the builder's local cache after every run, pass or fail (#195).
+        trap 'sh scripts/prune-buildx-cache.sh bugbarn-ci 3gb' EXIT
         CACHE_REF="ghcr.io/webwiebe/bugbarn/buildcache"
         docker buildx build \
           --builder bugbarn-ci \

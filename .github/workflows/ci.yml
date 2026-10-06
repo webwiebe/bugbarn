@@ -72,6 +72,7 @@ jobs:
           # which otherwise dwarfs the ~12s cached build.
           name: bugbarn-ci
           cleanup: false
+          buildkitd-config: deploy/docker/buildkitd-ci.toml
       - name: GHCR auth
         shell: bash
         run: |
@@ -95,6 +96,10 @@ jobs:
             --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
             --output type=cacheonly \
             .
+      - name: Cap bugbarn-ci builder cache
+        if: always()
+        shell: bash
+        run: sh scripts/prune-buildx-cache.sh bugbarn-ci 3gb
 
   # One leg per Node package (dashboard, marketing site, TS SDK) so they install
   # and build in parallel instead of serially.

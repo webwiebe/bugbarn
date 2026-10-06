@@ -1,0 +1,6 @@
+# BuildKit daemon config for the persistent bugbarn-ci builder on the CI build
+# host (issue #195). Caps the builder's local cache at 3 GB; the registry cache
+# on GHCR is what CI depends on, so a trimmed local cache only costs a re-pull.
+[worker.oci]
+  gc = true
+  maxUsedSpace = "3GB"
