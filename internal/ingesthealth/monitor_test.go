@@ -42,7 +42,7 @@ func TestSampleHealthyWhenRecent(t *testing.T) {
 func TestSampleStalledIngest(t *testing.T) {
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 	// depth 3: events are arriving into the queue but not draining.
-	m := New(Config{StaleAfter: 30 * time.Minute}, baseDeps(now.Add(-5*24*time.Hour), 3), nil)
+	m := New(Config{ConfirmSamples: 1, StaleAfter: 30 * time.Minute}, baseDeps(now.Add(-5*24*time.Hour), 3), nil)
 	m.now = func() time.Time { return now }
 
 	m.sample(context.Background())
@@ -79,7 +79,7 @@ func TestSampleIdleWithEmptyQueueIsHealthy(t *testing.T) {
 // where the queue-corroboration path cannot apply.
 func TestSampleStaleMonolithNoQueueIsUnhealthy(t *testing.T) {
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
-	m := New(Config{StaleAfter: 30 * time.Minute}, Deps{
+	m := New(Config{ConfirmSamples: 1, StaleAfter: 30 * time.Minute}, Deps{
 		LastEventAt: func(context.Context) (time.Time, error) { return now.Add(-2 * time.Hour), nil },
 	}, nil)
 	m.now = func() time.Time { return now }
@@ -97,7 +97,7 @@ func TestSampleStaleMonolithNoQueueIsUnhealthy(t *testing.T) {
 
 func TestSampleBacklogOverThreshold(t *testing.T) {
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
-	m := New(Config{StaleAfter: time.Hour, MaxQueueDepth: 50_000}, baseDeps(now, 411_000), nil)
+	m := New(Config{ConfirmSamples: 1, StaleAfter: time.Hour, MaxQueueDepth: 50_000}, baseDeps(now, 411_000), nil)
 	m.now = func() time.Time { return now }
 
 	m.sample(context.Background())
@@ -172,7 +172,7 @@ func TestQueueDepthErrorDoesNotMarkUnhealthy(t *testing.T) {
 
 func TestAlertThrottled(t *testing.T) {
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
-	m := New(Config{StaleAfter: time.Minute, AlertEvery: 15 * time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
+	m := New(Config{ConfirmSamples: 1, StaleAfter: time.Minute, AlertEvery: 15 * time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
 	cur := now
 	m.now = func() time.Time { return cur }
 

@@ -47,7 +47,7 @@ func (f *fakeNotifier) count() int {
 func TestNotifiesOutOfBandOnStall(t *testing.T) {
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
 	f := &fakeNotifier{name: "fake"}
-	m := New(Config{StaleAfter: 30 * time.Minute, Environment: "production"}, baseDeps(now.Add(-13*time.Hour), 103_062), nil)
+	m := New(Config{ConfirmSamples: 1, StaleAfter: 30 * time.Minute, Environment: "production"}, baseDeps(now.Add(-13*time.Hour), 103_062), nil)
 	m.now = func() time.Time { return now }
 	m.AddNotifier(f)
 
@@ -87,7 +87,7 @@ func TestHealthySampleDoesNotNotify(t *testing.T) {
 func TestNotifyShareTheAlertThrottle(t *testing.T) {
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
 	f := &fakeNotifier{name: "fake"}
-	m := New(Config{StaleAfter: time.Minute, AlertEvery: 15 * time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
+	m := New(Config{ConfirmSamples: 1, StaleAfter: time.Minute, AlertEvery: 15 * time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
 	cur := now
 	m.now = func() time.Time { return cur }
 	m.AddNotifier(f)
@@ -112,7 +112,7 @@ func TestOneFailingChannelDoesNotBlockAnother(t *testing.T) {
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
 	bad := &fakeNotifier{name: "bad", err: errors.New("smtp unreachable")}
 	good := &fakeNotifier{name: "good"}
-	m := New(Config{StaleAfter: time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
+	m := New(Config{ConfirmSamples: 1, StaleAfter: time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
 	m.now = func() time.Time { return now }
 	m.AddNotifier(bad, good)
 

@@ -64,6 +64,15 @@ type Config struct {
 	// Environment (production/staging/testing) labels outgoing alerts so a
 	// recipient can tell which instance is stalled. Optional.
 	Environment string
+	// ConfirmSamples is how many consecutive samples must find the pipeline
+	// unhealthy before the snapshot reports it and the alert fires. Default 3
+	// (two minutes at the default interval). One sample is not enough: the
+	// write queue also carries logs, security and metrics batches, so it is
+	// briefly non-empty whenever the writer restarts during a rollout, and a
+	// production instance can go half an hour without an error event. A new
+	// pod's first sample then saw "events queued but not persisted" for a few
+	// seconds and paged (BS2-107). A real stall holds across samples.
+	ConfirmSamples int
 }
 
 func (c Config) withDefaults() Config {
@@ -85,6 +94,9 @@ func (c Config) withDefaults() Config {
 	if c.NotifyTimeout <= 0 {
 		c.NotifyTimeout = 30 * time.Second
 	}
+	if c.ConfirmSamples <= 0 {
+		c.ConfirmSamples = 3
+	}
 	return c
 }
 
@@ -101,6 +113,10 @@ type Snapshot struct {
 	QueueDepth          int64     `json:"queueDepth"`
 	QueueDepthKnown     bool      `json:"queueDepthKnown"`
 	WALSizeBytes        int64     `json:"walSizeBytes"`
+	// UnhealthySamples counts the consecutive samples, this one included,
+	// that found the pipeline unhealthy. Healthy turns false once it reaches
+	// Config.ConfirmSamples.
+	UnhealthySamples int `json:"unhealthySamples,omitempty"`
 }
 
 // Deps are the data sources the monitor samples. QueueDepth may be nil (e.g. a
@@ -124,6 +140,9 @@ type Monitor struct {
 
 	mu        sync.Mutex
 	lastAlert time.Time
+	// streak counts consecutive unhealthy samples; only the sample loop
+	// touches it.
+	streak int
 
 	notifiers []Notifier
 
@@ -233,6 +252,7 @@ func (m *Monitor) sample(ctx context.Context) {
 	}
 
 	m.evaluate(&snap, now)
+	m.confirm(&snap)
 
 	m.snap.Store(&snap)
 	m.maybeAlert(ctx, snap)
@@ -282,6 +302,33 @@ func (m *Monitor) evaluate(snap *Snapshot, now time.Time) {
 	}
 }
 
+// confirm holds back an unhealthy verdict until it has held for
+// ConfirmSamples consecutive samples. Until then the snapshot stays healthy and
+// the reasons go out at WARN, which stays in the local log and is not reported
+// to BugBarn, so a transient condition is still visible in the pod's log.
+func (m *Monitor) confirm(snap *Snapshot) {
+	if snap.Healthy {
+		m.streak = 0
+		return
+	}
+	m.streak++
+	snap.UnhealthySamples = m.streak
+	if m.streak >= m.cfg.ConfirmSamples {
+		return
+	}
+	m.logger.Warn("ingest-health: unhealthy sample, waiting for confirmation",
+		"environment", m.cfg.Environment,
+		"reasons", snap.Reasons,
+		"unhealthy_samples", m.streak,
+		"confirm_samples", m.cfg.ConfirmSamples,
+		"last_event_age_seconds", snap.LastEventAgeSeconds,
+		"queue_depth", snap.QueueDepth,
+		"queue_depth_known", snap.QueueDepthKnown,
+	)
+	snap.Healthy = true
+	snap.Reasons = nil
+}
+
 // maybeAlert logs at ERROR when unhealthy, throttled to AlertEvery so a sustained
 // outage does not spam (and re-report to BugBarn) every interval. A WAL over the
 // warn threshold logs at WARN regardless of overall health, as an early signal.
@@ -305,9 +352,13 @@ func (m *Monitor) maybeAlert(ctx context.Context, snap Snapshot) {
 	}
 
 	m.logger.Error("ingest pipeline unhealthy",
+		"environment", m.cfg.Environment,
 		"reasons", snap.Reasons,
+		"unhealthy_samples", snap.UnhealthySamples,
+		"last_event_at", snap.LastEventAt,
 		"last_event_age_seconds", snap.LastEventAgeSeconds,
 		"queue_depth", snap.QueueDepth,
+		"queue_depth_known", snap.QueueDepthKnown,
 		"wal_bytes", snap.WALSizeBytes,
 	)
 	m.notify(ctx, snap)
