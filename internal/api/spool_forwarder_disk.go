@@ -88,7 +88,33 @@ func writeCursor(dir string, offset int64) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, spoolCursorFileName), data, 0o600)
+	// Write a temp file and rename it into place. os.WriteFile truncates first,
+	// so a crash in between left an empty cursor.json that readCursor rejected
+	// on every drain pass (BS2-152).
+	tmp, err := os.CreateTemp(dir, spoolCursorFileName+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, filepath.Join(dir, spoolCursorFileName)); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 func resetCursor(dir string) error {
