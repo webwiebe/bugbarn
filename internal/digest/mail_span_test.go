@@ -45,8 +45,8 @@ func TestMailErrorTextCarriesNoRelayOutput(t *testing.T) {
 	if got := err.Error(); got != "send email failed: permanent_rejection (smtp 550)" {
 		t.Fatalf("Error() = %q", got)
 	}
-	cancelled := &MailError{Class: "other", cause: context.Canceled}
-	if !errors.Is(cancelled, context.Canceled) {
+	canceledErr := &MailError{Class: "other", cause: context.Canceled}
+	if !errors.Is(canceledErr, context.Canceled) {
 		t.Fatal("MailError hides context.Canceled from errors.Is")
 	}
 }
@@ -91,12 +91,12 @@ func TestSendMailTracedRecordsClassNotMessage(t *testing.T) {
 	var dump strings.Builder
 	dump.WriteString(span.Status.Description)
 	for _, kv := range span.Attributes {
-		dump.WriteString(kv.Value.Emit())
+		dump.WriteString(kv.Value.String())
 	}
 	for _, ev := range span.Events {
 		dump.WriteString(ev.Name)
 		for _, kv := range ev.Attributes {
-			dump.WriteString(kv.Value.Emit())
+			dump.WriteString(kv.Value.String())
 		}
 	}
 	if strings.Contains(dump.String(), "jane@example.com") {

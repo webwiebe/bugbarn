@@ -202,7 +202,8 @@ func attemptDelivery(ctx context.Context, mc MailConfig, subject, plain, html st
 			return lastErr
 		}
 		if attempt < len(delays)-1 {
-			slog.Warn("digest mailer: transient error, retrying", "attempt", attempt+1, "max_attempts", 3, "retry_in", delay, "error_class", errorClass(lastErr))
+			slog.Warn("digest mailer: transient error, retrying",
+				"attempt", attempt+1, "max_attempts", 3, "retry_in", delay, "error_class", errorClass(lastErr))
 			select {
 			case <-ctx.Done():
 				return lastErr
