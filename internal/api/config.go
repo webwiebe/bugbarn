@@ -40,7 +40,16 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 		PostLogoutRedirectURI string `json:"postLogoutRedirectURI,omitempty"`
 	}
 
+	// spanBarnConfig tells the SPA whether to start the SpanBarn browser SDK and
+	// where to send spans. The key stays on the server (see frontend_traces.go).
+	type spanBarnConfig struct {
+		Enabled  bool   `json:"enabled"`
+		Endpoint string `json:"endpoint,omitempty"`
+		Service  string `json:"service,omitempty"`
+	}
+
 	type runtimeConfig struct {
+		SpanBarn   spanBarnConfig    `json:"spanbarn"`
 		FunnelBarn funnelBarnConfig  `json:"funnelbarn"`
 		BugBarn    bugbarnSelfConfig `json:"bugbarn"`
 		OIDC       oidcConfigOut     `json:"oidc"`
@@ -48,6 +57,9 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := runtimeConfig{}
+	if s.frontendTraces != nil {
+		cfg.SpanBarn = spanBarnConfig{Enabled: true, Endpoint: frontendTracesBase, Service: s.frontendTraces.service}
+	}
 	if s.funnelBarnEndpoint != "" {
 		cfg.FunnelBarn = funnelBarnConfig{
 			Enabled:  true,

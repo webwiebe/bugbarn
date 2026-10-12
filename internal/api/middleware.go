@@ -73,7 +73,7 @@ func isCSRFProtected(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 		switch r.URL.Path {
-		case "/api/v1/events", "/api/v1/login", "/api/v1/logout":
+		case "/api/v1/events", "/api/v1/login", "/api/v1/logout", frontendTracesPath:
 			return false
 		}
 		return true

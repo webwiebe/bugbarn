@@ -282,6 +282,7 @@ func run() error {
 	apiServer.SetRetentionDays(cfg.EventRetentionDays)
 	apiServer.SetHeldReplayer(heldReplayer)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
+	apiServer.SetFrontendTraces(cfg.FrontendTracesURL, cfg.FrontendTracesKey, "bugbarn-web")
 	if selfReporting {
 		apiServer.SetSelfReportingConfig(cfg.SelfAPIKey, cfg.SelfProject)
 	}
