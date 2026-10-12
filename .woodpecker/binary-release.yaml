@@ -21,6 +21,14 @@
 # that tag push is what fires release.yaml (staging) and then
 # deploy-production.yaml. A commit that failed the test suite still shipped to
 # production. Waiting on ci is what gives that gate any authority.
+#
+# `depends_on: build-and-test` keeps the tag from outliving its images. The tag
+# push fires release.yaml, whose retag-images step waits for the SHA-tagged
+# images that build-and-test pushes. A newer push cancels the older pipeline
+# (the repo cancels previous push pipelines), and when that happened after this
+# workflow had already cut the tag, the tag existed with no images (v0.236.219,
+# pipeline 413, 2026-10-12). Tagging only after build-and-test succeeds means a
+# cancelled pipeline leaves no tag behind.
 when:
   - event: push
     branch: main
@@ -28,6 +36,7 @@ when:
 
 depends_on:
   - ci
+  - build-and-test
 
 labels:
   type: build
