@@ -43,7 +43,7 @@ import {
 } from "./views-projects.js";
 import { loadIssues } from "./views-issues.js";
 
-initInstrumentation();
+const instrumentationReady = initInstrumentation();
 
 function applySidebarState(): void {
   const expanded = localStorage.getItem(sidebarKey) === "expanded";
@@ -186,6 +186,7 @@ window.addEventListener("beforeunload", stopLiveStream);
 void start();
 
 async function start(): Promise<void> {
+  await instrumentationReady;
   void initFunnelBarn();
   void initSelfReporting();
   void initIAMBarnWidgets();

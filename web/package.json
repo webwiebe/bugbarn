@@ -17,5 +17,8 @@
     "oxlint": "1.82.0",
     "typescript": "^7.0.2"
   },
-  "packageManager": "pnpm@12.4.2"
+  "packageManager": "pnpm@12.4.2",
+  "dependencies": {
+    "@spanbarn/js": "https://github.com/wiebe-xyz/spanbarn/releases/download/js-v0.1.0/spanbarn-js-0.1.0.tgz"
+  }
 }
