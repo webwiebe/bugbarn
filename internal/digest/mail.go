@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"text/template"
 	"time"
@@ -123,7 +124,42 @@ func buildMessage(mc MailConfig, from, subject, plain, html string) []byte {
 	return []byte(msg.String())
 }
 
+// MailError is what callers of deliverEmail get back on failure. It carries the
+// error class and SMTP reply code and nothing the relay said, because callers
+// log it and the relay's text can quote recipient addresses or account names.
+type MailError struct {
+	Class string
+	Code  int
+	cause error
+}
+
+func (e *MailError) Unwrap() error { return e.cause }
+
+func (e *MailError) Error() string {
+	if e.Code != 0 {
+		return fmt.Sprintf("send email failed: %s (smtp %d)", e.Class, e.Code)
+	}
+	return "send email failed: " + e.Class
+}
+
 func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html string) error {
+	err := attemptDelivery(ctx, mc, subject, plain, html)
+	if err == nil {
+		return nil
+	}
+	class, code := classifyMailError(err)
+	me := &MailError{Class: class, Code: code}
+	// Keep context cancellation visible to errors.Is; the sentinels carry no text.
+	switch {
+	case errors.Is(err, context.Canceled):
+		me.cause = context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		me.cause = context.DeadlineExceeded
+	}
+	return me
+}
+
+func attemptDelivery(ctx context.Context, mc MailConfig, subject, plain, html string) error {
 	from := mc.From
 	if from == "" {
 		from = mc.User
@@ -166,7 +202,7 @@ func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html strin
 			return lastErr
 		}
 		if attempt < len(delays)-1 {
-			slog.Warn("digest mailer: transient error, retrying", "attempt", attempt+1, "max_attempts", 3, "retry_in", delay, "error", lastErr)
+			slog.Warn("digest mailer: transient error, retrying", "attempt", attempt+1, "max_attempts", 3, "retry_in", delay, "error_class", errorClass(lastErr))
 			select {
 			case <-ctx.Done():
 				return lastErr
@@ -263,6 +299,40 @@ func writeMessage(client *smtp.Client, from string, to []string, msg []byte) err
 	return client.Quit()
 }
 
+// classifyMailError maps a send error to a low-cardinality class and, for SMTP
+// replies, the numeric code. It never returns the error text.
+func classifyMailError(err error) (class string, code int) {
+	var tpErr *textproto.Error
+	if errors.As(err, &tpErr) {
+		switch {
+		case tpErr.Code == 530 || tpErr.Code == 534 || tpErr.Code == 535:
+			return "auth", tpErr.Code
+		case tpErr.Code >= 400 && tpErr.Code < 500:
+			return "temporary_rejection", tpErr.Code
+		default:
+			return "permanent_rejection", tpErr.Code
+		}
+	}
+	var netErr net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+		return "timeout", 0
+	}
+	var tlsErr *tls.CertificateVerificationError
+	if errors.As(err, &tlsErr) {
+		return "tls", 0
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return "connect", 0
+	}
+	return "other", 0
+}
+
+func errorClass(err error) string {
+	class, _ := classifyMailError(err)
+	return class
+}
+
 // sendMailTraced wraps a single SMTP send attempt in a span, recording the
 // mail host and attempt number and marking the span as failed on error. The
 // existing slog-based retry logging in deliverEmail is unchanged; this adds
@@ -275,9 +345,17 @@ func sendMailTraced(ctx context.Context, host string, attempt int, send func() e
 		attribute.Int("attempt", attempt),
 	)
 	if err := send(); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		// Record the class and reply code only. The relay's text can quote the
+		// recipient address or the account name, and spans outlive the mail.
+		class, code := classifyMailError(err)
+		span.SetAttributes(attribute.String("error.class", class))
+		if code != 0 {
+			span.SetAttributes(attribute.Int("smtp.code", code))
+		}
+		span.SetStatus(codes.Error, class)
 		emailDeliveryCounter.Add(ctx, 1, metric.WithAttributes(
 			attribute.String("outcome", "error"),
+			attribute.String("error_class", class),
 			attribute.Int("attempt", attempt),
 		))
 		return err
