@@ -1,3 +1,5 @@
+import { fetchSpanBarnRuntime, startSpanBarn } from "./spanbarn.js";
+
 const TELEMETRY_URL = "/api/v1/telemetry";
 const CLIENT_ERRORS_URL = "/api/v1/client-errors";
 const SERVICE_NAME = "bugbarn-web";
@@ -209,7 +211,16 @@ function installErrorHandlers(): void {
   });
 }
 
-export function initInstrumentation(): void {
+// Starts the SpanBarn SDK when the server advertises the relay. Otherwise the
+// built-in instrumentation below reports spans to BugBarn's own telemetry
+// endpoint.
+export async function initInstrumentation(): Promise<void> {
+  const runtime = await fetchSpanBarnRuntime();
+  if (startSpanBarn(runtime, CLIENT_ERRORS_URL)) return;
+  initBuiltInInstrumentation();
+}
+
+function initBuiltInInstrumentation(): void {
   instrumentFetch();
   instrumentNavigation();
   installErrorHandlers();
