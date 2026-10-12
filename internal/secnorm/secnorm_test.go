@@ -1,8 +1,6 @@
 package secnorm
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -39,8 +37,7 @@ func TestTraefikAccessLog(t *testing.T) {
 func TestTraefikSampleNamesTheCaller(t *testing.T) {
 	line := `{"source":"traefik","message":"{\"DownstreamStatus\":401,\"RequestMethod\":\"POST\",\"RequestHost\":\"bugbarn.wiebe.xyz\",\"RequestPath\":\"/api/v1/logs\",\"request_User-Agent\":\"bugbarn-go/1.2\",\"request_X-Bugbarn-Project\":\"web\",\"request_X-Bugbarn-Api-Key\":\"secret-key-value\"}"}`
 	r := parseOne(t, line)
-	sum := sha256.Sum256([]byte("secret-key-value"))
-	want := "POST bugbarn.wiebe.xyz/api/v1/logs 401 ua=bugbarn-go/1.2 project=web key=" + hex.EncodeToString(sum[:])[:6]
+	want := "POST bugbarn.wiebe.xyz/api/v1/logs 401 ua=bugbarn-go/1.2 project=web"
 	if r.Message != want {
 		t.Fatalf("Message = %q, want %q", r.Message, want)
 	}
