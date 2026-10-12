@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -45,14 +46,25 @@ type Deliverer struct {
 	mailCfg digest.MailConfig
 	vol     EventVolumeSource
 	env     string // this BugBarn instance's environment (production/staging/testing), labels emails
+
+	// Email sends are bounded (see mail_limit.go): mailSlots caps concurrent
+	// SMTP sends, mailQueue caps how many more may wait.
+	sendEmail    func(ctx context.Context, mc digest.MailConfig, to, subject, plain, html string) error
+	mailSlots    chan struct{}
+	mailQueue    int64
+	emailWaiting atomic.Int64
+	emailDropped atomic.Int64
 }
 
 // NewDeliverer creates a new Deliverer with a 5-second HTTP timeout.
 func NewDeliverer(mailCfg digest.MailConfig) *Deliverer {
-	return &Deliverer{
-		client:  &http.Client{Timeout: 5 * time.Second},
-		mailCfg: mailCfg,
+	d := &Deliverer{
+		client:    &http.Client{Timeout: 5 * time.Second},
+		mailCfg:   mailCfg,
+		sendEmail: digest.DeliverEmail,
 	}
+	d.setMailLimits(defaultMailConcurrency, defaultMailQueue)
+	return d
 }
 
 // SetEventVolumeSource wires an optional source used to render the 24h event
@@ -203,7 +215,12 @@ func (d *Deliverer) fireEmail(ctx context.Context, rule Rule, issue domain.Issue
 	}
 
 	subject := alertSubject(d.env, rule, issue)
-	return digest.DeliverEmail(ctx, d.mailCfg, rule.EmailTo, subject, plain.String(), htmlBuf.String())
+	release, err := d.acquireMailSlot(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return d.sendEmail(ctx, d.mailCfg, rule.EmailTo, subject, plain.String(), htmlBuf.String())
 }
 
 type alertMailData struct {
