@@ -1,8 +1,6 @@
 package secnorm
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -38,10 +36,11 @@ func traefik(base Record, in map[string]any) (Record, bool) {
 }
 
 // callerSuffix names who sent a request, from the request headers Traefik
-// keeps (accesslog.fields.headers). It adds the user agent, the project slug
-// and a 6-hex fingerprint of the presented API key, never the key itself, so a
+// keeps (accesslog.fields.headers): the user agent and the project slug, so a
 // burst of rejected requests can be traced to its sender. Headers Traefik does
-// not log are left out.
+// not log are left out. The API key header is never kept in access logs; the
+// key fingerprint comes from the ingest handler's "ingest api key denied"
+// warning (internal/ingest/denied.go).
 func callerSuffix(in map[string]any) string {
 	var b strings.Builder
 	if ua := truncate(str(in, "request_User-Agent"), 120); ua != "" {
@@ -49,10 +48,6 @@ func callerSuffix(in map[string]any) string {
 	}
 	if p := truncate(str(in, "request_X-Bugbarn-Project"), 64); p != "" {
 		b.WriteString(" project=" + p)
-	}
-	if k := str(in, "request_X-Bugbarn-Api-Key"); k != "" {
-		sum := sha256.Sum256([]byte(k))
-		b.WriteString(" key=" + hex.EncodeToString(sum[:])[:6])
 	}
 	return b.String()
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -47,6 +48,11 @@ type Handler struct {
 	maxBodyBytes int64
 	now          func() time.Time
 	idFn         func() string
+	logger       *slog.Logger
+
+	// deniedAt throttles the denied-key log line: see logDenied.
+	deniedMu sync.Mutex
+	deniedAt map[string]time.Time
 
 	// funnelbarnLastFired throttles the "event_ingested" product event: see
 	// trackEventIngested.
@@ -104,6 +110,8 @@ func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyByt
 		maxBodyBytes: maxBodyBytes,
 		now:          time.Now,
 		idFn:         generateIngestID,
+		logger:       slog.Default(),
+		deniedAt:     map[string]time.Time{},
 	}
 }
 
@@ -170,7 +178,11 @@ func (h *Handler) APIKeyProjectScope(r *http.Request) (projectID int64, scope st
 		return 0, "full", true
 	}
 	slug := r.Header.Get("x-bugbarn-project")
-	return h.auth.ValidWithSetupFallback(r.Context(), r.Header.Get(auth.HeaderAPIKey), slug)
+	projectID, scope, ok = h.auth.ValidWithSetupFallback(r.Context(), r.Header.Get(auth.HeaderAPIKey), slug)
+	if !ok {
+		h.logDenied(r)
+	}
+	return projectID, scope, ok
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
