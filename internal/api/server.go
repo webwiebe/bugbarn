@@ -50,6 +50,7 @@ type Server struct {
 	maxSourceMapBytes   int64
 	funnelBarnEndpoint  string
 	funnelBarnAPIKey    string
+	frontendTraces      *frontendTracesProxy
 	selfAPIKey          string
 	selfProject         string
 	workerStatus        *worker.Status
@@ -268,6 +269,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ok bool
 	r, ok = s.authenticateAndResolve(w, r)
 	if !ok {
+		return
+	}
+
+	// Frontend traces keep no BugBarn state, so a reader serves them itself.
+	if s.serveFrontendTraces(w, r) {
 		return
 	}
 

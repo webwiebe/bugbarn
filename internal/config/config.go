@@ -68,6 +68,8 @@ type Config struct {
 	EventSampleAfter    int
 	FunnelBarnEndpoint  string // BUGBARN_FUNNELBARN_ENDPOINT
 	FunnelBarnAPIKey    string // BUGBARN_FUNNELBARN_API_KEY
+	FrontendTracesURL   string // BUGBARN_FRONTEND_TRACES_URL: SpanBarn base URL the browser spans are relayed to
+	FrontendTracesKey   string // BUGBARN_FRONTEND_TRACES_API_KEY: project-scoped SpanBarn key, held server-side
 	AutoApproveProjects bool   // BUGBARN_AUTO_APPROVE_PROJECTS
 	Mode                string // BUGBARN_MODE: "", "writer", or "reader"
 	WriterURL           string // BUGBARN_WRITER_URL: writer service URL (required when Mode=="reader")
@@ -145,6 +147,8 @@ func Load() Config {
 		SelfProject:         os.Getenv("BUGBARN_SELF_PROJECT"),
 		FunnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
 		FunnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
+		FrontendTracesURL:   os.Getenv("BUGBARN_FRONTEND_TRACES_URL"),
+		FrontendTracesKey:   os.Getenv("BUGBARN_FRONTEND_TRACES_API_KEY"),
 		AutoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
 		Mode:                os.Getenv("BUGBARN_MODE"),
 		WriterURL:           os.Getenv("BUGBARN_WRITER_URL"),
