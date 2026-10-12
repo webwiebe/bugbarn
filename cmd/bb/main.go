@@ -112,6 +112,7 @@ Examples:
   bb logs -f --level warn            # tail warnings and above
   bb logs --project backend --limit 20
   bb issues --status all --query OOM # search all issues
+  bb issues --all                    # every page, not just the first 100
   bb issue issue-000042              # get issue detail
   bb events issue-000042             # list events for issue
   bb vibe issue-000042               # open a Claude Code session for the issue
