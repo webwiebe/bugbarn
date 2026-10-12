@@ -169,7 +169,14 @@ func cmdIssues(args []string) error {
 	query := fs.String("query", "", "search text")
 	project := fs.String("project", "", "project slug filter")
 	group := fs.String("group", "", "group slug filter (shows all projects in the group)")
+	limit := fs.Int("limit", 0, "page size, 1 to 500 (default: the server's 100)")
+	offset := fs.Int("offset", 0, "skip this many issues")
+	all := fs.Bool("all", false, "follow every page and print one merged list")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	paging := issuePaging{limit: *limit, offset: *offset, all: *all, offsetSet: flagWasSet(fs, "offset")}
+	if err := paging.validate(); err != nil {
 		return err
 	}
 
@@ -177,26 +184,8 @@ func cmdIssues(args []string) error {
 	if err != nil {
 		return err
 	}
-
-	if *group != "" && *project != "" {
-		return fmt.Errorf("--group and --project are mutually exclusive")
-	}
-
-	// Resolution order: explicit flag > .bugbarn.json group > .bugbarn.json project / global config.
-	resolvedGroup := resolveGroup(*group)
-	if resolvedGroup != "" && *project == "" {
-		if err := validateGroup(client, resolvedGroup); err != nil {
-			return err
-		}
-		client.group = resolvedGroup
-	} else {
-		projectSlug := resolveProject(*project, client)
-		if projectSlug != "" {
-			if err := validateProject(client, projectSlug); err != nil {
-				return err
-			}
-			client.project = projectSlug
-		}
+	if err := scopeIssuesClient(client, *project, *group); err != nil {
+		return err
 	}
 
 	params := url.Values{}
@@ -206,11 +195,50 @@ func cmdIssues(args []string) error {
 		params.Set("q", *query)
 	}
 
-	data, err := client.get("/api/v1/issues?" + params.Encode())
+	res, err := fetchIssues(client, params.Encode(), paging)
 	if err != nil {
 		return err
 	}
-	return writeRaw(data)
+	if res.hint != "" {
+		fmt.Fprintln(os.Stderr, res.hint)
+	}
+	return writeRaw(res.body)
+}
+
+// flagWasSet reports whether the named flag appeared on the command line.
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
+}
+
+// scopeIssuesClient scopes the client to a group or project.
+// Resolution order: explicit flag > .bugbarn.json group > .bugbarn.json project / global config.
+func scopeIssuesClient(client *Client, project, group string) error {
+	if group != "" && project != "" {
+		return fmt.Errorf("--group and --project are mutually exclusive")
+	}
+	resolvedGroup := resolveGroup(group)
+	if resolvedGroup != "" && project == "" {
+		if err := validateGroup(client, resolvedGroup); err != nil {
+			return err
+		}
+		client.group = resolvedGroup
+		return nil
+	}
+	projectSlug := resolveProject(project, client)
+	if projectSlug == "" {
+		return nil
+	}
+	if err := validateProject(client, projectSlug); err != nil {
+		return err
+	}
+	client.project = projectSlug
+	return nil
 }
 
 func cmdIssue(args []string) error {

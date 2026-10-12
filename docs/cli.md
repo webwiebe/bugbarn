@@ -64,6 +64,8 @@ bb issues --status all                 # all issues regardless of status
 bb issues --status resolved            # only resolved issues
 bb issues --sort event_count           # sort by event count
 bb issues --query "OOM"                # search by title
+bb issues --limit 250 --offset 250     # one page of up to 500 issues
+bb issues --all                        # follow every page, one merged list (stops at 20,000)
 ```
 
 ### Issue detail
