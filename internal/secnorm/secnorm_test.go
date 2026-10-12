@@ -1,6 +1,8 @@
 package secnorm
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +33,26 @@ func TestTraefikAccessLog(t *testing.T) {
 	}
 	if got, _ := r.Field("status"); got != "401" {
 		t.Fatalf("status field = %q", got)
+	}
+}
+
+func TestTraefikSampleNamesTheCaller(t *testing.T) {
+	line := `{"source":"traefik","message":"{\"DownstreamStatus\":401,\"RequestMethod\":\"POST\",\"RequestHost\":\"bugbarn.wiebe.xyz\",\"RequestPath\":\"/api/v1/logs\",\"request_User-Agent\":\"bugbarn-go/1.2\",\"request_X-Bugbarn-Project\":\"web\",\"request_X-Bugbarn-Api-Key\":\"secret-key-value\"}"}`
+	r := parseOne(t, line)
+	sum := sha256.Sum256([]byte("secret-key-value"))
+	want := "POST bugbarn.wiebe.xyz/api/v1/logs 401 ua=bugbarn-go/1.2 project=web key=" + hex.EncodeToString(sum[:])[:6]
+	if r.Message != want {
+		t.Fatalf("Message = %q, want %q", r.Message, want)
+	}
+	if strings.Contains(r.Message, "secret-key-value") {
+		t.Fatal("sample leaks the key")
+	}
+}
+
+func TestTraefikSampleWithoutCallerHeaders(t *testing.T) {
+	line := `{"source":"traefik","message":"{\"DownstreamStatus\":401,\"RequestMethod\":\"GET\",\"RequestHost\":\"h\",\"RequestPath\":\"/x\"}"}`
+	if got := parseOne(t, line).Message; got != "GET h/x 401" {
+		t.Fatalf("Message = %q", got)
 	}
 }
 

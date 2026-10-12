@@ -1,6 +1,8 @@
 package secnorm
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -31,8 +33,28 @@ func traefik(base Record, in map[string]any) (Record, bool) {
 	if t, ok := parseTime(str(in, "StartUTC")); ok {
 		base.TS = t
 	}
-	base.Message = fmt.Sprintf("%s %s%s %d", base.Method, str(in, "RequestHost"), base.Path, base.Status)
+	base.Message = fmt.Sprintf("%s %s%s %d", base.Method, str(in, "RequestHost"), base.Path, base.Status) + callerSuffix(in)
 	return base, true
+}
+
+// callerSuffix names who sent a request, from the request headers Traefik
+// keeps (accesslog.fields.headers). It adds the user agent, the project slug
+// and a 6-hex fingerprint of the presented API key, never the key itself, so a
+// burst of rejected requests can be traced to its sender. Headers Traefik does
+// not log are left out.
+func callerSuffix(in map[string]any) string {
+	var b strings.Builder
+	if ua := truncate(str(in, "request_User-Agent"), 120); ua != "" {
+		b.WriteString(" ua=" + ua)
+	}
+	if p := truncate(str(in, "request_X-Bugbarn-Project"), 64); p != "" {
+		b.WriteString(" project=" + p)
+	}
+	if k := str(in, "request_X-Bugbarn-Api-Key"); k != "" {
+		sum := sha256.Sum256([]byte(k))
+		b.WriteString(" key=" + hex.EncodeToString(sum[:])[:6])
+	}
+	return b.String()
 }
 
 // k8sAudit maps a Kubernetes audit.k8s.io/v1 Event.
