@@ -22,6 +22,19 @@ depends_on:
 labels:
   type: build
 
+# Clone with git tracing (#202). The clone step intermittently fails with
+# "could not read Username ... Device not configured". GIT_TRACE shows which git
+# binary runs, GIT_TRACE_CURL shows whether the fetch sent an Authorization
+# header after the 401. GIT_TRACE_REDACT stays at its default (on), so
+# credentials are redacted; request and response bodies are not traced.
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    environment:
+      GIT_TRACE: "1"
+      GIT_TRACE_CURL: "1"
+      GIT_TRACE_CURL_NO_DATA: "1"
+
 steps:
   - name: build-images
     image: bash
