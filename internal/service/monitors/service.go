@@ -33,6 +33,7 @@ type Repository interface {
 	GetMonitor(ctx context.Context, projectID int64, slug string) (domain.Monitor, error)
 	ListMonitors(ctx context.Context, projectID int64) ([]domain.Monitor, error)
 	MarkMonitorEmitted(ctx context.Context, id int64, now time.Time) error
+	ListEnabledMonitors(ctx context.Context) ([]domain.Monitor, error)
 }
 
 // Reporter turns incidents into issues; *monitorwatch.Reporter satisfies it.
@@ -134,6 +135,12 @@ func (s *Service) report(ctx context.Context, res CheckInResult) {
 			s.logger.Error("monitor recovery not recorded", "project_id", m.ProjectID, "monitor", m.Slug, "error", err)
 		}
 	}
+}
+
+// ListAll returns the enabled monitors of every active project, with their
+// project slug.
+func (s *Service) ListAll(ctx context.Context) ([]domain.Monitor, error) {
+	return s.repo.ListEnabledMonitors(ctx)
 }
 
 // List returns the monitors of a project.

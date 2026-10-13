@@ -278,7 +278,7 @@ export interface AppState {
   settingsTab: SettingsTab;
   volumeDefaults: VolumeDefaults | null;
   currentEnv: string;
-  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs" | "account" | "security" | "hosts" | "rules";
+  currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs" | "account" | "security" | "hosts" | "rules" | "monitors";
   issues: ApiIssue[];
   issueQuery: string;
   issueSort: IssueSort;

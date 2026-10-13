@@ -51,6 +51,8 @@ func main() {
 		err = cmdUnmute(os.Args[2:])
 	case "projects":
 		err = cmdProjects(os.Args[2:])
+	case "monitors":
+		err = cmdMonitors(os.Args[2:])
 	case "groups":
 		err = cmdGroups(os.Args[2:])
 	case "apikeys":
@@ -97,6 +99,7 @@ Commands:
   reopen      Reopen a resolved issue
   mute        Mute an issue
   unmute      Unmute an issue
+  monitors    List check-in monitors of a project
   projects    List or create projects
   groups      List or create project groups
   apikeys     List API keys

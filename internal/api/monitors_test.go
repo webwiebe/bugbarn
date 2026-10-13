@@ -193,3 +193,44 @@ func TestMonitorCheckInIsForwardedByReaders(t *testing.T) {
 		t.Fatal("the reader wrote the monitor itself")
 	}
 }
+
+func TestListMonitorsPutsIncidentsFirst(t *testing.T) {
+	t.Parallel()
+	h := newMonitorHarness(t)
+	if rr := h.post("a-sweep", h.key, `{"status":"ok","interval":"1h"}`); rr.Code != http.StatusCreated {
+		t.Fatalf("create ok monitor: %d %s", rr.Code, rr.Body)
+	}
+	if rr := h.post("b-sync", h.key, `{"status":"error","interval":"1h"}`); rr.Code != http.StatusCreated {
+		t.Fatalf("create failing monitor: %d %s", rr.Code, rr.Body)
+	}
+
+	get := func(headers ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/monitors", nil)
+		for i := 0; i+1 < len(headers); i += 2 {
+			req.Header.Set(headers[i], headers[i+1])
+		}
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+		return rr
+	}
+	if rr := get(); rr.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous list: %d", rr.Code)
+	}
+	rr := get("X-BugBarn-API-Key", h.other, "X-BugBarn-Project", "geo")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rr.Code, rr.Body)
+	}
+	var body struct {
+		Monitors []map[string]any `json:"monitors"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Monitors) != 2 || body.Monitors[0]["slug"] != "b-sync" || body.Monitors[0]["state"] != "error" || body.Monitors[1]["slug"] != "a-sweep" {
+		t.Fatalf("order or content: %v", body.Monitors)
+	}
+	if body.Monitors[1]["intervalSeconds"] != float64(3600) || body.Monitors[1]["lastCheckInAt"] == nil {
+		t.Fatalf("fields: %v", body.Monitors[1])
+	}
+
+}

@@ -2,10 +2,13 @@ package api
 
 import (
 	"net/http"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 )
 
@@ -135,4 +138,64 @@ func parseOptionalDuration(field, value string) (*time.Duration, error) {
 		return nil, apperr.InvalidInput(field+` must be a duration such as "1h" or "90s"`, err)
 	}
 	return &d, nil
+}
+
+// listMonitors handles GET /api/v1/monitors: the monitors of the scoped project,
+// or of every project in the caller's scope. Monitors that need attention
+// (error, missed) come first.
+func (s *Server) listMonitors(w http.ResponseWriter, r *http.Request) {
+	if s.monitors == nil {
+		http.Error(w, "monitors unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var (
+		list []domain.Monitor
+		err  error
+	)
+	if pid, ok := domain.ProjectIDFromContext(r.Context()); ok && pid > 0 {
+		list, err = s.monitors.List(r.Context(), pid)
+	} else {
+		list, err = s.monitors.ListAll(r.Context())
+		if ids, scoped := domain.ProjectIDsFromContext(r.Context()); scoped {
+			list = slices.DeleteFunc(list, func(m domain.Monitor) bool { return !slices.Contains(ids, m.ProjectID) })
+		}
+	}
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		return monitorRank(list[i].State) < monitorRank(list[j].State)
+	})
+	out := make([]map[string]any, 0, len(list))
+	for _, m := range list {
+		out = append(out, monitorJSON(m))
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{"monitors": out})
+}
+
+func monitorRank(state string) int {
+	switch state {
+	case domain.MonitorStateError, domain.MonitorStateMissed:
+		return 0
+	}
+	return 1
+}
+
+func monitorJSON(m domain.Monitor) map[string]any {
+	out := map[string]any{
+		"slug":            m.Slug,
+		"project":         m.ProjectSlug,
+		"state":           m.State,
+		"lastStatus":      m.LastStatus,
+		"intervalSeconds": int64(m.Interval / time.Second),
+		"graceSeconds":    int64(m.Grace / time.Second),
+		"dueBy":           m.NextDue().UTC().Format(time.RFC3339),
+		"stateSince":      m.StateSince.UTC().Format(time.RFC3339),
+	}
+	if !m.LastCheckInAt.IsZero() {
+		out["lastCheckInAt"] = m.LastCheckInAt.UTC().Format(time.RFC3339)
+	}
+	return out
 }
