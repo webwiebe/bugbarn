@@ -2,6 +2,7 @@ package alert
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -25,13 +26,17 @@ type Evaluator struct {
 	publicURL  string
 	adminEmail string
 	log        *slog.Logger
+	newIssues  *newIssueLimiter
 }
 
 // NewEvaluator creates an Evaluator wired to the given repository and deliverer.
 // When adminEmail is set and SMTP is configured, every new issue and regression
 // is emailed to that address regardless of per-project alert rules.
 func NewEvaluator(repo Repository, deliverer notifier, publicURL, adminEmail string, log *slog.Logger) *Evaluator {
-	return &Evaluator{repo: repo, deliverer: deliverer, publicURL: publicURL, adminEmail: adminEmail, log: log}
+	return &Evaluator{
+		repo: repo, deliverer: deliverer, publicURL: publicURL, adminEmail: adminEmail, log: log,
+		newIssues: newNewIssueLimiter(),
+	}
 }
 
 // HandleEvent receives a domain event and dispatches to condition evaluation.
@@ -42,7 +47,7 @@ func (e *Evaluator) HandleEvent(evt any) {
 	case domainevents.IssueCreated:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "new_issue")
 		e.evaluate(ctx, v.ProjectID, v.Issue, "message_contains")
-		e.notifyAdmin(v.Issue, "new_issue")
+		e.notifyNewIssue(v.Issue)
 	case domainevents.IssueRegressed:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "regression")
 		e.evaluate(ctx, v.ProjectID, v.Issue, "message_contains")
@@ -68,6 +73,38 @@ func isSpikeMilestone(count int) bool {
 		count /= 10
 	}
 	return count == 1
+}
+
+// notifyNewIssue mails the admin about a new issue unless its project already
+// sent newIssueMailMax such mails in the current window. Suppressed issues are
+// counted and reported in one summary mail when the window ends, so a grouping
+// gap that opens an issue per event costs a handful of mails, not one per event.
+func (e *Evaluator) notifyNewIssue(issue domain.Issue) {
+	slug := issue.ProjectSlug
+	a := e.newIssues.admit(slug)
+	if a.Summarize > 0 {
+		e.notifySuppressed(slug, a.Summarize)
+	}
+	if a.Send {
+		e.notifyAdmin(issue, "new_issue")
+	}
+	if a.ScheduleSummary {
+		start := a.WindowStart
+		time.AfterFunc(a.Remaining, func() {
+			if n := e.newIssues.expire(slug, start); n > 0 {
+				e.notifySuppressed(slug, n)
+			}
+		})
+	}
+}
+
+// notifySuppressed mails one summary for new issues that were not mailed
+// individually.
+func (e *Evaluator) notifySuppressed(slug string, count int) {
+	e.log.Info("new issue mails capped", "project", slug, "suppressed", count)
+	minutes := int(newIssueMailWindow.Minutes())
+	title := fmt.Sprintf("%d more new issues in the last %d minutes were not mailed one by one", count, minutes)
+	e.notifyAdmin(domain.Issue{Title: title, ProjectSlug: slug}, "new_issue_flood")
 }
 
 // notifyAdmin emails the configured admin address for every new issue and

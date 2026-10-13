@@ -13,8 +13,12 @@ import (
 )
 
 var (
-	uuidPattern       = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
-	ipv4Pattern       = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	uuidPattern = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
+	ipv4Pattern = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	// timestampPattern matches an ISO 8601 date, optionally followed by a time
+	// (T or space separated, fractional seconds, Z or a UTC offset). The input is
+	// already lowercased, so the separators are t and z.
+	timestampPattern  = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}(?:[t ]\d{2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?(?:z|[+-]\d{2}(?::?\d{2})?)?)?\b`)
 	hexAddress        = regexp.MustCompile(`(?i)\b0x[0-9a-f]{6,}\b`)
 	hexToken          = regexp.MustCompile(`(?i)\b[0-9a-f]{12,}\b`)
 	longNumber        = regexp.MustCompile(`\b\d+\b`)
@@ -256,6 +260,7 @@ func rawScrubbedFallback(rawScrubbed map[string]any) rawScrubbedData {
 func normalize(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	value = uuidPattern.ReplaceAllString(value, "<id>")
+	value = timestampPattern.ReplaceAllString(value, "<ts>")
 	value = ipv4Pattern.ReplaceAllString(value, "<ip>")
 	value = hexAddress.ReplaceAllString(value, "<hex>")
 	value = hexToken.ReplaceAllString(value, "<hex>")

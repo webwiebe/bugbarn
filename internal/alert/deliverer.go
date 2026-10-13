@@ -280,6 +280,8 @@ func conditionLabel(condition string) string {
 		return "Error spike"
 	case "silence":
 		return "Project silent"
+	case "new_issue_flood":
+		return "New issues capped"
 	case "message_contains":
 		return "Message contains match"
 	default:

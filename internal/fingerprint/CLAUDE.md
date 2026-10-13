@@ -38,7 +38,8 @@ on the consumer side.
   cross-origin errors arriving as `exception: {}`), `RawScrubbed.name` / `properties.*`
   stand in.
 
-`normalize()` in `fingerprint.go` lowercases and replaces UUIDs, IPs, hex ids, numbers,
+`normalize()` in `fingerprint.go` lowercases and replaces UUIDs, ISO 8601 dates and
+timestamps (`<ts>`, before the number rule, which would leave their two-digit parts), IPs, hex ids, numbers,
 `:line:col` and the privacy placeholders with tokens. `storage/issues_insert.go`
 (`normalizeTitle`) and `internal/issues` have their own, slightly different regex set for
 the normalised issue title. Those do not affect grouping.
