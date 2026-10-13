@@ -259,3 +259,32 @@ test("buildEnvelope omits breadcrumbs when buffer is empty", async () => {
   const event = events[events.length - 1];
   assert.equal(event.breadcrumbs, undefined);
 });
+
+test("environment option is sent as the environment attribute", async () => {
+  const events = [];
+  const transport = { async send(event) { events.push(event); }, async flush() {} };
+
+  init({ apiKey: "k", environment: "staging", transport, installDefaultHandlers: false });
+  await captureException(new Error("a"));
+  await captureException(new Error("b"), { attributes: { region: "eu" } });
+  await captureException(new Error("c"), { attributes: { environment: "override" } });
+
+  assert.deepEqual(events[0].attributes, { environment: "staging" });
+  assert.deepEqual(events[1].attributes, { region: "eu", environment: "staging" });
+  assert.equal(events[2].attributes.environment, "override");
+});
+
+test("environment falls back to BUGBARN_ENVIRONMENT and is omitted when unset", async () => {
+  const events = [];
+  const transport = { async send(event) { events.push(event); }, async flush() {} };
+
+  process.env.BUGBARN_ENVIRONMENT = "testing";
+  init({ apiKey: "k", transport, installDefaultHandlers: false });
+  await captureException(new Error("a"));
+  delete process.env.BUGBARN_ENVIRONMENT;
+  init({ apiKey: "k", transport, installDefaultHandlers: false });
+  await captureException(new Error("b"));
+
+  assert.equal(events[0].attributes.environment, "testing");
+  assert.equal(events[1].attributes, undefined);
+});
