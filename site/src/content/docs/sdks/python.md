@@ -147,6 +147,25 @@ bugbarn.shutdown(timeout=2.0)
 
 `shutdown` is called automatically via `atexit` when the process exits normally.
 
+## Check-in monitors
+
+`bugbarn.check_in` reports that a scheduled job or worker ran. If the job stays silent past its interval plus grace, BugBarn opens an issue; the next `ok` check-in resolves it.
+
+```python
+import bugbarn
+
+try:
+    sync_calendars()
+    bugbarn.check_in("calendar-sync", "ok", interval="1h", grace="10m")
+except Exception as exc:
+    bugbarn.check_in("calendar-sync", "error", interval="1h", message=str(exc))
+    raise
+finally:
+    bugbarn.flush()  # short-lived processes: wait for delivery before exit
+```
+
+`interval` and `grace` take seconds, a `datetime.timedelta` or a duration string such as `"90s"` or `"1h"`. The first call creates the monitor from the interval (1 minute to 31 days). Repeat the options on every call, or leave them out once the monitor exists. `check_in` returns `False` when the SDK is not initialised or the queue is full, raises `ValueError` for a status other than `ok` or `error`, and delivers asynchronously like `capture_exception`. Messages are cut at 200 characters and appear only on the issue an error check-in opens, so keep personal data out. See [POST /api/v1/monitors/{slug}/check-ins](../api.md).
+
 ## Framework integration
 
 ### Django
