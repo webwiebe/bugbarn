@@ -10,8 +10,10 @@ mkdir -p /srv/packages/typescript
 cp -n /tmp/sdk-package/*.tgz /srv/packages/typescript/ 2>/dev/null || true
 
 # Write latest.json so consumers can discover the current package URL without
-# knowing the content-hash suffix in advance.
-tarball=$(ls /srv/packages/typescript/bugbarn-typescript-*.tgz 2>/dev/null | sort | tail -1)
+# knowing the content-hash suffix in advance. The newest file by modification
+# time wins: the hash suffix has no order, so sorting by name picks an arbitrary
+# old tarball. cp -n gives each new tarball the mtime of its first deploy.
+tarball=$(ls -t /srv/packages/typescript/bugbarn-typescript-*.tgz 2>/dev/null | head -1)
 if [ -n "$tarball" ]; then
   filename=$(basename "$tarball")
   version="${filename#bugbarn-typescript-}"
