@@ -35,12 +35,16 @@ COPY sdks/typescript/package.json sdks/typescript/pnpm-lock.yaml sdks/typescript
 RUN pnpm install --frozen-lockfile
 
 COPY sdks/typescript/ ./
-# Derive a stable 12-char content hash from source files. The same SDK source
-# always produces the same hash, so the tarball URL is immutable per content.
-# When the SDK source changes the hash changes, producing a new URL.
-RUN SDK_HASH=$(find src -type f | sort | xargs sha256sum | sha256sum | cut -c1-12) && \
+# Derive a stable 12-char content hash from what the tarball ships: the compiled
+# dist/, README and package.json fields other than version. The same package
+# content always produces the same hash, so the tarball URL is immutable per
+# content. Hashing src/ alone missed compiler and manifest changes, which put
+# different bytes behind an existing URL and broke consumers' lockfile integrity.
+# The entrypoint never overwrites a published tarball (see web-entrypoint.sh).
+RUN pnpm run build && \
+    SDK_HASH=$( (find dist -type f | sort | xargs sha256sum; sha256sum README.md package.json) | sha256sum | cut -c1-12) && \
     pnpm pkg set version="0.1.0-${SDK_HASH}" && \
-    pnpm run build && pnpm pack
+    pnpm pack
 
 FROM caddy:2.8-alpine
 
