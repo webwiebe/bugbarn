@@ -25,6 +25,12 @@ func (s *Server) serveSpecialEndpoint(w http.ResponseWriter, r *http.Request) bo
 		}
 	}
 
+	// Agent key requests — public, rate-limited; before the setup page, whose
+	// prefix they share.
+	if s.serveKeyRequestEndpoint(w, r) {
+		return true
+	}
+
 	// Setup endpoint — public, no auth required.
 	if strings.HasPrefix(r.URL.Path, "/api/v1/setup/") && r.Method == http.MethodGet {
 		s.serveSetup(w, r)
@@ -271,6 +277,7 @@ func (s *Server) dispatchProtected(w http.ResponseWriter, r *http.Request) {
 		s.dispatchLogEventRoutes,
 		s.dispatchProjectRoutes,
 		s.dispatchProjectItemRoutes,
+		s.dispatchKeyRequestRoutes,
 		s.dispatchGroupAliasRoutes,
 		s.dispatchAPIKeyFacetAnalyticsRoutes,
 		s.dispatchTelemetryRoutes,

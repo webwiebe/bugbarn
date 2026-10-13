@@ -1,6 +1,7 @@
 import { readFirst } from "../data.js";
 import { escapeAttr, escapeHtml, errorMessage } from "../format.js";
-import type { ApiApiKey, ApiProject, ApiSettings } from "../types.js";
+import type { ApiApiKey, ApiKeyRequest, ApiProject, ApiSettings } from "../types.js";
+import { renderKeyRequests } from "./key-requests.js";
 import { renderField } from "./shared.js";
 
 export function renderSettingsViewMarkup(
@@ -13,6 +14,7 @@ export function renderSettingsViewMarkup(
   aliases: import("../types.js").ApiAlias[] = [],
   tab: import("../types.js").SettingsTab = "overview",
   systemHealth: import("../types.js").SystemHealth | null = null,
+  keyRequests: ApiKeyRequest[] = [],
 ): string {
   const pendingProjects = projects.filter(p => (p.status ?? p.Status) === "pending");
   const activeProjects = projects.filter(p => (p.status ?? p.Status) !== "pending");
@@ -27,7 +29,7 @@ export function renderSettingsViewMarkup(
   if (tab === "overview") {
     content = renderSettingsOverview(settings, username, activeProjects, groups, apiKeys, pendingProjects, error);
   } else if (tab === "projects") {
-    content = renderSettingsProjects(projects, groups, aliases);
+    content = renderKeyRequests(keyRequests) + renderSettingsProjects(projects, groups, aliases);
   } else if (tab === "preferences") {
     content = renderSettingsPreferences(settings);
   } else if (tab === "system") {

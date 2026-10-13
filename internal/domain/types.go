@@ -113,6 +113,27 @@ type APIKey struct {
 	LastUsedAt time.Time `json:"last_used_at"`
 }
 
+// Key request statuses. "expired" is derived from ExpiresAt, never stored.
+const (
+	KeyRequestPending  = "pending"
+	KeyRequestApproved = "approved"
+	KeyRequestDenied   = "denied"
+	KeyRequestClaimed  = "claimed"
+	KeyRequestExpired  = "expired"
+)
+
+// KeyRequest is an agent's request for an ingest key for an active project. It
+// carries no key material: the key is minted when the approved request is claimed.
+type KeyRequest struct {
+	ID          string    `json:"id"`
+	ProjectID   int64     `json:"projectId"`
+	ProjectSlug string    `json:"project"`
+	Label       string    `json:"label"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"createdAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
 // Release represents a software release row.
 type Release struct {
 	ID          string    `json:"id"`

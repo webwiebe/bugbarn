@@ -61,6 +61,7 @@ type (
 	DigestStore        struct{ *core }
 	WebSessionStore    struct{ *core }
 	DetectionRuleStore struct{ *core }
+	KeyRequestStore    struct{ *core }
 )
 
 // Store is a thin facade that composes every domain store over one core. Its
@@ -87,6 +88,7 @@ type Store struct {
 	*DigestStore
 	*WebSessionStore
 	*DetectionRuleStore
+	*KeyRequestStore
 }
 
 // Stores exposes the individual domain stores by name for dependency wiring.
@@ -107,6 +109,7 @@ type Stores struct {
 	Users          *UserStore
 	Digests        *DigestStore
 	DetectionRules *DetectionRuleStore
+	KeyRequests    *KeyRequestStore
 }
 
 // newStore builds the facade and every domain store over a single shared core.
@@ -139,6 +142,7 @@ func newStore(c *core) *Store {
 		DigestStore:        &DigestStore{c},
 		WebSessionStore:    &WebSessionStore{c},
 		DetectionRuleStore: &DetectionRuleStore{c},
+		KeyRequestStore:    &KeyRequestStore{c},
 	}
 }
 
@@ -161,6 +165,7 @@ func (s *Store) Domains() Stores {
 		Users:          s.UserStore,
 		Digests:        s.DigestStore,
 		DetectionRules: s.DetectionRuleStore,
+		KeyRequests:    s.KeyRequestStore,
 	}
 }
 

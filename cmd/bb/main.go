@@ -55,6 +55,8 @@ func main() {
 		err = cmdGroups(os.Args[2:])
 	case "apikeys":
 		err = cmdAPIKeys(os.Args[2:])
+	case "key-request":
+		err = cmdKeyRequest(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Printf("bb %s (built %s)\n", Version, BuildTime)
 		return
@@ -98,6 +100,7 @@ Commands:
   projects    List or create projects
   groups      List or create project groups
   apikeys     List API keys
+  key-request Ask an admin for an ingest key for an existing project
   version     Print version
 
 Authentication:
@@ -121,6 +124,7 @@ Examples:
   bb groups                          # list project groups
   bb issues --group bugbarn          # issues across all bugbarn-* projects
   bb apikeys                         # list API keys
+  bb key-request geo --label org/repo --output-secret | gh secret set BUGBARN_API_KEY
 
 Config: ~/.config/bugbarn/cli.json (override with BB_CONFIG env var)
   Set "telemetry": false to disable error reporting to BugBarn.
