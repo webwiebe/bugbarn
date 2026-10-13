@@ -74,8 +74,28 @@ export type BugBarnEnvelope = {
   };
 };
 
+export type CheckInStatus = "ok" | "error";
+
+export type CheckInOptions = {
+  /** Expected time between check-ins: seconds or a duration string such as "1h". Creates the monitor on the first call. */
+  interval?: number | string;
+  /** How late a check-in may be before BugBarn opens an issue: seconds or a duration string. */
+  grace?: number | string;
+  /** Shown on the issue an error check-in opens. Keep personal data out. */
+  message?: string;
+};
+
+export type CheckInBody = {
+  status: CheckInStatus;
+  interval?: string;
+  grace?: string;
+  message?: string;
+};
+
 export type Transport = {
   send(event: BugBarnEnvelope): Promise<void>;
+  /** Optional: transports that cannot carry check-ins leave it out and `checkIn` resolves to false. */
+  sendCheckIn?(slug: string, body: CheckInBody): Promise<void>;
   flush(options?: FlushOptions): Promise<boolean | void>;
 };
 

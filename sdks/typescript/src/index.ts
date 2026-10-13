@@ -1,12 +1,12 @@
 import { createTransport } from "./transport.js";
 import { uploadSourceMap, createSourceMapUploader } from "./source-maps.js";
-import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, StackFrame, Transport } from "./types.js";
+import type { BugBarnClientOptions, BugBarnEnvelope, CaptureOptions, CheckInBody, CheckInOptions, CheckInStatus, StackFrame, Transport } from "./types.js";
 import { setUser, clearUser, getUser } from "./user.js";
 import { addBreadcrumb, getBreadcrumbs, clearBreadcrumbs } from "./breadcrumbs.js";
 import { installAutoInterceptors } from "./interceptors.js";
 
 const SDK_NAME = "bugbarn.typescript";
-const SDK_VERSION = "0.1.0";
+const SDK_VERSION = "1.1.0";
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 2000;
 
 let transport: Transport | null = null;
@@ -192,6 +192,48 @@ export async function captureException(error: unknown, options?: CaptureOptions)
   await transport.send(buildEnvelope(error, options));
 }
 
+function durationText(value: number | string | undefined, name: string): string | undefined {
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new RangeError(`${name} must be a positive number of seconds`);
+  }
+  return `${value}s`;
+}
+
+/**
+ * Reports that a scheduled job ran. If the job stays silent past its interval plus
+ * grace, BugBarn opens an issue; the next "ok" check-in resolves it. Resolves to
+ * false when the SDK is not initialised or the transport cannot carry check-ins.
+ * Delivery is asynchronous: call flush() before a short-lived process exits.
+ */
+export async function checkIn(slug: string, status: CheckInStatus = "ok", options: CheckInOptions = {}): Promise<boolean> {
+  if (status !== "ok" && status !== "error") {
+    throw new RangeError(`status must be "ok" or "error", got ${String(status)}`);
+  }
+  const body: CheckInBody = { status };
+  const interval = durationText(options.interval, "interval");
+  const grace = durationText(options.grace, "grace");
+  if (interval) {
+    body.interval = interval;
+  }
+  if (grace) {
+    body.grace = grace;
+  }
+  if (options.message) {
+    body.message = options.message;
+  }
+  if (!transport?.sendCheckIn) {
+    return false;
+  }
+  await transport.sendCheckIn(slug, body);
+  return true;
+}
+
 export async function flush(timeoutMs?: number): Promise<boolean> {
   if (!transport) {
     return true;
@@ -218,3 +260,4 @@ export { setUser, clearUser } from "./user.js";
 export { addBreadcrumb, clearBreadcrumbs } from "./breadcrumbs.js";
 export { createBugBarnDestination } from "./pino-transport.js";
 export type { BugBarnTransportOptions } from "./pino-transport.js";
+export type { CheckInOptions, CheckInStatus } from "./types.js";

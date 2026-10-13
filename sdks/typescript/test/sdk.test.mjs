@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
 
-import { captureException, createTransport, flush, getApiKey, init, shutdown, uploadSourceMap, setUser, clearUser, addBreadcrumb, clearBreadcrumbs } from "../dist/esm/index.js";
+import { captureException, checkIn, createTransport, flush, getApiKey, init, shutdown, uploadSourceMap, setUser, clearUser, addBreadcrumb, clearBreadcrumbs } from "../dist/esm/index.js";
 
 test("init stores transport and api key", async () => {
   const events = [];
@@ -33,7 +33,7 @@ test("init stores transport and api key", async () => {
   assert.equal(events[0].dist, "web");
   assert.equal(events[0].tags?.service, "api");
   assert.equal(events[0].sender.sdk.name, "bugbarn.typescript");
-  assert.equal(events[0].sender.sdk.version, "0.1.0");
+  assert.equal(events[0].sender.sdk.version, "1.1.0");
   assert.ok(events[0].timestamp.length > 0);
 });
 
@@ -288,4 +288,69 @@ test("environment falls back to BUGBARN_ENVIRONMENT and is omitted when unset", 
 
   assert.equal(events[0].attributes.environment, "testing");
   assert.equal(events[1].attributes, undefined);
+});
+
+test("checkIn builds the body from seconds and duration strings", async () => {
+  const sent = [];
+  const transport = {
+    async send() {},
+    async sendCheckIn(slug, body) { sent.push({ slug, body }); },
+    async flush() {},
+  };
+  init({ apiKey: "k", transport, installDefaultHandlers: false });
+
+  assert.equal(await checkIn("nightly", "error", { interval: 3600, grace: "10m", message: "disk full" }), true);
+  assert.equal(await checkIn("nightly", "ok", { interval: "1h" }), true);
+  assert.equal(await checkIn("nightly"), true);
+
+  assert.deepEqual(sent[0], { slug: "nightly", body: { status: "error", interval: "3600s", grace: "10m", message: "disk full" } });
+  assert.deepEqual(sent[1].body, { status: "ok", interval: "1h" });
+  assert.deepEqual(sent[2].body, { status: "ok" });
+});
+
+test("checkIn rejects bad input and reports transports that cannot carry it", async () => {
+  init({ apiKey: "k", transport: { async send() {}, async flush() {} }, installDefaultHandlers: false });
+  assert.equal(await checkIn("nightly"), false);
+  await assert.rejects(() => checkIn("nightly", "fine"), RangeError);
+  await assert.rejects(() => checkIn("nightly", "ok", { interval: 0 }), RangeError);
+
+  await shutdown();
+  assert.equal(await checkIn("nightly"), false);
+});
+
+test("default transport posts check-ins next to the events endpoint and flush waits for them", async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    calls.push({ url, method: init.method, headers: init.headers, body: JSON.parse(init.body) });
+    return { ok: true, status: 200 };
+  };
+  try {
+    const transport = createTransport("bb_live_test", "https://bugbarn.example.com/api/v1/events", "geo");
+    await transport.sendCheckIn("pending sweep", { status: "ok", interval: "1h" });
+    assert.equal(calls.length, 0);
+    assert.equal(await transport.flush({ timeoutMs: 2000 }), true);
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://bugbarn.example.com/api/v1/monitors/pending%20sweep/check-ins");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].headers["x-bugbarn-api-key"], "bb_live_test");
+    assert.equal(calls[0].headers["x-bugbarn-project"], "geo");
+    assert.deepEqual(calls[0].body, { status: "ok", interval: "1h" });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a failing check-in request never throws into the caller", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("network down"); };
+  try {
+    const transport = createTransport("k", "https://bugbarn.example.com");
+    await transport.sendCheckIn("nightly", { status: "ok" });
+    assert.equal(await transport.flush({ timeoutMs: 2000 }), true);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
