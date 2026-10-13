@@ -155,6 +155,16 @@ _atexit_registered = False
 _default_attributes: dict[str, Any] = {}
 
 
+def _with_environment(attributes: dict[str, Any]) -> dict[str, Any]:
+    """Mirror the environment into ``deployment.environment``, the OpenTelemetry key
+    the server turns into the environment facet. A caller-set ``deployment.environment``
+    wins, and a per-call ``environment`` flows into the mirror like the TypeScript SDK."""
+    environment = attributes.get("environment")
+    if environment and "deployment.environment" not in attributes:
+        attributes["deployment.environment"] = environment
+    return attributes
+
+
 def _normalize_exception(exc: BaseException | str | object) -> BaseException:
     if isinstance(exc, BaseException):
         return exc
@@ -217,7 +227,7 @@ def _build_event(
         exception_type=type(normalized).__name__,
         exception_message=str(normalized),
         stacktrace=_extract_stacktrace(normalized.__traceback__),
-        attributes={**_default_attributes, **(attributes or {})},
+        attributes=_with_environment({**_default_attributes, **(attributes or {})}),
         tags=tags or {},
         extra=extra or {},
         user=get_user(),

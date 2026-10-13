@@ -46,6 +46,35 @@ class InitContextTests(unittest.TestCase):
 
         self.assertEqual(transport.events[0].attributes["environment"], "canary")
 
+    def test_environment_is_mirrored_to_deployment_environment(self):
+        transport = RecordingTransport()
+        init(api_key="k", transport=transport, environment="production")
+
+        capture_exception(RuntimeError("boom"))
+
+        attrs = transport.events[0].attributes
+        self.assertEqual(attrs["environment"], "production")
+        self.assertEqual(attrs["deployment.environment"], "production")
+
+    def test_per_call_environment_flows_into_the_mirror(self):
+        transport = RecordingTransport()
+        init(api_key="k", transport=transport, environment="production")
+
+        capture_exception(RuntimeError("boom"), attributes={"environment": "canary"})
+
+        attrs = transport.events[0].attributes
+        self.assertEqual(attrs["deployment.environment"], "canary")
+
+    def test_caller_set_deployment_environment_wins(self):
+        transport = RecordingTransport()
+        init(api_key="k", transport=transport, environment="production")
+
+        capture_exception(RuntimeError("boom"), attributes={"deployment.environment": "eu-west"})
+
+        attrs = transport.events[0].attributes
+        self.assertEqual(attrs["environment"], "production")
+        self.assertEqual(attrs["deployment.environment"], "eu-west")
+
     def test_unset_context_adds_no_attributes(self):
         transport = RecordingTransport()
         init(api_key="k", transport=transport)
