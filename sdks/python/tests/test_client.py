@@ -204,6 +204,30 @@ class CheckInTests(unittest.TestCase):
         self.assertEqual(captured["headers"].get("X-bugbarn-api-key"), "bb_live_test")
         self.assertEqual(captured["headers"].get("X-bugbarn-project"), "geo")
         self.assertEqual(captured["body"], {"status": "ok"})
+        self.assertTrue(captured["headers"].get("User-agent", "").startswith("bugbarn-python/"))
+        transport.close()
+
+    def test_rejected_requests_warn_once_per_reason_with_the_server_message(self):
+        import io
+        import urllib.error
+
+        def reject(code, text):
+            def fake(request, timeout=0):
+                raise urllib.error.HTTPError(request.full_url, code, "x", {}, io.BytesIO(text))
+            return fake
+
+        transport = Transport(api_key="bb_live_test", endpoint="https://bugbarn.example.com")
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err):
+            with mock.patch("urllib.request.urlopen", side_effect=reject(400, b"grace must not exceed the interval")):
+                transport._send(CheckIn(slug="a", body={"status": "ok"}))
+                transport._send(CheckIn(slug="a", body={"status": "ok"}))
+            with mock.patch("urllib.request.urlopen", side_effect=reject(403, b"error code: 1010")):
+                transport._send(CheckIn(slug="a", body={"status": "ok"}))
+        lines = [line for line in err.getvalue().splitlines() if line.startswith("bugbarn:")]
+        self.assertEqual(len(lines), 2, lines)
+        self.assertIn("HTTP 400 (grace must not exceed the interval)", lines[0])
+        self.assertIn("HTTP 403 (error code: 1010)", lines[1])
         transport.close()
 
     def test_check_in_travels_the_queue_and_flush_waits_for_it(self):
