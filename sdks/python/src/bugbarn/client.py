@@ -16,7 +16,7 @@ from .breadcrumbs import Breadcrumb, get_breadcrumbs
 from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
-SDK_VERSION = "1.2.0"
+SDK_VERSION = "1.2.1"
 DEFAULT_ENDPOINT = "/api/v1/events"
 
 
