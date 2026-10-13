@@ -15,8 +15,15 @@ import (
 )
 
 type fakeRepo struct {
-	got storage.MonitorCheckIn
-	err error
+	got     storage.MonitorCheckIn
+	err     error
+	result  *storage.MonitorCheckInResult
+	emitted []int64
+}
+
+func (f *fakeRepo) MarkMonitorEmitted(_ context.Context, id int64, _ time.Time) error {
+	f.emitted = append(f.emitted, id)
+	return nil
 }
 
 func (f *fakeRepo) RecordMonitorCheckIn(_ context.Context, in storage.MonitorCheckIn) (storage.MonitorCheckInResult, error) {
@@ -24,7 +31,90 @@ func (f *fakeRepo) RecordMonitorCheckIn(_ context.Context, in storage.MonitorChe
 	if f.err != nil {
 		return storage.MonitorCheckInResult{}, f.err
 	}
+	if f.result != nil {
+		return *f.result, nil
+	}
 	return storage.MonitorCheckInResult{Monitor: domain.Monitor{Slug: in.Slug, State: domain.MonitorStateOK}}, nil
+}
+
+type fakeReporter struct {
+	errored, recovered int
+	err                error
+}
+
+func (r *fakeReporter) Errored(context.Context, domain.Monitor, string) error {
+	r.errored++
+	return r.err
+}
+
+func (r *fakeReporter) Recovered(context.Context, domain.Monitor, time.Time) error {
+	r.recovered++
+	return r.err
+}
+
+func TestCheckInReportsErrorOnceThenRecovery(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{}
+	rep := &fakeReporter{}
+	s := newService(repo)
+	s.SetReporter(rep)
+	in := CheckInInput{Slug: "sweep", Status: domain.CheckInError}
+
+	// First error check-in: state error entered now, never emitted.
+	repo.result = &storage.MonitorCheckInResult{PreviousState: domain.MonitorStateOK,
+		Monitor: domain.Monitor{ID: 3, State: domain.MonitorStateError, StateSince: now}}
+	if _, err := s.CheckIn(context.Background(), 1, in); err != nil {
+		t.Fatal(err)
+	}
+	if rep.errored != 1 || len(repo.emitted) != 1 {
+		t.Fatalf("errored %d, emitted %v", rep.errored, repo.emitted)
+	}
+
+	// A second error inside 24h of the report is not reported again.
+	repo.result = &storage.MonitorCheckInResult{PreviousState: domain.MonitorStateError,
+		Monitor: domain.Monitor{ID: 3, State: domain.MonitorStateError, StateSince: now.Add(-time.Hour), LastEmittedAt: now.Add(-time.Minute)}}
+	if _, err := s.CheckIn(context.Background(), 1, in); err != nil {
+		t.Fatal(err)
+	}
+	if rep.errored != 1 {
+		t.Fatalf("repeated error reported again: %d", rep.errored)
+	}
+
+	// An ok check-in after the error is a recovery.
+	repo.result = &storage.MonitorCheckInResult{PreviousState: domain.MonitorStateError,
+		Monitor: domain.Monitor{ID: 3, State: domain.MonitorStateOK}}
+	if _, err := s.CheckIn(context.Background(), 1, CheckInInput{Slug: "sweep", Status: domain.CheckInOK}); err != nil {
+		t.Fatal(err)
+	}
+	if rep.recovered != 1 {
+		t.Fatalf("recovered %d", rep.recovered)
+	}
+
+	// An ok check-in on a healthy monitor reports nothing.
+	repo.result = &storage.MonitorCheckInResult{PreviousState: domain.MonitorStateOK,
+		Monitor: domain.Monitor{ID: 3, State: domain.MonitorStateOK}}
+	if _, err := s.CheckIn(context.Background(), 1, CheckInInput{Slug: "sweep", Status: domain.CheckInOK}); err != nil {
+		t.Fatal(err)
+	}
+	if rep.recovered != 1 {
+		t.Fatalf("healthy check-in reported a recovery: %d", rep.recovered)
+	}
+}
+
+func TestCheckInSucceedsWhenReportFails(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{result: &storage.MonitorCheckInResult{
+		Monitor: domain.Monitor{ID: 3, State: domain.MonitorStateError, StateSince: now}}}
+	s := newService(repo)
+	s.SetReporter(&fakeReporter{err: errors.New("boom")})
+	if _, err := s.CheckIn(context.Background(), 1, CheckInInput{Slug: "sweep", Status: domain.CheckInError}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.emitted) != 0 {
+		t.Fatal("failed report was marked as sent")
+	}
 }
 
 func (f *fakeRepo) GetMonitor(context.Context, int64, string) (domain.Monitor, error) {

@@ -32,13 +32,21 @@ type Repository interface {
 	RecordMonitorCheckIn(ctx context.Context, in storage.MonitorCheckIn) (storage.MonitorCheckInResult, error)
 	GetMonitor(ctx context.Context, projectID int64, slug string) (domain.Monitor, error)
 	ListMonitors(ctx context.Context, projectID int64) ([]domain.Monitor, error)
+	MarkMonitorEmitted(ctx context.Context, id int64, now time.Time) error
+}
+
+// Reporter turns incidents into issues; *monitorwatch.Reporter satisfies it.
+type Reporter interface {
+	Errored(ctx context.Context, m domain.Monitor, message string) error
+	Recovered(ctx context.Context, m domain.Monitor, at time.Time) error
 }
 
 // Service validates and records check-ins.
 type Service struct {
-	repo   Repository
-	logger *slog.Logger
-	now    func() time.Time
+	repo     Repository
+	reporter Reporter
+	logger   *slog.Logger
+	now      func() time.Time
 }
 
 // New builds the service over repo.
@@ -48,6 +56,10 @@ func New(repo Repository, logger *slog.Logger) *Service {
 	}
 	return &Service{repo: repo, logger: logger.With("service", "monitors"), now: time.Now}
 }
+
+// SetReporter wires the issue reporting. Without one, check-ins are recorded
+// and nothing opens or resolves an issue.
+func (s *Service) SetReporter(r Reporter) { s.reporter = r }
 
 // SetClock replaces the time source. Tests use it to fix the check-in time.
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
@@ -92,10 +104,36 @@ func (s *Service) CheckIn(ctx context.Context, projectID int64, in CheckInInput)
 		}
 		return CheckInResult{}, err
 	}
-	return CheckInResult{
+	out := CheckInResult{
 		Monitor: res.Monitor, Created: res.Created, PreviousState: res.PreviousState,
 		Message: cleanMessage(in.Message),
-	}, nil
+	}
+	s.report(ctx, out)
+	return out, nil
+}
+
+// report opens an issue for an error check-in and resolves the open ones when
+// a monitor recovers. A failure is logged and does not fail the check-in: the
+// job did report in, and an unreported error check-in is not marked as sent.
+func (s *Service) report(ctx context.Context, res CheckInResult) {
+	if s.reporter == nil {
+		return
+	}
+	m, now := res.Monitor, s.now().UTC()
+	switch {
+	case m.State == domain.MonitorStateError && m.NeedsReport(now):
+		if err := s.reporter.Errored(ctx, m, res.Message); err != nil {
+			s.logger.Error("monitor error check-in not reported", "project_id", m.ProjectID, "monitor", m.Slug, "error", err)
+			return
+		}
+		if err := s.repo.MarkMonitorEmitted(ctx, m.ID, now); err != nil {
+			s.logger.Error("monitor report not recorded", "project_id", m.ProjectID, "monitor", m.Slug, "error", err)
+		}
+	case m.State == domain.MonitorStateOK && res.PreviousState != domain.MonitorStateOK:
+		if err := s.reporter.Recovered(ctx, m, now); err != nil {
+			s.logger.Error("monitor recovery not recorded", "project_id", m.ProjectID, "monitor", m.Slug, "error", err)
+		}
+	}
 }
 
 // List returns the monitors of a project.

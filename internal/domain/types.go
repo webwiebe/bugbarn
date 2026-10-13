@@ -288,6 +288,7 @@ const (
 type Monitor struct {
 	ID            int64
 	ProjectID     int64
+	ProjectSlug   string // set by ListEnabledMonitors
 	Slug          string
 	Interval      time.Duration
 	Grace         time.Duration
@@ -308,4 +309,18 @@ func (m Monitor) NextDue() time.Time {
 		base = m.CreatedAt
 	}
 	return base.Add(m.Interval + m.Grace)
+}
+
+// MonitorReportRepeat is how long an unresolved incident waits before it is
+// reported again.
+const MonitorReportRepeat = 24 * time.Hour
+
+// NeedsReport reports whether the incident the monitor is in has not been
+// reported yet, or was last reported MonitorReportRepeat ago. A monitor in
+// state ok has no incident.
+func (m Monitor) NeedsReport(now time.Time) bool {
+	if m.State == MonitorStateOK {
+		return false
+	}
+	return m.LastEmittedAt.Before(m.StateSince) || now.Sub(m.LastEmittedAt) >= MonitorReportRepeat
 }
