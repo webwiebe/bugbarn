@@ -22,6 +22,7 @@ import { renderAccountView } from "./views-account.js";
 import { loadSecurity, renderSecurityView, securityStatus } from "./views-security.js";
 import { hostsStatus, loadHosts, renderHostsView, setSelectedHost } from "./views-hosts.js";
 import { loadRules, renderRulesView, rulesStatus } from "./views-rules.js";
+import { loadMonitors, monitorsStatus, renderMonitorsView } from "./views-monitors.js";
 
 type Route = typeof state.currentRoute;
 
@@ -34,6 +35,7 @@ const simpleRoutes: Partial<Record<string, { route: Route; title: string }>> = {
   account: { route: "account", title: "Account" },
   security: { route: "security", title: "Security" },
   rules: { route: "rules", title: "Detection rules" },
+  monitors: { route: "monitors", title: "Monitors" },
 };
 
 interface ViewHandlers { render: () => void; load: () => Promise<void>; status: () => string }
@@ -42,6 +44,7 @@ const telemetryViews: Partial<Record<Route, ViewHandlers>> = {
   security: { render: renderSecurityView, load: loadSecurity, status: securityStatus },
   hosts: { render: renderHostsView, load: loadHosts, status: hostsStatus },
   rules: { render: renderRulesView, load: loadRules, status: rulesStatus },
+  monitors: { render: renderMonitorsView, load: loadMonitors, status: monitorsStatus },
 };
 
 export function route(): void {

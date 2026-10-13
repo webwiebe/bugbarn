@@ -113,6 +113,15 @@ bb projects --create "My App"          # create a new project
 bb projects --create "My App" --slug my-app
 ```
 
+### Monitors
+
+```sh
+bb monitors                            # check-in monitors of the current project (JSON)
+bb monitors --project geo              # another project
+```
+
+Monitors that are failing or missed come first. Each entry has `slug`, `state` (`ok`, `missed`, `error`), `lastCheckInAt`, `intervalSeconds`, `graceSeconds` and `dueBy`.
+
 ### API keys
 
 ```sh

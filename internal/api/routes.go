@@ -438,6 +438,8 @@ func (s *Server) dispatchMiscRoutes(w http.ResponseWriter, r *http.Request) bool
 		s.serveClientError(w, r)
 	case r.URL.Path == "/api/v1/admin/digest" && r.Method == http.MethodPost:
 		s.serveDigestTrigger(w, r)
+	case r.URL.Path == "/api/v1/monitors" && r.Method == http.MethodGet:
+		s.listMonitors(w, r)
 	case r.URL.Path == "/internal/v1/db-backup" && r.Method == http.MethodGet:
 		s.serveDBBackup(w, r)
 	default:

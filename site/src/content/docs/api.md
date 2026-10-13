@@ -255,6 +255,19 @@ A scheduled job or worker reports that it ran. A monitor that stays silent past 
 
 ---
 
+#### GET /api/v1/monitors
+
+List the monitors of the scoped project (session users without a project header get every project). Monitors in state `error` or `missed` come first.
+
+**Auth:** session or API key.
+
+**Response `200`:**
+```json
+{"monitors": [{"slug": "pending-sweep", "project": "geo", "state": "missed", "lastStatus": "ok", "intervalSeconds": 3600, "graceSeconds": 600, "dueBy": "2026-10-13T11:10:00Z", "stateSince": "2026-10-13T11:11:00Z", "lastCheckInAt": "2026-10-13T10:00:00Z"}]}
+```
+
+---
+
 ### Telemetry (read)
 
 **Auth:** Session cookie or full-scope API key, like the other dashboard endpoints. The dashboard shows these under **Security** and **Hosts**.
