@@ -82,7 +82,9 @@ func (e *Evaluator) notifyAdmin(issue domain.Issue, conditionType string) {
 
 		if err := e.deliverer.Fire(fireCtx, rule, iss, e.publicURL); err != nil {
 			e.log.Error("failed to fire admin alert", "issue_id", iss.ID, "condition", conditionType, "error", err)
+			return
 		}
+		e.log.Info("admin alert sent", "issue_id", iss.ID, "project", iss.ProjectSlug, "condition", conditionType)
 	}()
 }
 
@@ -132,6 +134,7 @@ func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.
 				e.log.Error("failed to fire alert", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
 				return
 			}
+			e.log.Info("alert sent", "alert_id", r.ID, "issue_id", iss.ID, "project", iss.ProjectSlug, "condition", r.Condition)
 
 			if err := e.repo.RecordFiring(ctx, r.ID, iss.ID); err != nil {
 				e.log.Error("failed to record firing", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
