@@ -16,7 +16,7 @@ from .breadcrumbs import Breadcrumb, get_breadcrumbs
 from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
-SDK_VERSION = "0.1.0"
+SDK_VERSION = "1.2.0"
 DEFAULT_ENDPOINT = "/api/v1/events"
 
 
@@ -45,6 +45,7 @@ class Envelope:
     )
     user: Optional[UserContext] = None
     breadcrumbs: Optional[List[Breadcrumb]] = None
+    trace_id: Optional[str] = None
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -62,6 +63,8 @@ class Envelope:
         }
         if self.stacktrace:
             payload["exception"]["stacktrace"] = [frame.__dict__ for frame in self.stacktrace]
+        if self.trace_id:
+            payload["traceId"] = self.trace_id
         if self.user:
             payload["user"] = self.user.to_dict()
         if self.breadcrumbs:
@@ -70,8 +73,15 @@ class Envelope:
 
 
 class Transport:
-    def __init__(self, api_key: str, endpoint: str = DEFAULT_ENDPOINT, maxsize: int = 256) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        endpoint: str = DEFAULT_ENDPOINT,
+        maxsize: int = 256,
+        project: str | None = None,
+    ) -> None:
         self.api_key = api_key
+        self.project = project
         if endpoint and "/api/" not in endpoint:
             self.endpoint = endpoint.rstrip("/") + DEFAULT_ENDPOINT
         else:
@@ -116,15 +126,13 @@ class Transport:
 
     def _send(self, event: Envelope) -> None:
         payload = json.dumps(event.to_payload()).encode("utf-8")
-        request = urllib.request.Request(
-            self.endpoint,
-            data=payload,
-            method="POST",
-            headers={
-                "content-type": "application/json",
-                "x-bugbarn-api-key": self.api_key,
-            },
-        )
+        headers = {
+            "content-type": "application/json",
+            "x-bugbarn-api-key": self.api_key,
+        }
+        if self.project:
+            headers["x-bugbarn-project"] = self.project
+        request = urllib.request.Request(self.endpoint, data=payload, method="POST", headers=headers)
 
         try:
             with urllib.request.urlopen(request, timeout=2) as response:
@@ -144,6 +152,7 @@ class Transport:
 _transport: Transport | None = None
 _install_hook = False
 _atexit_registered = False
+_default_attributes: dict[str, Any] = {}
 
 
 def _normalize_exception(exc: BaseException | str | object) -> BaseException:
@@ -173,6 +182,21 @@ def _extract_stacktrace(tb) -> list[StackFrame] | None:
     return frames or None
 
 
+def _current_trace_id() -> str | None:
+    """Trace id of the active OpenTelemetry span, when opentelemetry is installed."""
+    try:
+        from opentelemetry import trace
+    except ImportError:
+        return None
+    try:
+        ctx = trace.get_current_span().get_span_context()
+    except Exception:
+        return None
+    if not ctx.is_valid:
+        return None
+    return format(ctx.trace_id, "032x")
+
+
 def _now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -193,11 +217,12 @@ def _build_event(
         exception_type=type(normalized).__name__,
         exception_message=str(normalized),
         stacktrace=_extract_stacktrace(normalized.__traceback__),
-        attributes=attributes or {},
+        attributes={**_default_attributes, **(attributes or {})},
         tags=tags or {},
         extra=extra or {},
         user=get_user(),
         breadcrumbs=crumbs if crumbs else None,
+        trace_id=_current_trace_id(),
     )
 
 
@@ -226,9 +251,19 @@ def init(
     endpoint: str = DEFAULT_ENDPOINT,
     install_excepthook: bool = False,
     transport: Transport | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    release: str | None = None,
 ) -> None:
-    global _transport, _install_hook, _atexit_registered
-    _transport = transport or Transport(api_key=api_key, endpoint=endpoint)
+    """Start reporting. *project* is sent as the X-BugBarn-Project header (needed by
+    setup keys); *environment* and *release* become attributes on every event."""
+    global _transport, _install_hook, _atexit_registered, _default_attributes
+    _transport = transport or Transport(api_key=api_key, endpoint=endpoint, project=project)
+    _default_attributes = {
+        key: value
+        for key, value in (("environment", environment), ("release", release))
+        if value
+    }
     if install_excepthook and not _install_hook:
         sys.excepthook = _excepthook
         _install_threading_hook()
