@@ -271,3 +271,41 @@ type DigestData struct {
 	Regressions    int           `json:"regressions"`
 	TopIssues      []DigestIssue `json:"top_issues"`
 }
+
+// Monitor states and check-in statuses. A monitor is "ok" until a check-in
+// reports an error or the miss detector finds it overdue.
+const (
+	MonitorStateOK     = "ok"
+	MonitorStateMissed = "missed"
+	MonitorStateError  = "error"
+
+	CheckInOK    = "ok"
+	CheckInError = "error"
+)
+
+// Monitor is a scheduled job or worker that reports in with check-ins. Only the
+// latest signal is kept, not a history.
+type Monitor struct {
+	ID            int64
+	ProjectID     int64
+	Slug          string
+	Interval      time.Duration
+	Grace         time.Duration
+	Enabled       bool
+	CreatedAt     time.Time
+	LastCheckInAt time.Time
+	LastStatus    string
+	State         string
+	StateSince    time.Time
+	LastEmittedAt time.Time
+}
+
+// NextDue is the time after which the monitor counts as missed: the last
+// check-in (or its creation, before the first one) plus interval and grace.
+func (m Monitor) NextDue() time.Time {
+	base := m.LastCheckInAt
+	if base.IsZero() {
+		base = m.CreatedAt
+	}
+	return base.Add(m.Interval + m.Grace)
+}
