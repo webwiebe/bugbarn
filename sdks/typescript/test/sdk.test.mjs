@@ -269,9 +269,10 @@ test("environment option is sent as the environment attribute", async () => {
   await captureException(new Error("b"), { attributes: { region: "eu" } });
   await captureException(new Error("c"), { attributes: { environment: "override" } });
 
-  assert.deepEqual(events[0].attributes, { environment: "staging" });
-  assert.deepEqual(events[1].attributes, { region: "eu", environment: "staging" });
+  assert.deepEqual(events[0].attributes, { environment: "staging", "deployment.environment": "staging" });
+  assert.deepEqual(events[1].attributes, { region: "eu", environment: "staging", "deployment.environment": "staging" });
   assert.equal(events[2].attributes.environment, "override");
+  assert.equal(events[2].attributes["deployment.environment"], "override");
 });
 
 test("environment falls back to BUGBARN_ENVIRONMENT and is omitted when unset", async () => {

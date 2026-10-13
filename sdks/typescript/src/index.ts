@@ -68,12 +68,24 @@ function parseStacktrace(stack?: string): StackFrame[] | undefined {
   return frames.length > 0 ? frames : undefined;
 }
 
-/** Adds the configured environment unless the caller already set one for this event. */
+/**
+ * Adds the configured environment unless the caller already set one for this
+ * event. `environment` is what the dashboard filters and fingerprints on;
+ * `deployment.environment` is the OpenTelemetry key the server turns into the
+ * environment facet.
+ */
 function withEnvironment(attributes?: Record<string, unknown>): Record<string, unknown> | undefined {
-  if (!currentEnvironment || (attributes && "environment" in attributes)) {
+  if (!currentEnvironment) {
     return attributes;
   }
-  return { ...attributes, environment: currentEnvironment };
+  const merged: Record<string, unknown> = { ...attributes };
+  if (!("environment" in merged)) {
+    merged.environment = currentEnvironment;
+  }
+  if (!("deployment.environment" in merged)) {
+    merged["deployment.environment"] = merged.environment;
+  }
+  return merged;
 }
 
 function buildEnvelope(error: unknown, options?: CaptureOptions): BugBarnEnvelope {
