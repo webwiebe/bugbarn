@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -67,4 +68,21 @@ func (s *MonitorStore) MarkMonitorEmitted(ctx context.Context, id int64, now tim
 	}
 	_, err := s.db.ExecContext(ctx, `UPDATE monitors SET last_emitted_at = ? WHERE id = ?`, formatTime(now), id)
 	return wrapErr(err, "mark monitor emitted")
+}
+
+// DeleteMonitor removes a monitor of a project by slug. Its issues stay: they
+// belong to the project, and someone may still be working on them. A job that
+// checks in again with an interval creates the monitor afresh.
+func (s *MonitorStore) DeleteMonitor(ctx context.Context, projectID int64, slug string) error {
+	if s == nil || s.db == nil {
+		return errMonitorReadOnly
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM monitors WHERE project_id = ? AND slug = ?`, projectID, slug)
+	if err != nil {
+		return wrapErr(err, "delete monitor")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return wrapNotFound(sql.ErrNoRows, "monitor not found")
+	}
+	return nil
 }

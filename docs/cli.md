@@ -118,6 +118,7 @@ bb projects --create "My App" --slug my-app
 ```sh
 bb monitors                            # check-in monitors of the current project (JSON)
 bb monitors --project geo              # another project
+bb monitors --project geo --delete pending-sweep   # delete one; its issues stay
 ```
 
 Monitors that are failing or missed come first. Each entry has `slug`, `state` (`ok`, `missed`, `error`), `lastCheckInAt`, `intervalSeconds`, `graceSeconds` and `dueBy`.

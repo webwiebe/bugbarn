@@ -234,3 +234,41 @@ func TestListMonitorsPutsIncidentsFirst(t *testing.T) {
 	}
 
 }
+
+func TestDeleteMonitorEndpoint(t *testing.T) {
+	t.Parallel()
+	h := newMonitorHarness(t)
+	if rr := h.post("sweep", h.key, `{"status":"ok","interval":"1h"}`); rr.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rr.Code, rr.Body)
+	}
+	del := func(path string, headers ...string) int {
+		req := httptest.NewRequest(http.MethodDelete, path, nil)
+		for i := 0; i+1 < len(headers); i += 2 {
+			req.Header.Set(headers[i], headers[i+1])
+		}
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+		return rr.Code
+	}
+	scope := []string{"X-BugBarn-API-Key", h.other, "X-BugBarn-Project", "geo"}
+	if code := del("/api/v1/monitors/sweep"); code != http.StatusUnauthorized {
+		t.Fatalf("anonymous delete: %d", code)
+	}
+	if code := del("/api/v1/monitors/nope", scope...); code != http.StatusNotFound {
+		t.Fatalf("unknown monitor: %d", code)
+	}
+	if code := del("/api/v1/monitors/sweep", scope...); code != http.StatusNoContent {
+		t.Fatalf("delete: %d", code)
+	}
+	if code := del("/api/v1/monitors/sweep", scope...); code != http.StatusNotFound {
+		t.Fatalf("second delete: %d", code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/monitors", nil)
+	req.Header.Set("X-BugBarn-API-Key", h.other)
+	req.Header.Set("X-BugBarn-Project", "geo")
+	rr := httptest.NewRecorder()
+	h.server.ServeHTTP(rr, req)
+	if !strings.Contains(rr.Body.String(), `"monitors":[]`) {
+		t.Fatalf("list after delete: %s", rr.Body)
+	}
+}
