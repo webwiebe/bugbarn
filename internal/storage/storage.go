@@ -188,7 +188,7 @@ func open(path string, autoMigrate bool) (*Store, error) {
 	roDB.SetMaxOpenConns(4)
 	registerDBStats(roDB, "read")
 
-	c := &core{db: db, roDB: roDB}
+	c := &core{db: db, roDB: roDB, mergeFingerprintCollisions: os.Getenv("BUGBARN_FINGERPRINT_MERGE") == "true"}
 	ctx := context.Background()
 	if err := c.init(ctx); err != nil {
 		unregisterDBStats(roDB)
