@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,7 @@ type transport struct {
 	queue       chan envelope
 	done        chan struct{}
 	client      *http.Client
+	inflight    sync.WaitGroup // check-ins being delivered
 }
 
 func newTransport(apiKey, endpoint, projectSlug string, queueSize int) *transport {
@@ -54,7 +56,7 @@ func (t *transport) flush(timeout time.Duration) bool {
 	// Instead: create a ticker-based drain check.
 	deadline := time.Now().Add(timeout)
 	for {
-		if len(t.queue) == 0 {
+		if len(t.queue) == 0 && t.idle() {
 			return true
 		}
 		if time.Now().After(deadline) {
@@ -66,10 +68,30 @@ func (t *transport) flush(timeout time.Duration) bool {
 
 func (t *transport) shutdown(timeout time.Duration) bool {
 	close(t.queue)
+	deadline := time.After(timeout)
 	select {
 	case <-t.done:
+	case <-deadline:
+		return false
+	}
+	idle := make(chan struct{})
+	go func() { t.inflight.Wait(); close(idle) }()
+	select {
+	case <-idle:
 		return true
-	case <-time.After(timeout):
+	case <-deadline:
+		return false
+	}
+}
+
+// idle reports whether no check-in is being delivered.
+func (t *transport) idle() bool {
+	done := make(chan struct{})
+	go func() { t.inflight.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(time.Millisecond):
 		return false
 	}
 }

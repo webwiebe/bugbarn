@@ -231,6 +231,30 @@ Infrastructure telemetry from Vector agents: security log lines (Traefik access 
 
 ---
 
+#### POST /api/v1/monitors/{slug}/check-ins
+
+A scheduled job or worker reports that it ran. A monitor that stays silent past its interval plus grace opens an issue; an `ok` check-in resolves it again.
+
+**Auth:** API key (`ingest` or `full` scope). The project comes from the key or the `X-BugBarn-Project` header.
+
+**Slug:** 1 to 64 characters of `a-z`, `0-9`, `.`, `_`, `-`. At most 100 monitors per project.
+
+**Request body:**
+```json
+{"status": "ok", "message": "swept 12 rows", "interval": "1h", "grace": "10m"}
+```
+
+- `status`: `ok` or `error`. An `error` check-in opens an issue right away.
+- `message`: optional note, cut at 200 characters. It appears only on the issue an `error` check-in opens; keep personal data out of it.
+- `interval`: how often a check-in is expected, from `1m` to `31d` (Go duration syntax). The first check-in must send it; it creates the monitor. Later check-ins may omit it to keep the stored value, or send it to replace it.
+- `grace`: extra time after the interval before the monitor counts as missed. Defaults to 0 and may not exceed the interval.
+
+**Responses:** `201` monitor created, `200` monitor updated, `400` invalid input, `401` bad key, `404` unknown monitor and no `interval` sent, `409` monitor limit reached.
+
+**Issues:** a miss opens `Monitor missed: <slug>`, an error check-in opens `Monitor failed: <slug>`. Both are issues in the monitor's project and go through the normal alert path. An `ok` check-in records a recovery event with the check-in time and resolves the open issue; a later miss regresses the same issue. A muted or resolved issue is left alone. An incident that stays unresolved is reported again after 24 hours. For 5 minutes after a BugBarn restart no monitor is marked missed.
+
+---
+
 ### Telemetry (read)
 
 **Auth:** Session cookie or full-scope API key, like the other dashboard endpoints. The dashboard shows these under **Security** and **Hosts**.
