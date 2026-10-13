@@ -19,6 +19,7 @@ import (
 	analyticssvc "github.com/wiebe-xyz/bugbarn/internal/service/analytics"
 	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
 	issuesvc "github.com/wiebe-xyz/bugbarn/internal/service/issues"
+	keyrequestsvc "github.com/wiebe-xyz/bugbarn/internal/service/keyrequests"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
@@ -38,6 +39,7 @@ type Server struct {
 	logs           *logsvc.Service
 	analytics      *analyticssvc.Service
 	detectionRules *detectionrules.Service
+	keyRequests    *keyrequestsvc.Service
 	logger         *slog.Logger
 
 	users               *auth.UserAuthenticator

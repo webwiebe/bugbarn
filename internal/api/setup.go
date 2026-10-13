@@ -38,7 +38,8 @@ func (s *Server) resolveSetupProject(w http.ResponseWriter, r *http.Request, slu
 	}
 	if projectIsActive(proj.Status) && s.users != nil && s.users.Enabled() {
 		if _, ok := s.sessionUser(r); !ok {
-			http.Error(w, "setup key for an active project requires an authenticated admin session", http.StatusForbidden)
+			http.Error(w, "setup key for an active project requires an authenticated admin session; "+
+				"agents can ask an admin for a key: POST /api/v1/setup/"+slug+"/key-requests", http.StatusForbidden)
 			return proj, false
 		}
 	}
@@ -111,6 +112,7 @@ approves the project%s
 	}
 
 	viewSection := dashboardSuffix(dashboard, "\n## View your project\n\n%s/#/issues\n", "")
+	viewSection += keyRequestDocs(endpoint, slug)
 
 	page := fmt.Sprintf(`# BugBarn Integration: %s
 

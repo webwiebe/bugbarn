@@ -3,14 +3,14 @@
 import { renderSettingsViewMarkup } from "./components.js";
 import { fetchSystemHealth, normalizeList, normalizeObject } from "./data.js";
 import { errorMessage, escapeHtml } from "./format.js";
-import type { ApiAlias, ApiApiKey, ApiProject, ApiProjectGroup, ApiSettings } from "./types.js";
+import type { ApiAlias, ApiApiKey, ApiKeyRequest, ApiProject, ApiProjectGroup, ApiSettings } from "./types.js";
 import { elements, liveWindowMinutes, setActiveView, setStatus, showFlash, state } from "./core.js";
 import { apiFetch, fetchJson, logout, postFormData, postJson } from "./http.js";
 import { checkPendingProjects, renderProjectSwitcher } from "./views-projects.js";
 
 export async function loadSettings(): Promise<void> {
   try {
-    const [settingsPayload, keysPayload, projectsPayload, groupsPayload, aliasesPayload] = await Promise.all([
+    const [settingsPayload, keysPayload, projectsPayload, groupsPayload, aliasesPayload, keyRequestsPayload] = await Promise.all([
       fetchJson("/api/v1/settings", true),
       fetchJson("/api/v1/apikeys", true).catch(() => null),
       // ?usage=true: the settings screen is the only view that renders the
@@ -19,12 +19,14 @@ export async function loadSettings(): Promise<void> {
       fetchJson("/api/v1/projects?usage=true", true).catch(() => null),
       fetchJson("/api/v1/groups", true).catch(() => null),
       fetchJson("/api/v1/aliases", true).catch(() => null),
+      fetchJson("/api/v1/key-requests", true).catch(() => null),
     ]);
     state.settings = settingsPayload ? normalizeObject<ApiSettings>(settingsPayload, "settings") : null;
     state.apiKeys = keysPayload ? normalizeList<ApiApiKey>(keysPayload as Record<string, unknown>, "apiKeys") : [];
     if (projectsPayload) state.projects = normalizeList<ApiProject>(projectsPayload, "projects");
     state.groups = groupsPayload ? ((groupsPayload as Record<string, unknown>)["groups"] as ApiProjectGroup[] ?? []) : [];
     state.aliases = aliasesPayload ? ((aliasesPayload as Record<string, unknown>)["aliases"] as ApiAlias[] ?? []) : [];
+    state.keyRequests = keyRequestsPayload ? normalizeList<ApiKeyRequest>(keyRequestsPayload as Record<string, unknown>, "keyRequests") : [];
     renderProjectSwitcher();
     if (state.currentRoute === "settings") renderSettingsView();
   } catch (error) {
@@ -57,7 +59,7 @@ export function renderSettingsView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Settings";
   elements.detailBody.innerHTML = "";
-  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth);
+  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth, state.keyRequests);
   wireSettingsActions();
   if (state.settingsTab === "system") {
     void loadSystemHealth();
@@ -78,7 +80,7 @@ async function loadSystemHealth(): Promise<void> {
     systemHealthLoading = false;
   }
   if (state.currentRoute === "settings" && state.settingsTab === "system") {
-    elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, null, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth);
+    elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, null, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth, state.keyRequests);
     wireSettingsActions();
   }
 }
@@ -118,6 +120,8 @@ function wireSettingsActions(): void {
       if (slug) void approveProject(slug, btn);
     });
   });
+
+  wireKeyRequestActions();
 
   elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-delete-project]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -241,6 +245,32 @@ async function approveProject(slug: string, btn?: HTMLButtonElement): Promise<vo
   } catch (error) {
     if (btn) { btn.disabled = false; btn.textContent = label; }
     showFlash(`Approve failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+function wireKeyRequestActions(): void {
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-approve-key-request], [data-deny-key-request]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const approve = btn.dataset["approveKeyRequest"];
+      const deny = btn.dataset["denyKeyRequest"];
+      if (approve) void resolveKeyRequest(approve, "approve", btn);
+      else if (deny) void resolveKeyRequest(deny, "deny", btn);
+    });
+  });
+}
+
+async function resolveKeyRequest(id: string, action: "approve" | "deny", btn: HTMLButtonElement): Promise<void> {
+  const label = btn.textContent ?? "";
+  btn.disabled = true;
+  btn.textContent = "…";
+  try {
+    await postJson(`/api/v1/key-requests/${encodeURIComponent(id)}/${action}`, {});
+    showFlash(action === "approve" ? "Key request approved. The agent can now collect its key." : "Key request denied.", "success");
+    await loadSettings();
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = label;
+    showFlash(`Key request ${action} failed: ${errorMessage(error)}`, "error", 8000);
   }
 }
 

@@ -58,6 +58,7 @@ export const state: AppState = {
   settings: null,
   systemHealth: null,
   apiKeys: [],
+  keyRequests: [],
   liveEvents: [],
   liveError: null,
   liveTimer: null,
