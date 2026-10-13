@@ -112,6 +112,10 @@ func monitorAttrs(m domain.Monitor) map[string]any {
 		"interval_seconds": int64(m.Interval / time.Second),
 		"grace_seconds":    int64(m.Grace / time.Second),
 	}
+	if m.Schedule != "" {
+		attrs["schedule"] = m.Schedule
+		attrs["timezone"] = m.Timezone
+	}
 	if !m.LastCheckInAt.IsZero() {
 		attrs["last_checkin_at"] = m.LastCheckInAt.UTC().Format(time.RFC3339)
 	}

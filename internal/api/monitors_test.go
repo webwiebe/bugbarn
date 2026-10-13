@@ -272,3 +272,59 @@ func TestDeleteMonitorEndpoint(t *testing.T) {
 		t.Fatalf("list after delete: %s", rr.Body)
 	}
 }
+
+func TestMonitorCheckInWithSchedule(t *testing.T) {
+	t.Parallel()
+	h := newMonitorHarness(t)
+
+	rr := h.post("nightly", h.key, `{"status":"ok","schedule":"0 6 * * *","timezone":"Europe/Amsterdam","grace":"10m"}`)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create: got %d: %s", rr.Code, rr.Body.String())
+	}
+	var created map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created["schedule"] != "0 6 * * *" || created["timezone"] != "Europe/Amsterdam" {
+		t.Fatalf("response: %v", created)
+	}
+
+	// No timezone means UTC; the listing carries the schedule and no interval.
+	if rr := h.post("utc-job", h.key, `{"status":"ok","schedule":"*/15 * * * *"}`); rr.Code != http.StatusCreated {
+		t.Fatalf("utc: got %d: %s", rr.Code, rr.Body.String())
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/monitors", nil)
+	req.Header.Set("X-BugBarn-API-Key", h.other)
+	req.Header.Set("X-BugBarn-Project", "geo")
+	list := httptest.NewRecorder()
+	h.server.ServeHTTP(list, req)
+	var body struct {
+		Monitors []map[string]any `json:"monitors"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &body); err != nil {
+		t.Fatalf("%v: %s", err, list.Body.String())
+	}
+	got := map[string]map[string]any{}
+	for _, m := range body.Monitors {
+		got[m["slug"].(string)] = m
+	}
+	if got["utc-job"]["timezone"] != "UTC" || got["utc-job"]["schedule"] != "*/15 * * * *" || got["utc-job"]["intervalSeconds"] != float64(0) {
+		t.Fatalf("listing: %v", got["utc-job"])
+	}
+	if got["nightly"]["graceSeconds"] != float64(600) {
+		t.Fatalf("listing: %v", got["nightly"])
+	}
+
+	for name, payload := range map[string]string{
+		"both modes":       `{"status":"ok","interval":"1h","schedule":"0 6 * * *"}`,
+		"bad expression":   `{"status":"ok","schedule":"every day"}`,
+		"six fields":       `{"status":"ok","schedule":"0 0 6 * * *"}`,
+		"never runs":       `{"status":"ok","schedule":"0 0 31 2 *"}`,
+		"unknown zone":     `{"status":"ok","schedule":"0 6 * * *","timezone":"Mars/Olympus"}`,
+		"zone on interval": `{"status":"ok","interval":"1h","timezone":"Europe/Amsterdam"}`,
+	} {
+		if rr := h.post("bad-cron", h.key, payload); rr.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d: %s", name, rr.Code, rr.Body.String())
+		}
+	}
+}

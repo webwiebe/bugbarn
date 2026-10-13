@@ -68,6 +68,8 @@ type checkInBody struct {
 	Message  string `json:"message"`
 	Interval string `json:"interval"`
 	Grace    string `json:"grace"`
+	Schedule string `json:"schedule"`
+	Timezone string `json:"timezone"`
 }
 
 func (s *Server) recordCheckIn(w http.ResponseWriter, r *http.Request, slug string) {
@@ -81,7 +83,10 @@ func (s *Server) recordCheckIn(w http.ResponseWriter, r *http.Request, slug stri
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	in := monitorsvc.CheckInInput{Slug: slug, Status: body.Status, Message: body.Message}
+	in := monitorsvc.CheckInInput{
+		Slug: slug, Status: body.Status, Message: body.Message,
+		Schedule: body.Schedule, Timezone: body.Timezone,
+	}
 	if in.Interval, err = parseOptionalDuration("interval", body.Interval); err != nil {
 		writeServiceError(w, err)
 		return
@@ -107,6 +112,8 @@ func (s *Server) recordCheckIn(w http.ResponseWriter, r *http.Request, slug stri
 		"interval":  res.Monitor.Interval.String(),
 		"grace":     res.Monitor.Grace.String(),
 		"createdAt": res.Monitor.CreatedAt.UTC().Format(time.RFC3339),
+		"schedule":  res.Monitor.Schedule,
+		"timezone":  monitorTimezone(res.Monitor),
 	})
 }
 
@@ -194,6 +201,10 @@ func monitorJSON(m domain.Monitor) map[string]any {
 		"dueBy":           m.NextDue().UTC().Format(time.RFC3339),
 		"stateSince":      m.StateSince.UTC().Format(time.RFC3339),
 	}
+	if m.Schedule != "" {
+		out["schedule"] = m.Schedule
+		out["timezone"] = monitorTimezone(m)
+	}
 	if !m.LastCheckInAt.IsZero() {
 		out["lastCheckInAt"] = m.LastCheckInAt.UTC().Format(time.RFC3339)
 	}
@@ -232,4 +243,16 @@ func (s *Server) dispatchMonitorRoutes(w http.ResponseWriter, r *http.Request) b
 		return false
 	}
 	return true
+}
+
+// monitorTimezone is the zone a cron monitor is evaluated in, UTC when none was
+// stored. Interval monitors have none.
+func monitorTimezone(m domain.Monitor) string {
+	if m.Schedule == "" {
+		return ""
+	}
+	if m.Timezone == "" {
+		return "UTC"
+	}
+	return m.Timezone
 }

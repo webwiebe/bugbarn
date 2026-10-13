@@ -6,7 +6,7 @@ import { addBreadcrumb, getBreadcrumbs, clearBreadcrumbs } from "./breadcrumbs.j
 import { installAutoInterceptors } from "./interceptors.js";
 
 const SDK_NAME = "bugbarn.typescript";
-const SDK_VERSION = "1.1.0";
+const SDK_VERSION = "1.2.0";
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 2000;
 
 let transport: Transport | null = null;
@@ -215,6 +215,12 @@ export async function checkIn(slug: string, status: CheckInStatus = "ok", option
   if (status !== "ok" && status !== "error") {
     throw new RangeError(`status must be "ok" or "error", got ${String(status)}`);
   }
+  if (options.interval !== undefined && options.schedule) {
+    throw new RangeError("pass interval or schedule, not both");
+  }
+  if (options.timezone && !options.schedule) {
+    throw new RangeError("timezone needs a schedule");
+  }
   const body: CheckInBody = { status };
   const interval = durationText(options.interval, "interval");
   const grace = durationText(options.grace, "grace");
@@ -223,6 +229,12 @@ export async function checkIn(slug: string, status: CheckInStatus = "ok", option
   }
   if (grace) {
     body.grace = grace;
+  }
+  if (options.schedule) {
+    body.schedule = options.schedule;
+  }
+  if (options.timezone) {
+    body.timezone = options.timezone;
   }
   if (options.message) {
     body.message = options.message;

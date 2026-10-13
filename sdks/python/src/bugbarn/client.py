@@ -17,7 +17,7 @@ from .breadcrumbs import Breadcrumb, get_breadcrumbs
 from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
-SDK_VERSION = "1.3.0"
+SDK_VERSION = "1.4.0"
 DEFAULT_ENDPOINT = "/api/v1/events"
 CHECK_IN_STATUSES = ("ok", "error")
 
@@ -360,18 +360,26 @@ def check_in(
     *,
     interval: float | int | datetime.timedelta | str | None = None,
     grace: float | int | datetime.timedelta | str | None = None,
+    schedule: str | None = None,
+    timezone: str | None = None,
     message: str | None = None,
 ) -> bool:
     """Report that a scheduled job ran. *status* is ``"ok"`` or ``"error"``.
 
     Pass *interval* (seconds, a ``timedelta`` or a duration string such as ``"1h"``) the
     first time to create the monitor; BugBarn raises an issue when the next check-in is
-    late by more than *grace*. Delivery is asynchronous like events: call ``flush()``
+    late by more than *grace*. Jobs that run at fixed times pass *schedule* instead, a
+    5-field cron expression, with *timezone* as an IANA name such as ``"Europe/Amsterdam"``
+    (UTC when left out). Use *interval* or *schedule* on a monitor, not both. Delivery is asynchronous like events: call ``flush()``
     before a short-lived process exits. Returns False when the client is not initialised,
     the queue is full or the transport cannot carry check-ins.
     """
     if status not in CHECK_IN_STATUSES:
         raise ValueError(f"status must be one of {CHECK_IN_STATUSES}, got {status!r}")
+    if interval is not None and schedule:
+        raise ValueError("pass interval or schedule, not both")
+    if timezone and not schedule:
+        raise ValueError("timezone needs a schedule")
     if _transport is None:
         return False
     body: dict[str, Any] = {"status": status}
@@ -381,6 +389,10 @@ def check_in(
         body["interval"] = interval_text
     if grace_text:
         body["grace"] = grace_text
+    if schedule:
+        body["schedule"] = schedule
+    if timezone:
+        body["timezone"] = timezone
     if message:
         body["message"] = message
     submit = getattr(_transport, "submit_check_in", None)

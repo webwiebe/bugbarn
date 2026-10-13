@@ -129,6 +129,7 @@ linters:
           allow:
             - $gostd
             - github.com/wiebe-xyz/bugbarn/internal/event
+            - github.com/wiebe-xyz/bugbarn/internal/cronexpr
         # Dogfooding: internal/selflog only sees records that go through slog.
         # A stdlib log call at error level never reaches BugBarn's own dashboard.
         no-stdlib-log:

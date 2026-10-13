@@ -121,7 +121,7 @@ bb monitors --project geo              # another project
 bb monitors --project geo --delete pending-sweep   # delete one; its issues stay
 ```
 
-Monitors that are failing or missed come first. Each entry has `slug`, `state` (`ok`, `missed`, `error`), `lastCheckInAt`, `intervalSeconds`, `graceSeconds` and `dueBy`.
+Monitors that are failing or missed come first. Each entry has `slug`, `state` (`ok`, `missed`, `error`), `lastCheckInAt`, `intervalSeconds`, `graceSeconds` and `dueBy`. Monitors on a cron schedule also carry `schedule` and `timezone` (and `intervalSeconds` is `0`).
 
 ### API keys
 
