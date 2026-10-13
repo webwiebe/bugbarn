@@ -17,7 +17,7 @@ from .breadcrumbs import Breadcrumb, get_breadcrumbs
 from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
-SDK_VERSION = "1.4.0"
+SDK_VERSION = "1.4.1"
 DEFAULT_ENDPOINT = "/api/v1/events"
 CHECK_IN_STATUSES = ("ok", "error")
 
@@ -98,7 +98,7 @@ class Transport:
             self.endpoint = endpoint
         self.queue: "queue.Queue[Envelope | CheckIn]" = queue.Queue(maxsize=maxsize)
         self._closed = threading.Event()
-        self._warned = False
+        self._warned: set[str] = set()
         self._worker = threading.Thread(target=self._run, name="bugbarn-transport", daemon=True)
         self._worker.start()
 
@@ -156,6 +156,8 @@ class Transport:
         payload = json.dumps(body).encode("utf-8")
         headers = {
             "content-type": "application/json",
+            # urllib's default agent is blocked by Cloudflare browser-signature rules (error 1010).
+            "user-agent": f"bugbarn-python/{SDK_VERSION}",
             "x-bugbarn-api-key": self.api_key,
         }
         if self.project:
@@ -166,14 +168,15 @@ class Transport:
             with urllib.request.urlopen(request, timeout=2) as response:
                 response.read()
         except urllib.error.HTTPError as err:
-            self._warn_once(what, f"ingest answered HTTP {err.code}")
+            self._warn_once(what, f"ingest answered HTTP {err.code}{_error_detail(err)}")
         except urllib.error.URLError as err:
             self._warn_once(what, f"ingest unreachable: {err.reason}")
 
     def _warn_once(self, what: str, reason: str) -> None:
-        if self._warned:
+        key = f"{what}:{reason}"
+        if key in self._warned or len(self._warned) >= 20:
             return
-        self._warned = True
+        self._warned.add(key)
         print(f"bugbarn: {what} dropped, {reason} ({self.endpoint})", file=sys.stderr)
 
 
@@ -191,6 +194,15 @@ def _with_environment(attributes: dict[str, Any]) -> dict[str, Any]:
     if environment and "deployment.environment" not in attributes:
         attributes["deployment.environment"] = environment
     return attributes
+
+
+def _error_detail(err: urllib.error.HTTPError) -> str:
+    """The server's short error text, so a rejected request says why."""
+    try:
+        text = err.read(200).decode("utf-8", "replace").strip()
+    except Exception:
+        return ""
+    return f" ({text})" if text else ""
 
 
 def _normalize_exception(exc: BaseException | str | object) -> BaseException:
