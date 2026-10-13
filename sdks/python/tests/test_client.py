@@ -7,7 +7,16 @@ import unittest
 from unittest import mock
 
 from bugbarn import client
-from bugbarn.client import CheckIn, Envelope, Transport, capture_exception, check_in, flush, init, shutdown
+from bugbarn.client import (
+    CheckIn,
+    Envelope,
+    Transport,
+    capture_exception,
+    check_in,
+    flush,
+    init,
+    shutdown,
+)
 
 
 class RecordingTransport:
