@@ -5,6 +5,7 @@ import sys
 import unittest
 from unittest import mock
 
+from bugbarn import client
 from bugbarn.client import Envelope, Transport, capture_exception, flush, init, shutdown
 
 
@@ -41,7 +42,7 @@ class SDKTests(unittest.TestCase):
         self.assertEqual(transport.events[0].exception_message, "boom")
         self.assertEqual(transport.events[0].tags["service"], "api")
         self.assertEqual(transport.events[0].sender["sdk"]["name"], "bugbarn.python")
-        self.assertEqual(transport.events[0].sender["sdk"]["version"], "0.1.0")
+        self.assertEqual(transport.events[0].sender["sdk"]["version"], client.SDK_VERSION)
 
     def test_flush_and_shutdown_use_bounded_timeout(self):
         transport = RecordingTransport()
