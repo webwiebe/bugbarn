@@ -3,7 +3,8 @@
 import { renderEmptyIssues, renderIssueListMarkup, renderSetupGuide } from "./components.js";
 import { normalizeList } from "./data.js";
 import { errorMessage, escapeHtml } from "./format.js";
-import type { ApiIssue, IssueSort, IssueStatus } from "./types.js";
+import { issueHeading, renderIssueStatusTabs, renderIssueSummaryStrip } from "./components/issue-summary.js";
+import type { ApiIssue, IssueCounts, IssueSort, IssueStatus } from "./types.js";
 import { byId, elements, setActiveView, setStatus, state } from "./core.js";
 import { fetchJson } from "./http.js";
 import { setRouteStatus } from "./router.js";
@@ -35,6 +36,7 @@ export async function loadIssues(): Promise<void> {
     const raw = payload as Record<string, unknown>;
     state.issues = normalizeList<ApiIssue>(raw, "issues");
     state.issueHasMore = Boolean(raw?.["hasMore"]);
+    applyIssueTotals(raw);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       setRouteStatus();
       renderIssuesView();
@@ -44,11 +46,25 @@ export async function loadIssues(): Promise<void> {
     if (generation !== issueLoadGeneration) return;
     state.issues = [];
     state.issueHasMore = false;
+    state.issueTotal = null;
+    state.issueCounts = null;
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       renderIssuesView(error);
       setStatus(`Issues unavailable: ${errorMessage(error)}`);
     }
   }
+}
+
+/** Keeps the server's cached totals; a response without them clears the old ones. */
+function applyIssueTotals(raw: Record<string, unknown>): void {
+  const total = raw?.["total"];
+  state.issueTotal = typeof total === "number" ? total : null;
+  state.issueTotalApproximate = raw?.["totalIsApproximate"] === true;
+  state.issueCounts = (raw?.["counts"] as IssueCounts | undefined) ?? null;
+}
+
+function issueHeadingText(): string {
+  return issueHeading(state.issues.length, state.issueTotal, state.issueTotalApproximate, state.issueHasMore);
 }
 
 export async function loadMoreIssues(): Promise<void> {
@@ -77,6 +93,7 @@ export async function loadMoreIssues(): Promise<void> {
     const more = normalizeList<ApiIssue>(raw, "issues");
     state.issues = state.issues.concat(more);
     state.issueHasMore = Boolean(raw?.["hasMore"]);
+    applyIssueTotals(raw);
     if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
       setRouteStatus();
       renderIssuesView();
@@ -120,10 +137,9 @@ export function renderIssuesView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Select an issue";
   elements.detailBody.innerHTML = "";
-  const count = state.issues.length;
   elements.overviewView.innerHTML = `
     <div class="view-head">
-      <h2 id="issue-count">${escapeHtml(error ? "Unavailable" : `${count} issue${count === 1 ? "" : "s"}`)}</h2>
+      <h2 id="issue-count">${escapeHtml(error ? "Unavailable" : issueHeadingText())}</h2>
       <div class="view-actions">
         <input id="issue-filter" type="search" placeholder="Search issues…" aria-label="Search issues" value="${escapeHtml(state.issueQuery)}" />
         <select id="issue-sort" aria-label="Sort issues">
@@ -133,11 +149,9 @@ export function renderIssuesView(error: unknown = null): void {
         </select>
       </div>
     </div>
+    ${renderIssueSummaryStrip(error ? null : state.issueCounts, state.issueStatus)}
     <div class="issue-status-tabs" role="tablist">
-      <button class="tab${state.issueStatus === "all" ? " active" : ""}" data-status="all" role="tab">All</button>
-      <button class="tab${state.issueStatus === "open" ? " active" : ""}" data-status="open" role="tab">Open</button>
-      <button class="tab${state.issueStatus === "resolved" ? " active" : ""}" data-status="resolved" role="tab">Resolved</button>
-      <button class="tab${state.issueStatus === "muted" ? " active" : ""}" data-status="muted" role="tab">Muted</button>
+      ${renderIssueStatusTabs(error ? null : state.issueCounts, state.issueStatus)}
     </div>
     <div id="issue-list" class="list issue-list" aria-live="polite"></div>
   `;
@@ -173,7 +187,7 @@ function renderIssuesList(error: unknown = null): void {
   }
 
   const count = state.issues.length;
-  elements.issueCount.textContent = `${count} issue${count === 1 ? "" : "s"}`;
+  elements.issueCount.textContent = issueHeadingText();
 
   if (!count) {
     elements.issueList.innerHTML = renderEmptyIssues(renderSetupGuide());

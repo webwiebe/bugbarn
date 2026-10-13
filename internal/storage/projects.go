@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // CreateProject inserts a new project row; returns an error if the slug already exists.
@@ -287,6 +288,8 @@ type ProjectUsage struct {
 	IssueCount int   `json:"issue_count"`
 	EventCount int   `json:"event_count"`
 	LogCount   int   `json:"log_count"`
+	// IssueStatus splits IssueCount by status.
+	IssueStatus domain.IssueCounts `json:"issue_status"`
 }
 
 // ProjectUsageAll returns issue, event, and log counts for every project.
@@ -297,9 +300,20 @@ func (s *ProjectStore) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUs
 		SELECT p.id,
 			COALESCE(ic.cnt, 0),
 			COALESCE(ec.cnt, 0),
-			COALESCE(lc.cnt, 0)
+			COALESCE(lc.cnt, 0),
+			COALESCE(ic.open_cnt, 0),
+			COALESCE(ic.regressed_cnt, 0),
+			COALESCE(ic.resolved_cnt, 0),
+			COALESCE(ic.muted_cnt, 0)
 		FROM projects p
-		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM issues GROUP BY project_id) ic ON ic.project_id = p.id
+		LEFT JOIN (
+			SELECT project_id,
+				COUNT(*) cnt,
+				SUM(status IN ('unresolved', 'regressed')) open_cnt,
+				SUM(status IN ('unresolved', 'regressed') AND regression_count > 0) regressed_cnt,
+				SUM(status = 'resolved') resolved_cnt,
+				SUM(status = 'muted') muted_cnt
+			FROM issues GROUP BY project_id) ic ON ic.project_id = p.id
 		LEFT JOIN (SELECT project_id, SUM(sample_weight) cnt FROM events GROUP BY project_id) ec ON ec.project_id = p.id
 		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM log_entries GROUP BY project_id) lc ON lc.project_id = p.id`)
 	if err != nil {
@@ -309,9 +323,11 @@ func (s *ProjectStore) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUs
 
 	for rows.Next() {
 		var u ProjectUsage
-		if err := rows.Scan(&u.ProjectID, &u.IssueCount, &u.EventCount, &u.LogCount); err != nil {
+		if err := rows.Scan(&u.ProjectID, &u.IssueCount, &u.EventCount, &u.LogCount,
+			&u.IssueStatus.Open, &u.IssueStatus.Regressed, &u.IssueStatus.Resolved, &u.IssueStatus.Muted); err != nil {
 			return nil, err
 		}
+		u.IssueStatus.All = u.IssueCount
 		usage[u.ProjectID] = u
 	}
 	return usage, rows.Err()

@@ -89,7 +89,29 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	if hasMore {
 		issues = issues[:requestedLimit]
 	}
-	writeJSON(w, map[string]any{"issues": issues, "hasMore": hasMore})
+	resp := map[string]any{"issues": issues, "hasMore": hasMore}
+	s.addIssueTotals(r.Context(), resp, filter, len(issues))
+	writeJSON(w, resp)
+}
+
+// addIssueTotals adds the cached per-status counts for the request's scope, and
+// the total that matches the filter. A text query or a facet filter narrows the
+// list in ways the counters cannot follow, so then the total is the number of
+// issues in this page and totalIsApproximate is set. A failed count never fails
+// the list: the page then carries no totals.
+func (s *Server) addIssueTotals(ctx context.Context, resp map[string]any, filter domain.IssueFilter, loaded int) {
+	counts, err := s.issues.Counts(ctx)
+	if err != nil {
+		return
+	}
+	resp["counts"] = counts
+	if strings.TrimSpace(filter.Query) != "" || len(filter.Facets) > 0 {
+		resp["total"] = loaded
+		resp["totalIsApproximate"] = true
+		return
+	}
+	resp["total"] = counts.For(filter.Status)
+	resp["totalIsApproximate"] = false
 }
 
 // buildIssueFilter parses the issue-list query params. It returns the filter
