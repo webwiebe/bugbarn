@@ -78,6 +78,7 @@ class Transport:
             self.endpoint = endpoint
         self.queue: "queue.Queue[Envelope]" = queue.Queue(maxsize=maxsize)
         self._closed = threading.Event()
+        self._warned = False
         self._worker = threading.Thread(target=self._run, name="bugbarn-transport", daemon=True)
         self._worker.start()
 
@@ -128,12 +129,21 @@ class Transport:
         try:
             with urllib.request.urlopen(request, timeout=2) as response:
                 response.read()
-        except urllib.error.URLError:
+        except urllib.error.HTTPError as err:
+            self._warn_once(f"ingest answered HTTP {err.code}")
+        except urllib.error.URLError as err:
+            self._warn_once(f"ingest unreachable: {err.reason}")
+
+    def _warn_once(self, reason: str) -> None:
+        if self._warned:
             return
+        self._warned = True
+        print(f"bugbarn: event dropped, {reason} ({self.endpoint})", file=sys.stderr)
 
 
 _transport: Transport | None = None
 _install_hook = False
+_atexit_registered = False
 
 
 def _normalize_exception(exc: BaseException | str | object) -> BaseException:
@@ -193,7 +203,21 @@ def _build_event(
 
 def _excepthook(exc_type, exc, tb) -> None:
     capture_exception(exc)
+    # The interpreter exits right after this hook, so drain now; the daemon
+    # transport thread would otherwise take the event down with it.
+    flush(timeout=2.0)
     sys.__excepthook__(exc_type, exc, tb)
+
+
+def _install_threading_hook() -> None:
+    previous = threading.excepthook
+
+    def hook(args) -> None:
+        if args.exc_value is not None and args.exc_type is not SystemExit:
+            capture_exception(args.exc_value)
+        previous(args)
+
+    threading.excepthook = hook
 
 
 def init(
@@ -203,12 +227,15 @@ def init(
     install_excepthook: bool = False,
     transport: Transport | None = None,
 ) -> None:
-    global _transport, _install_hook
+    global _transport, _install_hook, _atexit_registered
     _transport = transport or Transport(api_key=api_key, endpoint=endpoint)
     if install_excepthook and not _install_hook:
         sys.excepthook = _excepthook
+        _install_threading_hook()
         _install_hook = True
-    atexit.register(lambda: shutdown(timeout=2.0))
+    if not _atexit_registered:
+        atexit.register(lambda: shutdown(timeout=2.0))
+        _atexit_registered = True
 
 
 def flush(timeout: float = 2.0) -> bool:
