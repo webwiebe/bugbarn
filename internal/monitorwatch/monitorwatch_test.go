@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
@@ -270,5 +271,42 @@ func TestMissedMonitorIsReportedAgainAfterADay(t *testing.T) {
 	h.detector.Check(context.Background())
 	if got := h.issue(domain.MonitorStateMissed); got.EventCount != 2 {
 		t.Fatalf("not reported after a day: %d", got.EventCount)
+	}
+}
+
+func TestDeletedMonitorStopsMissingAndKeepsItsIssues(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.checkIn(domain.CheckInOK, true)
+	h.pastDue()
+	before := h.issue(domain.MonitorStateMissed)
+	if before.Status != "unresolved" || before.EventCount != 1 {
+		t.Fatalf("setup: %+v", before)
+	}
+
+	if err := h.store.DeleteMonitor(ctx, h.project.ID, "sweep"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.GetMonitor(ctx, h.project.ID, "sweep"); !errors.Is(err, apperr.ErrNotFound) {
+		t.Fatalf("monitor still there: %v", err)
+	}
+
+	// Days later: no scan reports it again, and the issue is as it was.
+	h.advance(72 * time.Hour)
+	h.detector.Check(ctx)
+	after := h.issue(domain.MonitorStateMissed)
+	if after.ID != before.ID || after.Status != "unresolved" || after.EventCount != 1 {
+		t.Fatalf("issue changed after delete: %+v", after)
+	}
+
+	// A second delete is a not-found.
+	if err := h.store.DeleteMonitor(ctx, h.project.ID, "sweep"); !errors.Is(err, apperr.ErrNotFound) {
+		t.Fatalf("second delete: %v", err)
+	}
+
+	// The job checking in again with an interval starts a fresh monitor.
+	h.checkIn(domain.CheckInOK, true)
+	if m := h.monitor(); m.State != domain.MonitorStateOK {
+		t.Fatalf("recreated monitor: %+v", m)
 	}
 }

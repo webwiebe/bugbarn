@@ -34,6 +34,7 @@ type Repository interface {
 	ListMonitors(ctx context.Context, projectID int64) ([]domain.Monitor, error)
 	MarkMonitorEmitted(ctx context.Context, id int64, now time.Time) error
 	ListEnabledMonitors(ctx context.Context) ([]domain.Monitor, error)
+	DeleteMonitor(ctx context.Context, projectID int64, slug string) error
 }
 
 // Reporter turns incidents into issues; *monitorwatch.Reporter satisfies it.
@@ -141,6 +142,15 @@ func (s *Service) report(ctx context.Context, res CheckInResult) {
 // project slug.
 func (s *Service) ListAll(ctx context.Context) ([]domain.Monitor, error) {
 	return s.repo.ListEnabledMonitors(ctx)
+}
+
+// Delete removes a monitor. Its issues are left as they are.
+func (s *Service) Delete(ctx context.Context, projectID int64, slug string) error {
+	err := s.repo.DeleteMonitor(ctx, projectID, slug)
+	if err != nil && errors.Is(err, apperr.ErrInternal) {
+		s.logger.Error("monitor delete failed", "project_id", projectID, "monitor", slug, "error", err)
+	}
+	return err
 }
 
 // List returns the monitors of a project.

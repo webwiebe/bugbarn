@@ -199,3 +199,37 @@ func monitorJSON(m domain.Monitor) map[string]any {
 	}
 	return out
 }
+
+// deleteMonitor handles DELETE /api/v1/monitors/<slug> in the scoped project.
+// The monitor's issues stay.
+func (s *Server) deleteMonitor(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimPrefix(r.URL.Path, monitorsPathPrefix)
+	pid, ok := domain.ProjectIDFromContext(r.Context())
+	if !ok || pid <= 0 || slug == "" || strings.Contains(slug, "/") {
+		writeServiceError(w, apperr.InvalidInput("delete a monitor inside a project: send X-BugBarn-Project", nil))
+		return
+	}
+	if s.monitors == nil {
+		http.Error(w, "monitors unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.monitors.Delete(r.Context(), pid, slug); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// dispatchMonitorRoutes serves the authenticated monitor routes: the list and
+// the delete. Check-ins have their own key-authenticated entry point.
+func (s *Server) dispatchMonitorRoutes(w http.ResponseWriter, r *http.Request) bool {
+	switch {
+	case r.URL.Path == "/api/v1/monitors" && r.Method == http.MethodGet:
+		s.listMonitors(w, r)
+	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, monitorsPathPrefix):
+		s.deleteMonitor(w, r)
+	default:
+		return false
+	}
+	return true
+}

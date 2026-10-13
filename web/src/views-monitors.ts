@@ -1,7 +1,8 @@
 // Monitors: scheduled jobs and workers that report in with check-ins. Read-only;
 // a monitor is created by its first check-in. Ones that need attention come first.
-import { errorMessage, escapeHtml } from "./format.js";
-import { elements, setActiveView, state } from "./core.js";
+import { errorMessage, escapeAttr, escapeHtml } from "./format.js";
+import { elements, setActiveView, setStatus, state } from "./core.js";
+import { apiFetch } from "./http.js";
 import { telemetryGet } from "./telemetry-api.js";
 
 interface Monitor {
@@ -73,6 +74,7 @@ function renderRow(m: Monitor): string {
       <td>${stateChip(m)}${since}</td>
       <td>${escapeHtml(monitorAge(m.lastCheckInAt))}</td>
       <td>every ${escapeHtml(formatSeconds(m.intervalSeconds))}, grace ${escapeHtml(formatSeconds(m.graceSeconds))}</td>
+      <td><button type="button" class="btn-sm" data-monitor-delete="${escapeAttr(m.slug)}" data-monitor-project="${escapeAttr(m.project)}">Delete</button></td>
     </tr>`;
 }
 
@@ -85,7 +87,7 @@ function renderList(): string {
   return `
     <div class="table-scroll">
       <table class="volume-table">
-        <thead><tr><th>Monitor</th><th>State</th><th>Last check-in</th><th>Schedule</th></tr></thead>
+        <thead><tr><th>Monitor</th><th>State</th><th>Last check-in</th><th>Schedule</th><th></th></tr></thead>
         <tbody>${mv.monitors.map(renderRow).join("")}</tbody>
       </table>
     </div>`;
@@ -99,4 +101,20 @@ export function renderMonitorsView(): void {
     <div class="view-head"><h2>Monitors</h2></div>
     <p class="muted">Scheduled jobs and workers that report in. A job that stays silent past its interval plus grace opens an issue, and its next ok check-in resolves it.</p>
     <div class="section">${renderList()}</div>`;
+  elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-monitor-delete]").forEach(btn => {
+    btn.addEventListener("click", () => void deleteMonitor(btn.dataset["monitorDelete"] ?? "", btn.dataset["monitorProject"] ?? ""));
+  });
+}
+
+async function deleteMonitor(slug: string, project: string): Promise<void> {
+  if (!slug) return;
+  if (!window.confirm(`Delete monitor "${slug}"? Its issues stay. A job that checks in again with an interval creates it anew.`)) return;
+  const headers: Record<string, string> = project ? { "X-BugBarn-Project": project } : {};
+  const res = await apiFetch(`/api/v1/monitors/${encodeURIComponent(slug)}`, { method: "DELETE", headers });
+  if (!res.ok) {
+    setStatus(`Could not delete the monitor: ${(await res.text().catch(() => "")).trim() || res.statusText}`);
+    return;
+  }
+  setStatus(`Monitor ${slug} deleted.`);
+  await loadMonitors();
 }

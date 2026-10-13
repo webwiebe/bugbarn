@@ -23,6 +23,8 @@ type fakeRepo struct {
 
 func (f *fakeRepo) ListEnabledMonitors(context.Context) ([]domain.Monitor, error) { return nil, nil }
 
+func (f *fakeRepo) DeleteMonitor(context.Context, int64, string) error { return nil }
+
 func (f *fakeRepo) MarkMonitorEmitted(_ context.Context, id int64, _ time.Time) error {
 	f.emitted = append(f.emitted, id)
 	return nil

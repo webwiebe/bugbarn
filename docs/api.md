@@ -266,6 +266,12 @@ List the monitors of the scoped project (session users without a project header 
 {"monitors": [{"slug": "pending-sweep", "project": "geo", "state": "missed", "lastStatus": "ok", "intervalSeconds": 3600, "graceSeconds": 600, "dueBy": "2026-10-13T11:10:00Z", "stateSince": "2026-10-13T11:11:00Z", "lastCheckInAt": "2026-10-13T10:00:00Z"}]}
 ```
 
+#### DELETE /api/v1/monitors/{slug}
+
+Delete a monitor of the scoped project (send `X-BugBarn-Project`). Its issues stay as they are. The miss detector stops watching it at once. A job that checks in again with an interval creates the monitor anew.
+
+**Auth:** session or API key. **Responses:** `204` deleted, `404` unknown monitor, `400` no project scope.
+
 ---
 
 ### Telemetry (read)
