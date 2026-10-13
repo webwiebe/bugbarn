@@ -126,6 +126,11 @@ func (s *core) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpd
 		explanationJSON, _ := json.Marshal(u.newExplanation)
 
 		if err == nil {
+			if !s.mergeFingerprintCollisions {
+				// Another issue already holds this fingerprint. Leave this one
+				// as it is; new events group onto the keeper.
+				continue
+			}
 			if err := mergeIntoKeeper(ctx, tx, u, keeperID); err != nil {
 				return err
 			}

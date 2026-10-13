@@ -17,6 +17,12 @@ type core struct {
 	roDB             *sql.DB
 	defaultProjectID int64
 
+	// mergeFingerprintCollisions lets the background fingerprint migration fold an
+	// issue into another one that already holds its recomputed fingerprint. Off by
+	// default: a merge deletes the folded issue, so its key stops resolving and
+	// its per-event facets and regression history cascade away.
+	mergeFingerprintCollisions bool
+
 	// sampleAfter is the deployment-wide event-sampling threshold: an issue
 	// stores every event until it has this many, and is sampled past it. 0
 	// disables sampling everywhere. Projects can opt out (or back in) but do not

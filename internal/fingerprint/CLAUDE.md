@@ -59,11 +59,13 @@ come from the scrubbed map.
 
 There is no algorithm version. On every writable `storage.Open`,
 `migrateFingerprints` (`storage/migrate_fingerprints.go`) re-hashes each issue's
-`representative_event_json` in the background. If the new hash matches another issue it
-**merges** the two (moves events, unions facets, deletes the old issue); otherwise it
-rewrites the fingerprint in place. Merges cannot be undone. A change here is a data
-migration of every issue in production: say so in the PR and expect the merge storm on the
-first writer start after deploy.
+`representative_event_json` in the background. If the new hash matches no other issue it
+rewrites the fingerprint in place. If it matches another issue the stale one is left
+untouched, unless `BUGBARN_FINGERPRINT_MERGE=true`: a merge moves events, unions facets and
+**deletes** the old issue, so its key (`GEO-412`) stops resolving and its `event_facets`
+and `regression_events` rows cascade away. Merges cannot be undone. A change here is a data
+migration of every issue in production: say so in the PR and measure the re-hash and
+collision counts per project first (a read-only pass over `issues` in a reader pod).
 
 The migration only touches issues whose fingerprint is `sha256(fingerprint_material)`,
 i.e. ones BugBarn computed (`isComputedFingerprint`). SDK-supplied overrides such as

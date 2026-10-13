@@ -136,11 +136,12 @@ func TestMigrateFingerprintsRewritesStaleComputedFingerprint(t *testing.T) {
 	}
 }
 
-// When the recomputed fingerprint already belongs to another issue, the stale
-// issue is folded into it.
+// When the recomputed fingerprint already belongs to another issue and merging
+// is enabled, the stale issue is folded into it.
 func TestMigrateFingerprintsMergesStaleIntoCurrent(t *testing.T) {
 	t.Parallel()
 	store := openForMigration(t)
+	store.mergeFingerprintCollisions = true
 	ctx := context.Background()
 	first := migrationEvent(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	second := migrationEvent(time.Date(2026, 9, 1, 13, 0, 0, 0, time.UTC))
@@ -170,5 +171,42 @@ func TestMigrateFingerprintsMergesStaleIntoCurrent(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("event_count = %d, want 2", count)
+	}
+}
+
+// By default a collision leaves the stale issue untouched: nothing is deleted,
+// so its key keeps resolving and its history stays.
+func TestMigrateFingerprintsLeavesCollidingIssueAloneByDefault(t *testing.T) {
+	t.Parallel()
+	store := openForMigration(t)
+	ctx := context.Background()
+	first := migrationEvent(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
+	second := migrationEvent(time.Date(2026, 9, 1, 13, 0, 0, 0, time.UTC))
+
+	current := fingerprint.Fingerprint(first)
+	if _, _, _, _, err := store.PersistProcessedEvent(ctx, withFingerprint(first, current, "")); err != nil {
+		t.Fatal(err)
+	}
+	const oldMaterial = `{"exceptionType":"alert","algorithm":"old"}`
+	oldFP := sha256Hex(oldMaterial)
+	if _, _, _, _, err := store.PersistProcessedEvent(ctx, withFingerprint(second, oldFP, oldMaterial)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.migrateFingerprints(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	got := issueFingerprints(t, store)
+	if len(got) != 2 {
+		t.Fatalf("both issues must survive, got %v", got)
+	}
+	var count int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("events = %d (err %v), want 2", count, err)
+	}
+	var stale int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM issues WHERE fingerprint = ?`, oldFP).Scan(&stale); err != nil || stale != 1 {
+		t.Fatalf("the colliding issue must keep its old fingerprint, found %d (err %v)", stale, err)
 	}
 }
