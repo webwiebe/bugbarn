@@ -229,6 +229,26 @@ const logger = pino(
 Logs must resolve to a project: use a project-scoped API key, or set `project`.
 A batch that resolves to neither is rejected with a `400`.
 
+## Check-in monitors
+
+`checkIn` reports that a scheduled job or worker ran. If the job stays silent past its interval plus grace, BugBarn opens an issue; the next `ok` check-in resolves it.
+
+```ts
+import { checkIn, flush } from "@bugbarn/typescript";
+
+try {
+  await syncCalendars();
+  await checkIn("calendar-sync", "ok", { interval: "1h", grace: "10m" });
+} catch (error) {
+  await checkIn("calendar-sync", "error", { interval: "1h", message: String(error) });
+  throw error;
+} finally {
+  await flush(2000); // short-lived processes: wait for delivery before exit
+}
+```
+
+`interval` and `grace` take seconds or a duration string such as `"90s"` or `"1h"`. The first call creates the monitor from the interval (1 minute to 31 days). Repeat the options on every call, or leave them out once the monitor exists. `checkIn` resolves to `false` when the SDK is not initialised, throws a `RangeError` for a status other than `ok` or `error`, and delivers asynchronously: a failed request is dropped, and `flush` and `shutdown` wait for check-ins in flight. Messages are cut at 200 characters and appear only on the issue an error check-in opens, so keep personal data out. See [POST /api/v1/monitors/{slug}/check-ins](../api.md).
+
 ## Flush and shutdown
 
 ### flush
