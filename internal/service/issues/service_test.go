@@ -16,6 +16,10 @@ type fakeRepo struct {
 	issues map[string]domain.Issue
 	events []domain.Event
 	err    error
+
+	counts     domain.IssueCounts
+	countsErr  error
+	countCalls int
 }
 
 func (f *fakeRepo) ListIssues(context.Context) ([]domain.Issue, error) {
@@ -64,6 +68,14 @@ func (f *fakeRepo) UnmuteIssue(_ context.Context, id string) (domain.Issue, erro
 
 func (f *fakeRepo) HourlyEventCounts(context.Context, []int64) (map[int64][24]int, error) {
 	return nil, f.err
+}
+
+func (f *fakeRepo) IssueStatusCounts(context.Context) (domain.IssueCounts, error) {
+	f.countCalls++
+	if f.countsErr != nil {
+		return domain.IssueCounts{}, f.countsErr
+	}
+	return f.counts, nil
 }
 
 func (f *fakeRepo) IssueRowIDByDisplayID(context.Context, string) (int64, error) {

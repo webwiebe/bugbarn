@@ -149,6 +149,13 @@ function usageCount(n: number | undefined): string {
   return n === undefined ? "—" : String(n);
 }
 
+/** Tooltip for a project's issue count: how the issues split by status. */
+function issueBreakdownTitle(p: ApiProject): string {
+  const s = p.issue_status;
+  if (!s) return "Issues";
+  return `${s.open} open (${s.regressed} regressed), ${s.resolved} resolved, ${s.muted} muted`;
+}
+
 function renderSettingsProjects(
   projects: ApiProject[],
   groups: import("../types.js").ApiProjectGroup[],
@@ -206,7 +213,7 @@ function renderSettingsProjects(
             </div>
             <div class="project-actions">
               <div class="project-usage">
-                <span class="usage-stat" title="Open issues"><span class="usage-icon">◆</span>${escapeHtml(usageCount(issues))}<span class="usage-label">${issues === 1 ? "issue" : "issues"}</span></span>
+                <span class="usage-stat" title="${escapeAttr(issueBreakdownTitle(p))}"><span class="usage-icon">◆</span>${escapeHtml(usageCount(issues))}<span class="usage-label">${issues === 1 ? "issue" : "issues"}</span></span>
                 <span class="usage-stat" title="Retained events (older ones are expired by the retention window)"><span class="usage-icon">▸</span>${escapeHtml(usageCount(events))}<span class="usage-label">${events === 1 ? "event" : "events"}</span></span>
                 <span class="usage-stat" title="Retained log lines"><span class="usage-icon">≡</span>${escapeHtml(usageCount(logs))}<span class="usage-label">${logs === 1 ? "log" : "logs"}</span></span>
               </div>

@@ -58,6 +58,9 @@ type projectWithUsage struct {
 	EventCount   *int   `json:"event_count,omitempty"`
 	LogCount     *int   `json:"log_count,omitempty"`
 
+	// IssueStatus splits IssueCount into open, regressed, resolved and muted.
+	IssueStatus *domain.IssueCounts `json:"issue_status,omitempty"`
+
 	// Volume policy. RetentionDays is null when the project inherits the
 	// deployment window; SamplingMode is "" when it inherits the default.
 	RetentionDays *int   `json:"retention_days"`
@@ -414,6 +417,9 @@ func (s *Server) attachUsage(r *http.Request, projects []domain.Project, out []p
 		out[i].IssueCount = &issues
 		out[i].EventCount = &events
 		out[i].LogCount = &logs
+		status := u.IssueStatus
+		status.All = issues
+		out[i].IssueStatus = &status
 	}
 }
 

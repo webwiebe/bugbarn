@@ -162,6 +162,8 @@ export interface ApiProject extends RawRecord {
   status?: string;
   Status?: string;
   issue_count?: number;
+  /** issue_count split by status; absent when the usage aggregate was unavailable. */
+  issue_status?: IssueCounts;
   event_count?: number;
   log_count?: number;
   group_id?: number | null;
@@ -224,7 +226,16 @@ export interface AnalyticsReferrer extends RawRecord { host: string; pageviews: 
 export interface AnalyticsSegmentBucket extends RawRecord { value: string; pageviews: number; sessions: number; }
 
 export type IssueSort = "last_seen" | "first_seen" | "event_count";
-export type IssueStatus = "all" | "open" | "resolved" | "muted";
+export type IssueStatus = "all" | "open" | "regressed" | "resolved" | "muted";
+
+/** Cached per-status issue counts for the current project, group or All. */
+export interface IssueCounts {
+  open: number;
+  regressed: number;
+  resolved: number;
+  muted: number;
+  all: number;
+}
 export type SettingsTab = "overview" | "projects" | "volume" | "preferences" | "keys" | "system";
 
 /** VolumeDefaults are the deployment-wide settings a project inherits unless it
@@ -273,6 +284,9 @@ export interface AppState {
   issueSort: IssueSort;
   issueStatus: IssueStatus;
   issueHasMore: boolean;
+  issueTotal: number | null;
+  issueTotalApproximate: boolean;
+  issueCounts: IssueCounts | null;
   selectedIssueId: string | null;
   selectedEventId: string | null;
   selectedReleaseId: string | null;

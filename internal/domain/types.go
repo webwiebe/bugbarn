@@ -46,6 +46,33 @@ type IssueFilter struct {
 	Offset int
 }
 
+// IssueCounts is the number of issues per status within one scope (a project, a
+// project group, or everything). Open covers unresolved and regressed issues,
+// the same set the "open" list filter returns.
+type IssueCounts struct {
+	Open      int `json:"open"`
+	Regressed int `json:"regressed"`
+	Resolved  int `json:"resolved"`
+	Muted     int `json:"muted"`
+	All       int `json:"all"`
+}
+
+// For returns the count that matches a list status filter. An empty or unknown
+// filter means all issues.
+func (c IssueCounts) For(status string) int {
+	switch status {
+	case "open":
+		return c.Open
+	case "regressed":
+		return c.Regressed
+	case "resolved":
+		return c.Resolved
+	case "muted":
+		return c.Muted
+	}
+	return c.All
+}
+
 // Event represents a single captured error event.
 type Event struct {
 	ID                     string      `json:"id"`

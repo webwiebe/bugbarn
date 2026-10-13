@@ -34,6 +34,7 @@ type Repository interface {
 	MuteIssue(ctx context.Context, id, muteMode string) (domain.Issue, error)
 	UnmuteIssue(context.Context, string) (domain.Issue, error)
 	HourlyEventCounts(context.Context, []int64) (map[int64][24]int, error)
+	IssueStatusCounts(context.Context) (domain.IssueCounts, error)
 	IssueRowIDByDisplayID(context.Context, string) (int64, error)
 	ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]domain.Event, bool, error)
 	GetEvent(context.Context, string) (domain.Event, error)
@@ -45,6 +46,7 @@ type Repository interface {
 type Service struct {
 	repo   Repository
 	logger *slog.Logger
+	counts countsCache
 }
 
 func New(repo Repository, logger *slog.Logger) *Service {
@@ -99,36 +101,37 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Issue, error) {
 	return issue, nil
 }
 
-func (s *Service) Resolve(ctx context.Context, id string) (domain.Issue, error) {
-	ctx, span := tracing.Tracer().Start(ctx, "service.issues.Resolve",
+// statusChange names one status transition for tracing and logging.
+type statusChange struct {
+	span, failed, done string
+	apply              func(context.Context, string) (domain.Issue, error)
+}
+
+// changeStatus runs one transition, logs it, and drops the cached status counts
+// so the next issue list reflects the change.
+func (s *Service) changeStatus(ctx context.Context, id string, c statusChange) (domain.Issue, error) {
+	ctx, span := tracing.Tracer().Start(ctx, c.span,
 		trace.WithAttributes(attribute.String("issue_id", id)))
 	defer span.End()
-	issue, err := s.repo.ResolveIssue(ctx, id)
+	issue, err := c.apply(ctx, id)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		if !isClientError(err) {
-			s.logger.ErrorContext(ctx, "resolve issue", "issue_id", id, "error", err)
+			s.logger.ErrorContext(ctx, c.failed, "issue_id", id, "error", err)
 		}
 		return domain.Issue{}, err
 	}
-	s.logger.InfoContext(ctx, "issue resolved", "issue_id", id)
+	s.invalidateCounts()
+	s.logger.InfoContext(ctx, c.done, "issue_id", id)
 	return issue, nil
 }
 
+func (s *Service) Resolve(ctx context.Context, id string) (domain.Issue, error) {
+	return s.changeStatus(ctx, id, statusChange{"service.issues.Resolve", "resolve issue", "issue resolved", s.repo.ResolveIssue})
+}
+
 func (s *Service) Reopen(ctx context.Context, id string) (domain.Issue, error) {
-	ctx, span := tracing.Tracer().Start(ctx, "service.issues.Reopen",
-		trace.WithAttributes(attribute.String("issue_id", id)))
-	defer span.End()
-	issue, err := s.repo.ReopenIssue(ctx, id)
-	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
-		if !isClientError(err) {
-			s.logger.ErrorContext(ctx, "reopen issue", "issue_id", id, "error", err)
-		}
-		return domain.Issue{}, err
-	}
-	s.logger.InfoContext(ctx, "issue reopened", "issue_id", id)
-	return issue, nil
+	return s.changeStatus(ctx, id, statusChange{"service.issues.Reopen", "reopen issue", "issue reopened", s.repo.ReopenIssue})
 }
 
 func (s *Service) Mute(ctx context.Context, id, muteMode string) (domain.Issue, error) {
@@ -144,23 +147,12 @@ func (s *Service) Mute(ctx context.Context, id, muteMode string) (domain.Issue, 
 		return domain.Issue{}, err
 	}
 	s.logger.InfoContext(ctx, "issue muted", "issue_id", id, "mute_mode", muteMode)
+	s.invalidateCounts()
 	return issue, nil
 }
 
 func (s *Service) Unmute(ctx context.Context, id string) (domain.Issue, error) {
-	ctx, span := tracing.Tracer().Start(ctx, "service.issues.Unmute",
-		trace.WithAttributes(attribute.String("issue_id", id)))
-	defer span.End()
-	issue, err := s.repo.UnmuteIssue(ctx, id)
-	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
-		if !isClientError(err) {
-			s.logger.ErrorContext(ctx, "unmute issue", "issue_id", id, "error", err)
-		}
-		return domain.Issue{}, err
-	}
-	s.logger.InfoContext(ctx, "issue unmuted", "issue_id", id)
-	return issue, nil
+	return s.changeStatus(ctx, id, statusChange{"service.issues.Unmute", "unmute issue", "issue unmuted", s.repo.UnmuteIssue})
 }
 
 func (s *Service) HourlyEventCounts(ctx context.Context, issueIDs []int64) (map[int64][24]int, error) {

@@ -216,6 +216,9 @@ func issueWhereConditions(
 	switch filter.Status {
 	case "open":
 		conditions = append(conditions, "i.status IN ('unresolved', 'regressed')")
+	case "regressed":
+		// Open issues that came back after a resolve or an until-regression mute.
+		conditions = append(conditions, "i.status IN ('unresolved', 'regressed') AND i.regression_count > 0")
 	case "muted":
 		conditions = append(conditions, "i.status = 'muted'")
 	case "resolved":
