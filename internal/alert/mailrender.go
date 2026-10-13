@@ -55,6 +55,9 @@ func alertSubject(env string, rule Rule, issue domain.Issue) string {
 		b.WriteString(": ")
 	}
 	b.WriteString(issue.Title)
+	if rule.Condition == "event_spike" {
+		fmt.Fprintf(&b, " (%d events)", issue.EventCount)
+	}
 	if env = strings.TrimSpace(env); env != "" {
 		b.WriteString(" [")
 		b.WriteString(env)
