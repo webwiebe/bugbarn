@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bugbarn-python"
-version = "1.0.0"
+version = "1.1.0"
 description = "BugBarn Python SDK skeleton"
 requires-python = ">=3.9"
 dependencies = []
