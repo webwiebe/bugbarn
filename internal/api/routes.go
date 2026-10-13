@@ -19,6 +19,8 @@ func (s *Server) serveSpecialEndpoint(w http.ResponseWriter, r *http.Request) bo
 		s.serveAlertmanagerIngestEndpoint,
 		s.serveLogsIngestEndpoint,
 		s.serveTelemetryIngestEndpoint,
+		// Job check-ins authenticate with a project key, like the ingest endpoints.
+		s.serveMonitorCheckInEndpoint,
 	} {
 		if serve(w, r) {
 			return true

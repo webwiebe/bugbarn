@@ -21,6 +21,7 @@ import (
 	issuesvc "github.com/wiebe-xyz/bugbarn/internal/service/issues"
 	keyrequestsvc "github.com/wiebe-xyz/bugbarn/internal/service/keyrequests"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
+	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
 	"github.com/wiebe-xyz/bugbarn/internal/service/telemetryview"
@@ -40,6 +41,7 @@ type Server struct {
 	analytics      *analyticssvc.Service
 	detectionRules *detectionrules.Service
 	keyRequests    *keyrequestsvc.Service
+	monitors       *monitorsvc.Service
 	logger         *slog.Logger
 
 	users               *auth.UserAuthenticator

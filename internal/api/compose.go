@@ -13,6 +13,7 @@ import (
 	issuesvc "github.com/wiebe-xyz/bugbarn/internal/service/issues"
 	keyrequestsvc "github.com/wiebe-xyz/bugbarn/internal/service/keyrequests"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
+	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
@@ -93,6 +94,7 @@ func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog
 		analytics:         analyticssvc.New(d.Analytics, logger),
 		detectionRules:    detectionrules.New(d.DetectionRules, logger),
 		keyRequests:       keyrequestsvc.New(d.KeyRequests, logger),
+		monitors:          monitorsvc.New(d.Monitors, logger),
 		logger:            logger.With("component", "api"),
 		maxSourceMapBytes: defaultMaxSourceMapBytes,
 	}
@@ -121,6 +123,7 @@ func NewServerWithAuth(
 		analytics:         analyticssvc.New(d.Analytics, logger),
 		detectionRules:    detectionrules.New(d.DetectionRules, logger),
 		keyRequests:       keyrequestsvc.New(d.KeyRequests, logger),
+		monitors:          monitorsvc.New(d.Monitors, logger),
 		logger:            logger.With("component", "api"),
 		users:             users,
 		sessions:          sessions,
