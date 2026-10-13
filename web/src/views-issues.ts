@@ -137,7 +137,6 @@ export function renderIssuesView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Select an issue";
   elements.detailBody.innerHTML = "";
-  const count = state.issues.length;
   elements.overviewView.innerHTML = `
     <div class="view-head">
       <h2 id="issue-count">${escapeHtml(error ? "Unavailable" : issueHeadingText())}</h2>
