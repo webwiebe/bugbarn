@@ -80,6 +80,25 @@ bb.CaptureMessage("payment gateway timeout, falling back to retry queue",
 )
 ```
 
+## Monitoring scheduled jobs
+
+`bb.CheckIn` reports that a scheduled job or worker ran. If the job stays silent past its interval plus grace, BugBarn opens an issue; the next `ok` check-in resolves it.
+
+```go
+func (w *PendingSweepWorker) run(ctx context.Context) {
+    if err := w.sweep(ctx); err != nil {
+        bb.CheckIn("pending-sweep", bb.CheckInError,
+            bb.CheckInInterval(time.Hour), bb.CheckInGrace(10*time.Minute),
+            bb.CheckInMessage("sweep failed"))
+        return
+    }
+    bb.CheckIn("pending-sweep", bb.CheckInOK,
+        bb.CheckInInterval(time.Hour), bb.CheckInGrace(10*time.Minute))
+}
+```
+
+The first call creates the monitor from the interval (1 minute to 31 days). Repeat the options on every call, or leave them out once the monitor exists. `bb.CheckIn` never blocks, returns `false` when the SDK is not initialised or the status is unknown, and `bb.Flush` and `bb.Shutdown` wait for check-ins in flight. Messages are cut at 200 characters and appear only on the issue an error check-in opens, so keep personal data out. See [POST /api/v1/monitors/{slug}/check-ins](../api.md).
+
 ## Attaching user context
 
 `bb.WithUser` attaches a user to a single capture call. All three fields are optional; pass an empty string for any you do not have.
