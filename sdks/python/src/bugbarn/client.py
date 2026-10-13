@@ -8,6 +8,7 @@ import sys
 import threading
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
@@ -16,8 +17,9 @@ from .breadcrumbs import Breadcrumb, get_breadcrumbs
 from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
-SDK_VERSION = "1.2.1"
+SDK_VERSION = "1.3.0"
 DEFAULT_ENDPOINT = "/api/v1/events"
+CHECK_IN_STATUSES = ("ok", "error")
 
 
 @dataclass
@@ -27,6 +29,14 @@ class StackFrame:
     line: int | None = None
     column: int | None = None
     module: str | None = None
+
+
+@dataclass
+class CheckIn:
+    """A heartbeat for a check-in monitor, delivered through the transport queue."""
+
+    slug: str
+    body: dict[str, Any]
 
 
 @dataclass
@@ -86,7 +96,7 @@ class Transport:
             self.endpoint = endpoint.rstrip("/") + DEFAULT_ENDPOINT
         else:
             self.endpoint = endpoint
-        self.queue: "queue.Queue[Envelope]" = queue.Queue(maxsize=maxsize)
+        self.queue: "queue.Queue[Envelope | CheckIn]" = queue.Queue(maxsize=maxsize)
         self._closed = threading.Event()
         self._warned = False
         self._worker = threading.Thread(target=self._run, name="bugbarn-transport", daemon=True)
@@ -95,6 +105,13 @@ class Transport:
     def submit(self, event: Envelope) -> bool:
         try:
             self.queue.put_nowait(event)
+            return True
+        except queue.Full:
+            return False
+
+    def submit_check_in(self, check_in: CheckIn) -> bool:
+        try:
+            self.queue.put_nowait(check_in)
             return True
         except queue.Full:
             return False
@@ -124,29 +141,40 @@ class Transport:
             finally:
                 self.queue.task_done()
 
-    def _send(self, event: Envelope) -> None:
-        payload = json.dumps(event.to_payload()).encode("utf-8")
+    def _send(self, event: Envelope | CheckIn) -> None:
+        if isinstance(event, CheckIn):
+            self._post(self._check_in_url(event.slug), event.body, "check-in")
+        else:
+            self._post(self.endpoint, event.to_payload(), "event")
+
+    def _check_in_url(self, slug: str) -> str:
+        """Check-ins live next to the events endpoint: the text before ``/api/`` is the server."""
+        base = self.endpoint.split("/api/", 1)[0] if "/api/" in self.endpoint else self.endpoint.rstrip("/")
+        return f"{base}/api/v1/monitors/{urllib.parse.quote(slug, safe='')}/check-ins"
+
+    def _post(self, url: str, body: dict[str, Any], what: str) -> None:
+        payload = json.dumps(body).encode("utf-8")
         headers = {
             "content-type": "application/json",
             "x-bugbarn-api-key": self.api_key,
         }
         if self.project:
             headers["x-bugbarn-project"] = self.project
-        request = urllib.request.Request(self.endpoint, data=payload, method="POST", headers=headers)
+        request = urllib.request.Request(url, data=payload, method="POST", headers=headers)
 
         try:
             with urllib.request.urlopen(request, timeout=2) as response:
                 response.read()
         except urllib.error.HTTPError as err:
-            self._warn_once(f"ingest answered HTTP {err.code}")
+            self._warn_once(what, f"ingest answered HTTP {err.code}")
         except urllib.error.URLError as err:
-            self._warn_once(f"ingest unreachable: {err.reason}")
+            self._warn_once(what, f"ingest unreachable: {err.reason}")
 
-    def _warn_once(self, reason: str) -> None:
+    def _warn_once(self, what: str, reason: str) -> None:
         if self._warned:
             return
         self._warned = True
-        print(f"bugbarn: event dropped, {reason} ({self.endpoint})", file=sys.stderr)
+        print(f"bugbarn: {what} dropped, {reason} ({self.endpoint})", file=sys.stderr)
 
 
 _transport: Transport | None = None
@@ -312,3 +340,50 @@ def capture_exception(
     return _transport.submit(
         _build_event(exc, attributes=attributes, tags=tags, extra=extra)
     )
+
+
+def _duration(value: float | int | datetime.timedelta | str | None, name: str) -> str | None:
+    """Format an interval or grace as the Go duration string the server parses."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value or None
+    seconds = value.total_seconds() if isinstance(value, datetime.timedelta) else float(value)
+    if seconds <= 0:
+        raise ValueError(f"{name} must be positive")
+    return f"{int(seconds)}s" if seconds == int(seconds) else f"{seconds}s"
+
+
+def check_in(
+    slug: str,
+    status: str = "ok",
+    *,
+    interval: float | int | datetime.timedelta | str | None = None,
+    grace: float | int | datetime.timedelta | str | None = None,
+    message: str | None = None,
+) -> bool:
+    """Report that a scheduled job ran. *status* is ``"ok"`` or ``"error"``.
+
+    Pass *interval* (seconds, a ``timedelta`` or a duration string such as ``"1h"``) the
+    first time to create the monitor; BugBarn raises an issue when the next check-in is
+    late by more than *grace*. Delivery is asynchronous like events: call ``flush()``
+    before a short-lived process exits. Returns False when the client is not initialised,
+    the queue is full or the transport cannot carry check-ins.
+    """
+    if status not in CHECK_IN_STATUSES:
+        raise ValueError(f"status must be one of {CHECK_IN_STATUSES}, got {status!r}")
+    if _transport is None:
+        return False
+    body: dict[str, Any] = {"status": status}
+    interval_text = _duration(interval, "interval")
+    grace_text = _duration(grace, "grace")
+    if interval_text:
+        body["interval"] = interval_text
+    if grace_text:
+        body["grace"] = grace_text
+    if message:
+        body["message"] = message
+    submit = getattr(_transport, "submit_check_in", None)
+    if submit is None:
+        return False
+    return submit(CheckIn(slug=slug, body=body))
