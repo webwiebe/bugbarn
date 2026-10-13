@@ -99,6 +99,16 @@ func (w *PendingSweepWorker) run(ctx context.Context) {
 
 The first call creates the monitor from the interval (1 minute to 31 days). Repeat the options on every call, or leave them out once the monitor exists. `bb.CheckIn` never blocks, returns `false` when the SDK is not initialised or the status is unknown, and `bb.Flush` and `bb.Shutdown` wait for check-ins in flight. Messages are cut at 200 characters and appear only on the issue an error check-in opens, so keep personal data out. See [POST /api/v1/monitors/{slug}/check-ins](../api.md).
 
+For jobs that run at fixed times, declare a cron schedule instead of an interval:
+
+```go
+bb.CheckIn("nightly-export", bb.CheckInOK,
+    bb.CheckInSchedule("0 6 * * *", "Europe/Amsterdam"), // 5-field cron, IANA zone (UTC when empty)
+    bb.CheckInGrace(10*time.Minute))
+```
+
+`CheckInSchedule` replaces `CheckInInterval`; use one of the two on a monitor. Check in when the job has run, after its scheduled time.
+
 ## Attaching user context
 
 `bb.WithUser` attaches a user to a single capture call. All three fields are optional; pass an empty string for any you do not have.

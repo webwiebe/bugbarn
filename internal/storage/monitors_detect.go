@@ -14,7 +14,7 @@ import (
 func (s *MonitorStore) ListEnabledMonitors(ctx context.Context) ([]domain.Monitor, error) {
 	rows, err := s.readDB().QueryContext(ctx, `
 SELECT m.id, m.project_id, m.slug, m.interval_s, m.grace_s, m.enabled, m.created_at,
-  m.last_checkin_at, m.last_status, m.state, m.state_since, m.last_emitted_at, p.slug
+  m.last_checkin_at, m.last_status, m.state, m.state_since, m.last_emitted_at, m.schedule, m.timezone, p.slug
 FROM monitors m JOIN projects p ON p.id = m.project_id
 WHERE m.enabled = 1 AND p.status = 'active'
 ORDER BY m.id`)

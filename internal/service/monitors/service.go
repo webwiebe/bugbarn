@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/cronexpr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -66,14 +67,18 @@ func (s *Service) SetReporter(r Reporter) { s.reporter = r }
 // SetClock replaces the time source. Tests use it to fix the check-in time.
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
 
-// CheckInInput is one check-in. Interval and Grace are optional: sent, they
-// create or update the monitor; left out, the stored values stay.
+// CheckInInput is one check-in. Interval, Schedule, Timezone and Grace are
+// optional: sent, they create or update the monitor; left out, the stored
+// values stay. Interval and Schedule exclude each other. Schedule is a 5-field
+// cron expression evaluated in Timezone (an IANA name, UTC when empty).
 type CheckInInput struct {
 	Slug     string
 	Status   string
 	Message  string
 	Interval *time.Duration
 	Grace    *time.Duration
+	Schedule string
+	Timezone string
 }
 
 // CheckInResult is the monitor after the check-in. Message is the cleaned
@@ -93,13 +98,20 @@ func (s *Service) CheckIn(ctx context.Context, projectID int64, in CheckInInput)
 	if in.Status != domain.CheckInOK && in.Status != domain.CheckInError {
 		return CheckInResult{}, apperr.InvalidInput(`status must be "ok" or "error"`, nil)
 	}
-	if err := validateTimings(in.Interval, in.Grace); err != nil {
+	if err := validateTimings(in); err != nil {
 		return CheckInResult{}, err
 	}
-	res, err := s.repo.RecordMonitorCheckIn(ctx, storage.MonitorCheckIn{
+	rec := storage.MonitorCheckIn{
 		ProjectID: projectID, Slug: in.Slug, Status: in.Status,
 		Interval: in.Interval, Grace: in.Grace, At: s.now().UTC(),
-	})
+	}
+	if schedule := strings.Join(strings.Fields(in.Schedule), " "); schedule != "" {
+		rec.Schedule = &schedule
+	}
+	if in.Timezone != "" {
+		rec.Timezone = &in.Timezone
+	}
+	res, err := s.repo.RecordMonitorCheckIn(ctx, rec)
 	if err != nil {
 		if errors.Is(err, apperr.ErrInternal) {
 			s.logger.Error("monitor check-in lost", "project_id", projectID, "monitor", in.Slug, "error", err)
@@ -158,15 +170,56 @@ func (s *Service) List(ctx context.Context, projectID int64) ([]domain.Monitor, 
 	return s.repo.ListMonitors(ctx, projectID)
 }
 
-func validateTimings(interval, grace *time.Duration) error {
-	if interval != nil && (*interval < MinInterval || *interval > MaxInterval) {
+func validateTimings(in CheckInInput) error {
+	if err := validateInterval(in); err != nil {
+		return err
+	}
+	if err := validateGrace(in.Interval, in.Grace); err != nil {
+		return err
+	}
+	return validateSchedule(in.Schedule, in.Timezone)
+}
+
+func validateInterval(in CheckInInput) error {
+	interval := in.Interval
+	if interval == nil {
+		return nil
+	}
+	if in.Schedule != "" {
+		return apperr.InvalidInput("send an interval or a schedule, not both", nil)
+	}
+	if in.Timezone != "" {
+		return apperr.InvalidInput("timezone needs a schedule, not an interval", nil)
+	}
+	if *interval < MinInterval || *interval > MaxInterval {
 		return apperr.InvalidInput("interval must be between 1m and 31d", nil)
 	}
+	return nil
+}
+
+func validateGrace(interval, grace *time.Duration) error {
 	if grace != nil && *grace < 0 {
 		return apperr.InvalidInput("grace must not be negative", nil)
 	}
 	if interval != nil && grace != nil && *grace > *interval {
 		return apperr.InvalidInput("grace must not exceed the interval", nil)
+	}
+	if grace != nil && *grace > MaxInterval {
+		return apperr.InvalidInput("grace must not exceed 31d", nil)
+	}
+	return nil
+}
+
+func validateSchedule(schedule, timezone string) error {
+	if schedule != "" {
+		if _, err := cronexpr.Parse(schedule); err != nil {
+			return apperr.InvalidInput("schedule: "+err.Error(), err)
+		}
+	}
+	if timezone != "" {
+		if _, err := time.LoadLocation(timezone); err != nil {
+			return apperr.InvalidInput(`timezone must be an IANA name such as "Europe/Amsterdam"`, err)
+		}
 	}
 	return nil
 }

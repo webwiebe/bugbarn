@@ -72,3 +72,32 @@ func TestCheckInBeforeInitReturnsFalse(t *testing.T) {
 		t.Fatal("CheckIn succeeded without Init")
 	}
 }
+
+func TestCheckInSendsScheduleAndTimezone(t *testing.T) {
+	seen := make(chan map[string]string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]string
+		_ = json.Unmarshal(raw, &body)
+		seen <- body
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	Init(Options{APIKey: "k", Endpoint: srv.URL})
+	defer Shutdown(2 * time.Second)
+
+	if !CheckIn("nightly-export", CheckInOK, CheckInSchedule("0 6 * * *", "Europe/Amsterdam"), CheckInGrace(10*time.Minute)) {
+		t.Fatal("CheckIn returned false")
+	}
+	if !Flush(2 * time.Second) {
+		t.Fatal("flush did not wait for the check-in")
+	}
+	body := <-seen
+	if body["schedule"] != "0 6 * * *" || body["timezone"] != "Europe/Amsterdam" || body["grace"] != "10m0s" {
+		t.Fatalf("body: %v", body)
+	}
+	if _, has := body["interval"]; has {
+		t.Fatalf("a schedule check-in carries no interval: %v", body)
+	}
+}

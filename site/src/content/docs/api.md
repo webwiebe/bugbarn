@@ -242,14 +242,17 @@ A scheduled job or worker reports that it ran. A monitor that stays silent past 
 **Request body:**
 ```json
 {"status": "ok", "message": "swept 12 rows", "interval": "1h", "grace": "10m"}
+{"status": "ok", "schedule": "0 6 * * *", "timezone": "Europe/Amsterdam", "grace": "10m"}
 ```
 
 - `status`: `ok` or `error`. An `error` check-in opens an issue right away.
 - `message`: optional note, cut at 200 characters. It appears only on the issue an `error` check-in opens; keep personal data out of it.
 - `interval`: how often a check-in is expected, from `1m` to `31d` (Go duration syntax). The first check-in must send it; it creates the monitor. Later check-ins may omit it to keep the stored value, or send it to replace it.
-- `grace`: extra time after the interval before the monitor counts as missed. Defaults to 0 and may not exceed the interval.
+- `schedule`: a standard 5-field cron expression (minute, hour, day of month, month, day of week; ranges, steps, lists and names like `MON` or `JAN` work) for jobs that run at fixed times. It replaces `interval`: send one of the two, not both. BugBarn expects a check-in after each scheduled time, within the grace. A check-in belongs to the run it follows, so a late `ok` after a missed run recovers the monitor and the next expected run is the one after it. Check in when the job has run, after its scheduled time.
+- `timezone`: IANA zone of `schedule`, such as `Europe/Amsterdam`. Defaults to `UTC`. Scheduled times follow the zone's wall clock across daylight saving: a time skipped in spring runs at the shifted time that day, and a time repeated in autumn counts once. Needs a `schedule`.
+- `grace`: extra time after the interval or scheduled time before the monitor counts as missed. Defaults to 0. With an interval it may not exceed the interval; with a schedule it may not exceed `31d`.
 
-**Responses:** `201` monitor created, `200` monitor updated, `400` invalid input, `401` bad key, `404` unknown monitor and no `interval` sent, `409` monitor limit reached.
+**Responses:** `201` monitor created, `200` monitor updated, `400` invalid input, `401` bad key, `404` unknown monitor and no `interval` or `schedule` sent, `409` monitor limit reached.
 
 **Issues:** a miss opens `Monitor missed: <slug>`, an error check-in opens `Monitor failed: <slug>`. Both are issues in the monitor's project and go through the normal alert path. An `ok` check-in records a recovery event with the check-in time and resolves the open issue; a later miss regresses the same issue. A muted or resolved issue is left alone. An incident that stays unresolved is reported again after 24 hours. For 5 minutes after a BugBarn restart no monitor is marked missed.
 
@@ -266,9 +269,11 @@ List the monitors of the scoped project (session users without a project header 
 {"monitors": [{"slug": "pending-sweep", "project": "geo", "state": "missed", "lastStatus": "ok", "intervalSeconds": 3600, "graceSeconds": 600, "dueBy": "2026-10-13T11:10:00Z", "stateSince": "2026-10-13T11:11:00Z", "lastCheckInAt": "2026-10-13T10:00:00Z"}]}
 ```
 
+Cron monitors carry `schedule` and `timezone` and report `intervalSeconds` as `0`; `dueBy` is the next scheduled run plus the grace.
+
 #### DELETE /api/v1/monitors/{slug}
 
-Delete a monitor of the scoped project (send `X-BugBarn-Project`). Its issues stay as they are. The miss detector stops watching it at once. A job that checks in again with an interval creates the monitor anew.
+Delete a monitor of the scoped project (send `X-BugBarn-Project`). Its issues stay as they are. The miss detector stops watching it at once. A job that checks in again with an interval or a schedule creates the monitor anew.
 
 **Auth:** session or API key. **Responses:** `204` deleted, `404` unknown monitor, `400` no project scope.
 

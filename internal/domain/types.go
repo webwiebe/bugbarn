@@ -3,6 +3,7 @@ package domain
 import (
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/cronexpr"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
@@ -286,12 +287,16 @@ const (
 // Monitor is a scheduled job or worker that reports in with check-ins. Only the
 // latest signal is kept, not a history.
 type Monitor struct {
-	ID            int64
-	ProjectID     int64
-	ProjectSlug   string // set by ListEnabledMonitors
-	Slug          string
-	Interval      time.Duration
-	Grace         time.Duration
+	ID          int64
+	ProjectID   int64
+	ProjectSlug string // set by ListEnabledMonitors
+	Slug        string
+	Interval    time.Duration
+	Grace       time.Duration
+	// Schedule is a 5-field cron expression evaluated in Timezone. When set it
+	// replaces Interval: the job is expected at each scheduled time.
+	Schedule      string
+	Timezone      string
 	Enabled       bool
 	CreatedAt     time.Time
 	LastCheckInAt time.Time
@@ -301,14 +306,41 @@ type Monitor struct {
 	LastEmittedAt time.Time
 }
 
-// NextDue is the time after which the monitor counts as missed: the last
-// check-in (or its creation, before the first one) plus interval and grace.
+// NextDue is the time after which the monitor counts as missed. For an
+// interval monitor it is the last check-in (or its creation, before the first
+// one) plus interval and grace. For a cron monitor it is the first scheduled
+// run after that check-in, plus grace: a check-in that arrives late, after the
+// next run was already due, still answers the run it belongs to.
 func (m Monitor) NextDue() time.Time {
 	base := m.LastCheckInAt
 	if base.IsZero() {
 		base = m.CreatedAt
 	}
-	return base.Add(m.Interval + m.Grace)
+	if m.Schedule == "" {
+		return base.Add(m.Interval + m.Grace)
+	}
+	sched, err := cronexpr.Parse(m.Schedule)
+	if err != nil {
+		return base.Add(m.Interval + m.Grace)
+	}
+	next := sched.Next(base, m.Location())
+	if next.IsZero() {
+		return base.Add(m.Interval + m.Grace)
+	}
+	return next.Add(m.Grace)
+}
+
+// Location is the time zone of the schedule, UTC when none is set or the name
+// is unknown to this build.
+func (m Monitor) Location() *time.Location {
+	if m.Timezone == "" {
+		return time.UTC
+	}
+	loc, err := time.LoadLocation(m.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
 }
 
 // MonitorReportRepeat is how long an unresolved incident waits before it is

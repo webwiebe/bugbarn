@@ -81,6 +81,10 @@ export type CheckInOptions = {
   interval?: number | string;
   /** How late a check-in may be before BugBarn opens an issue: seconds or a duration string. */
   grace?: number | string;
+  /** 5-field cron expression for jobs that run at fixed times. Replaces `interval`. */
+  schedule?: string;
+  /** IANA time zone of `schedule`, such as "Europe/Amsterdam". UTC when left out. */
+  timezone?: string;
   /** Shown on the issue an error check-in opens. Keep personal data out. */
   message?: string;
 };
@@ -89,6 +93,8 @@ export type CheckInBody = {
   status: CheckInStatus;
   interval?: string;
   grace?: string;
+  schedule?: string;
+  timezone?: string;
   message?: string;
 };
 

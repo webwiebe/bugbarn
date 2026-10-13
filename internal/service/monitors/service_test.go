@@ -184,3 +184,35 @@ func TestCheckInPassesStorageErrorsThrough(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestCheckInValidatesSchedules(t *testing.T) {
+	t.Parallel()
+	repo := &fakeRepo{}
+	s := newService(repo)
+	ctx := context.Background()
+
+	for name, in := range map[string]CheckInInput{
+		"both modes":         {Slug: "job", Status: "ok", Interval: d(time.Hour), Schedule: "0 6 * * *"},
+		"six fields":         {Slug: "job", Status: "ok", Schedule: "0 0 6 * * *"},
+		"never runs":         {Slug: "job", Status: "ok", Schedule: "0 0 31 2 *"},
+		"unknown zone":       {Slug: "job", Status: "ok", Schedule: "0 6 * * *", Timezone: "Mars/Olympus"},
+		"zone with interval": {Slug: "job", Status: "ok", Interval: d(time.Hour), Timezone: "Europe/Amsterdam"},
+		"grace past a month": {Slug: "job", Status: "ok", Schedule: "0 6 * * *", Grace: d(32 * 24 * time.Hour)},
+	} {
+		repo.got = storage.MonitorCheckIn{}
+		if _, err := s.CheckIn(ctx, 1, in); !errors.Is(err, apperr.ErrInvalidInput) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+		if repo.got.Slug != "" {
+			t.Errorf("%s reached storage", name)
+		}
+	}
+
+	in := CheckInInput{Slug: "job", Status: "ok", Schedule: "  0  6 * * *  ", Timezone: "Europe/Amsterdam", Grace: d(10 * time.Minute)}
+	if _, err := s.CheckIn(ctx, 1, in); err != nil {
+		t.Fatal(err)
+	}
+	if repo.got.Schedule == nil || *repo.got.Schedule != "0 6 * * *" || *repo.got.Timezone != "Europe/Amsterdam" || repo.got.Interval != nil {
+		t.Fatalf("stored input: %+v", repo.got)
+	}
+}

@@ -33,7 +33,7 @@ test("init stores transport and api key", async () => {
   assert.equal(events[0].dist, "web");
   assert.equal(events[0].tags?.service, "api");
   assert.equal(events[0].sender.sdk.name, "bugbarn.typescript");
-  assert.equal(events[0].sender.sdk.version, "1.1.0");
+  assert.equal(events[0].sender.sdk.version, "1.2.0");
   assert.ok(events[0].timestamp.length > 0);
 });
 
@@ -306,6 +306,23 @@ test("checkIn builds the body from seconds and duration strings", async () => {
   assert.deepEqual(sent[0], { slug: "nightly", body: { status: "error", interval: "3600s", grace: "10m", message: "disk full" } });
   assert.deepEqual(sent[1].body, { status: "ok", interval: "1h" });
   assert.deepEqual(sent[2].body, { status: "ok" });
+});
+
+test("checkIn sends a cron schedule with its time zone", async () => {
+  const sent = [];
+  const transport = {
+    async send() {},
+    async sendCheckIn(slug, body) { sent.push({ slug, body }); },
+    async flush() {},
+  };
+  init({ apiKey: "k", transport, installDefaultHandlers: false });
+
+  assert.equal(await checkIn("nightly", "ok", { schedule: "0 6 * * *", timezone: "Europe/Amsterdam", grace: "10m" }), true);
+  assert.equal(await checkIn("nightly", "ok", { schedule: "0 6 * * *" }), true);
+  assert.deepEqual(sent[0].body, { status: "ok", grace: "10m", schedule: "0 6 * * *", timezone: "Europe/Amsterdam" });
+  assert.deepEqual(sent[1].body, { status: "ok", schedule: "0 6 * * *" });
+  await assert.rejects(() => checkIn("nightly", "ok", { interval: 3600, schedule: "0 6 * * *" }), RangeError);
+  await assert.rejects(() => checkIn("nightly", "ok", { timezone: "Europe/Amsterdam" }), RangeError);
 });
 
 test("checkIn rejects bad input and reports transports that cannot carry it", async () => {

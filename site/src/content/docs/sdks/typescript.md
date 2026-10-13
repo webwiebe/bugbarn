@@ -247,7 +247,7 @@ try {
 }
 ```
 
-`interval` and `grace` take seconds or a duration string such as `"90s"` or `"1h"`. The first call creates the monitor from the interval (1 minute to 31 days). Repeat the options on every call, or leave them out once the monitor exists. `checkIn` resolves to `false` when the SDK is not initialised, throws a `RangeError` for a status other than `ok` or `error`, and delivers asynchronously: a failed request is dropped, and `flush` and `shutdown` wait for check-ins in flight. Messages are cut at 200 characters and appear only on the issue an error check-in opens, so keep personal data out. See [POST /api/v1/monitors/{slug}/check-ins](../api.md).
+`interval` and `grace` take seconds or a duration string such as `"90s"` or `"1h"`. Jobs that run at fixed times pass `schedule`, a 5-field cron expression, instead of `interval`, with `timezone` as an IANA name (UTC when left out): `await checkIn("nightly-export", "ok", { schedule: "0 6 * * *", timezone: "Europe/Amsterdam", grace: "10m" })`. Use one of the two on a monitor, and check in when the job has run, after its scheduled time. The first call creates the monitor from the interval (1 minute to 31 days). Repeat the options on every call, or leave them out once the monitor exists. `checkIn` resolves to `false` when the SDK is not initialised, throws a `RangeError` for a status other than `ok` or `error`, and delivers asynchronously: a failed request is dropped, and `flush` and `shutdown` wait for check-ins in flight. Messages are cut at 200 characters and appear only on the issue an error check-in opens, so keep personal data out. See [POST /api/v1/monitors/{slug}/check-ins](../api.md).
 
 ## Flush and shutdown
 

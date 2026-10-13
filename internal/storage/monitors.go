@@ -25,7 +25,12 @@ type MonitorCheckIn struct {
 	Status    string
 	Interval  *time.Duration
 	Grace     *time.Duration
-	At        time.Time
+	// Schedule and Timezone switch the monitor to a cron schedule. Sending an
+	// Interval switches it back to interval mode and clears both. Timezone
+	// alone changes the zone of a monitor that already has a schedule.
+	Schedule *string
+	Timezone *string
+	At       time.Time
 }
 
 // MonitorCheckInResult is the monitor after the check-in plus what it was
@@ -37,7 +42,7 @@ type MonitorCheckInResult struct {
 }
 
 const monitorColumns = `id, project_id, slug, interval_s, grace_s, enabled, created_at,
-  last_checkin_at, last_status, state, state_since, last_emitted_at`
+  last_checkin_at, last_status, state, state_since, last_emitted_at, schedule, timezone`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -46,7 +51,7 @@ func scanMonitor(row rowScanner) (domain.Monitor, error) {
 	var interval, grace, enabled int64
 	var created, lastCheckIn, since, emitted string
 	if err := row.Scan(&m.ID, &m.ProjectID, &m.Slug, &interval, &grace, &enabled, &created,
-		&lastCheckIn, &m.LastStatus, &m.State, &since, &emitted); err != nil {
+		&lastCheckIn, &m.LastStatus, &m.State, &since, &emitted, &m.Schedule, &m.Timezone); err != nil {
 		return domain.Monitor{}, err
 	}
 	m.Interval = time.Duration(interval) * time.Second
@@ -99,11 +104,8 @@ func applyMonitorCheckIn(ctx context.Context, tx *sql.Tx, in MonitorCheckIn) (Mo
 	}
 
 	res := MonitorCheckInResult{PreviousState: m.State}
-	if in.Interval != nil {
-		m.Interval = *in.Interval
-	}
-	if in.Grace != nil {
-		m.Grace = *in.Grace
+	if err := applyTimings(&m, in); err != nil {
+		return MonitorCheckInResult{}, err
 	}
 	m.LastCheckInAt = in.At
 	m.LastStatus = in.Status
@@ -115,17 +117,46 @@ func applyMonitorCheckIn(ctx context.Context, tx *sql.Tx, in MonitorCheckIn) (Mo
 		m.StateSince = in.At
 	}
 	_, err = tx.ExecContext(ctx, `
-UPDATE monitors SET interval_s = ?, grace_s = ?, last_checkin_at = ?, last_status = ?, state = ?, state_since = ?
+UPDATE monitors SET interval_s = ?, grace_s = ?, schedule = ?, timezone = ?,
+  last_checkin_at = ?, last_status = ?, state = ?, state_since = ?
 WHERE id = ?`,
-		int64(m.Interval/time.Second), int64(m.Grace/time.Second), formatTime(m.LastCheckInAt),
-		m.LastStatus, m.State, formatTimeOrEmpty(m.StateSince), m.ID)
+		int64(m.Interval/time.Second), int64(m.Grace/time.Second), m.Schedule, m.Timezone,
+		formatTime(m.LastCheckInAt), m.LastStatus, m.State, formatTimeOrEmpty(m.StateSince), m.ID)
 	res.Monitor = m
 	return res, wrapErr(err, "update monitor")
 }
 
+// applyTimings applies the schedule configuration a check-in carries to a
+// loaded monitor: an interval selects interval mode, a schedule selects cron
+// mode, a timezone alone adjusts a cron monitor.
+func applyTimings(m *domain.Monitor, in MonitorCheckIn) error {
+	switch {
+	case in.Interval != nil:
+		m.Interval, m.Schedule, m.Timezone = *in.Interval, "", ""
+	case in.Schedule != nil:
+		m.Interval, m.Schedule, m.Timezone = 0, *in.Schedule, valueOr(in.Timezone, m.Timezone)
+	case in.Timezone != nil:
+		if m.Schedule == "" {
+			return apperr.InvalidInput("timezone needs a schedule: this monitor uses an interval", nil)
+		}
+		m.Timezone = *in.Timezone
+	}
+	if in.Grace != nil {
+		m.Grace = *in.Grace
+	}
+	return nil
+}
+
+func valueOr(v *string, fallback string) string {
+	if v != nil {
+		return *v
+	}
+	return fallback
+}
+
 func createMonitorFromCheckIn(ctx context.Context, tx *sql.Tx, in MonitorCheckIn) (MonitorCheckInResult, error) {
-	if in.Interval == nil {
-		return MonitorCheckInResult{}, apperr.NotFound("monitor not found: send an interval to create it", nil)
+	if in.Interval == nil && in.Schedule == nil {
+		return MonitorCheckInResult{}, apperr.NotFound("monitor not found: send an interval or a schedule to create it", nil)
 	}
 	var n int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM monitors WHERE project_id = ?`, in.ProjectID).Scan(&n); err != nil {
@@ -135,20 +166,21 @@ func createMonitorFromCheckIn(ctx context.Context, tx *sql.Tx, in MonitorCheckIn
 		return MonitorCheckInResult{}, apperr.Conflict("monitor limit reached for this project", nil)
 	}
 	m := domain.Monitor{
-		ProjectID: in.ProjectID, Slug: in.Slug, Interval: *in.Interval, Enabled: true,
+		ProjectID: in.ProjectID, Slug: in.Slug, Enabled: true,
 		CreatedAt: in.At, LastCheckInAt: in.At, LastStatus: in.Status, State: domain.MonitorStateOK,
 	}
-	if in.Grace != nil {
-		m.Grace = *in.Grace
+	if err := applyTimings(&m, in); err != nil {
+		return MonitorCheckInResult{}, err
 	}
 	if in.Status == domain.CheckInError {
 		m.State = domain.MonitorStateError
 		m.StateSince = in.At
 	}
 	r, err := tx.ExecContext(ctx, `
-INSERT INTO monitors (project_id, slug, interval_s, grace_s, enabled, created_at, last_checkin_at, last_status, state, state_since)
-VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
-		m.ProjectID, m.Slug, int64(m.Interval/time.Second), int64(m.Grace/time.Second),
+INSERT INTO monitors (project_id, slug, interval_s, grace_s, schedule, timezone, enabled,
+	created_at, last_checkin_at, last_status, state, state_since)
+VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+		m.ProjectID, m.Slug, int64(m.Interval/time.Second), int64(m.Grace/time.Second), m.Schedule, m.Timezone,
 		formatTime(m.CreatedAt), formatTime(m.LastCheckInAt), m.LastStatus, m.State, formatTimeOrEmpty(m.StateSince))
 	if err != nil {
 		return MonitorCheckInResult{}, wrapErr(err, "create monitor")

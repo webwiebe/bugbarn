@@ -12,6 +12,9 @@ interface Monitor {
   lastStatus: string;
   intervalSeconds: number;
   graceSeconds: number;
+  /** Cron expression and its IANA zone; set instead of an interval for scheduled jobs. */
+  schedule?: string;
+  timezone?: string;
   dueBy: string;
   stateSince: string;
   lastCheckInAt?: string;
@@ -66,6 +69,13 @@ function stateChip(m: Monitor): string {
   return `<span class="chip">ok</span>`;
 }
 
+/** monitorTiming describes what a monitor expects: an interval or a cron schedule, plus the grace. */
+export function monitorTiming(m: Monitor): string {
+  const grace = `grace ${formatSeconds(m.graceSeconds)}`;
+  if (m.schedule) return `cron ${m.schedule} (${m.timezone || "UTC"}), ${grace}`;
+  return `every ${formatSeconds(m.intervalSeconds)}, ${grace}`;
+}
+
 function renderRow(m: Monitor): string {
   const since = m.state === "ok" ? "" : `<div class="muted">since ${escapeHtml(monitorAge(m.stateSince))}</div>`;
   return `
@@ -73,7 +83,7 @@ function renderRow(m: Monitor): string {
       <td><strong>${escapeHtml(m.slug)}</strong>${m.project ? `<div class="muted sec-mono">${escapeHtml(m.project)}</div>` : ""}</td>
       <td>${stateChip(m)}${since}</td>
       <td>${escapeHtml(monitorAge(m.lastCheckInAt))}</td>
-      <td>every ${escapeHtml(formatSeconds(m.intervalSeconds))}, grace ${escapeHtml(formatSeconds(m.graceSeconds))}</td>
+      <td>${escapeHtml(monitorTiming(m))}</td>
       <td><button type="button" class="btn-sm" data-monitor-delete="${escapeAttr(m.slug)}" data-monitor-project="${escapeAttr(m.project)}">Delete</button></td>
     </tr>`;
 }

@@ -149,6 +149,27 @@ class CheckInTests(unittest.TestCase):
         self.assertEqual(second.body, {"status": "ok", "interval": "1h"})
         self.assertEqual(third.body, {"status": "ok"})
 
+    def test_body_carries_schedule_and_timezone(self):
+        transport = RecordingTransport()
+        init(api_key="bb_live_test", transport=transport)
+
+        self.assertTrue(check_in("nightly", schedule="0 6 * * *", timezone="Europe/Amsterdam", grace="10m"))
+        self.assertTrue(check_in("nightly", schedule="0 6 * * *"))
+
+        first, second = transport.check_ins
+        self.assertEqual(
+            first.body,
+            {"status": "ok", "grace": "10m", "schedule": "0 6 * * *", "timezone": "Europe/Amsterdam"},
+        )
+        self.assertEqual(second.body, {"status": "ok", "schedule": "0 6 * * *"})
+
+    def test_schedule_excludes_interval_and_timezone_needs_schedule(self):
+        init(api_key="bb_live_test", transport=RecordingTransport())
+        with self.assertRaises(ValueError):
+            check_in("nightly", interval=3600, schedule="0 6 * * *")
+        with self.assertRaises(ValueError):
+            check_in("nightly", timezone="Europe/Amsterdam")
+
     def test_rejects_non_positive_interval(self):
         init(api_key="bb_live_test", transport=RecordingTransport())
         with self.assertRaises(ValueError):

@@ -23,6 +23,8 @@ type checkInOpts struct {
 	interval time.Duration
 	grace    time.Duration
 	message  string
+	schedule string
+	timezone string
 }
 
 // CheckInInterval declares how often the job is expected to check in
@@ -30,6 +32,14 @@ type checkInOpts struct {
 // sent later it replaces the stored value.
 func CheckInInterval(d time.Duration) CheckInOption {
 	return func(o *checkInOpts) { o.interval = d }
+}
+
+// CheckInSchedule declares a 5-field cron expression and an IANA time zone
+// ("Europe/Amsterdam", UTC when empty) for jobs that run at fixed times. It
+// replaces CheckInInterval: BugBarn expects a check-in after each scheduled
+// time, within the grace. Use one of the two on a monitor, not both.
+func CheckInSchedule(expression, timezone string) CheckInOption {
+	return func(o *checkInOpts) { o.schedule, o.timezone = expression, timezone }
 }
 
 // CheckInGrace declares how long after the interval a check-in may still
@@ -50,6 +60,8 @@ type checkInBody struct {
 	Message  string `json:"message,omitempty"`
 	Interval string `json:"interval,omitempty"`
 	Grace    string `json:"grace,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
 }
 
 // CheckIn tells BugBarn that a scheduled job or worker ran. Status is
@@ -59,6 +71,10 @@ type checkInBody struct {
 // Declare the schedule with CheckInInterval on the call that runs every time:
 //
 //	bb.CheckIn("pending-sweep", bb.CheckInOK, bb.CheckInInterval(time.Hour), bb.CheckInGrace(10*time.Minute))
+//
+// Jobs that run at fixed times declare a cron schedule instead:
+//
+//	bb.CheckIn("nightly-export", bb.CheckInOK, bb.CheckInSchedule("0 6 * * *", "Europe/Amsterdam"), bb.CheckInGrace(10*time.Minute))
 //
 // Delivery is asynchronous and never blocks the caller. It returns false when
 // Init has not run or the status is unknown. Flush and Shutdown wait
@@ -74,7 +90,7 @@ func CheckIn(slug, status string, options ...CheckInOption) bool {
 	for _, o := range options {
 		o(&co)
 	}
-	body := checkInBody{Status: status, Message: co.message}
+	body := checkInBody{Status: status, Message: co.message, Schedule: co.schedule, Timezone: co.timezone}
 	if co.interval > 0 {
 		body.Interval = co.interval.String()
 	}
