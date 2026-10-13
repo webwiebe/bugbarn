@@ -278,6 +278,8 @@ func conditionLabel(condition string) string {
 		return "Event count exceeded"
 	case "event_spike":
 		return "Error spike"
+	case "silence":
+		return "Project silent"
 	case "message_contains":
 		return "Message contains match"
 	default:

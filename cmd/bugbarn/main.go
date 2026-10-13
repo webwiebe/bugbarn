@@ -33,6 +33,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
+	"github.com/wiebe-xyz/bugbarn/internal/silence"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -194,6 +195,14 @@ func run() error {
 	retention.StartWorker(ctx, store, retention.Config{
 		RetentionDays: cfg.EventRetentionDays,
 	}, logger, &bgWg)
+
+	// Silent-project alert. Production only: staging and testing projects go
+	// quiet all the time and their mail would bury the real signal.
+	if cfg.Environment == "production" && cfg.AdminAlertEmail != "" && deliverer.EmailConfigured() {
+		silence.New(silence.DefaultConfig(), store.Domains().Projects,
+			alert.NewSilenceNotifier(deliverer, cfg.AdminAlertEmail, cfg.PublicURL),
+			logger.With("component", "silence-monitor")).Start(ctx, &bgWg)
+	}
 
 	// Infrastructure telemetry files (security logs, host metrics). Writer-only
 	// for the same reason as retention: readers open them read-only.
