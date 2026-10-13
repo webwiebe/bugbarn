@@ -49,7 +49,25 @@ func (e *Evaluator) HandleEvent(evt any) {
 		e.notifyAdmin(v.Issue, "regression")
 	case domainevents.IssueEventRecorded:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "event_count_exceeds")
+		if isSpikeMilestone(v.Issue.EventCount) {
+			e.notifyAdmin(v.Issue, "event_spike")
+		}
 	}
+}
+
+// isSpikeMilestone reports whether an issue's lifetime event count has just
+// reached a power of ten from 100 up. A loop on an existing issue never trips the
+// new-issue or regression mails; these milestones (100, 1000, 10000, ...) mail the
+// admin once per order of magnitude. Counts that skip past a milestone, as sampled
+// issues can, do not mail.
+func isSpikeMilestone(count int) bool {
+	if count < 100 {
+		return false
+	}
+	for count%10 == 0 {
+		count /= 10
+	}
+	return count == 1
 }
 
 // notifyAdmin emails the configured admin address for every new issue and
