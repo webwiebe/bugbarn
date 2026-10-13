@@ -243,7 +243,21 @@ func (s *IssueStore) GetIssue(ctx context.Context, issueID string) (Issue, error
 	if err != nil {
 		return Issue{}, err
 	}
+	return s.issueByRowID(ctx, rowID)
+}
 
+// IssueByFingerprint loads the issue of a project that carries fingerprint.
+func (s *IssueStore) IssueByFingerprint(ctx context.Context, projectID int64, fingerprint string) (Issue, error) {
+	var rowID int64
+	err := s.readDB().QueryRowContext(ctx,
+		`SELECT id FROM issues WHERE project_id = ? AND fingerprint = ?`, projectID, fingerprint).Scan(&rowID)
+	if err != nil {
+		return Issue{}, wrapNotFound(err, "issue not found")
+	}
+	return s.issueByRowID(ctx, rowID)
+}
+
+func (s *IssueStore) issueByRowID(ctx context.Context, rowID int64) (Issue, error) {
 	const sel = `
 SELECT
 	i.id,

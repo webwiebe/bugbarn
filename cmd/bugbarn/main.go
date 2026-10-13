@@ -229,6 +229,9 @@ func run() error {
 	// the first telemetry batch is already observed.
 	ruleSvc := detectionrules.New(store.DetectionRuleStore, logger)
 	engine := startDetections(ctx, telemetryIngester, eventProc, detectionRules(ctx, ruleSvc), cfg.Telemetry.Project, &bgWg, logger)
+	// Check-in monitors: the miss detector, and the reporter the API calls for
+	// error and recovery check-ins.
+	monitorReporter := startMonitors(ctx, store, eventProc, &bgWg, logger)
 	// Cloudflare firewall events. Writer-only like retention; started after
 	// the detection engine is wired so it observes the first page.
 	startCloudflarePoller(ctx, cfg.Cloudflare, telemetryIngester, &bgWg, logger)
@@ -290,6 +293,7 @@ func run() error {
 	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
 	apiServer.SetRetentionDays(cfg.EventRetentionDays)
 	apiServer.SetHeldReplayer(heldReplayer)
+	apiServer.SetMonitorReporter(monitorReporter)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
 	apiServer.SetFrontendTraces(cfg.FrontendTracesURL, cfg.FrontendTracesKey, "bugbarn-web")
 	if selfReporting {

@@ -231,6 +231,14 @@ func (s *Server) SetHeldReplayer(r projectsvc.HeldReplayer) {
 	}
 }
 
+// SetMonitorReporter wires the reporter that opens issues for error check-ins
+// and resolves them on recovery. Writer-only: readers forward check-ins.
+func (s *Server) SetMonitorReporter(r monitorsvc.Reporter) {
+	if s.monitors != nil {
+		s.monitors.SetReporter(r)
+	}
+}
+
 // SetIngestSpool wires a spool-backed forwarder for fire-and-forget ingest
 // endpoints (events, logs, analytics). When set, those endpoints append to
 // the on-disk spool and return 202 instead of forwarding synchronously, so
