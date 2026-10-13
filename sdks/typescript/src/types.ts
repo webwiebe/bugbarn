@@ -19,6 +19,12 @@ export type BugBarnClientOptions = {
   autoBreadcrumbs?: boolean; // default true
   release?: string;
   dist?: string;
+  /**
+   * Deployment environment, for example "testing", "staging" or "production".
+   * Defaults to BUGBARN_ENVIRONMENT. Sent as the `environment` attribute on every
+   * event so BugBarn can filter and group per environment.
+   */
+  environment?: string;
   /** Project slug within this BugBarn instance. Events and source maps are routed to this project. */
   project?: string;
   transport?: Transport;

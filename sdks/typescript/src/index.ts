@@ -14,6 +14,7 @@ let currentApiKey = "";
 let currentRelease: string | undefined;
 let currentDist: string | undefined;
 let currentProject: string | undefined;
+let currentEnvironment: string | undefined;
 let handlersInstalled = false;
 
 function normalizeError(error: unknown): Error {
@@ -67,6 +68,26 @@ function parseStacktrace(stack?: string): StackFrame[] | undefined {
   return frames.length > 0 ? frames : undefined;
 }
 
+/**
+ * Adds the configured environment unless the caller already set one for this
+ * event. `environment` is what the dashboard filters and fingerprints on;
+ * `deployment.environment` is the OpenTelemetry key the server turns into the
+ * environment facet.
+ */
+function withEnvironment(attributes?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!currentEnvironment) {
+    return attributes;
+  }
+  const merged: Record<string, unknown> = { ...attributes };
+  if (!("environment" in merged)) {
+    merged.environment = currentEnvironment;
+  }
+  if (!("deployment.environment" in merged)) {
+    merged["deployment.environment"] = merged.environment;
+  }
+  return merged;
+}
+
 function buildEnvelope(error: unknown, options?: CaptureOptions): BugBarnEnvelope {
   const normalized = normalizeError(error);
   const crumbs = getBreadcrumbs();
@@ -81,7 +102,7 @@ function buildEnvelope(error: unknown, options?: CaptureOptions): BugBarnEnvelop
       message: normalized.message,
       stacktrace: parseStacktrace(normalized.stack),
     },
-    attributes: options?.attributes,
+    attributes: withEnvironment(options?.attributes),
     tags: options?.tags,
     extra: options?.extra,
     user: getUser() ?? undefined,
@@ -150,6 +171,7 @@ export function init(options: BugBarnClientOptions): void {
   currentApiKey = options.apiKey;
   currentRelease = options.release ?? process.env.BUGBARN_RELEASE ?? undefined;
   currentDist = options.dist ?? process.env.BUGBARN_DIST ?? undefined;
+  currentEnvironment = options.environment ?? process.env.BUGBARN_ENVIRONMENT ?? undefined;
   currentProject = options.project ?? process.env.BUGBARN_PROJECT ?? undefined;
   transport = options.transport ?? createTransport(options.apiKey, options.endpoint, currentProject);
 

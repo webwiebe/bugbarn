@@ -20,6 +20,8 @@ This keeps Rapid Root on a normal package-manager dependency without publishing 
 
 The package exposes both ESM and CommonJS entrypoints, so bundlers and Node runtimes can choose `import` or `require` without custom externalization rules.
 
+Captured events can carry `environment` (`init({ environment })` or `BUGBARN_ENVIRONMENT`), `release` and `dist` metadata. The environment is sent as the `environment` attribute so BugBarn can tell testing, staging and production apart.
+
 Captured events can carry `release` and `dist` metadata. Set them during `init()` or via `BUGBARN_RELEASE` and `BUGBARN_DIST` so later source-map uploads can be matched to the same build.
 
 ## Local package
