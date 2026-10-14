@@ -67,7 +67,7 @@ func openTelemetryDB(ctx context.Context, spec telemetrydb.Spec, path string, ma
 // startDetections runs the detection engine over the ingester's telemetry:
 // the given rules, the heartbeat ticker and the emitter that persists each
 // detection as an event in the telemetry project through proc.
-func startDetections(ctx context.Context, ing *telemetry.Ingester, proc *ingestproc.Processor, rules []detect.Rule, project string, wg *sync.WaitGroup, log *slog.Logger) *detect.Engine {
+func startDetections(ctx context.Context, ing *telemetry.Ingester, proc *ingestproc.Processor, rules []detect.Rule, project, environment string, wg *sync.WaitGroup, log *slog.Logger) *detect.Engine {
 	engine := detect.NewEngine(rules, detectionBuffer, log)
 	if met := ing.Metrics(); met != nil {
 		hosts, err := met.Hosts(ctx)
@@ -91,7 +91,7 @@ func startDetections(ctx context.Context, ing *telemetry.Ingester, proc *ingestp
 			return true, res.Err
 		}
 		return false, res.Err
-	}, project, log)
+	}, project, log).WithEnvironment(environment)
 	wg.Add(2)
 	go func() {
 		defer wg.Done()

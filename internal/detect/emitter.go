@@ -25,6 +25,7 @@ type Emitter struct {
 	in      <-chan Detection
 	persist Persist
 	project string
+	env     string
 	log     *slog.Logger
 	backoff []time.Duration
 }
@@ -36,6 +37,14 @@ func NewEmitter(in <-chan Detection, persist Persist, project string, log *slog.
 		log:     log.With("component", "detect"),
 		backoff: []time.Duration{time.Second, 5 * time.Second, 30 * time.Second},
 	}
+}
+
+// WithEnvironment tags every emitted event with the deployment environment of
+// the BugBarn instance that raised it, so the dashboard's environment filter and
+// facet cover infrastructure issues too. Empty leaves events untagged.
+func (e *Emitter) WithEnvironment(env string) *Emitter {
+	e.env = env
+	return e
 }
 
 // Run emits detections until ctx ends.
@@ -51,7 +60,7 @@ func (e *Emitter) Run(ctx context.Context) {
 }
 
 func (e *Emitter) send(ctx context.Context, d Detection) {
-	rec, err := Record(d, e.project)
+	rec, err := RecordIn(d, e.project, e.env)
 	if err != nil {
 		e.log.Error("detection could not be encoded", "rule", d.Rule.ID, "error", err)
 		return
@@ -87,7 +96,12 @@ func Fingerprint(d Detection) string {
 // Record builds the internal spool record for a detection. Internal keeps the
 // source IPs in the event; they are the point of a security detection.
 func Record(d Detection, project string) (spool.Record, error) {
-	body, err := json.Marshal(payload(d))
+	return RecordIn(d, project, "")
+}
+
+// RecordIn is Record for an instance running in the named environment.
+func RecordIn(d Detection, project, env string) (spool.Record, error) {
+	body, err := json.Marshal(payload(d, env))
 	if err != nil {
 		return spool.Record{}, err
 	}
@@ -101,7 +115,7 @@ func Record(d Detection, project string) (spool.Record, error) {
 	}, nil
 }
 
-func payload(d Detection) map[string]any {
+func payload(d Detection, env string) map[string]any {
 	group := make(map[string]any, len(d.Group))
 	for _, kv := range d.Group {
 		group[kv.Key] = kv.Value
@@ -126,6 +140,12 @@ func payload(d Detection) map[string]any {
 	attrs := map[string]any{"detection": detection, "sample": d.Sample}
 	if h, ok := group["host"]; ok {
 		attrs["host"] = h
+	}
+	if env != "" {
+		// The dashboard filter reads attributes.environment, the facet reads
+		// deployment.environment; BugBarn has no top-level environment field.
+		attrs["environment"] = env
+		attrs["deployment.environment"] = env
 	}
 	return map[string]any{
 		"body":              title(d),

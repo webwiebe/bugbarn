@@ -171,3 +171,34 @@ func TestSpoolRecordNeverSerializesInternal(t *testing.T) {
 		t.Fatal("Internal was read from JSON")
 	}
 }
+
+func TestRecordCarriesTheInstanceEnvironment(t *testing.T) {
+	d := Detection{
+		Rule:  rule(t, "ssh-bruteforce"),
+		Group: []KV{{Key: "src_ip", Value: "203.0.113.9"}},
+		At:    t0, Count: 31, Limit: 30,
+	}
+	attrs := func(env string) map[string]any {
+		rec, err := RecordIn(d, "infra", env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := base64.StdEncoding.DecodeString(rec.BodyBase64)
+		var p map[string]any
+		if err := json.Unmarshal(body, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p["attributes"].(map[string]any)
+	}
+
+	got := attrs("production")
+	if got["environment"] != "production" || got["deployment.environment"] != "production" {
+		t.Fatalf("attributes = %v", got)
+	}
+	untagged := attrs("")
+	for _, k := range []string{"environment", "deployment.environment"} {
+		if _, has := untagged[k]; has {
+			t.Fatalf("an instance without an environment must not invent %s: %v", k, untagged)
+		}
+	}
+}
