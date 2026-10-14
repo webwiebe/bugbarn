@@ -55,7 +55,7 @@ func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer
 	}
 	base = base.WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	if cfg.SessionSecret != "" {
-		base = base.WithSetupKeyVerifier(newSetupKeyVerifier(cfg.SessionSecret))
+		base = base.WithSetupKeyVerifier(withSetupKeyUsage(newSetupKeyVerifier(cfg.SessionSecret), slog.Default()))
 	}
 	return base, nil
 }
