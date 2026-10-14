@@ -1,6 +1,7 @@
 package monitors
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -182,6 +183,33 @@ func TestCheckInPassesStorageErrorsThrough(t *testing.T) {
 	_, err := newService(repo).CheckIn(context.Background(), 1, CheckInInput{Slug: "sweep", Status: "ok"})
 	if !errors.Is(err, apperr.ErrNotFound) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestCheckInLostLogLevel(t *testing.T) {
+	t.Parallel()
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	cases := []struct {
+		name  string
+		ctx   context.Context
+		level string
+	}{
+		{"a live request that failed is an error", context.Background(), "ERROR"},
+		{"a canceled request is a warning", canceled, "WARN"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			s := New(&fakeRepo{err: apperr.Internal("load monitor", context.Canceled)}, slog.New(slog.NewJSONHandler(&buf, nil)))
+			if _, err := s.CheckIn(tc.ctx, 1, CheckInInput{Slug: "sweep", Status: "ok"}); err == nil {
+				t.Fatal("expected the storage error")
+			}
+			if !strings.Contains(buf.String(), `"level":"`+tc.level+`"`) || !strings.Contains(buf.String(), "monitor check-in lost") {
+				t.Fatalf("want a %s line, got %q", tc.level, buf.String())
+			}
+		})
 	}
 }
 
