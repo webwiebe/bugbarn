@@ -898,6 +898,18 @@ button:disabled {
   color: var(--fg);
 }
 
+.load-more-sentinel {
+  height: 1px;
+}
+
+.load-more-status {
+  padding: 12px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 .item-meta,
 .muted {
   color: var(--muted);
