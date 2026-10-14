@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // CreateAPIKey stores an API key's SHA-256 hash and returns the resulting row.
@@ -81,6 +83,32 @@ UPDATE api_keys SET last_used_at = ? WHERE key_sha256 = ?`,
 		formatTime(time.Now().UTC()), keySHA256,
 	)
 	return err
+}
+
+// TouchAPIKeysAt applies a batch of last-use times in one transaction. A key
+// only moves forward, so a late batch from a slow reader cannot rewind it.
+func (s *APIKeyStore) TouchAPIKeysAt(ctx context.Context, touches []domain.APIKeyTouch) error {
+	if s.db == nil {
+		return wrapErr(errors.New("no write connection"), "touch api keys")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return wrapErr(err, "touch api keys: begin")
+	}
+	defer func() { _ = tx.Rollback() }()
+	stmt, err := tx.PrepareContext(ctx, `
+UPDATE api_keys SET last_used_at = ?1
+WHERE key_sha256 = ?2 AND (last_used_at IS NULL OR last_used_at < ?1)`)
+	if err != nil {
+		return wrapErr(err, "touch api keys: prepare")
+	}
+	defer func() { _ = stmt.Close() }()
+	for _, t := range touches {
+		if _, err := stmt.ExecContext(ctx, formatTime(t.At.UTC()), t.KeySHA256); err != nil {
+			return wrapErr(err, "touch api keys")
+		}
+	}
+	return wrapErr(tx.Commit(), "touch api keys: commit")
 }
 
 // EnsureSetupAPIKey creates the API key if no key with the same sha256 exists yet (idempotent).

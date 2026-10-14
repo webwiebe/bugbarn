@@ -42,7 +42,9 @@ func ensureProductionAPIKeyAuth(cfg config.Config, authorizer *auth.Authorizer) 
 		"(set BUGBARN_API_KEY or BUGBARN_API_KEY_SHA256, or wire the database key store)")
 }
 
-func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer, error) {
+// newAPIAuthorizer builds the ingest authorizer. touch records a key's last
+// use: the store itself where it can write, the reader's batcher where it cannot.
+func newAPIAuthorizer(cfg config.Config, store *storage.Store, touch auth.DBKeyTouch) (*auth.Authorizer, error) {
 	var base *auth.Authorizer
 	var err error
 	if cfg.APIKeySHA256 != "" {
@@ -53,7 +55,7 @@ func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer
 	} else {
 		base = auth.New(cfg.APIKey)
 	}
-	base = base.WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
+	base = base.WithDBLookup(store.ValidAPIKeySHA256, touch)
 	if cfg.SessionSecret != "" {
 		base = base.WithSetupKeyVerifier(newSetupKeyVerifier(cfg.SessionSecret))
 	}

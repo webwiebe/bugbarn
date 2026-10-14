@@ -21,6 +21,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
+	"github.com/wiebe-xyz/bugbarn/internal/keytouch"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -99,7 +100,16 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 		defer ingestSpool.Close()
 	}
 
-	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
+	// The read-only store cannot record an API key's last use, so readers batch
+	// the touches and send them to the writer. Without the shared session secret
+	// the writer rejects the batch, so that setup keeps the store's own touch.
+	touch := store.TouchAPIKey
+	if cfg.SessionSecret != "" {
+		touches := keytouch.NewBatcher(keytouch.NewRemoteSender(cfg.WriterURL, cfg.SessionSecret), logger)
+		touch = touches.Touch
+		go touches.Run(ctx)
+	}
+	apiAuthorizer, err := newAPIAuthorizer(cfg, store, touch)
 	if err != nil {
 		return err
 	}

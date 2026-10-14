@@ -141,6 +141,13 @@ type APIKey struct {
 	LastUsedAt time.Time `json:"last_used_at"`
 }
 
+// APIKeyTouch records that an API key authenticated a request at At. Readers
+// batch these and send them to the writer, the only process that can write.
+type APIKeyTouch struct {
+	KeySHA256 string    `json:"sha256"`
+	At        time.Time `json:"at"`
+}
+
 // Key request statuses. "expired" is derived from ExpiresAt, never stored.
 const (
 	KeyRequestPending  = "pending"
