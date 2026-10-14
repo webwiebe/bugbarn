@@ -2788,6 +2788,116 @@ button.settings-nav-item:last-child {
   white-space: nowrap;
 }
 
+/* ── Error timeline (issues page) ───────────────────────── */
+
+.error-timeline {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #171812;
+  padding: 12px 12px 10px;
+}
+
+.error-timeline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.error-timeline-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.error-timeline-ranges {
+  display: flex;
+  gap: 4px;
+}
+
+.error-timeline-range {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.error-timeline-range.active {
+  color: inherit;
+  background: #252830;
+}
+
+.error-timeline-bars {
+  display: grid;
+  align-items: end;
+  gap: 2px;
+  height: 72px;
+}
+
+.error-timeline-bar {
+  display: flex;
+  flex-direction: column-reverse;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  overflow: hidden;
+}
+
+.error-timeline-seg {
+  display: block;
+  min-height: 1px;
+}
+
+.error-timeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.error-timeline-legend-item,
+.error-timeline-legend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.error-timeline-legend-btn {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.error-timeline-legend-btn:hover .error-timeline-name {
+  text-decoration: underline;
+}
+
+.error-timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.error-timeline-total {
+  color: var(--muted);
+}
+
+.error-timeline-empty {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+
 /* Keep last: a class that sets display would otherwise beat the UA rule for [hidden]. */
 [hidden] {
   display: none !important;

@@ -96,15 +96,19 @@ export async function fetchIAMBarnEndSessionURL(): Promise<string> {
   }
 }
 
-export async function fetchJson(path: string, allowMissing = false): Promise<unknown> {
+/** `unscoped` leaves out the project and group headers, for views that span all projects. */
+export async function fetchJson(path: string, allowMissing = false, unscoped = false): Promise<unknown> {
   const url = apiUrl(path);
-  const existing = state.inFlight.get(url);
+  const key = unscoped ? `${url}#unscoped` : url;
+  const existing = state.inFlight.get(key);
   if (existing) {
     return existing;
   }
 
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (state.currentGroup) {
+  if (unscoped) {
+    // no scope headers
+  } else if (state.currentGroup) {
     headers["X-BugBarn-Group"] = state.currentGroup;
   } else if (state.currentProject && state.currentProject !== "default" && state.currentProject !== "__all") {
     headers["X-BugBarn-Project"] = state.currentProject;
@@ -134,11 +138,11 @@ export async function fetchJson(path: string, allowMissing = false): Promise<unk
     }
   });
 
-  state.inFlight.set(url, request);
+  state.inFlight.set(key, request);
   try {
     return await request;
   } finally {
-    state.inFlight.delete(url);
+    state.inFlight.delete(key);
   }
 }
 

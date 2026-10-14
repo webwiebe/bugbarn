@@ -346,16 +346,21 @@ func (s *Server) dispatchIssueRoutes(w http.ResponseWriter, r *http.Request) boo
 }
 
 func (s *Server) dispatchLogEventRoutes(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
 	switch {
-	case r.URL.Path == "/api/v1/logs" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/v1/logs":
 		s.serveLogs(w, r)
-	case r.URL.Path == "/api/v1/logs/stream" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/v1/logs/stream":
 		s.serveLogsStream(w, r)
-	case r.URL.Path == "/api/v1/events/stream" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/v1/events/stream":
 		s.streamEvents(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/events/") && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/v1/events/timeline":
+		s.serveErrorTimeline(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/events/"):
 		s.getEvent(w, r)
-	case r.URL.Path == "/api/v1/live/events" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/v1/live/events":
 		s.listRecentEvents(w, r)
 	default:
 		return false
