@@ -2119,6 +2119,15 @@ button:disabled {
   flex: 0 1 auto;
 }
 
+.project-empty {
+  padding: 12px 0;
+}
+
+.project-empty-clear {
+  margin-left: 6px;
+  cursor: pointer;
+}
+
 .project-row {
   display: flex;
   align-items: center;
@@ -2777,4 +2786,9 @@ button.settings-nav-item:last-child {
 
 .rule-actions {
   white-space: nowrap;
+}
+
+/* Keep last: a class that sets display would otherwise beat the UA rule for [hidden]. */
+[hidden] {
+  display: none !important;
 }
