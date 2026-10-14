@@ -8,28 +8,37 @@ import type { ApiIssue, IssueCounts, IssueSort, IssueStatus } from "./types.js";
 import { byId, elements, setActiveView, setStatus, state } from "./core.js";
 import { fetchJson } from "./http.js";
 import { setRouteStatus } from "./router.js";
+import { createPageLoader, observeSentinel } from "./infinite-scroll.js";
 
 let issueLoadGeneration = 0;
+let loadingMore = false;
+let loadMoreFailed = false;
+let scrollObserver: IntersectionObserver | null = null;
+const pageLoader = createPageLoader(() => loadMoreIssues());
 
 const ISSUE_PAGE_SIZE = 50;
 
+function issueQueryParams(offset = 0): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set("limit", String(ISSUE_PAGE_SIZE));
+  if (offset > 0) params.set("offset", String(offset));
+  if (state.issueSort && state.issueSort !== "last_seen") params.set("sort", state.issueSort);
+  if (state.issueStatus && state.issueStatus !== "all") params.set("status", state.issueStatus);
+  if (state.issueQuery) params.set("q", state.issueQuery);
+  if (state.currentEnv) params.set("attributes.environment", state.currentEnv);
+  return params;
+}
+
+function onIssuesList(): boolean {
+  return state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId;
+}
+
 export async function loadIssues(): Promise<void> {
   const generation = ++issueLoadGeneration;
+  loadingMore = false;
+  loadMoreFailed = false;
   try {
-    const params = new URLSearchParams();
-    params.set("limit", String(ISSUE_PAGE_SIZE));
-    if (state.issueSort && state.issueSort !== "last_seen") {
-      params.set("sort", state.issueSort);
-    }
-    if (state.issueStatus && state.issueStatus !== "all") {
-      params.set("status", state.issueStatus);
-    }
-    if (state.issueQuery) {
-      params.set("q", state.issueQuery);
-    }
-    if (state.currentEnv) {
-      params.set("attributes.environment", state.currentEnv);
-    }
+    const params = issueQueryParams();
     const qs = params.toString();
     const payload = await fetchJson(`/api/v1/issues${qs ? `?${qs}` : ""}`);
     if (generation !== issueLoadGeneration) return;
@@ -37,7 +46,7 @@ export async function loadIssues(): Promise<void> {
     state.issues = normalizeList<ApiIssue>(raw, "issues");
     state.issueHasMore = Boolean(raw?.["hasMore"]);
     applyIssueTotals(raw);
-    if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
+    if (onIssuesList()) {
       setRouteStatus();
       renderIssuesView();
     }
@@ -48,7 +57,7 @@ export async function loadIssues(): Promise<void> {
     state.issueHasMore = false;
     state.issueTotal = null;
     state.issueCounts = null;
-    if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
+    if (onIssuesList()) {
       renderIssuesView(error);
       setStatus(`Issues unavailable: ${errorMessage(error)}`);
     }
@@ -67,25 +76,16 @@ function issueHeadingText(): string {
   return issueHeading(state.issues.length, state.issueTotal, state.issueTotalApproximate, state.issueHasMore);
 }
 
-export async function loadMoreIssues(): Promise<void> {
+async function loadMoreIssues(): Promise<void> {
   if (!state.issueHasMore) return;
   const generation = issueLoadGeneration;
+  loadingMore = true;
+  loadMoreFailed = false;
+  if (onIssuesList()) {
+    renderIssuesList();
+  }
   try {
-    const params = new URLSearchParams();
-    params.set("limit", String(ISSUE_PAGE_SIZE));
-    params.set("offset", String(state.issues.length));
-    if (state.issueSort && state.issueSort !== "last_seen") {
-      params.set("sort", state.issueSort);
-    }
-    if (state.issueStatus && state.issueStatus !== "all") {
-      params.set("status", state.issueStatus);
-    }
-    if (state.issueQuery) {
-      params.set("q", state.issueQuery);
-    }
-    if (state.currentEnv) {
-      params.set("attributes.environment", state.currentEnv);
-    }
+    const params = issueQueryParams(state.issues.length);
     const qs = params.toString();
     const payload = await fetchJson(`/api/v1/issues?${qs}`);
     if (generation !== issueLoadGeneration) return;
@@ -94,14 +94,22 @@ export async function loadMoreIssues(): Promise<void> {
     state.issues = state.issues.concat(more);
     state.issueHasMore = Boolean(raw?.["hasMore"]);
     applyIssueTotals(raw);
-    if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
+    loadingMore = false;
+    if (onIssuesList()) {
       setRouteStatus();
+      const scrollTop = document.scrollingElement?.scrollTop ?? 0;
       renderIssuesView();
+      if (document.scrollingElement) document.scrollingElement.scrollTop = scrollTop;
     }
     loadSparklines();
   } catch (error) {
     if (generation !== issueLoadGeneration) return;
+    loadingMore = false;
+    loadMoreFailed = true;
     setStatus(`Failed to load more issues: ${errorMessage(error)}`);
+    if (onIssuesList()) {
+      renderIssuesList();
+    }
   }
 }
 
@@ -124,7 +132,7 @@ export async function loadSparklines(): Promise<void> {
           issue.hourly_counts = sparklines[key];
         }
       }
-      if (state.currentRoute === "issues" && !state.selectedIssueId && !state.selectedEventId) {
+      if (onIssuesList()) {
         renderIssuesView();
       }
     }
@@ -194,9 +202,22 @@ function renderIssuesList(error: unknown = null): void {
     return;
   }
 
+  scrollObserver?.disconnect();
+  scrollObserver = null;
+  const canObserve = typeof IntersectionObserver !== "undefined";
   let html = renderIssueListMarkup(state.issues, "", state.selectedIssueId);
   if (state.issueHasMore) {
-    html += `<button class="load-more-btn" id="load-more-issues" type="button">Load more issues</button>`;
+    if (loadingMore) {
+      html += `<div class="load-more-status" id="issues-loading" role="status">Loading more issues…</div>`;
+    } else if (loadMoreFailed) {
+      html += `<button class="load-more-btn" id="load-more-issues" type="button">Loading failed. Retry</button>`;
+    } else if (canObserve) {
+      html += `<div class="load-more-sentinel" id="issues-sentinel" aria-hidden="true"></div>`;
+    } else {
+      html += `<button class="load-more-btn" id="load-more-issues" type="button">Load more issues</button>`;
+    }
+  } else {
+    html += `<div class="load-more-status" id="issues-end">No more issues</div>`;
   }
   elements.issueList.innerHTML = html;
   elements.issueList.querySelectorAll("[data-issue-id]").forEach((button) => {
@@ -209,6 +230,14 @@ function renderIssuesList(error: unknown = null): void {
   });
   const loadMoreBtn = document.getElementById("load-more-issues");
   if (loadMoreBtn) {
-    loadMoreBtn.addEventListener("click", () => void loadMoreIssues());
+    loadMoreBtn.addEventListener("click", () => void pageLoader.run());
+  }
+  const sentinel = document.getElementById("issues-sentinel");
+  if (sentinel) {
+    scrollObserver = observeSentinel({
+      sentinel,
+      canLoad: () => state.issueHasMore && !loadMoreFailed,
+      loader: pageLoader,
+    });
   }
 }
