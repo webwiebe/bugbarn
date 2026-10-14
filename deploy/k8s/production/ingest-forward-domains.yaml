@@ -93,6 +93,14 @@ spec:
       services:
         - name: bugbarn
           port: 8080
+    # Monitor check-ins (heartbeats and cron runs). Only the check-in POST is
+    # exposed here; monitor listing and deletion stay on the canonical host.
+    - match: HostRegexp(`^bb\..+$`) && PathRegexp(`^/api/v1/monitors/[^/]+/check-ins$`)
+      kind: Rule
+      priority: 200
+      services:
+        - name: bugbarn
+          port: 8080
     # Public setup guide (SDK onboarding) and health checks.
     - match: HostRegexp(`^bb\..+$`) && PathPrefix(`/api/v1/setup`)
       kind: Rule
