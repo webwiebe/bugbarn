@@ -228,7 +228,7 @@ func run() error {
 	// becomes an issue in the telemetry project. Started before the consumer so
 	// the first telemetry batch is already observed.
 	ruleSvc := detectionrules.New(store.DetectionRuleStore, logger)
-	engine := startDetections(ctx, telemetryIngester, eventProc, detectionRules(ctx, ruleSvc), cfg.Telemetry.Project, &bgWg, logger)
+	engine := startDetections(ctx, telemetryIngester, eventProc, detectionRules(ctx, ruleSvc), cfg.Telemetry.Project, cfg.Environment, &bgWg, logger)
 	// Check-in monitors: the miss detector, and the reporter the API calls for
 	// error and recovery check-ins.
 	monitorReporter := startMonitors(ctx, store, eventProc, &bgWg, logger)
