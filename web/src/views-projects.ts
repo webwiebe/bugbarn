@@ -126,16 +126,28 @@ export function renderPickerList(filter: string): void {
 
   pickerList.querySelectorAll<HTMLButtonElement>("[data-pick-project]").forEach(btn => {
     btn.addEventListener("click", () => {
-      const slug = btn.dataset["pickProject"] ?? "__all";
-      state.currentGroup = null; localStorage.removeItem(groupKey);
-      state.currentProject = slug; localStorage.setItem(projectKey, slug);
-      state.currentEnv = ""; localStorage.removeItem(envKey);
-      updatePickerBtn(); updateScopeBtn(); closePicker();
-      if (slug === "__all") { renderEnvSwitcher([]); void refreshAll(); }
-      else { void Promise.all([loadEnvironments(), refreshAll()]); }
+      selectProject(btn.dataset["pickProject"] ?? "__all");
+      closePicker();
     });
   });
 }
+
+/** Scopes the app to one project, as the picker does. */
+function selectProject(slug: string): void {
+  state.currentGroup = null; localStorage.removeItem(groupKey);
+  state.currentProject = slug; localStorage.setItem(projectKey, slug);
+  state.currentEnv = ""; localStorage.removeItem(envKey);
+  updatePickerBtn(); updateScopeBtn();
+  if (slug === "__all") { renderEnvSwitcher([]); void refreshAll(); }
+  else { void Promise.all([loadEnvironments(), refreshAll()]); }
+}
+
+// The error timeline legend asks for a project through this event, which keeps
+// the chart component free of an import on this module.
+document.addEventListener("bugbarn:select-project", (ev) => {
+  const slug = (ev as CustomEvent<string>).detail;
+  if (typeof slug === "string" && slug) selectProject(slug);
+});
 
 function updateScopeBtn(): void {
   const btn = document.getElementById("scope-btn");

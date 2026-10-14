@@ -16,6 +16,7 @@ import (
 	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
+	timelinesvc "github.com/wiebe-xyz/bugbarn/internal/service/timeline"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -91,6 +92,7 @@ func NewServer(ingestHandler *ingest.Handler, store *storage.Store, logger *slog
 		releases:          releasesvc.New(releases, logger),
 		alerts:            alertsvc.New(d.Alerts, logger),
 		logs:              logsvc.New(d.Logs, logger),
+		timeline:          timelinesvc.New(d.Events, logger),
 		analytics:         analyticssvc.New(d.Analytics, logger),
 		detectionRules:    detectionrules.New(d.DetectionRules, logger),
 		keyRequests:       keyrequestsvc.New(d.KeyRequests, logger),
@@ -120,6 +122,7 @@ func NewServerWithAuth(
 		releases:          releasesvc.New(releases, logger),
 		alerts:            alertsvc.New(d.Alerts, logger),
 		logs:              logsvc.New(d.Logs, logger),
+		timeline:          timelinesvc.New(d.Events, logger),
 		analytics:         analyticssvc.New(d.Analytics, logger),
 		detectionRules:    detectionrules.New(d.DetectionRules, logger),
 		keyRequests:       keyrequestsvc.New(d.KeyRequests, logger),

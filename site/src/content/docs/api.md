@@ -471,6 +471,44 @@ Remove the mute and return the issue to `unresolved`. No request body.
 
 **Auth:** Session cookie or full-scope API key.
 
+#### GET /api/v1/events/timeline
+
+Error events per project over time, for the stacked chart on the Issues page. It
+counts events with severity `ERROR`, `CRITICAL`, `FATAL`, `ALERT` or `EMERGENCY`, summed by
+`sample_weight` so sampled events count at their full weight. The request's
+project scope applies: with a session and no `X-BugBarn-Project` header the
+result covers all projects, an API key or the header narrows it to one project,
+and `X-BugBarn-Group` narrows it to the group's members. Results are cached for 30 seconds.
+
+**Query parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `range` | `24h` (default, 24 hourly buckets), `7d` (28 buckets of 6 hours) or `30d` (30 daily buckets). Any other value returns 400. |
+
+Buckets are aligned to UTC and end at the current bucket, so the last bucket is
+partial. Every bucket is present; a bucket without errors has an empty `counts` object.
+
+**Response:**
+```json
+{
+  "range": "24h",
+  "bucket_seconds": 3600,
+  "buckets": [
+    {"start": "2026-10-13T11:00:00Z", "counts": {}},
+    {"start": "2026-10-13T12:00:00Z", "counts": {"web": 4, "api": 1}}
+  ],
+  "projects": [
+    {"slug": "web", "name": "Web", "total": 4},
+    {"slug": "api", "name": "API", "total": 1}
+  ]
+}
+```
+
+`projects` lists the projects with errors in the range, largest total first.
+
+---
+
 #### GET /api/v1/events/{id}
 
 Fetch a single event by ID.

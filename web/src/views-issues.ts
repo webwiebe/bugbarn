@@ -9,6 +9,7 @@ import { byId, elements, setActiveView, setStatus, state } from "./core.js";
 import { fetchJson } from "./http.js";
 import { setRouteStatus } from "./router.js";
 import { createPageLoader, observeSentinel } from "./infinite-scroll.js";
+import { loadErrorTimeline, renderErrorTimelineSlot } from "./views-error-timeline.js";
 
 let issueLoadGeneration = 0;
 let loadingMore = false;
@@ -37,6 +38,7 @@ export async function loadIssues(): Promise<void> {
   const generation = ++issueLoadGeneration;
   loadingMore = false;
   loadMoreFailed = false;
+  void loadErrorTimeline();
   try {
     const params = issueQueryParams();
     const qs = params.toString();
@@ -157,6 +159,7 @@ export function renderIssuesView(error: unknown = null): void {
         </select>
       </div>
     </div>
+    <div id="error-timeline-slot"></div>
     ${renderIssueSummaryStrip(error ? null : state.issueCounts, state.issueStatus)}
     <div class="issue-status-tabs" role="tablist">
       ${renderIssueStatusTabs(error ? null : state.issueCounts, state.issueStatus)}
@@ -184,6 +187,7 @@ export function renderIssuesView(error: unknown = null): void {
     });
   });
 
+  renderErrorTimelineSlot();
   renderIssuesList(error);
 }
 

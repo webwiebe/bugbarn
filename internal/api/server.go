@@ -25,6 +25,7 @@ import (
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
 	"github.com/wiebe-xyz/bugbarn/internal/service/telemetryview"
+	timelinesvc "github.com/wiebe-xyz/bugbarn/internal/service/timeline"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
@@ -38,6 +39,7 @@ type Server struct {
 	releases       *releasesvc.Service
 	alerts         *alertsvc.Service
 	logs           *logsvc.Service
+	timeline       *timelinesvc.Service
 	analytics      *analyticssvc.Service
 	detectionRules *detectionrules.Service
 	keyRequests    *keyrequestsvc.Service
