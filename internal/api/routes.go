@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 )
 
 // serveSpecialEndpoint handles the unauthenticated endpoints that must run
@@ -42,8 +41,8 @@ func (s *Server) serveSpecialEndpoint(w http.ResponseWriter, r *http.Request) bo
 	// Writer-internal session endpoints (CQRS): authenticated exclusively by
 	// an HMAC over the request body with the shared session secret, so they
 	// must bypass the cookie/API-key pipeline. 404 unless enabled.
-	if strings.HasPrefix(r.URL.Path, sessionstore.InternalPathPrefix) {
-		s.serveInternalSessions(w, r)
+	// The reader-to-writer API key last-use batches use the same scheme.
+	if s.serveInternalEndpoint(w, r) {
 		return true
 	}
 

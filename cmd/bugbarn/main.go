@@ -253,7 +253,7 @@ func run() error {
 		}()
 	}
 
-	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
+	apiAuthorizer, err := newAPIAuthorizer(cfg, store, store.TouchAPIKey)
 	if err != nil {
 		return err
 	}
@@ -282,6 +282,7 @@ func run() error {
 	// in single-process mode too is harmless — they answer only to requests
 	// HMAC-signed with the shared session secret.
 	apiServer.SetInternalSessionSecret(cfg.SessionSecret)
+	apiServer.SetKeyToucher(store)
 	sessionstore.StartPruner(ctx, store, logger, &bgWg)
 	apiServer.SetDigest(cfg.Digest, store)
 	apiServer.SetMutQueue(mutQueue)

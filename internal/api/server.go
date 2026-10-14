@@ -95,6 +95,8 @@ type Server struct {
 	// internalSessionSecret enables the writer-internal /internal/v1/sessions/*
 	// endpoints (HMAC over the request body with the shared session secret).
 	internalSessionSecret []byte
+	// keyToucher applies API key last-use batches sent by the readers.
+	keyToucher KeyToucher
 }
 
 // SetMutQueue wires the mutation queue so that resolve/reopen/mute/unmute
