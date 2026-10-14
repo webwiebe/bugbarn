@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
     "lint": "tsc --noEmit",
-    "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs",
+    "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs scripts/project-filter.test.mjs",
     "test:e2e": "playwright test",
     "screenshots": "playwright test e2e/screenshots.spec.ts"
   },
@@ -14,6 +14,7 @@
     "@playwright/test": "^1.59.1",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.1",
+    "jsdom": "^26.1.0",
     "oxlint": "1.82.0",
     "typescript": "^7.0.2"
   },

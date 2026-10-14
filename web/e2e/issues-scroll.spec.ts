@@ -4,10 +4,9 @@
  * app and, when auth is on, accept the test login.
  */
 
-import { test, expect, type Page, type Route } from "@playwright/test";
+import { test, expect, type Route } from "@playwright/test";
+import { loginIfRequired } from "./login-helper";
 
-const TEST_USER = process.env["BUGBARN_TEST_USER"] ?? "admin";
-const TEST_PASS = process.env["BUGBARN_TEST_PASS"] ?? "password";
 const PAGE_SIZE = 50;
 const TOTAL = 80;
 
@@ -25,16 +24,6 @@ function issuePage(offset: number): Record<string, unknown> {
     };
   });
   return { issues, hasMore: offset + count < TOTAL, total: TOTAL };
-}
-
-async function loginIfRequired(page: Page): Promise<void> {
-  const loginForm = page.locator("#login-form");
-  await page.locator("#login-form, #issue-list").first().waitFor({ timeout: 8_000 });
-  if (!(await loginForm.isVisible().catch(() => false))) return;
-  await loginForm.locator('input[name="username"]').fill(TEST_USER);
-  await loginForm.locator('input[name="password"]').fill(TEST_PASS);
-  await loginForm.locator('button[type="submit"]').click();
-  await expect(loginForm).not.toBeVisible({ timeout: 8_000 });
 }
 
 test("scrolling to the end of the issues list loads the next page", async ({ page }) => {
