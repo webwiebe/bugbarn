@@ -111,8 +111,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       ${lastEvent ? renderDataSection("Exception", eventException(lastEvent)) : renderEmptySection("Exception", "No exception data returned.")}
       ${lastEvent ? renderDataSection("Context", eventContext(lastEvent)) : renderEmptySection("Context", "No contextual fields were returned for the latest event.")}
       ${renderStacktrace(lastEvent ? eventStacktrace(lastEvent) : [])}
-      ${renderNearbyReleasesPanel(releases, issueLastSeen(issue))}
-      ${issueReleasesHtml}
+      ${renderNearbyReleasesPanel(releases, issueLastSeen(issue))}${issueReleasesHtml}
       <div class="section section-scrollable">
         <h3>Events in this issue</h3>
         ${hasMore ? `<button type="button" data-load-older class="load-older-btn">Load older events</button>` : ""}
