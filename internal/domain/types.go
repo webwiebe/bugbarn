@@ -230,6 +230,16 @@ type IssueRelease struct {
 	LastSeen  time.Time `json:"last_seen"`
 }
 
+// SurfaceActivity counts the issues that occur on one sign-up surface (the
+// value of the `surface` attribute) and were seen recently. Facets are an
+// issue-level set, so the numbers are issues, not events.
+type SurfaceActivity struct {
+	Surface  string `json:"surface"`
+	Issues1d int    `json:"issues_24h"`
+	Issues7d int    `json:"issues_7d"`
+	Open     int    `json:"open"`
+}
+
 // User represents an admin user stored in the database.
 type User struct {
 	ID             int64     `json:"id"`

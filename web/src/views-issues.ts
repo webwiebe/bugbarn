@@ -10,6 +10,7 @@ import { fetchJson } from "./http.js";
 import { setRouteStatus } from "./router.js";
 import { createPageLoader, observeSentinel } from "./infinite-scroll.js";
 import { loadErrorTimeline, renderErrorTimelineSlot } from "./views-error-timeline.js";
+import { loadSurfaces, renderSurfacesSlot } from "./views-surfaces.js";
 
 let issueLoadGeneration = 0;
 let loadingMore = false;
@@ -40,6 +41,7 @@ export async function loadIssues(): Promise<void> {
   loadingMore = false;
   loadMoreFailed = false;
   void loadErrorTimeline();
+  void loadSurfaces();
   try {
     const params = issueQueryParams();
     const qs = params.toString();
@@ -162,6 +164,7 @@ export function renderIssuesView(error: unknown = null): void {
       </div>
     </div>
     <div id="error-timeline-slot"></div>
+    <div id="surfaces-slot"></div>
     ${renderIssueSummaryStrip(error ? null : state.issueCounts, state.issueStatus)}
     <div class="issue-status-tabs" role="tablist">
       ${renderIssueStatusTabs(error ? null : state.issueCounts, state.issueStatus)}
@@ -195,6 +198,7 @@ export function renderIssuesView(error: unknown = null): void {
   });
 
   renderErrorTimelineSlot();
+  renderSurfacesSlot();
   renderIssuesList(error);
 }
 

@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
     "lint": "tsc --noEmit",
-    "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs scripts/project-filter.test.mjs scripts/timeline-stack.test.mjs scripts/release-rows.test.mjs",
+    "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs scripts/project-filter.test.mjs scripts/timeline-stack.test.mjs scripts/release-rows.test.mjs scripts/surfaces.test.mjs",
     "test:e2e": "playwright test",
     "screenshots": "playwright test e2e/screenshots.spec.ts"
   },

@@ -109,6 +109,10 @@ func (f *fakeRepo) ListFacetValues(_ context.Context, _ int64, _ string) ([]stri
 	return nil, f.err
 }
 
+func (f *fakeRepo) SurfaceActivity(_ context.Context, _ int64, _ time.Time) ([]domain.SurfaceActivity, error) {
+	return nil, f.err
+}
+
 func TestGet_Happy(t *testing.T) {
 	t.Parallel()
 

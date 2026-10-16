@@ -823,6 +823,17 @@ List all observed values for a given facet key.
 
 ---
 
+#### GET /api/v1/surfaces
+
+Issues seen per value of the `surface` event attribute (for example `wordpress`, `lightroom`, `mcp`) in the current project. Facets are an issue-level set, so the numbers count issues. Only issues last seen in the past 7 days are listed; `open` counts unresolved and regressed ones. The Issues page shows the same table as "By surface" for a single project and hides it when no issue carries a surface.
+
+**Response:**
+```json
+{"surfaces": [{"surface": "wordpress", "issues_24h": 2, "issues_7d": 4, "open": 3}]}
+```
+
+---
+
 ### Projects
 
 **Auth:** Session cookie or full-scope API key.
