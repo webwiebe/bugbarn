@@ -281,6 +281,7 @@ export interface AppState {
   currentRoute: "issues" | "releases" | "alerts" | "settings" | "logs" | "account" | "security" | "hosts" | "rules" | "monitors";
   issues: ApiIssue[];
   issueQuery: string;
+  issueRelease: string;
   issueSort: IssueSort;
   issueStatus: IssueStatus;
   issueHasMore: boolean;
