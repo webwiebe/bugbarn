@@ -27,6 +27,7 @@ function issueQueryParams(offset = 0): URLSearchParams {
   if (state.issueStatus && state.issueStatus !== "all") params.set("status", state.issueStatus);
   if (state.issueQuery) params.set("q", state.issueQuery);
   if (state.currentEnv) params.set("attributes.environment", state.currentEnv);
+  if (state.issueRelease) params.set("release", state.issueRelease);
   return params;
 }
 
@@ -152,6 +153,7 @@ export function renderIssuesView(error: unknown = null): void {
       <h2 id="issue-count">${escapeHtml(error ? "Unavailable" : issueHeadingText())}</h2>
       <div class="view-actions">
         <input id="issue-filter" type="search" placeholder="Search issues…" aria-label="Search issues" value="${escapeHtml(state.issueQuery)}" />
+        <input id="issue-release" type="search" placeholder="Release…" aria-label="Filter by release" value="${escapeHtml(state.issueRelease)}" />
         <select id="issue-sort" aria-label="Sort issues">
           <option value="last_seen"${state.issueSort === "last_seen" ? " selected" : ""}>Last seen</option>
           <option value="first_seen"${state.issueSort === "first_seen" ? " selected" : ""}>First seen</option>
@@ -172,6 +174,11 @@ export function renderIssuesView(error: unknown = null): void {
 
   elements.issueFilter.addEventListener("input", () => {
     state.issueQuery = elements.issueFilter.value.trim();
+    void loadIssues();
+  });
+
+  byId<HTMLInputElement>("issue-release").addEventListener("input", (ev) => {
+    state.issueRelease = (ev.target as HTMLInputElement).value.trim();
     void loadIssues();
   });
 

@@ -46,6 +46,7 @@ export const state: AppState = {
   currentRoute: "issues",
   issues: [],
   issueQuery: "",
+  issueRelease: "",
   issueSort: "last_seen",
   issueStatus: "open",
   issueHasMore: false,
