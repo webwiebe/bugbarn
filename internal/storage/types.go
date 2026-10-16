@@ -38,6 +38,10 @@ type core struct {
 	// every insert — the single writer is shared with event ingestion, so we
 	// keep each log write as short as possible.
 	logInsertCount atomic.Uint64
+
+	// seenReleases remembers which (project, release, environment) the writer
+	// already recorded, so ensureRelease costs one map lookup per event.
+	seenReleases seenReleases
 }
 
 // Domain stores. Each is a narrow, focused view over the shared core exposing

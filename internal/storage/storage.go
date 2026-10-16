@@ -347,6 +347,7 @@ func (s *core) persistFacetsFor(ctx context.Context, projectID, issueID int64, e
 		facetSpan.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	s.ensureRelease(ctx, projectID, evt)
 	return nil
 }
 

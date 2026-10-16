@@ -89,6 +89,8 @@ The key determines the project — no extra header is needed.
 
 A release marker ties a commit SHA to a deploy event. BugBarn displays these on the issues timeline so you can immediately see which deploy introduced or fixed an error.
 
+BugBarn also records a release by itself. The first time a project's events carry a new release value (`release`, `service.version` or `app.version`), the writer adds a release with that value as name and version, the event's environment and the time of that first event, and `created_by` set to `auto`. A marker you post before the first event of that version (and environment) is reused, so post the marker at deploy time, ahead of traffic, when you want the commit SHA and URL attached. Events without a release value create nothing.
+
 ### curl
 
 ```sh
