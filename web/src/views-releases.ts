@@ -46,10 +46,7 @@ export async function loadReleaseDetail(releaseId: string): Promise<void> {
     }
   }
 
-  const newIssues = allIssues.filter((issue) => {
-    const fs = toTimestampMs(issue.FirstSeen ?? issue.firstSeen ?? issue.first_seen);
-    return fs >= releaseStart && (releaseEnd === 0 || fs < releaseEnd);
-  });
+  const newIssues = await loadNewIssues(releaseId, allIssues, releaseStart, releaseEnd);
 
   const regressions = allIssues.filter((issue) => {
     const lr = toTimestampMs(issue.LastRegressedAt ?? (issue as Record<string, unknown>)["last_regressed_at"]);
@@ -65,6 +62,22 @@ export async function loadReleaseDetail(releaseId: string): Promise<void> {
       const id = btn.dataset["issueId"];
       if (id) location.hash = `#/issues/${encodeURIComponent(id)}`;
     });
+  });
+}
+
+// The server resolves the window per environment and reads the full issue table.
+// The loaded list is only the fallback when the request fails.
+async function loadNewIssues(releaseId: string, loaded: ApiIssue[], start: number, end: number): Promise<ApiIssue[]> {
+  try {
+    const params = new URLSearchParams({ status: "all", limit: "200", new_in_release: releaseId });
+    const payload = await fetchJson(`/api/v1/issues?${params.toString()}`, true);
+    if (payload) return normalizeList<ApiIssue>(payload, "issues");
+  } catch {
+    // fall through to the loaded list
+  }
+  return loaded.filter((issue) => {
+    const fs = toTimestampMs(issue.FirstSeen ?? issue.firstSeen ?? issue.first_seen);
+    return fs >= start && (end === 0 || fs < end);
   });
 }
 

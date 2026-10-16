@@ -232,6 +232,15 @@ func issueWhereConditions(
 		whereArgs = append(whereArgs, like, like)
 	}
 
+	if !filter.FirstSeenFrom.IsZero() {
+		conditions = append(conditions, "i.first_seen >= ?")
+		whereArgs = append(whereArgs, formatTime(filter.FirstSeenFrom))
+	}
+	if !filter.FirstSeenBefore.IsZero() {
+		conditions = append(conditions, "i.first_seen < ?")
+		whereArgs = append(whereArgs, formatTime(filter.FirstSeenBefore))
+	}
+
 	return conditions, whereArgs
 }
 

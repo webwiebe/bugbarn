@@ -45,6 +45,11 @@ type IssueFilter struct {
 	Facets map[string]string
 	Limit  int
 	Offset int
+
+	// FirstSeenFrom and FirstSeenBefore bound issues.first_seen to the half-open
+	// range [FirstSeenFrom, FirstSeenBefore). A zero value leaves that side open.
+	FirstSeenFrom   time.Time
+	FirstSeenBefore time.Time
 }
 
 // IssueCounts is the number of issues per status within one scope (a project, a
