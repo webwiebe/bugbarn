@@ -304,7 +304,7 @@ List individual events belonging to an issue.
 
 ### `GET /api/v1/issues/{id}/releases`
 
-Releases the issue occurs in, with event counts over the latest 500 events.
+Releases the issue occurs in, with event counts over the latest 500 events. The issue page shows the same list in a "Releases" block and hides it when no event carries a release.
 
 ---
 
