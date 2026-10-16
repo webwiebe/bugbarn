@@ -60,11 +60,31 @@ func extractFacets(evt event.Event) map[string]string {
 		out["environment"] = env
 	}
 
-	if rel := stringFromMap(evt.Attributes, "release"); rel != "" {
+	if rel := releaseOf(evt); rel != "" {
 		out["release"] = rel
 	}
 
 	return out
+}
+
+// releaseOf returns the release an event reports. Senders spell it several
+// ways; the first non-empty one wins, in this order: attributes.release,
+// attributes.service.version, resource.service.version, attributes.app.version.
+func releaseOf(evt event.Event) string {
+	for _, c := range []struct {
+		from map[string]any
+		key  string
+	}{
+		{evt.Attributes, "release"},
+		{evt.Attributes, "service.version"},
+		{evt.Resource, "service.version"},
+		{evt.Attributes, "app.version"},
+	} {
+		if v := stringFromMap(c.from, c.key); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // stringFromMap retrieves a string value from a map[string]any. It first tries

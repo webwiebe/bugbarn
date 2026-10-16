@@ -221,6 +221,15 @@ type Setting struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// IssueRelease is one release an issue was seen in, counted over a sample of
+// the issue's latest events.
+type IssueRelease struct {
+	Release   string    `json:"release"`
+	Events    int       `json:"events"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+}
+
 // User represents an admin user stored in the database.
 type User struct {
 	ID             int64     `json:"id"`

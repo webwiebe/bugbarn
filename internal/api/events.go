@@ -36,6 +36,21 @@ func (s *Server) listIssueEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
 }
 
+// listIssueReleases answers which releases an issue occurs in, counted over the
+// issue's latest events (sampled_events says how many).
+func (s *Server) listIssueReleases(w http.ResponseWriter, r *http.Request) {
+	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/releases")
+	releases, sampled, err := s.issues.IssueReleases(r.Context(), issueID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if releases == nil {
+		releases = []domain.IssueRelease{}
+	}
+	writeJSON(w, map[string]any{"releases": releases, "sampled_events": sampled})
+}
+
 func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) {
 	eventID := strings.TrimPrefix(r.URL.Path, "/api/v1/events/")
 	event, err := s.issues.GetEvent(r.Context(), eventID)

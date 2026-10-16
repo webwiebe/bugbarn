@@ -163,7 +163,7 @@ Facets are indexed key/value pairs extracted from event fields at ingest time. T
 | `http.status_code` | `attributes.http.status_code` |
 | `http.method` | `attributes.http.method` |
 | `user_agent.original` | `attributes.user_agent.original` |
-| `release` | `attributes.release` |
+| `release` | `attributes.release`, else `attributes.service.version`, `resource.service.version`, `attributes.app.version` (first non-empty) |
 
 ### Cardinality Limits
 
@@ -299,6 +299,12 @@ Return a single issue by ID. Includes `representative_event` and `fingerprint_ex
 ### `GET /api/v1/issues/{id}/events`
 
 List individual events belonging to an issue.
+
+---
+
+### `GET /api/v1/issues/{id}/releases`
+
+Releases the issue occurs in, with event counts over the latest 500 events.
 
 ---
 

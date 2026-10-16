@@ -414,6 +414,25 @@ List events grouped under an issue.
 
 ---
 
+#### GET /api/v1/issues/{id}/releases
+
+Releases an issue occurs in, counted over the issue's latest 500 events. Events without a release are counted in `sampled_events` and not listed.
+
+**Response:**
+```json
+{
+  "releases": [
+    {"release": "0.3.0", "events": 1, "first_seen": "2026-10-01T09:03:00Z", "last_seen": "2026-10-01T09:03:00Z"},
+    {"release": "0.2.0", "events": 3, "first_seen": "2026-10-01T09:00:00Z", "last_seen": "2026-10-01T09:02:00Z"}
+  ],
+  "sampled_events": 5
+}
+```
+
+Releases are ordered by last seen, newest first. The list is empty when no event carries a release.
+
+---
+
 #### POST /api/v1/issues/{id}/resolve
 
 Mark the issue as resolved. No request body.
