@@ -37,6 +37,7 @@ type Repository interface {
 	IssueStatusCounts(context.Context) (domain.IssueCounts, error)
 	IssueRowIDByDisplayID(context.Context, string) (int64, error)
 	ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]domain.Event, bool, error)
+	IssueReleases(ctx context.Context, issueID string, sample int) ([]domain.IssueRelease, int, error)
 	GetEvent(context.Context, string) (domain.Event, error)
 	ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]domain.Event, error)
 	ListFacetKeys(ctx context.Context, projectID int64) ([]string, error)
@@ -192,6 +193,27 @@ func (s *Service) ListEvents(ctx context.Context, issueID string, limit int, bef
 	}
 	span.SetAttributes(attribute.Int("count", len(events)))
 	return events, hasMore, nil
+}
+
+// ReleaseSampleSize is how many of an issue's latest events the release counts
+// are taken from.
+const ReleaseSampleSize = 500
+
+// IssueReleases counts the releases among the issue's latest events. It returns
+// the releases (most recently seen first) and how many events were looked at.
+func (s *Service) IssueReleases(ctx context.Context, issueID string) ([]domain.IssueRelease, int, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.issues.IssueReleases",
+		trace.WithAttributes(attribute.String("issue_id", issueID)))
+	defer span.End()
+	releases, sampled, err := s.repo.IssueReleases(ctx, issueID, ReleaseSampleSize)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		if !isClientError(err) {
+			s.logger.ErrorContext(ctx, "issue releases", "issue_id", issueID, "error", err)
+		}
+		return nil, 0, err
+	}
+	return releases, sampled, nil
 }
 
 func (s *Service) GetEvent(ctx context.Context, id string) (domain.Event, error) {

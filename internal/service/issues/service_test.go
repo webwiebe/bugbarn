@@ -86,6 +86,10 @@ func (f *fakeRepo) ListIssueEvents(_ context.Context, _ string, _ int, _ int64) 
 	return nil, false, f.err
 }
 
+func (f *fakeRepo) IssueReleases(_ context.Context, _ string, _ int) ([]domain.IssueRelease, int, error) {
+	return nil, 0, f.err
+}
+
 func (f *fakeRepo) GetEvent(context.Context, string) (domain.Event, error) {
 	return domain.Event{}, f.err
 }

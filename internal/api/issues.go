@@ -58,6 +58,8 @@ func (s *Server) serveIssueRoute(w http.ResponseWriter, r *http.Request) {
 		s.unmuteIssue(w, r)
 	case strings.HasSuffix(r.URL.Path, "/events"):
 		s.listIssueEvents(w, r)
+	case strings.HasSuffix(r.URL.Path, "/releases") && r.Method == http.MethodGet:
+		s.listIssueReleases(w, r)
 	default:
 		s.getIssue(w, r)
 	}
