@@ -42,7 +42,7 @@ const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
 const occurrenceBucketCount = 24;
 
-export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], releases: ApiRelease[] = [], hasMore = false): string {
+export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], releases: ApiRelease[] = [], hasMore = false, issueReleasesHtml = ""): string {
   const id = firstIdentifier(issue);
   const rawTitle = issueTitle(issue);
   const exceptionType = issueExceptionType(issue);
@@ -111,7 +111,7 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       ${lastEvent ? renderDataSection("Exception", eventException(lastEvent)) : renderEmptySection("Exception", "No exception data returned.")}
       ${lastEvent ? renderDataSection("Context", eventContext(lastEvent)) : renderEmptySection("Context", "No contextual fields were returned for the latest event.")}
       ${renderStacktrace(lastEvent ? eventStacktrace(lastEvent) : [])}
-      ${renderNearbyReleasesPanel(releases, issueLastSeen(issue))}
+      ${renderNearbyReleasesPanel(releases, issueLastSeen(issue))}${issueReleasesHtml}
       <div class="section section-scrollable">
         <h3>Events in this issue</h3>
         ${hasMore ? `<button type="button" data-load-older class="load-older-btn">Load older events</button>` : ""}

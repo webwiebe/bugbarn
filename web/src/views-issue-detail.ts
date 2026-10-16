@@ -5,17 +5,39 @@ import { normalizeList, normalizeObject } from "./data.js";
 import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { errorMessage } from "./format.js";
 import type { ApiEvent, ApiIssue } from "./types.js";
+import { renderIssueReleasesMarkup } from "./components/issue-releases.js";
+import type { IssueRelease } from "./release-rows.js";
 import { elements, setActiveView, setStatus, showFlash, state } from "./core.js";
 import { apiFetch, fetchJson, postJson } from "./http.js";
 import { loadIssues } from "./views-issues.js";
 
+// Markup of the open issue's releases block; re-renders after loading older
+// events reuse it.
+let issueReleasesHtml = "";
+
+async function loadIssueReleases(issueId: string): Promise<string> {
+  try {
+    const payload = (await fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/releases`)) as Record<string, unknown>;
+    return renderIssueReleasesMarkup(
+      normalizeList<IssueRelease>(payload, "releases"),
+      Number(payload?.["sampled_events"] ?? 0),
+    );
+  } catch {
+    // The block is an extra; the issue page works without it.
+    return "";
+  }
+}
+
 export async function loadIssueDetail(issueId: string): Promise<void> {
   setDetailLoading(`Issue ${issueId}`);
+  issueReleasesHtml = "";
   try {
-    const [issuePayload, eventsPayload] = await Promise.all([
+    const [issuePayload, eventsPayload, releasesHtml] = await Promise.all([
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}`),
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events?limit=25`),
+      loadIssueReleases(issueId),
     ]);
+    issueReleasesHtml = releasesHtml;
     const issue = normalizeObject<ApiIssue>(issuePayload, "issue");
     const raw = eventsPayload as Record<string, unknown>;
     const events = normalizeList<ApiEvent>(raw, "events");
@@ -68,7 +90,7 @@ export function setDetailLoading(title: string): void {
 function renderIssueDetail(issue: ApiIssue, events: ApiEvent[], hasMore = false): void {
   setActiveView("detail");
   elements.detailTitle.textContent = issueTitle(issue);
-  elements.detailBody.innerHTML = renderIssueDetailMarkup(issue, events, state.releases, hasMore);
+  elements.detailBody.innerHTML = renderIssueDetailMarkup(issue, events, state.releases, hasMore, issueReleasesHtml);
   wireIssueDetailActions(firstIdentifier(issue));
 
   if (hasMore) {
