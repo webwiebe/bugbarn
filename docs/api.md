@@ -384,6 +384,8 @@ List issues with optional filtering.
 
 `hourly_counts` is an array of 24 integers representing event counts for each of the last 24 hours (oldest first), used to render a sparkline.
 
+`first_release` is the release carried by the first event of the issue, set once when the issue is created. It is absent when that event had no release and for issues created before the field existed. Generic webhook alert payloads carry it as `issue.first_release` under the same rule.
+
 ---
 
 #### GET /api/v1/issues/{id}

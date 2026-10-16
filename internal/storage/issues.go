@@ -107,7 +107,8 @@ SELECT
 	COALESCE(p.slug, '') AS project_slug,
 	i.issue_number,
 	COALESCE(p.issue_prefix, '') AS issue_prefix,
-	i.project_id
+	i.project_id,
+	i.first_release
 FROM ` + fromClause
 	if len(conditions) > 0 {
 		sqlQuery += `
@@ -289,7 +290,8 @@ SELECT
 	COALESCE(p.slug, '') AS project_slug,
 	i.issue_number,
 	COALESCE(p.issue_prefix, '') AS issue_prefix,
-	i.project_id
+	i.project_id,
+	i.first_release
 FROM issues i
 LEFT JOIN projects p ON p.id = i.project_id
 WHERE i.id = ?`
@@ -341,6 +343,7 @@ func scanIssue(scanner interface {
 		&issueNumber,
 		&issuePrefix,
 		&issue.ProjectID,
+		&issue.FirstRelease,
 	); err != nil {
 		return Issue{}, err
 	}

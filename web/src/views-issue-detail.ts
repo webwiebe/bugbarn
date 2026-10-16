@@ -15,16 +15,21 @@ import { loadIssues } from "./views-issues.js";
 // events reuse it.
 let issueReleasesHtml = "";
 
-async function loadIssueReleases(issueId: string): Promise<string> {
+interface IssueReleasesData {
+  releases: IssueRelease[];
+  sampled: number;
+}
+
+async function loadIssueReleases(issueId: string): Promise<IssueReleasesData | null> {
   try {
     const payload = (await fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/releases`)) as Record<string, unknown>;
-    return renderIssueReleasesMarkup(
-      normalizeList<IssueRelease>(payload, "releases"),
-      Number(payload?.["sampled_events"] ?? 0),
-    );
+    return {
+      releases: normalizeList<IssueRelease>(payload, "releases"),
+      sampled: Number(payload?.["sampled_events"] ?? 0),
+    };
   } catch {
     // The block is an extra; the issue page works without it.
-    return "";
+    return null;
   }
 }
 
@@ -32,13 +37,15 @@ export async function loadIssueDetail(issueId: string): Promise<void> {
   setDetailLoading(`Issue ${issueId}`);
   issueReleasesHtml = "";
   try {
-    const [issuePayload, eventsPayload, releasesHtml] = await Promise.all([
+    const [issuePayload, eventsPayload, releasesData] = await Promise.all([
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}`),
       fetchJson(`/api/v1/issues/${encodeURIComponent(issueId)}/events?limit=25`),
       loadIssueReleases(issueId),
     ]);
-    issueReleasesHtml = releasesHtml;
     const issue = normalizeObject<ApiIssue>(issuePayload, "issue");
+    issueReleasesHtml = releasesData
+      ? renderIssueReleasesMarkup(releasesData.releases, releasesData.sampled, String(issue["first_release"] ?? ""))
+      : "";
     const raw = eventsPayload as Record<string, unknown>;
     const events = normalizeList<ApiEvent>(raw, "events");
     const hasMore = Boolean(raw?.["hasMore"]);
