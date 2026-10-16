@@ -362,6 +362,7 @@ List issues with optional filtering.
 | `sort` | Sort order: `last_seen` (default), `first_seen`, or `event_count`. |
 | `status` | Filter by status: `open`, `muted`, `resolved`, or `all`. |
 | `q` | Full-text search query. |
+| `new_in_release` | A release ID. Returns the issues first seen at or after that release's `observed_at` and before the next release of the same environment. The latest release of an environment has no upper bound. The total is then approximate. An unknown release returns 404. |
 | `<facet_key>=<value>` | Filter by any facet key. Example: `environment=production`. Multiple facets can be combined. |
 
 **Response:**

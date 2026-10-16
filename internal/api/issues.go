@@ -77,6 +77,14 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filter, requestedLimit := buildIssueFilter(q)
+	if releaseID := strings.TrimSpace(q.Get("new_in_release")); releaseID != "" {
+		from, before, err := s.releases.NewIssueWindow(r.Context(), releaseID)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		filter.FirstSeenFrom, filter.FirstSeenBefore = from, before
+	}
 	issues, err := s.issues.ListFiltered(r.Context(), filter)
 	if err != nil {
 		writeServiceError(w, err)
@@ -107,7 +115,8 @@ func (s *Server) addIssueTotals(ctx context.Context, resp map[string]any, filter
 		return
 	}
 	resp["counts"] = counts
-	if strings.TrimSpace(filter.Query) != "" || len(filter.Facets) > 0 {
+	rangeFiltered := !filter.FirstSeenFrom.IsZero() || !filter.FirstSeenBefore.IsZero()
+	if strings.TrimSpace(filter.Query) != "" || len(filter.Facets) > 0 || rangeFiltered {
 		resp["total"] = loaded
 		resp["totalIsApproximate"] = true
 		return
@@ -147,7 +156,10 @@ func buildIssueFilter(q url.Values) (domain.IssueFilter, int) {
 // parseIssueFacets treats any query param that isn't a known pagination/sort key
 // as a facet filter (facet_key=value).
 func parseIssueFacets(q url.Values) map[string]string {
-	knownParams := map[string]bool{"sort": true, "status": true, "q": true, "limit": true, "offset": true, "project_slug": true}
+	knownParams := map[string]bool{
+		"sort": true, "status": true, "q": true, "limit": true, "offset": true,
+		"project_slug": true, "new_in_release": true,
+	}
 	var facets map[string]string
 	for key, vals := range q {
 		if knownParams[key] || len(vals) == 0 || strings.TrimSpace(vals[0]) == "" {
