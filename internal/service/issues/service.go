@@ -42,6 +42,7 @@ type Repository interface {
 	ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]domain.Event, error)
 	ListFacetKeys(ctx context.Context, projectID int64) ([]string, error)
 	ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error)
+	SurfaceActivity(ctx context.Context, projectID int64, now time.Time) ([]domain.SurfaceActivity, error)
 }
 
 type Service struct {
@@ -260,6 +261,17 @@ func (s *Service) ListFacetKeys(ctx context.Context, projectID int64) ([]string,
 		span.SetStatus(codes.Error, err.Error())
 	}
 	return keys, err
+}
+
+// SurfaceActivity lists the issues seen per sign-up surface in the last 7 days.
+func (s *Service) SurfaceActivity(ctx context.Context, projectID int64) ([]domain.SurfaceActivity, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.issues.SurfaceActivity")
+	defer span.End()
+	out, err := s.repo.SurfaceActivity(ctx, projectID, time.Now().UTC())
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return out, err
 }
 
 func (s *Service) ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error) {

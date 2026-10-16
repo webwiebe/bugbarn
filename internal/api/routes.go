@@ -425,6 +425,8 @@ func (s *Server) dispatchAPIKeyFacetAnalyticsRoutes(w http.ResponseWriter, r *ht
 		s.listAPIKeys(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/apikeys/") && r.Method == http.MethodDelete:
 		s.deleteAPIKey(w, r)
+	case r.URL.Path == "/api/v1/surfaces" && r.Method == http.MethodGet:
+		s.serveSurfaces(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/facets") && r.Method == http.MethodGet:
 		s.serveFacetsRoute(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/analytics/") && r.Method == http.MethodGet:
