@@ -394,18 +394,22 @@ func (d *Deliverer) buildPayload(rule Rule, issue domain.Issue, publicURL string
 }
 
 func (d *Deliverer) genericPayload(rule Rule, issue domain.Issue, issueURL string) ([]byte, error) {
+	issueFields := map[string]any{
+		"id":          issue.ID,
+		"title":       issue.Title,
+		"url":         issueURL,
+		"first_seen":  issue.FirstSeen.Format(time.RFC3339),
+		"event_count": issue.EventCount,
+		"severity":    severityFromIssue(issue),
+	}
+	if issue.FirstRelease != "" {
+		issueFields["first_release"] = issue.FirstRelease
+	}
 	payload := map[string]any{
 		"alert":     rule.Name,
 		"condition": rule.Condition,
 		"project":   fmt.Sprintf("%d", rule.ProjectID),
-		"issue": map[string]any{
-			"id":          issue.ID,
-			"title":       issue.Title,
-			"url":         issueURL,
-			"first_seen":  issue.FirstSeen.Format(time.RFC3339),
-			"event_count": issue.EventCount,
-			"severity":    severityFromIssue(issue),
-		},
+		"issue":     issueFields,
 	}
 	return json.Marshal(payload)
 }

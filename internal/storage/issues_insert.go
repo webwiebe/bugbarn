@@ -43,6 +43,7 @@ func (s *core) insertNewIssue(ctx context.Context, tx *sql.Tx, p newIssueParams)
 		EventCount:             1,
 		RepresentativeEvent:    p.evt,
 		IssueNumber:            issueNumber,
+		FirstRelease:           releaseOf(p.evt),
 	}
 
 	id, err := insertIssueRow(ctx, tx, p, issueNumber)
@@ -74,8 +75,9 @@ INSERT INTO issues (
 	last_seen,
 	event_count,
 	representative_event_json,
-	issue_number
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	issue_number,
+	first_release
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.projectID,
 		p.fingerprintValue,
 		p.material,
@@ -89,6 +91,7 @@ INSERT INTO issues (
 		1,
 		p.representative,
 		issueNumber,
+		releaseOf(p.evt),
 	)
 	if err != nil {
 		return 0, err

@@ -30,6 +30,10 @@ type Issue struct {
 	ProjectSlug            string      `json:"project_slug,omitempty"`
 	ProjectID              int64       `json:"project_id,omitempty"`
 
+	// FirstRelease is the release the first event of the issue reported, empty
+	// when that event carried none or the issue predates the column.
+	FirstRelease string `json:"first_release,omitempty"`
+
 	// SampleRate is how many occurrences one stored event of this issue stands
 	// for: 1 when everything is stored, 100 when the issue is loud enough that
 	// only every hundredth event is kept. EventCount is unaffected either way —
