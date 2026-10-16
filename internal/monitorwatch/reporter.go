@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
@@ -137,7 +138,7 @@ func (r *Reporter) emit(ctx context.Context, m domain.Monitor, kind, title, seve
 		"observedTimestamp": r.now().UTC().Format(time.RFC3339Nano),
 		"fingerprint":       Fingerprint(m.Slug, kind),
 		"attributes":        map[string]any{"monitor": attrs},
-		"resource":          map[string]any{"service.name": "bugbarn-monitors"},
+		"resource":          resourceFor(m.Slug),
 	})
 	if err != nil {
 		return err
@@ -150,6 +151,23 @@ func (r *Reporter) emit(ctx context.Context, m domain.Monitor, kind, title, seve
 		ProjectSlug: slug,
 		Internal:    true,
 	})
+}
+
+// environments a monitor slug can end in, as in "appointment-reminders-testing".
+var slugEnvironments = []string{"production", "staging", "testing", "e2e", "development"}
+
+// resourceFor is the event resource of a monitor incident. A monitor has no
+// environment field, so it is read from the slug suffix; a slug without one
+// leaves the event without an environment.
+func resourceFor(slug string) map[string]any {
+	res := map[string]any{"service.name": "bugbarn-monitors"}
+	for _, env := range slugEnvironments {
+		if strings.HasSuffix(slug, "-"+env) {
+			res["deployment.environment"] = env
+			break
+		}
+	}
+	return res
 }
 
 func randomID() string {
