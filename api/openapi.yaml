@@ -96,6 +96,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
 
+  /api/v1/version:
+    get:
+      operationId: getVersion
+      tags: [Health]
+      summary: Running version
+      description: >-
+        The release this process is running. `version` is what the deploy
+        stated (BUGBARN_VERSION), `commit` and `built` are baked into the
+        binary. Deploy smokes compare it with what they rolled out.
+      security: []
+      responses:
+        "200":
+          description: The running version
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, commit, built]
+                properties:
+                  version:
+                    type: string
+                    example: v0.236.200
+                  commit:
+                    type: string
+                    example: 0123456789abcdef0123456789abcdef01234567
+                  built:
+                    type: string
+                    example: "2026-10-17T12:00:00Z"
+
   /api/v1/runtime-config:
     get:
       operationId: getRuntimeConfig

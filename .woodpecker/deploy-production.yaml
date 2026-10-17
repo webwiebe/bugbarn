@@ -71,6 +71,12 @@ steps:
         . ./.digests
         test -n "$SERVICE_DIGEST" && test -n "$WEB_DIGEST" || { echo "ERROR: missing digests"; exit 1; }
         SSH="ssh -o StrictHostKeyChecking=no"
+        # The pods report the release tag (GET /api/v1/version); the commit is
+        # the tag's commit, which the image was built from.
+        VERSION="$CI_COMMIT_TAG"
+        SHA="$(git rev-parse "$CI_COMMIT_TAG^{commit}")"
+        sed -i.bak "s/__VERSION__/$VERSION/g" deploy/k8s/production/kustomization.yaml
+        rm -f deploy/k8s/production/kustomization.yaml.bak
         $SSH "$K3S_USER@$K3S_HOST" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
         # Snapshot what production is running RIGHT NOW, before we touch it, so
         # rollback can restore these exact images instead of using `rollout
@@ -86,7 +92,10 @@ steps:
           W=\$(kubectl -n $NAMESPACE get deploy bugbarn-writer -o \"\$COL\" --no-headers)
           R=\$(kubectl -n $NAMESPACE get deploy bugbarn-reader -o \"\$COL\" --no-headers)
           B=\$(kubectl -n $NAMESPACE get deploy bugbarn-web -o \"\$COL\" --no-headers)
-          printf 'PREV_WRITER=%s\nPREV_READER=%s\nPREV_WEB=%s\n' \"\$W\" \"\$R\" \"\$B\" > /tmp/bugbarn-prev-images-$CI_PIPELINE_NUMBER
+          # The version the pods report is part of the same rollout, so rollback
+          # restores it with the images. Empty when the running release predates it.
+          V=\$(kubectl -n $NAMESPACE get deploy bugbarn-writer -o 'jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"BUGBARN_VERSION\")].value}')
+          printf 'PREV_WRITER=%s\nPREV_READER=%s\nPREV_WEB=%s\nPREV_VERSION=%s\n' \"\$W\" \"\$R\" \"\$B\" \"\$V\" > /tmp/bugbarn-prev-images-$CI_PIPELINE_NUMBER
           cat /tmp/bugbarn-prev-images-$CI_PIPELINE_NUMBER
         "
         scp -o StrictHostKeyChecking=no -r deploy "$K3S_USER@$K3S_HOST:/tmp/bugbarn-deploy/deploy"
@@ -116,6 +125,10 @@ steps:
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-writer --timeout=600s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-reader --timeout=180s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-web --timeout=180s
+          # Smoke: the pods report the release tag at the tag's commit. A
+          # failure runs the rollback step below.
+          sh /tmp/bugbarn-deploy/deploy/scripts/assert-version.sh $NAMESPACE deploy/bugbarn-writer bugbarn $VERSION $SHA
+          sh /tmp/bugbarn-deploy/deploy/scripts/assert-version.sh $NAMESPACE deploy/bugbarn-reader bugbarn $VERSION $SHA
         "
 
   - name: rollback-on-failure
@@ -143,6 +156,10 @@ steps:
               ''|*:local) echo \"ERROR: refusing to roll back to unusable image '\$IMG'\"; exit 1 ;;
             esac
           done
+          if [ -n \"\$PREV_VERSION\" ]; then
+            kubectl -n $NAMESPACE set env deployment/bugbarn-writer BUGBARN_VERSION=\"\$PREV_VERSION\"
+            kubectl -n $NAMESPACE set env deployment/bugbarn-reader BUGBARN_VERSION=\"\$PREV_VERSION\"
+          fi
           kubectl -n $NAMESPACE set image deployment/bugbarn-writer bugbarn=\"\$PREV_WRITER\"
           kubectl -n $NAMESPACE set image deployment/bugbarn-reader bugbarn=\"\$PREV_READER\"
           kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=\"\$PREV_WEB\"

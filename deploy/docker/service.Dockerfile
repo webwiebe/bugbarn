@@ -9,7 +9,8 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY sdks/go ./sdks/go
 
-RUN go build -o /out/bugbarn ./cmd/bugbarn
+ARG COMMIT=unknown BUILD_TIME=unknown
+RUN go build -ldflags "-X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}" -o /out/bugbarn ./cmd/bugbarn
 
 # --- CI-only stages (not part of the deploy image; the final runtime stage
 # below depends only on `build`, so a plain `docker build` skips these). ---

@@ -62,6 +62,7 @@ type Server struct {
 	workerStatus        *worker.Status
 	ingestHealth        func() ingesthealth.Snapshot
 	autoApproveProjects bool
+	build               buildInfo // GET /api/v1/version
 
 	// globalRetentionDays is the deployment-wide event retention window. The API
 	// clamps per-project overrides to it and reports it so the UI can show what

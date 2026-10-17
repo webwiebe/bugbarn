@@ -224,6 +224,7 @@ steps:
         # be reported before the gates it protects are trusted.
         sh scripts/gates_test.sh
         bash scripts/ghcr-prune_test.sh
+        bash scripts/assert-version_test.sh
         sh scripts/diff-coverage_test.sh
         sh scripts/check-file-length.sh
         # Create the origin/* remote-tracking refs (a plain `git fetch origin main`

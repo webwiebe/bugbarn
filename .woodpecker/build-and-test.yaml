@@ -50,7 +50,7 @@ steps:
         DOCKER_CONFIG_DIR="$(mktemp -d)"
         printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')" > "$DOCKER_CONFIG_DIR/config.json"
         export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
-        docker buildx build --platform linux/amd64 --push -f deploy/docker/service.Dockerfile -t "$SERVICE_IMAGE:$CI_COMMIT_SHA" .
+        docker buildx build --platform linux/amd64 --push --build-arg COMMIT="$CI_COMMIT_SHA" --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -f deploy/docker/service.Dockerfile -t "$SERVICE_IMAGE:$CI_COMMIT_SHA" .
         docker buildx build --platform linux/amd64 --push -f deploy/docker/web.Dockerfile -t "$WEB_IMAGE:$CI_COMMIT_SHA" .
 
   - name: deploy-testing
@@ -72,6 +72,10 @@ steps:
       - |
         set -euo pipefail
         SSH="ssh -o StrictHostKeyChecking=no"
+        # The pods report this as their version (GET /api/v1/version).
+        VERSION="main-$(echo ${CI_COMMIT_SHA} | cut -c1-7)"
+        sed -i.bak "s/__VERSION__/$VERSION/g" deploy/k8s/testing/kustomization.yaml
+        rm -f deploy/k8s/testing/kustomization.yaml.bak
         $SSH "$K3S_USER@$K3S_HOST" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
         scp -o StrictHostKeyChecking=no -r deploy "$K3S_USER@$K3S_HOST:/tmp/bugbarn-deploy/deploy"
         $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/testing/namespace.yaml"
@@ -84,6 +88,8 @@ steps:
           kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=$WEB_IMAGE:$CI_COMMIT_SHA
           kubectl -n $NAMESPACE rollout status deployment/bugbarn --timeout=180s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-web --timeout=180s
+          # Smoke: the pods report the version and commit that were deployed.
+          sh /tmp/bugbarn-deploy/deploy/scripts/assert-version.sh $NAMESPACE deploy/bugbarn bugbarn $VERSION $CI_COMMIT_SHA
         "
         curl -sf -X POST "$BUGBARN_ENDPOINT/api/v1/releases" \
           -H "Content-Type: application/json" \

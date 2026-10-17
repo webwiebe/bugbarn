@@ -155,6 +155,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	logHub := logstream.NewHub()
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
+	apiServer.SetBuildInfo(Version, Commit, BuildTime)
 	// Readers authorize telemetry and forward it; the writer stores it.
 	apiServer.SetTelemetry(nil, cfg.Telemetry.Project)
 	defer wireReaderTelemetryViews(apiServer, cfg.Telemetry)()

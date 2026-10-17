@@ -85,6 +85,12 @@ steps:
         . ./.digests
         test -n "$SERVICE_DIGEST" && test -n "$WEB_DIGEST" || { echo "ERROR: missing digests"; exit 1; }
         SSH="ssh -o StrictHostKeyChecking=no"
+        # The pods report the release tag (GET /api/v1/version); the commit is
+        # the tag's commit, which the image was built from.
+        VERSION="$CI_COMMIT_TAG"
+        SHA="$(git rev-parse "$CI_COMMIT_TAG^{commit}")"
+        sed -i.bak "s/__VERSION__/$VERSION/g" deploy/k8s/staging/kustomization.yaml
+        rm -f deploy/k8s/staging/kustomization.yaml.bak
         $SSH "$K3S_USER@$K3S_HOST" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
         scp -o StrictHostKeyChecking=no -r deploy "$K3S_USER@$K3S_HOST:/tmp/bugbarn-deploy/deploy"
         $SSH "$K3S_USER@$K3S_HOST" "kubectl apply -f /tmp/bugbarn-deploy/deploy/k8s/staging/namespace.yaml"
@@ -108,6 +114,9 @@ steps:
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-writer --timeout=600s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-reader --timeout=180s
           kubectl -n $NAMESPACE rollout status deployment/bugbarn-web --timeout=180s
+          # Smoke: the pods report the release tag at the tag's commit.
+          sh /tmp/bugbarn-deploy/deploy/scripts/assert-version.sh $NAMESPACE deploy/bugbarn-writer bugbarn $VERSION $SHA
+          sh /tmp/bugbarn-deploy/deploy/scripts/assert-version.sh $NAMESPACE deploy/bugbarn-reader bugbarn $VERSION $SHA
         "
         curl -sf -X POST "$BUGBARN_ENDPOINT/api/v1/releases" \
           -H "Content-Type: application/json" \

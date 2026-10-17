@@ -40,9 +40,11 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
-// Version and BuildTime are injected at build time via -ldflags.
+// Version, Commit and BuildTime are injected at build time via -ldflags.
+// Version is overridden at run time by BUGBARN_VERSION (see resolveVersion).
 var (
 	Version   = "dev"
+	Commit    = "unknown"
 	BuildTime = "unknown"
 )
 
@@ -62,6 +64,7 @@ func main() {
 
 // run owns process wiring: it opens storage, starts the worker, and serves the API.
 func run() error {
+	Version = resolveVersion(Version, os.Getenv("BUGBARN_VERSION"))
 	cfg := config.Load()
 
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -271,6 +274,7 @@ func run() error {
 	logHub := logstream.NewHub()
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)
 	apiServer.SetLogHub(logHub)
+	apiServer.SetBuildInfo(Version, Commit, BuildTime)
 	apiServer.SetTelemetry(telemetryIngester, cfg.Telemetry.Project)
 	wireWriterTelemetryViews(apiServer, telemetryIngester)
 	// Rule changes through the API (forwarded here by readers) reload the engine.

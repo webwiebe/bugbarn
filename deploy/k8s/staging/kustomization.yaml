@@ -21,3 +21,25 @@ images:
   - name: bugbarn/web
     newName: ghcr.io/webwiebe/bugbarn/web
     newTag: local
+patches:
+  # The deploy replaces __VERSION__ (testing: main-<sha7>, staging and production:
+  # the release tag). It lives in the pod spec so the pods roll when only the
+  # version changes.
+  - target:
+      kind: Deployment
+      name: bugbarn-writer
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: BUGBARN_VERSION
+          value: "__VERSION__"
+  - target:
+      kind: Deployment
+      name: bugbarn-reader
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: BUGBARN_VERSION
+          value: "__VERSION__"
