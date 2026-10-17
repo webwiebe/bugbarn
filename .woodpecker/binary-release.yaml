@@ -103,7 +103,7 @@ steps:
         BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         mkdir -p dist debs
         for A in amd64 arm64; do
-          GOOS=linux GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.BuildTime=$BUILD_TIME" -o "dist/bugbarn-linux-$A" ./cmd/bugbarn
+          GOOS=linux GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.Commit=$CI_COMMIT_SHA -X main.BuildTime=$BUILD_TIME" -o "dist/bugbarn-linux-$A" ./cmd/bugbarn
           GOOS=linux GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.BuildTime=$BUILD_TIME" -o "dist/bb-linux-$A" ./cmd/bb
           VERSION="$VERSION_NUM" GOARCH="$A" envsubst < nfpm-bugbarn.yaml > nfpm-bugbarn-processed.yaml
           nfpm package --config nfpm-bugbarn-processed.yaml --packager deb --target debs/
@@ -123,7 +123,7 @@ steps:
         BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         mkdir -p dist
         for A in amd64 arm64; do
-          GOOS=darwin GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.BuildTime=$BUILD_TIME" -o dist/bugbarn ./cmd/bugbarn
+          GOOS=darwin GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.Commit=$CI_COMMIT_SHA -X main.BuildTime=$BUILD_TIME" -o dist/bugbarn ./cmd/bugbarn
           GOOS=darwin GOARCH=$A go build -ldflags "-X main.Version=v$VERSION_NUM -X main.BuildTime=$BUILD_TIME" -o dist/bb ./cmd/bb
           tar -czvf "dist/bugbarn-darwin-$A-$VERSION_NUM.tar.gz" -C dist bugbarn
           tar -czvf "dist/bb-darwin-$A-$VERSION_NUM.tar.gz" -C dist bb

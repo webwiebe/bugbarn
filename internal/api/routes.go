@@ -222,6 +222,9 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request) boo
 	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:
 		s.serveHealth(w, r)
 		return true
+	case r.URL.Path == "/api/v1/version" && r.Method == http.MethodGet:
+		s.serveVersion(w, r)
+		return true
 	case r.URL.Path == "/api/v1/runtime-config" && r.Method == http.MethodGet:
 		s.serveRuntimeConfig(w, r)
 		return true
