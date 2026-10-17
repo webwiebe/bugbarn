@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
@@ -100,6 +101,26 @@ func TestSmokeLoginEmptyHashNeverMatches(t *testing.T) {
 	}
 	if a.Valid(smokeUser, "") {
 		t.Fatal("an empty hash must never match an empty password")
+	}
+}
+
+// htpasswd -B emits the $2y$ prefix, which the seed script uses. It is the same
+// algorithm as $2a$, and startup must accept it.
+func TestSmokeLoginAcceptsAnHtpasswdStyleHash(t *testing.T) {
+	hash := strings.Replace(hashOf(t, smokePass), "$2a$", "$2y$", 1)
+	if !strings.HasPrefix(hash, "$2y$") {
+		t.Fatalf("test setup: expected a $2y$ hash, got prefix %q", hash[:4])
+	}
+	admin, err := NewUserAuthenticator(adminUser, adminPass, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := admin.WithSmokeLogin(smokeUser, hash)
+	if err != nil {
+		t.Fatalf("a $2y$ hash must be accepted: %v", err)
+	}
+	if user, ok := a.Authenticate(smokeUser, smokePass); !ok || user != smokeUser {
+		t.Fatalf("Authenticate with a $2y$ hash = %q, %v; want %q, true", user, ok, smokeUser)
 	}
 }
 
