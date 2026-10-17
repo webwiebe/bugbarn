@@ -41,13 +41,14 @@ RUN go build std && \
 #
 # CPU cap: the build host also runs the CI runners, and an uncapped test stage
 # held the buildkit container at 780% CPU and the host at 0-2% idle. GOMAXPROCS
-# bounds the compiler, linker and test binaries; -p bounds how many packages
-# vet, test and build run at once. Raise both together, never one alone.
+# bounds the threads of each compiler, linker and test process; -p bounds how
+# many of those processes run at once. The two multiply, so the product is the
+# cap: 2 x 2 = 4 cores. (4 x 4 measured 554%.) Change them so the product stays 4.
 FROM deps AS test
-ENV GOMAXPROCS=4
+ENV GOMAXPROCS=2
 COPY . .
-RUN go vet -p 4 ./... && go test -p 4 ./... && go build -p 4 ./... && \
-    (cd sdks/go && go vet -p 4 ./... && go test -p 4 ./... && go build -p 4 ./...)
+RUN go vet -p 2 ./... && go test -p 2 ./... && go build -p 2 ./... && \
+    (cd sdks/go && go vet -p 2 ./... && go test -p 2 ./... && go build -p 2 ./...)
 
 FROM alpine:3.20
 
