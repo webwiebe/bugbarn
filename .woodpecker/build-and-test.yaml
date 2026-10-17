@@ -101,18 +101,19 @@ steps:
   # Browser smoke of the deployed dashboard: headless Chromium signs in, opens
   # the main views and fails on any console error, failed request or view that
   # does not render (web/e2e/deploy-smoke.spec.ts). It runs here, after the
-  # rollout, and not in PR CI. Needs the testing admin login as the Woodpecker
-  # secrets bugbarn_testing_admin_user / bugbarn_testing_admin_password.
+  # rollout, and not in PR CI. It signs in as the dedicated smoke login (the
+  # service reads BUGBARN_SMOKE_USERNAME / BUGBARN_SMOKE_PASSWORD_HASH from the
+  # testing secret), with the password in the Woodpecker secret
+  # bugbarn_testing_smoke_password.
   - name: smoke-testing
     image: bash
     depends_on: [deploy-testing]
     environment:
       SOPS_AGE_KEY:
         from_secret: sops_age_key_testing
-      BUGBARN_SMOKE_USER:
-        from_secret: bugbarn_testing_admin_user
+      BUGBARN_SMOKE_USER: e2e-bugbarn-smoke@e2e.wiebe.xyz
       BUGBARN_SMOKE_PASSWORD:
-        from_secret: bugbarn_testing_admin_password
+        from_secret: bugbarn_testing_smoke_password
       BUGBARN_SMOKE_URL: https://bugbarn.test.wiebe.xyz/app/
     commands:
       - |
