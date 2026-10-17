@@ -104,6 +104,9 @@ steps:
         # oxlint is the linter (eslint cannot load against TS 7); `pnpm run
         # lint` is the tsc type check.
         node scripts/oxlint-ratchet.mjs
+        # Layer boundaries (web/.dependency-cruiser.cjs), report only until
+        # 2026-10-31 (then add --enforce).
+        pnpm run boundaries
         pnpm run lint
         pnpm run test
         pnpm run build

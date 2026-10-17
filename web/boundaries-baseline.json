@@ -1,0 +1,27 @@
+{
+  "violations": [
+    "no-circular:src/http.ts:src/router.ts",
+    "no-circular:src/http.ts:src/views-projects.ts",
+    "no-circular:src/router.ts:src/views-alerts.ts",
+    "no-circular:src/router.ts:src/views-hosts.ts",
+    "no-circular:src/router.ts:src/views-issue-detail.ts",
+    "no-circular:src/router.ts:src/views-issues.ts",
+    "no-circular:src/router.ts:src/views-logs.ts",
+    "no-circular:src/router.ts:src/views-monitors.ts",
+    "no-circular:src/router.ts:src/views-releases.ts",
+    "no-circular:src/router.ts:src/views-rules.ts",
+    "no-circular:src/router.ts:src/views-security.ts",
+    "no-circular:src/router.ts:src/views-settings.ts",
+    "no-circular:src/router.ts:src/views-volume.ts",
+    "no-circular:src/views-error-timeline.ts:src/http.ts",
+    "no-circular:src/views-issue-detail.ts:src/views-issues.ts",
+    "no-circular:src/views-issues.ts:src/http.ts",
+    "no-circular:src/views-issues.ts:src/views-error-timeline.ts",
+    "no-circular:src/views-issues.ts:src/views-surfaces.ts",
+    "no-circular:src/views-monitors.ts:src/telemetry-api.ts",
+    "no-circular:src/views-projects.ts:src/router.ts",
+    "no-circular:src/views-rules.ts:src/telemetry-api.ts",
+    "no-circular:src/views-settings.ts:src/views-projects.ts",
+    "no-circular:src/views-surfaces.ts:src/http.ts"
+  ]
+}

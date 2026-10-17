@@ -2,4 +2,5 @@
 # pnpm-workspace.yaml in a parent directory (the CI hosts have one in $HOME).
 # This is a single package: there is no multi-package workspace in this repo.
 allowBuilds:
+  '@swc/core': false
   esbuild: true
