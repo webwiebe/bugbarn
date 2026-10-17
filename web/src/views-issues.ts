@@ -7,7 +7,7 @@ import { issueHeading, renderIssueStatusTabs, renderIssueSummaryStrip } from "./
 import type { ApiIssue, IssueCounts, IssueSort, IssueStatus } from "./types.js";
 import { byId, elements, setActiveView, setStatus, state } from "./core.js";
 import { fetchJson } from "./http.js";
-import { setRouteStatus } from "./router.js";
+import { setRouteStatus } from "./app-actions.js";
 import { createPageLoader, observeSentinel } from "./infinite-scroll.js";
 import { loadErrorTimeline, renderErrorTimelineSlot } from "./views-error-timeline.js";
 import { loadSurfaces, renderSurfacesSlot } from "./views-surfaces.js";

@@ -20,7 +20,7 @@ import {
   state,
 } from "./core.js";
 import { fetchJson } from "./http.js";
-import { refreshAll } from "./router.js";
+import { refreshAll } from "./app-actions.js";
 
 export async function loadProjects(): Promise<void> {
   try {
