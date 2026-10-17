@@ -243,6 +243,53 @@ jobs:
 EOF
 expect 1 "runner scope: no reclaim step at all fails" -- sh "$REPO/scripts/check-runner-scope.sh" "$RS/none"
 
+# ------------------------------------------------- check-typed-boundaries.sh
+# Report-only before 2026-10-31, failing from that date. The input floor fails
+# in both modes. The fixture has 30 clean files, the floor.
+TB="$WORK/typed-boundaries"
+TBS="$REPO/scripts/check-typed-boundaries.sh"
+mkdir -p "$TB/scripts" "$TB/internal/service" "$TB/internal/api"
+i=0
+while [ "$i" -lt 30 ]; do
+	printf 'package service\n' >"$TB/internal/service/f$i.go"
+	i=$((i + 1))
+done
+echo 0 >"$TB/scripts/typed-boundaries-baseline.txt"
+expect 0 "typed-boundaries: a clean tree passes before the date" -- sh "$TBS" "$TB" 2026-10-17
+expect 0 "typed-boundaries: a clean tree passes after the date" -- sh "$TBS" "$TB" 2026-11-01
+
+printf 'package api\n\nimport "database/sql"\n\nvar _ = sql.ErrNoRows\n' >"$TB/internal/api/leak.go"
+expect 0 "typed-boundaries: a raw DB leak is only reported before the date" -- sh "$TBS" "$TB" 2026-10-30
+expect 1 "typed-boundaries: a raw DB leak fails from the date" -- sh "$TBS" "$TB" 2026-10-31
+if sh "$TBS" "$TB" 2026-10-30 2>&1 | grep -q 'REPORT (typed-boundaries'; then
+	pass=$((pass + 1))
+	echo "ok   typed-boundaries: report mode names the finding"
+else
+	fail=$((fail + 1))
+	echo "FAIL typed-boundaries: report mode printed no REPORT line"
+fi
+echo 2 >"$TB/scripts/typed-boundaries-baseline.txt"
+expect 0 "typed-boundaries: a baselined leak passes after the date" -- sh "$TBS" "$TB" 2026-11-01
+rm -f "$TB/internal/api/leak.go"
+expect 1 "typed-boundaries: a stale baseline fails from the date" -- sh "$TBS" "$TB" 2026-11-01
+
+echo 0 >"$TB/scripts/typed-boundaries-baseline.txt"
+printf 'package service\n\nfunc f(err error) bool { return strings.Contains(err.Error(), "no rows") }\n' >"$TB/internal/service/str.go"
+expect 1 "typed-boundaries: matching on err.Error() text fails from the date" -- sh "$TBS" "$TB" 2026-11-01
+rm -f "$TB/internal/service/str.go"
+
+printf 'package service\n\nimport "database/sql"\n\nvar _ = sql.ErrNoRows\n' >"$TB/internal/service/f0_test.go"
+expect 0 "typed-boundaries: test files are exempt" -- sh "$TBS" "$TB" 2026-11-01
+rm -f "$TB/internal/service/f0_test.go"
+
+rm -f "$TB/internal/service/f0.go"
+expect 1 "typed-boundaries: below the input floor fails before the date" -- sh "$TBS" "$TB" 2026-10-17
+expect 1 "typed-boundaries: below the input floor fails after the date" -- sh "$TBS" "$TB" 2026-11-01
+printf 'package service\n' >"$TB/internal/service/f0.go"
+
+rm -f "$TB/scripts/typed-boundaries-baseline.txt"
+expect 1 "typed-boundaries: a missing baseline fails" -- sh "$TBS" "$TB" 2026-10-17
+
 echo
 echo "gates_test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
