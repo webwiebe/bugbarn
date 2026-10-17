@@ -184,6 +184,7 @@ ts-budget: $(PNPM)
 test-gates:
 	@sh scripts/gates_test.sh
 	@bash scripts/ghcr-prune_test.sh
+	@sh scripts/diff-coverage_test.sh
 
 check-file-length:
 	@sh scripts/check-file-length.sh

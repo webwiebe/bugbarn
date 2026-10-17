@@ -224,6 +224,7 @@ steps:
         # be reported before the gates it protects are trusted.
         sh scripts/gates_test.sh
         bash scripts/ghcr-prune_test.sh
+        sh scripts/diff-coverage_test.sh
         sh scripts/check-file-length.sh
         # Create the origin/* remote-tracking refs (a plain `git fetch origin main`
         # only updates FETCH_HEAD), with enough depth for the diff base. Without
@@ -241,5 +242,11 @@ steps:
         sh scripts/check-go-lint.sh
         sh scripts/check-go-soak.sh
         sh scripts/check-coverage.sh
+        # Changed-line coverage, report only until 2026-10-24 (then add
+        # --enforce). 80% of the coverable Go lines a PR adds must be executed;
+        # diffs under 10 coverable lines are exempt. Same step in ci.yml.
+        if [ "${CI_PIPELINE_EVENT:-}" = pull_request ]; then
+          sh scripts/diff-coverage.sh coverage/go.out "origin/$CI_COMMIT_TARGET_BRANCH"
+        fi
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
         pnpm dlx jscpd@latest .

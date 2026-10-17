@@ -267,7 +267,10 @@ jobs:
       # reported before the gates it protects are trusted.
       - name: Gate script tests
         shell: bash
-        run: sh scripts/gates_test.sh
+        run: |
+          set -euo pipefail
+          sh scripts/gates_test.sh
+          sh scripts/diff-coverage_test.sh
       - name: File-length gate (all languages)
         shell: bash
         run: sh scripts/check-file-length.sh
@@ -292,6 +295,12 @@ jobs:
       - name: Go coverage ratchet
         shell: bash
         run: sh scripts/check-coverage.sh
+      # Changed-line coverage, report only until 2026-10-24 (then add
+      # --enforce). Same step in .woodpecker/ci.yaml.
+      - name: Diff coverage (report only)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: sh scripts/diff-coverage.sh coverage/go.out "origin/${GITHUB_BASE_REF}"
       - name: Duplication scan (jscpd)
         shell: bash
         run: |
