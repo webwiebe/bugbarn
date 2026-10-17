@@ -207,6 +207,42 @@ else
 	expect 1 "coverage: a non-numeric baseline fails" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
 fi
 
+# Runner scope: no workflow step may reach into another runner's directory. The
+# repo's own workflows must pass; fixtures with the old glob, a missing scope
+# and no reclaim step at all must fail. Text only, no step is ever executed.
+expect 0 "runner scope: the repo's workflows are scoped" -- sh "$REPO/scripts/check-runner-scope.sh" "$REPO/.github/workflows"
+
+RS="$WORK/runner-scope"
+mkdir -p "$RS/glob" "$RS/unscoped" "$RS/none"
+cat >"$RS/glob/w.yml" <<'EOF'
+jobs:
+  a:
+    steps:
+      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+        run: |
+          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
+            rm -rf "$c"
+          done
+EOF
+expect 1 "runner scope: a glob over the runners root fails" -- sh "$REPO/scripts/check-runner-scope.sh" "$RS/glob"
+
+cat >"$RS/unscoped/w.yml" <<'EOF'
+jobs:
+  a:
+    steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        run: rm -rf .cache
+EOF
+expect 1 "runner scope: a reclaim step without the workspace scope fails" -- sh "$REPO/scripts/check-runner-scope.sh" "$RS/unscoped"
+
+cat >"$RS/none/w.yml" <<'EOF'
+jobs:
+  a:
+    steps:
+      - run: echo hi
+EOF
+expect 1 "runner scope: no reclaim step at all fails" -- sh "$REPO/scripts/check-runner-scope.sh" "$RS/none"
+
 echo
 echo "gates_test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

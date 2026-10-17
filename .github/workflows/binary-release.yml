@@ -41,14 +41,15 @@ jobs:
       version: ${{ steps.next_version.outputs.version }}
       version_num: ${{ steps.next_version.outputs.version_num }}
     steps:
-      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -106,14 +107,15 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - name: Checkout code
         uses: actions/checkout@v6
 
@@ -178,14 +180,15 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - name: Reclaim workspaces (clear read-only Go cache from prior runs)
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in "$HOME"/github-runners/*/_work/bugbarn/bugbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - name: Checkout code
         uses: actions/checkout@v6
 
