@@ -2,7 +2,11 @@
 
 **Feature Branch**: `005-ui-fixes-project-management`
 **Created**: 2026-05-05
-**Status**: Draft
+**Spec**: 005-ui-fixes-project-management
+**Status**: Partial
+**Last verified against the tree**: 2026-10-17 at 70a663f
+**Issues**: none found
+**Principles touched**: none
 **Input**: Layout bugs on narrow screens, empty issues list, missing project delete/reject, project merging/linking.
 
 ## User Scenarios & Testing
@@ -70,3 +74,43 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 
 1. **Given** a viewport width below 600px, **When** viewing an issue detail page, **Then** the fingerprint hash truncates with ellipsis, JSON blocks scroll horizontally, and action buttons wrap to remain accessible.
 2. **Given** a viewport width below 600px, **When** viewing the event occurrence chart, **Then** the chart scales to fit the viewport.
+
+---
+
+## Requirements
+
+### Functional Requirements
+
+- **FR-501**: The settings page MUST stay readable between 375px and 1120px viewport width without clipped inputs, install URLs or tarball paths. Issues: none found. [inferred] Styles live in `web/styles.css`; no test covers layout.
+- **FR-502**: The issues API MUST return `"issues": []` for an empty result. Issues: none found. Tests: `internal/api/issues_test.go::TestListIssuesPagination`.
+- **FR-503**: The "All projects" view MUST list issues from every project. [inferred]
+- **FR-504**: An admin MUST be able to delete a project with its related data through `DELETE /api/v1/projects/:slug`. Issues: none found. Tests: `internal/storage/projects_test.go::TestDeleteProjectWithRelatedData`.
+- **FR-505**: A pending project MUST be rejectable. Issues: [#228](https://github.com/webwiebe/bugbarn/issues/228). [gap] The tree has `POST /api/v1/projects/:slug/approve` and `DELETE`; there is no `/reject` route.
+- **FR-506**: Renaming a project MUST keep the old slug as an alias that routes events to the renamed project. Issues: none found. Tests: `internal/storage/projects_test.go::TestRenameProjectCreatesAlias`, `::TestEnsureProjectResolvesAlias`.
+- **FR-507**: Merging a project MUST move its data to the target, turn the source slug into an alias and delete the source. Issues: none found. Tests: `internal/storage/projects_test.go::TestMergeProjectsMovesDataAndCreatesAlias`.
+- **FR-508**: Project groups MUST exist as a parent entity with member projects. Issues: none found. Tests: `internal/storage/projects_test.go::TestGroupCRUD`.
+- **FR-509**: Selecting a group in the project dropdown MUST aggregate issues, analytics and alerts across its members. [inferred]
+- **FR-510**: The issue detail page MUST stay readable below 600px: the fingerprint truncates, JSON blocks scroll horizontally and action buttons wrap. [inferred]
+
+---
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| Status Draft; every task in `tasks.md` unchecked | Header, tasks.md | Delete, rename, merge, aliases and groups ship (`internal/api/routes.go`, `internal/storage/projects.go`, `groups.go`) |
+| `POST /api/v1/projects/:slug/reject` | tasks.md T008 | Route not present; `approve`, `merge`, `PUT` rename and `DELETE` exist |
+| Delete of an active project with issues requires confirmation | Story 3, scenario 3 | Confirmation is a UI concern; not established from the API |
+| Layout fixes verified at 375, 600, 1120 and 1440px | tasks.md T003 | Not established |
+
+## Proof contract
+
+- [ ] Deleting a project removes its issues, events and keys.
+- [ ] Events sent to a renamed or merged slug land in the target project.
+- [ ] The issues list for an empty project returns `[]`.
+
+## Sources
+
+- `internal/api/routes.go`, `internal/api/projects.go`
+- `internal/storage/projects.go`, `internal/storage/groups.go`
+- `web/styles.css`

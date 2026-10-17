@@ -2,7 +2,11 @@
 
 **Feature Branch**: `002-phase2-improvements`  
 **Created**: 2026-04-18  
-**Status**: Draft  
+**Spec**: 002-phase2-improvements
+**Status**: Partial
+**Last verified against the tree**: 2026-10-17 at 70a663f
+**Issues**: none found
+**Principles touched**: II, III, VII
 **Input**: Gap analysis between BugBarn and Sentry identifying the highest-leverage improvements for a personal error tracker. Phase 2 targets backend-only changes with immediate operational value; Phase 3 adds user context and breadcrumbs requiring SDK changes across all languages.
 
 ---
@@ -348,32 +352,32 @@ BUGBARN_SELF_PROJECT=bugbarn-service
 
 ### Functional Requirements
 
-- **FR-101**: Alert rules MUST support `webhook_url`, `condition`, `threshold`, `cooldown_minutes`, and `last_fired_at` fields.
-- **FR-102**: Alert delivery MUST support generic JSON webhooks and Slack Block Kit payloads (auto-detected by host).
-- **FR-103**: Alert delivery MUST enforce a per-rule cooldown and MUST NOT fire duplicate notifications within the cooldown window.
-- **FR-104**: Alert delivery MUST be attempted with retries (3 attempts, exponential backoff) and MUST NOT block worker progress on failure.
-- **FR-105**: Issues MUST support `muted` and `regressed` statuses in addition to `unresolved` and `resolved`.
-- **FR-106**: Muted issues MUST NOT appear in the default issue list filter.
-- **FR-107**: Muted issues with mode `until_regression` MUST transition to `regressed` when a new event arrives.
-- **FR-108**: The issue list API MUST return `hourly_counts` (24 integers) per issue without a per-issue subquery.
-- **FR-109**: The web UI MUST render a 24-bar sparkline per issue row using only CSS (no JS charting library).
-- **FR-110**: The canonical event model MUST support a `user` context object with `id`, `email`, and `username`.
-- **FR-111**: `user.id` MUST be indexed as a facet key for issue filtering.
-- **FR-112**: TypeScript, Python, and PHP SDKs MUST expose `setUser` / `clearUser`.
-- **FR-113**: The canonical event model MUST support a `breadcrumbs` array capped at 100 entries per event.
-- **FR-114**: The TypeScript SDK MUST automatically intercept `console`, `fetch`/`XHR`, and navigation events when `autoBreadcrumbs: true` (default).
-- **FR-115**: Python and PHP SDKs MUST support manual `add_breadcrumb` calls.
-- **FR-116**: The event detail UI MUST render breadcrumbs as a chronological timeline section when present.
-- **FR-117**: A Go SDK MUST exist at `sdks/go/` with `Init`, `CaptureError`, `CaptureMessage`, `Flush`, `Shutdown`, and `RecoverMiddleware`.
-- **FR-118**: When `BUGBARN_SELF_ENDPOINT` is set, the service MUST use the Go SDK to report panics and dead-lettered records to the configured endpoint.
-- **FR-119**: Self-reporting MUST be entirely opt-in; absence of `BUGBARN_SELF_ENDPOINT` MUST leave behaviour identical to today.
+- **FR-101**: Alert rules MUST support `webhook_url`, `condition`, `threshold`, `cooldown_minutes`, and `last_fired_at` fields. Issues: none found. Tests: `internal/alert/repository_test.go::TestStoreRepository_ListForProject`.
+- **FR-102**: Alert delivery MUST support generic JSON webhooks and Slack Block Kit payloads (auto-detected by host). Issues: none found. Tests: `internal/alert/deliverer_test.go::TestDeliverer_GenericPayload`, `::TestDeliverer_SlackPayload`, `::TestDeliverer_SlackDetection`.
+- **FR-103**: Alert delivery MUST enforce a per-rule cooldown and MUST NOT fire duplicate notifications within the cooldown window. Issues: none found. Tests: `internal/alert/evaluator_test.go::TestEvaluator_CooldownPreventsDoubleFire`.
+- **FR-104**: Alert delivery MUST be attempted with retries (3 attempts, exponential backoff) and MUST NOT block worker progress on failure. Issues: none found. Tests: `internal/alert/deliverer_test.go::TestDeliverer_RetryOnFailure`, `::TestDeliverer_AllRetriesFail`.
+- **FR-105**: Issues MUST support `muted` and `regressed` statuses in addition to `unresolved` and `resolved`. Issues: none found. Tests: `internal/storage/issues_test.go::TestMuteIssue`.
+- **FR-106**: Muted issues MUST NOT appear in the default issue list filter. [inferred]
+- **FR-107**: Muted issues with mode `until_regression` MUST transition to `regressed` when a new event arrives. Issues: none found. Tests: `internal/storage/issues_test.go::TestMuteUntilRegressionTriggersOnNewEvent`.
+- **FR-108**: The issue list API MUST return `hourly_counts` (24 integers) per issue without a per-issue subquery. Issues: none found. Tests: `internal/storage/issues_test.go::TestHourlyEventCounts`, `internal/api/issues_test.go::TestListIssuesIncludesHourlyCounts`.
+- **FR-109**: The web UI MUST render a 24-bar sparkline per issue row using only CSS (no JS charting library). [inferred] Rendered in `web/src/components/issues-list.ts`.
+- **FR-110**: The canonical event model MUST support a `user` context object with `id`, `email`, and `username`. Issues: none found. Tests: `internal/normalize/normalize_test.go::TestNormalizeUserExtraction`.
+- **FR-111**: `user.id` MUST be indexed as a facet key for issue filtering. [gap] `extractFacets` in `internal/storage/facets.go` does not index a user facet; see Drift. Issues: [#227](https://github.com/webwiebe/bugbarn/issues/227).
+- **FR-112**: TypeScript, Python, and PHP SDKs MUST expose `setUser` / `clearUser`. Issues: none found. Tests: `sdks/python/tests/test_user.py::test_set_user_stores_fields`, `sdks/php/tests/UserTest.php::testSetUserStoresValues`, `sdks/typescript/test/user.test.mjs::setUser stores a copy of the user object`.
+- **FR-113**: The canonical event model MUST support a `breadcrumbs` array capped at 100 entries per event. Issues: none found. Tests: `internal/normalize/normalize_test.go::TestNormalizeBreadcrumbCap`.
+- **FR-114**: The TypeScript SDK MUST automatically intercept `console`, `fetch`/`XHR`, and navigation events when `autoBreadcrumbs: true` (default). Issues: none found. Tests: `sdks/typescript/test/interceptors.test.mjs::console interceptor adds a breadcrumb for each wrapped method`.
+- **FR-115**: Python and PHP SDKs MUST support manual `add_breadcrumb` calls. Issues: none found. Tests: `sdks/python/tests/test_breadcrumbs.py::test_add_breadcrumb_adds_entry`, `sdks/php/tests/BreadcrumbsTest.php::testAddBreadcrumb`.
+- **FR-116**: The event detail UI MUST render breadcrumbs as a chronological timeline section when present. [inferred] Rendered in `web/src/components/issues-detail.ts`.
+- **FR-117**: A Go SDK MUST exist at `sdks/go/` with `Init`, `CaptureError`, `CaptureMessage`, `Flush`, `Shutdown`, and `RecoverMiddleware`. Issues: none found. Tests: `sdks/go/bugbarn_test.go::TestShutdownDrainsQueue`, `sdks/go/middleware_test.go::TestRecoverMiddlewarePanic`.
+- **FR-118**: When `BUGBARN_SELF_ENDPOINT` is set, the service MUST use the Go SDK to report panics and dead-lettered records to the configured endpoint. Issues: none found. Tests: `internal/selflog/handler_test.go::TestErrorReportCarriesAttributes`.
+- **FR-119**: Self-reporting MUST be entirely opt-in; absence of `BUGBARN_SELF_ENDPOINT` MUST leave behaviour identical to today. [inferred]
 
 ### Non-Functional Requirements
 
-- **NFR-101**: Alert webhook delivery MUST complete or time out within 5 seconds and MUST NOT add more than 100 ms to worker batch processing time in the common case (delivery is fire-and-forget in a separate goroutine).
-- **NFR-102**: The `hourly_counts` query MUST not degrade issue list response time by more than 50 ms at 10,000 issues.
-- **NFR-103**: The breadcrumb ring buffer in the TypeScript SDK MUST use O(1) insertion (circular buffer or fixed-size array with head pointer).
-- **NFR-104**: The Go SDK transport goroutine MUST not prevent process exit; it MUST respect a bounded `Shutdown` timeout.
+- **NFR-101**: Alert webhook delivery MUST complete or time out within 5 seconds and MUST NOT add more than 100 ms to worker batch processing time in the common case (delivery is fire-and-forget in a separate goroutine). Issues: none found. Tests: `internal/alert/deliverer_test.go::TestDeliverer_RetryOnFailure`.
+- **NFR-102**: The `hourly_counts` query MUST not degrade issue list response time by more than 50 ms at 10,000 issues. [inferred] No test measures the added latency.
+- **NFR-103**: The breadcrumb ring buffer in the TypeScript SDK MUST use O(1) insertion (circular buffer or fixed-size array with head pointer). Issues: none found. Tests: `sdks/typescript/test/breadcrumbs.test.mjs::ring buffer caps at 100 breadcrumbs (oldest dropped)`.
+- **NFR-104**: The Go SDK transport goroutine MUST not prevent process exit; it MUST respect a bounded `Shutdown` timeout. Issues: none found. Tests: `sdks/go/transport_test.go::TestTransportShutdown`.
 
 ---
 
@@ -403,3 +407,31 @@ BUGBARN_SELF_PROJECT=bugbarn-service
 2. Should `user.email` be passed through the PII scrubber or treated as intentional? Recommendation: intentional — callers who don't want email stored should not set it. Document clearly.
 3. Should breadcrumbs be stored in the `events` table as a JSON column or in a separate `event_breadcrumbs` table? Recommendation: JSON column on `events` — breadcrumbs are always read with the event and never queried independently.
 4. Should the Go SDK live in `sdks/go/` (separate Composer-style package) or in `internal/reporter/` (internal-only)? Recommendation: `sdks/go/` — a real importable module validates that it works as an external dependency, and it can be used by any Go app beyond BugBarn itself.
+
+
+---
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| `user.id` is indexed as a facet key | FR-111 | `extractFacets` in `internal/storage/facets.go` indexes resource and attribute fields, severity, environment and release. It has no user facet |
+| Self-reporting configured by `BUGBARN_SELF_ENDPOINT` alone | FR-118, FR-119 | `internal/selflog/CLAUDE.md`: the handler installs only when `BUGBARN_SELF_ENDPOINT` and `BUGBARN_SELF_API_KEY` are both set |
+| Self-reporting covers panics and dead-lettered records | FR-118 | Dead-lettering logs at ERROR in `cmd/bugbarn/worker.go`; the selflog handler reports every ERROR record |
+| Alert delivery is Slack Block Kit or generic JSON | FR-102 | `internal/alert/deliverer.go` also detects Discord webhooks, as Open Question 1 recommended |
+| Alert delivery is webhook only | P2-1 | `internal/alert/` also sends admin email for new issues, regressions and event-count milestones |
+| Status Draft | Header | Phase 2 and the dogfooding story ship; FR-111 does not |
+| Event model carries `user` with `id`, `email`, `username` | FR-110 | `normalize` also accepts `user_id` and `name` as fallbacks |
+
+## Proof contract
+
+- [ ] An alert rule with a cooldown fires once and delivers to a Slack-style URL.
+- [ ] A muted `until_regression` issue changes status when a new event arrives.
+- [ ] The issue list returns `hourly_counts` with 24 entries per issue.
+- [ ] An ERROR log record from the service appears in the self-reporting project.
+
+## Sources
+
+- `internal/alert/`, `internal/storage/issues_upsert.go`, `internal/normalize/`
+- `sdks/go/`, `sdks/typescript/`, `sdks/python/`, `sdks/php/`
+- `internal/selflog/CLAUDE.md`

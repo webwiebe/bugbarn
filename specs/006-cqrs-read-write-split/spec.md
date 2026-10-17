@@ -2,7 +2,11 @@
 
 **Feature Branch**: `006-cqrs-read-write-split`
 **Created**: 2026-05-06
-**Status**: Draft
+**Spec**: 006-cqrs-read-write-split
+**Status**: Shipped
+**Last verified against the tree**: 2026-10-17 at 70a663f
+**Issues**: none found
+**Principles touched**: V
 **Input**: 503 errors during production rollouts due to `Recreate` strategy. Single PVC (ReadWriteOnce) prevents rolling updates. Opportunity to scale reads independently.
 
 ## Problem
@@ -284,3 +288,49 @@ esac
 - [ ] `go build ./...` and `go test ./...` pass
 - [ ] Deploy to staging with writer (1 replica) + readers (2 replicas) and verify
 - [ ] Rolling update of reader pods while sending traffic — no dropped requests
+
+---
+
+## Requirements
+
+### Functional Requirements
+
+- **FR-601**: `BUGBARN_MODE` MUST accept `""`, `writer` and `reader` and abort startup on any other value. Issues: none found. [inferred] `validateMode` in `internal/config/config.go`; no test names it.
+- **FR-602**: A reader MUST open the database read-only and fail every write method. Issues: none found. Tests: `internal/storage/readonly_test.go::TestOpenReadOnly_PersistProcessedEventFails`, `::TestOpenReadOnlyReadsExistingData`.
+- **FR-603**: A reader MUST forward non-GET requests it cannot answer to the writer. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_AuthenticatedPOSTForwarded`, `::TestWriteForwarder_DeleteForwarded`.
+- **FR-604**: A reader MUST serve GET requests from its local store. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_GETNotForwarded`.
+- **FR-605**: A reader MUST return 502 when the writer is down. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_WriterDown502`.
+- **FR-606**: With no forwarder configured the server MUST behave as the single-process mode. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestNoForwarder_NormalBehavior`.
+- **FR-607**: Login and session writes on a reader MUST reach the writer. Issues: none found. Tests: `internal/api/reader_mode_test.go::TestReaderModeLoginAndValidate`, `::TestReaderModeRefreshDelegatesToWriter`.
+- **FR-608**: Reader-to-writer internal session endpoints MUST reject unsigned requests. Issues: none found. Tests: `internal/api/reader_mode_test.go::TestInternalSessionEndpointsRejectUnsigned`.
+- **FR-609**: The writer MUST run as a single `Recreate` pod and readers as a `RollingUpdate` set, so reader rollouts drop no requests. Issues: none found. Gate: `deploy/k8s/production/writer-deployment.yaml`, `deploy/k8s/production/reader-deployment.yaml`.
+
+### Non-Functional Requirements
+
+- **NFR-601**: Readers see the writer's committed data without a restore step. [inferred] They share the PVC read-only; see Drift.
+
+---
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| Readers restore a SQLite copy from Litestream and refresh every 30 to 60 seconds | Solution, Reader SQLite Lifecycle, Phase 5, Acceptance Criteria | Litestream is removed. Readers mount the writer's PVC read-only (`deploy/k8s/production/reader-deployment.yaml`); `internal/reader/restore.go` does not exist |
+| The writer runs spool, worker and Litestream replication | Modes, Acceptance Criteria | The writer runs spool, worker, Redis consumer, retention, digest and `RunPeriodicCheckpoint`; no replication |
+| Readers are stateless and eventually consistent by 30 to 60 seconds | Modes, Consistency model | WAL gives readers the committed state of the shared file. Staleness bound not established |
+| Reader forwards events by HTTP | Event Forwarding | With a spool dir and a Redis URL the reader publishes to Redis (spec 007); sync forwarding stays for mutations |
+| Entrypoint runs `litestream restore` | Startup, Phase 6 | `deploy/docker/entrypoint.sh` documents that Litestream is gone |
+| Status Draft; acceptance boxes unchecked | Header | Production runs one writer and 2 to 6 HPA-scaled readers |
+| `internal/api/forwarder.go` | Phase 3 | Not established; forwarding tests live in `internal/api/server_forwarding_test.go` |
+
+## Proof contract
+
+- [ ] A reader rollout drops no requests.
+- [ ] An issue resolved through a reader takes effect on the writer.
+- [ ] A reader refuses to write to its read-only store.
+
+## Sources
+
+- `internal/api/server_forwarding_test.go`, `internal/api/reader_mode_test.go`
+- `internal/storage/readonly_test.go`
+- `deploy/CLAUDE.md`, `deploy/k8s/production/`

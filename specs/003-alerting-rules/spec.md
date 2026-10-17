@@ -2,7 +2,11 @@
 
 **Feature Branch**: `003-alerting-rules`
 **Created**: 2026-04-22
-**Status**: Draft
+**Spec**: 003-alerting-rules
+**Status**: Shipped
+**Last verified against the tree**: 2026-10-17 at 70a663f
+**Issues**: none found
+**Principles touched**: VII (BugBarn reports its own failures)
 **Input**: Phase 2 spec (002) defined the alert schema and delivery pipeline but left the `event_count_exceeds` condition unimplemented. This spec closes that gap.
 
 ---
@@ -75,14 +79,14 @@ bus.Publish(domainevents.IssueEventRecorded{Issue: issue, ProjectID: projectID})
 
 ### Functional Requirements
 
-- **FR-301**: Alert rules with `condition: event_count_exceeds` MUST fire when the issue's `event_count` exceeds `threshold`.
-- **FR-302**: A threshold of 0 or less MUST NOT trigger a firing.
-- **FR-303**: Cooldown enforcement from Phase 2 (per alert/issue pair, configurable `cooldown_minutes`) MUST apply to `event_count_exceeds` identically to other conditions.
-- **FR-304**: The alert payload MUST include `event_count` in the `issue` block so the receiver can display the current volume.
+- **FR-301**: Alert rules with `condition: event_count_exceeds` MUST fire when the issue's `event_count` exceeds `threshold`. Issues: none found. Tests: `internal/alert/evaluator_test.go::TestEvaluator_ConditionMatching`.
+- **FR-302**: A threshold of 0 or less MUST NOT trigger a firing. [inferred] `internal/alert/evaluator.go` skips a threshold of 0 or less; no test names it.
+- **FR-303**: Cooldown enforcement from Phase 2 (per alert/issue pair, configurable `cooldown_minutes`) MUST apply to `event_count_exceeds` identically to other conditions. Issues: none found. Tests: `internal/alert/evaluator_test.go::TestEvaluator_CooldownPreventsDoubleFire`, `::TestEvaluator_CooldownExpiredAllowsFire`.
+- **FR-304**: The alert payload MUST include `event_count` in the `issue` block so the receiver can display the current volume. Issues: none found. Tests: `internal/alert/deliverer_test.go::TestDeliverer_GenericPayload`.
 
 ### Non-Functional Requirements
 
-- **NFR-301**: Publishing `IssueEventRecorded` MUST add no observable latency to the worker loop (synchronous publish to in-process bus handlers; handlers spawn their own goroutines for network I/O).
+- **NFR-301**: Publishing `IssueEventRecorded` MUST add no observable latency to the worker loop (synchronous publish to in-process bus handlers; handlers spawn their own goroutines for network I/O). [inferred]
 
 ---
 
@@ -91,3 +95,24 @@ bus.Publish(domainevents.IssueEventRecorded{Issue: issue, ProjectID: projectID})
 - **SC-301**: An alert with `event_count_exceeds / threshold: 5` fires after the 6th event for a given issue and does not fire again until the cooldown expires.
 - **SC-302**: Setting `threshold: 0` produces no firings.
 - **SC-303**: The Slack payload for an `event_count_exceeds` firing includes the current event count in the fields block.
+
+---
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| Status Draft | Header | `event_count_exceeds` is evaluated in `internal/alert/evaluator.go` and offered in the web alert form (`web/src/components/alerts.ts`) |
+| Conditions are `new_issue`, `regression`, `event_count_exceeds` | Background | `internal/alert/types.go` also lists `message_contains` |
+| `IssueEventRecorded` is published synchronously | NFR-301 | `internal/domainevents/events.go` defines the event; handler goroutine behaviour not established |
+| SC-303 shows the count in the Slack fields block | Success Criteria | `TestDeliverer_SlackPayload` covers the Slack shape; a test of the count field specifically does not exist |
+
+## Proof contract
+
+- [ ] A rule with `event_count_exceeds` and `threshold: 5` fires on the 6th event and stays quiet until the cooldown ends.
+- [ ] A rule with `threshold: 0` never fires.
+
+## Sources
+
+- `internal/alert/evaluator.go`, `deliverer.go`, `types.go`
+- `internal/domainevents/events.go`
