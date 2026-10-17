@@ -38,10 +38,16 @@ RUN go build std && \
 # test: vet + test + build for both modules on top of the warm deps cache, so a
 # source change only recompiles app packages. The RUN fails the build on any
 # test/vet/build failure, which fails CI.
+#
+# CPU cap: the build host also runs the CI runners, and an uncapped test stage
+# held the buildkit container at 780% CPU and the host at 0-2% idle. GOMAXPROCS
+# bounds the compiler, linker and test binaries; -p bounds how many packages
+# vet, test and build run at once. Raise both together, never one alone.
 FROM deps AS test
+ENV GOMAXPROCS=4
 COPY . .
-RUN go vet ./... && go test ./... && go build ./... && \
-    (cd sdks/go && go vet ./... && go test ./... && go build ./...)
+RUN go vet -p 4 ./... && go test -p 4 ./... && go build -p 4 ./... && \
+    (cd sdks/go && go vet -p 4 ./... && go test -p 4 ./... && go build -p 4 ./...)
 
 FROM alpine:3.20
 
