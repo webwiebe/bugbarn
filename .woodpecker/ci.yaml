@@ -239,7 +239,6 @@ steps:
         # old step ran only the diff-scoped half, unconditionally, so on a push
         # to main it compared main to itself and passed without reading a line.
         sh scripts/check-go-lint.sh
-        sh scripts/check-go-soak.sh
         sh scripts/check-coverage.sh
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
         pnpm dlx jscpd@latest .

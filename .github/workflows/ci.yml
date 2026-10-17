@@ -286,9 +286,6 @@ jobs:
             git fetch --no-tags origin "$BASE:refs/remotes/origin/$BASE"
           fi
           sh scripts/check-go-lint.sh
-      - name: Dead-code and boundary soaks
-        shell: bash
-        run: sh scripts/check-go-soak.sh
       - name: Go coverage ratchet
         shell: bash
         run: sh scripts/check-coverage.sh

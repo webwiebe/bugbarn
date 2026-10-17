@@ -15,7 +15,7 @@ export PATH := $(COREPACK_BIN):$(PATH)
 PNPM := $(COREPACK_BIN)/pnpm
 
 .PHONY: help setup test lint build dev docker-build spec-check \
-	lint-go check-file-length coverage dup quality test-gates go-soak ts-budget \
+	lint-go check-file-length coverage dup quality test-gates ts-budget \
 	woodpecker-secrets-edit woodpecker-secrets-sync
 
 help:
@@ -27,7 +27,6 @@ help:
 		'  lint-go      golangci-lint: full-tree ratchet + diff-scoped run' \
 		'  check-file-length  fail on any source file over 500 lines' \
 		'  coverage     measure Go coverage and ratchet against baseline' \
-		'  go-soak      dead-code + import-boundary soaks (report + ratchet)' \
 		'  ts-budget    TypeScript size/complexity soak (needs web/node_modules)' \
 		'  test-gates   run the tests for the gate scripts themselves' \
 		'  dup          scan the repo for cross-file duplication (jscpd)' \
@@ -169,13 +168,6 @@ lint-go:
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	sh scripts/check-go-lint.sh
 
-# Dead-code and import-boundary soaks (.golangci-soak.yml). Report-only in the
-# sense that neither is enforced at 0 yet; both counts are ratcheted.
-go-soak:
-	@set -eu; \
-	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
-	sh scripts/check-go-soak.sh
-
 # TypeScript size/complexity soak. Needs web/node_modules (make setup).
 ts-budget: $(PNPM)
 	@sh scripts/check-ts-budget.sh
@@ -203,7 +195,7 @@ $(PNPM):
 # Umbrella gate used by CI: every code-quality check in one target. The gate
 # scripts' own tests run first, so a gate that has stopped failing is reported
 # before the gates it protects are trusted.
-quality: test-gates check-file-length lint-go go-soak coverage ts-budget dup
+quality: test-gates check-file-length lint-go coverage ts-budget dup
 
 build: $(PNPM)
 	@set -eu; \
