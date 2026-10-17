@@ -18,14 +18,7 @@ var (
 	titleColor  = lipgloss.Color("230")
 	subtleColor = lipgloss.Color("243")
 	dimColor    = lipgloss.Color("241")
-	brightColor = lipgloss.Color("250")
 	footerBg    = lipgloss.Color("235")
-
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(titleColor).
-			Background(primaryColor).
-			Padding(0, 1)
 
 	headerStyle = lipgloss.NewStyle().
 			Foreground(titleColor).
@@ -59,7 +52,6 @@ var (
 
 	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(titleColor)
 	labelStyle   = lipgloss.NewStyle().Foreground(subtleColor)
-	valueStyle   = lipgloss.NewStyle().Foreground(brightColor)
 	keyStyle     = lipgloss.NewStyle().Foreground(primaryColor)
 	frameStyle   = lipgloss.NewStyle().Foreground(accentColor)
 	dimStyle     = lipgloss.NewStyle().Foreground(dimColor)

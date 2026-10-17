@@ -244,7 +244,6 @@ steps:
         # old step ran only the diff-scoped half, unconditionally, so on a push
         # to main it compared main to itself and passed without reading a line.
         sh scripts/check-go-lint.sh
-        sh scripts/check-go-soak.sh
         sh scripts/check-coverage.sh
         # Changed-line coverage, report only until 2026-10-24 (then add
         # --enforce). 80% of the coverable Go lines a PR adds must be executed;

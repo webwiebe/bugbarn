@@ -31,6 +31,9 @@ linters:
     # fails on any depguard finding, outside the shared count ratchet, so a new
     # boundary violation cannot hide behind an unrelated fix.
     - depguard
+    # dead code. Zero findings in both modules; any new one raises the count
+    # past scripts/golangci-baseline.txt and fails scripts/check-go-lint.sh.
+    - unused
   settings:
     gocyclo:
       min-complexity: 12

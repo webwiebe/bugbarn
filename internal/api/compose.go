@@ -22,7 +22,7 @@ import (
 )
 
 // compose.go is the API layer's composition root: the only file in
-// internal/api that may import internal/storage (.golangci-soak.yml,
+// internal/api that may import internal/storage (.golangci.yml,
 // api-storage-boundary). It turns a store into the services the handlers call;
 // handlers only ever see the services.
 

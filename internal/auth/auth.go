@@ -319,12 +319,6 @@ func ClearCSRFCookie(secure bool) *http.Cookie {
 	}
 }
 
-func sign(secret, payload []byte) []byte {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(payload)
-	return mac.Sum(nil)
-}
-
 func randomSecret() string {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
