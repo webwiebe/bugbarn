@@ -26,7 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const BASELINE_FILE = "oxlint-baseline.json";
-export const LINT_TARGETS = ["src"];
+const LINT_TARGETS = ["src"];
 export const BUDGET_RULES = [
   "eslint(complexity)",
   "eslint(max-lines)",
@@ -91,7 +91,7 @@ export function tally(findings) {
   return { counts, budget };
 }
 
-export function runOxlint(webDir) {
+function runOxlint(webDir) {
   const bin = path.join(webDir, "node_modules", ".bin", "oxlint");
   if (!fs.existsSync(bin)) {
     throw new Error(`oxlint is not installed at ${bin}; run pnpm install in web/ first`);

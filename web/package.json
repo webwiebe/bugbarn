@@ -8,6 +8,8 @@
     "lint": "tsc --noEmit",
     "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs scripts/project-filter.test.mjs scripts/timeline-stack.test.mjs scripts/release-rows.test.mjs scripts/surfaces.test.mjs scripts/boundaries-ratchet.test.mjs",
     "boundaries": "node scripts/boundaries-ratchet.mjs",
+    "lint:knip": "node scripts/knip-ratchet.mjs",
+    "lint:knip-test": "node --test scripts/knip-ratchet.test.mjs",
     "test:e2e": "playwright test",
     "screenshots": "playwright test e2e/screenshots.spec.ts"
   },
@@ -18,6 +20,7 @@
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.1",
     "jsdom": "^26.1.0",
+    "knip": "6.34.0",
     "oxlint": "1.82.0",
     "typescript": "^7.0.2"
   },
