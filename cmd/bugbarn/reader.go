@@ -134,7 +134,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 			return proj.Slug
 		})
 	}
-	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
+	userAuth, err := newUserAuthenticator(cfg)
 	if err != nil {
 		return err
 	}

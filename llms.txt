@@ -202,6 +202,8 @@ Environment variables for the server:
 | `BUGBARN_ADMIN_USERNAME` | (none) | Web UI admin username |
 | `BUGBARN_ADMIN_PASSWORD` | (none) | Web UI admin password (plaintext) |
 | `BUGBARN_ADMIN_PASSWORD_BCRYPT` | (none) | Web UI admin password (bcrypt hash, preferred) |
+| `BUGBARN_SMOKE_USERNAME` | (none) | Optional second web login for the post-deploy browser smoke; needs `BUGBARN_SMOKE_PASSWORD_HASH`. Empty disables it |
+| `BUGBARN_SMOKE_PASSWORD_HASH` | (none) | bcrypt hash for the smoke login (no plaintext variant) |
 | `BUGBARN_SESSION_SECRET` | (none) | Secret for session cookie signing |
 | `BUGBARN_SESSION_TTL_SECONDS` | `43200` | Session lifetime in seconds (default 12h) |
 | `BUGBARN_ALLOWED_ORIGINS` | (none) | Comma-separated allowed CORS origins for dashboard |

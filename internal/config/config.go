@@ -21,16 +21,20 @@ type Config struct {
 	AdminUsername       string
 	AdminPassword       string
 	AdminPasswordBcrypt string
-	SessionSecret       string
-	SessionTTL          time.Duration
-	AllowedOrigins      []string
-	TrustedProxies      []*net.IPNet
-	SpoolDir            string
-	DBPath              string
-	MaxBodyBytes        int64
-	MaxSpoolBytes       int64
-	MaxSourceMapBytes   int64
-	PublicURL           string
+	// SmokeUsername and SmokePasswordHash configure the optional second login
+	// used by the post-deploy browser smoke. Both empty means disabled.
+	SmokeUsername     string
+	SmokePasswordHash string
+	SessionSecret     string
+	SessionTTL        time.Duration
+	AllowedOrigins    []string
+	TrustedProxies    []*net.IPNet
+	SpoolDir          string
+	DBPath            string
+	MaxBodyBytes      int64
+	MaxSpoolBytes     int64
+	MaxSourceMapBytes int64
+	PublicURL         string
 	// Environment is BUGBARN_ENVIRONMENT (falls back to BUGBARN_ENV):
 	// production/staging/testing. Drives fail-closed defaults and labels
 	// outgoing alert emails.
@@ -115,6 +119,8 @@ func Load() Config {
 		AdminUsername:       os.Getenv("BUGBARN_ADMIN_USERNAME"),
 		AdminPassword:       os.Getenv("BUGBARN_ADMIN_PASSWORD"),
 		AdminPasswordBcrypt: os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT"),
+		SmokeUsername:       os.Getenv("BUGBARN_SMOKE_USERNAME"),
+		SmokePasswordHash:   os.Getenv("BUGBARN_SMOKE_PASSWORD_HASH"),
 		SessionSecret:       os.Getenv("BUGBARN_SESSION_SECRET"),
 		AllowedOrigins:      parseCSVEnv("BUGBARN_ALLOWED_ORIGINS"),
 		TrustedProxies:      parseTrustedProxies(os.Getenv("BUGBARN_TRUSTED_PROXIES")),

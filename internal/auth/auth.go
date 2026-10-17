@@ -171,6 +171,9 @@ func (a *Authorizer) ValidWithContext(ctx context.Context, provided string) bool
 type UserAuthenticator struct {
 	username     string
 	passwordHash []byte
+	// smoke is the optional second login for the post-deploy browser smoke
+	// (see smoke_login.go). Its zero value means disabled.
+	smoke login
 }
 
 func NewUserAuthenticator(username, password, passwordBcrypt string) (*UserAuthenticator, error) {
@@ -194,13 +197,8 @@ func (a *UserAuthenticator) Enabled() bool {
 }
 
 func (a *UserAuthenticator) Valid(username, password string) bool {
-	if a == nil || !a.Enabled() {
-		return true
-	}
-	if subtle.ConstantTimeCompare([]byte(username), []byte(a.username)) != 1 {
-		return false
-	}
-	return bcrypt.CompareHashAndPassword(a.passwordHash, []byte(password)) == nil
+	_, ok := a.Authenticate(username, password)
+	return ok
 }
 
 func (a *UserAuthenticator) Username() string {

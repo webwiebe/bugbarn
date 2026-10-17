@@ -31,6 +31,8 @@ BUGBARN_SESSION_SECRET=<random high-entropy string>
 
 For local-only development, `BUGBARN_ADMIN_PASSWORD` can be used instead of `BUGBARN_ADMIN_PASSWORD_BCRYPT`; the service hashes it in memory at startup. Do not use plaintext admin passwords in committed manifests.
 
+An optional second login exists for the post-deploy browser smoke: set `BUGBARN_SMOKE_USERNAME` and `BUGBARN_SMOKE_PASSWORD_HASH` (bcrypt only) in the same secret. It has the same session and permissions as the admin login, both empty leaves it disabled, and only the testing environment sets it. A username without a hash (or the reverse) stops startup.
+
 The session cookie is HTTP-only, SameSite=Lax, and marked Secure when BugBarn is reached through HTTPS or a proxy that sets `X-Forwarded-Proto: https`.
 
 For direct cluster access, you can still use a port-forward:

@@ -104,6 +104,19 @@ spec:
                   name: bugbarn-secrets
                   key: BUGBARN_ADMIN_PASSWORD_BCRYPT
                   optional: true
+            # Second login for the post-deploy browser smoke (testing only).
+            - name: BUGBARN_SMOKE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_SMOKE_USERNAME
+                  optional: true
+            - name: BUGBARN_SMOKE_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_SMOKE_PASSWORD_HASH
+                  optional: true
             - name: BUGBARN_SESSION_SECRET
               valueFrom:
                 secretKeyRef:
