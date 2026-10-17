@@ -1,0 +1,6 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/app.ts", "sw.js", "build.mjs"],
+  "project": ["src/**/*.ts", "scripts/**/*.mjs", "sw.js", "build.mjs"],
+  "ignoreDependencies": ["oxlint", "@swc/core"]
+}

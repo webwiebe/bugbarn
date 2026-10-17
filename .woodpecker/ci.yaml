@@ -107,6 +107,10 @@ steps:
         # Layer boundaries (web/.dependency-cruiser.cjs), report only until
         # 2026-10-31 (then add --enforce).
         pnpm run boundaries
+        # Dead code (knip). The ratchet's own test blocks; the gate itself is
+        # report-only while it soaks. Baseline: web/knip-baseline.json.
+        node scripts/knip-ratchet.test.mjs
+        node scripts/knip-ratchet.mjs --report-only
         pnpm run lint
         pnpm run test
         pnpm run build
