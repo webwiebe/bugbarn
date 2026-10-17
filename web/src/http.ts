@@ -15,8 +15,7 @@ import {
   updateBBMenuUser,
   type OIDCRuntime,
 } from "./core.js";
-import { loadProjects } from "./views-projects.js";
-import { refreshAll } from "./router.js";
+import { loadProjects, refreshAll } from "./app-actions.js";
 import { stopLiveStream } from "./live.js";
 
 export async function loadSession(): Promise<void> {

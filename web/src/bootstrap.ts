@@ -29,7 +29,7 @@ import {
 import { login, loadSession, logout, renderLogin } from "./http.js";
 import { initIAMBarnWidgets } from "./iambarn.js";
 import { requestNotificationPermission, stopLiveStream } from "./live.js";
-import { refreshAll, route } from "./router.js";
+import { refreshAll, route, setRouteStatus } from "./router.js";
 import {
   checkPendingProjects,
   closePicker,
@@ -42,6 +42,9 @@ import {
   renderPickerList,
 } from "./views-projects.js";
 import { loadIssues } from "./views-issues.js";
+import { registerAppActions } from "./app-actions.js";
+
+registerAppActions({ refreshAll, loadProjects, setRouteStatus });
 
 const instrumentationReady = initInstrumentation();
 
