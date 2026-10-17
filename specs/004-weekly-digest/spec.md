@@ -2,7 +2,11 @@
 
 **Feature Branch**: `004-weekly-digest`
 **Created**: 2026-04-22
-**Status**: Draft
+**Spec**: 004-weekly-digest
+**Status**: Shipped
+**Last verified against the tree**: 2026-10-17 at 70a663f
+**Issues**: none found
+**Principles touched**: VII (BugBarn reports its own failures)
 **Input**: Operators want a scheduled summary of error trends so they can review the week's health without opening the UI every day.
 
 ---
@@ -161,18 +165,18 @@ The scheduler goroutine wakes every minute, checks if it is the configured weekd
 
 ### Functional Requirements
 
-- **FR-401**: When `BUGBARN_DIGEST_WEBHOOK_URL` is set, the digest MUST be POSTed as JSON to that URL every configured day/hour.
-- **FR-402**: When SMTP is configured and `BUGBARN_DIGEST_TO` is set, the digest MUST be sent as an email (HTML + plain text multipart) every configured day/hour.
-- **FR-403**: Digest delivery failures MUST be logged and MUST NOT crash the service.
-- **FR-404**: When neither channel is configured, the scheduler goroutine MUST NOT start.
-- **FR-405**: The digest MUST cover the 7 days preceding the send time.
-- **FR-406**: `top_issues` MUST contain at most 5 entries ordered by event count descending within the period.
+- **FR-401**: When `BUGBARN_DIGEST_WEBHOOK_URL` is set, the digest MUST be POSTed as JSON to that URL every configured day/hour. Issues: none found. Tests: `internal/digest/digest_test.go::TestSendNotifierFailuresAreIndependent`.
+- **FR-402**: When SMTP is configured and `BUGBARN_DIGEST_TO` is set, the digest MUST be sent as an email (HTML + plain text multipart) every configured day/hour. Issues: none found. Tests: `internal/digest/mail_test.go::TestDeliverEmailBuildsMultipart`.
+- **FR-403**: Digest delivery failures MUST be logged and MUST NOT crash the service. Issues: none found. Tests: `internal/digest/digest_test.go::TestSendNotifierFailuresAreIndependent`.
+- **FR-404**: When neither channel is configured, the scheduler goroutine MUST NOT start. [inferred]
+- **FR-405**: The digest MUST cover the 7 days preceding the send time. [inferred]
+- **FR-406**: `top_issues` MUST contain at most 5 entries ordered by event count descending within the period. [inferred]
 
 ### Non-Functional Requirements
 
-- **NFR-401**: Storage queries for digest data MUST NOT hold the database connection for more than 2 seconds; a context deadline of 10 seconds is applied.
-- **NFR-402**: Email and webhook delivery MUST each have a 15-second timeout.
-- **NFR-403**: The scheduler MUST add no observable CPU overhead between fire times (sleeps until next minute check).
+- **NFR-401**: Storage queries for digest data MUST NOT hold the database connection for more than 2 seconds; a context deadline of 10 seconds is applied. Issues: none found. The tree budgets 30 seconds per project and 10 minutes per run (`internal/digest/digest.go`); see Drift. Tests: `internal/digest/digest_test.go::TestSendSlowProjectDoesNotStarveTheRest`.
+- **NFR-402**: Email and webhook delivery MUST each have a 15-second timeout. Issues: none found. Tests: `internal/digest/mail_test.go::TestDeliverEmailHonorsContextDeadline`.
+- **NFR-403**: The scheduler MUST add no observable CPU overhead between fire times (sleeps until next minute check). [inferred]
 
 ---
 
@@ -182,3 +186,28 @@ The scheduler goroutine wakes every minute, checks if it is the configured weekd
 - **SC-402**: An email is received with correct subject line and issue counts when SMTP is configured.
 - **SC-403**: With zero events this week, the digest still sends with `total_events: 0` and an empty `top_issues` array.
 - **SC-404**: With neither channel configured, `grep "digest" <(journalctl -u bugbarn)` returns nothing on startup.
+
+---
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| Email uses `BUGBARN_SMTP_HOST`, `_PORT`, `_USER`, `_PASS`, `_FROM` | Configuration table | `internal/config/config.go` reads unprefixed `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, plus `SMTP_FROM_NAME` and `SMTP_REPLY_TO` |
+| Email is sent when SMTP is configured and `BUGBARN_DIGEST_TO` is set | FR-402 | Email also requires `BUGBARN_DIGEST_ENABLED=true` |
+| Queries use a 10 second context deadline | NFR-401 | Per-project budget defaults to 30 seconds (`BUGBARN_DIGEST_PROJECT_BUDGET_SECONDS`), the whole gather to 10 minutes (`BUGBARN_DIGEST_GATHER_BUDGET_SECONDS`), delivery to 2 minutes |
+| Status Draft | Header | The scheduler, webhook and email notifiers ship in `internal/digest` |
+| One digest per run | Scheduler section | The digest is built per project and a slow project no longer starves the rest |
+| SC-404 greps `journalctl` | Success Criteria | Production runs in Kubernetes; no journald unit exists. Not established |
+
+## Proof contract
+
+- [ ] A webhook POST arrives with `type: "weekly_digest"` at the configured day and hour.
+- [ ] An email arrives with the multipart body when `BUGBARN_DIGEST_ENABLED=true`.
+- [ ] A slow project does not stop delivery for the others.
+
+## Sources
+
+- `internal/digest/scheduler.go`, `digest.go`, `mail.go`, `webhook.go`
+- `internal/storage/digest.go` (`WeeklyDigest`, top 5 by event count)
+- `internal/config/config.go` (digest and SMTP variables)

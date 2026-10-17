@@ -2,7 +2,11 @@
 
 **Feature Branch**: `001-personal-error-tracker`  
 **Created**: 2026-04-15  
-**Status**: Draft  
+**Spec**: 001-personal-error-tracker
+**Status**: Shipped
+**Last verified against the tree**: 2026-10-17 at 70a663f
+**Issues**: [#154](https://github.com/webwiebe/bugbarn/issues/154), [#157](https://github.com/webwiebe/bugbarn/issues/157), [#205](https://github.com/webwiebe/bugbarn/issues/205), [#223](https://github.com/webwiebe/bugbarn/issues/223)
+**Principles touched**: I, II, III, IV, V, VI
 **Input**: Build a barebones, open-source, self-hosted Sentry-like system for personal use with fast non-blocking ingest, OpenTelemetry-based event normalization, deduplicated errors/issues, live event views, lightweight auth, SDKs for TypeScript and Python, Docker/binary deployment, and homelab CI/CD.
 
 ## User Scenarios & Testing
@@ -126,53 +130,53 @@ As a user, I want releases, alerts, settings, issue resolution, source-map uploa
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST expose an authenticated ingest endpoint for application events.
-- **FR-002**: The ingest endpoint MUST durably enqueue accepted events before responding and MUST NOT perform issue/event database inserts in the request path.
-- **FR-003**: The system MUST define a canonical event envelope based on OpenTelemetry concepts for exceptions, logs, resources, attributes, traces, and severity.
-- **FR-004**: The system MUST preserve unknown sender-provided fields in scrubbed raw context.
-- **FR-005**: The system MUST reject unauthenticated ingest requests.
-- **FR-006**: The system MUST enforce configurable request size and spool size limits.
-- **FR-007**: Background workers MUST normalize queued payloads into canonical events.
-- **FR-008**: Background workers MUST scrub PII and secrets before persistence and UI exposure.
-- **FR-009**: Background workers MUST fingerprint events into issues using normalized exception type, normalized message, stack frames, and selected stable context.
-- **FR-010**: Fingerprinting MUST remove volatile identifiers such as UUIDs, IP addresses, timestamps, large numeric IDs, memory addresses, and obvious random tokens.
-- **FR-011**: The data model MUST represent an issue/error separately from its event occurrences.
-- **FR-012**: Events MUST reference their grouped issue when grouping succeeds.
-- **FR-013**: The system MUST track first seen, last seen, occurrence count, project/application, severity, and representative event metadata per issue.
-- **FR-014**: The system MUST support flexible facets extracted from event context, including but not limited to host, runtime, release, environment, route, status code, user agent family, and region.
-- **FR-015**: The system MUST keep a registry of discovered facet keys and maintain queryable facet values.
-- **FR-016**: The API MUST provide issue list, issue detail, event list, event detail, and facet filtering endpoints.
-- **FR-017**: The web UI MUST include an issue list view.
-- **FR-018**: The web UI MUST include an issue detail view with event navigation.
-- **FR-019**: The web UI MUST include a live event flow view.
-- **FR-020**: The system MUST support username/password login for human users.
-- **FR-021**: Initial user credentials MUST be configurable through environment variables and/or CLI setup.
-- **FR-022**: The system MUST provide project/application API key management.
-- **FR-023**: The project MUST ship Docker images for ingest/API/worker and web components.
-- **FR-024**: The ingest/API/worker service SHOULD build as a standalone binary.
-- **FR-025**: The project MUST provide TypeScript and Python SDKs before the first public release.
-- **FR-026**: SDKs MUST support default uncaught error handlers and manual capture.
-- **FR-027**: SDKs MUST send events asynchronously and avoid blocking application execution on network failures.
-- **FR-028**: CI MUST run tests, linting, builds, and container image checks.
-- **FR-029**: CI/CD MUST support testing and staging namespaces in the homelab K3S cluster.
-- **FR-030**: The system MUST support release or notable-event markers so regressions can be correlated with recent deploys or operational changes.
-- **FR-031**: Release markers SHOULD be linkable from issue/event timelines and SHOULD carry at least name, environment, observed time, optional commit/version, and optional URL.
-- **FR-032**: The TypeScript SDK MUST allow release and dist metadata to be attached to captured events, defaulting from SDK configuration and/or environment variables.
-- **FR-033**: The system MUST provide a source map upload endpoint that accepts multipart artifact uploads keyed by release, dist, and bundle URL.
-- **FR-034**: The web UI MUST expose releases, alerts, and settings views backed by same-origin API routes.
-- **FR-035**: The web UI MUST support resolving and reopening an issue from the issue detail view.
-- **FR-036**: The web UI MUST display fingerprint material and concise traceback source details when the backend provides them.
-- **FR-037**: The web UI SHOULD keep issue event lists scrollable and place them after the exception, context, and stacktrace sections.
+- **FR-001**: The system MUST expose an authenticated ingest endpoint for application events. Issues: none found. Tests: `internal/ingest/handler_test.go::TestServeHTTPRejectsMissingAPIKeyWhenEnabled`.
+- **FR-002**: The ingest endpoint MUST durably enqueue accepted events before responding and MUST NOT perform issue/event database inserts in the request path. Issues: [#9](https://github.com/webwiebe/bugbarn/issues/9). Tests: `internal/ingest/handler_test.go::TestServeHTTPAcceptedAndSpoolsBody`.
+- **FR-003**: The system MUST define a canonical event envelope based on OpenTelemetry concepts for exceptions, logs, resources, attributes, traces, and severity. Issues: none found. Tests: `internal/normalize/normalize_test.go::TestNormalizeOpenTelemetryShapedEvent`.
+- **FR-004**: The system MUST preserve unknown sender-provided fields in scrubbed raw context. [inferred]
+- **FR-005**: The system MUST reject unauthenticated ingest requests. Issues: none found. Tests: `internal/ingest/handler_test.go::TestServeHTTPRejectsMissingAPIKeyWhenEnabled`.
+- **FR-006**: The system MUST enforce configurable request size and spool size limits. Issues: [#8](https://github.com/webwiebe/bugbarn/issues/8). Tests: `internal/ingest/handler_test.go::TestServeHTTPRejectsOversizeBody`.
+- **FR-007**: Background workers MUST normalize queued payloads into canonical events. Issues: none found. Tests: `internal/normalize/normalize_test.go::TestNormalizeSDKStyleEvent`.
+- **FR-008**: Background workers MUST scrub PII and secrets before persistence and UI exposure. Issues: none found. Tests: `internal/privacy/scrub_test.go::TestScrubRedactsSensitiveKeysAndStringPatterns`.
+- **FR-009**: Background workers MUST fingerprint events into issues using normalized exception type, normalized message, stack frames, and selected stable context. Issues: none found. Tests: `internal/fingerprint/fingerprint_test.go::TestFingerprintChangesForDifferentExceptionType`.
+- **FR-010**: Fingerprinting MUST remove volatile identifiers such as UUIDs, IP addresses, timestamps, large numeric IDs, memory addresses, and obvious random tokens. Issues: [#205](https://github.com/webwiebe/bugbarn/issues/205). Tests: `internal/fingerprint/fingerprint_test.go::TestFingerprintIgnoresVolatileIdentifiers`, `internal/fingerprint/timestamp_test.go::TestFingerprintGroupsMessagesDifferingOnlyByTimestamp`.
+- **FR-011**: The data model MUST represent an issue/error separately from its event occurrences. Issues: none found. Tests: `internal/storage/storage_test.go::TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable`.
+- **FR-012**: Events MUST reference their grouped issue when grouping succeeds. Issues: none found. Tests: `internal/storage/storage_test.go::TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable`.
+- **FR-013**: The system MUST track first seen, last seen, occurrence count, project/application, severity, and representative event metadata per issue. [inferred]
+- **FR-014**: The system MUST support flexible facets extracted from event context, including but not limited to host, runtime, release, environment, route, status code, user agent family, and region. Issues: [#157](https://github.com/webwiebe/bugbarn/issues/157). Tests: `internal/storage/events_releases_test.go::TestExtractFacetsReleaseSpellings`.
+- **FR-015**: The system MUST keep a registry of discovered facet keys and maintain queryable facet values. Issues: [#157](https://github.com/webwiebe/bugbarn/issues/157). Tests: `internal/storage/facets_lazycount_test.go::TestPersistFacetsWithExistingKeysStillPersists`.
+- **FR-016**: The API MUST provide issue list, issue detail, event list, event detail, and facet filtering endpoints. Issues: none found. Tests: `internal/api/issues_test.go::TestListIssuesPagination`, `internal/storage/facets_test.go::TestListIssuesFilteredByFacets`.
+- **FR-017**: The web UI MUST include an issue list view. [inferred]
+- **FR-018**: The web UI MUST include an issue detail view with event navigation. [inferred]
+- **FR-019**: The web UI MUST include a live event flow view. Issues: none found. Tests: `internal/service/issues/service_test.go::TestListLiveEvents_DefaultSince`.
+- **FR-020**: The system MUST support username/password login for human users. Issues: none found. Tests: `internal/auth/auth_test.go::TestUserAuthenticator`.
+- **FR-021**: Initial user credentials MUST be configurable through environment variables and/or CLI setup. [inferred]
+- **FR-022**: The system MUST provide project/application API key management. Issues: none found. Tests: `internal/auth/auth_test.go::TestValidWithHashedAPIKey`.
+- **FR-023**: The project MUST ship Docker images for ingest/API/worker and web components. Issues: none found. Gate: `deploy/docker/service.Dockerfile`, built by `.woodpecker/build-and-test.yaml`.
+- **FR-024**: The ingest/API/worker service SHOULD build as a standalone binary. Issues: none found. Gate: `.woodpecker/binary-release.yaml`.
+- **FR-025**: The project MUST provide TypeScript and Python SDKs before the first public release. Issues: [#154](https://github.com/webwiebe/bugbarn/issues/154).
+- **FR-026**: SDKs MUST support default uncaught error handlers and manual capture. Issues: none found. Tests: `sdks/go/middleware_test.go::TestRecoverMiddlewarePanic`.
+- **FR-027**: SDKs MUST send events asynchronously and avoid blocking application execution on network failures. [inferred]
+- **FR-028**: CI MUST run tests, linting, builds, and container image checks. Issues: none found. Gate: `.woodpecker/ci.yaml`.
+- **FR-029**: CI/CD MUST support testing and staging namespaces in the homelab K3S cluster. Issues: none found. Gate: `.woodpecker/build-and-test.yaml` (testing) and `.woodpecker/release.yaml` (staging).
+- **FR-030**: The system MUST support release or notable-event markers so regressions can be correlated with recent deploys or operational changes. Issues: [#223](https://github.com/webwiebe/bugbarn/issues/223). Tests: `internal/storage/events_releases_test.go::TestIssueReleases`.
+- **FR-031**: Release markers SHOULD be linkable from issue/event timelines and SHOULD carry at least name, environment, observed time, optional commit/version, and optional URL. Issues: [#223](https://github.com/webwiebe/bugbarn/issues/223), [#224](https://github.com/webwiebe/bugbarn/issues/224). Tests: `internal/alert/payload_first_release_test.go::TestGenericPayloadCarriesFirstRelease`.
+- **FR-032**: The TypeScript SDK MUST allow release and dist metadata to be attached to captured events, defaulting from SDK configuration and/or environment variables. [inferred]
+- **FR-033**: The system MUST provide a source map upload endpoint that accepts multipart artifact uploads keyed by release, dist, and bundle URL. Issues: [#12](https://github.com/webwiebe/bugbarn/issues/12).
+- **FR-034**: The web UI MUST expose releases, alerts, and settings views backed by same-origin API routes. [inferred]
+- **FR-035**: The web UI MUST support resolving and reopening an issue from the issue detail view. Issues: none found. Tests: `internal/storage/storage_test.go::TestResolveIssueReopensOnRegressionAndLiveEventsAreWindowed`.
+- **FR-036**: The web UI MUST display fingerprint material and concise traceback source details when the backend provides them. [inferred]
+- **FR-037**: The web UI SHOULD keep issue event lists scrollable and place them after the exception, context, and stacktrace sections. [inferred]
 
 ### Non-Functional Requirements
 
-- **NFR-001**: Ingest p95 response time under local durable enqueue SHOULD stay below 10 ms on modest hardware during normal operation.
-- **NFR-002**: A single-node deployment SHOULD tolerate bursts of at least 1,000 small events per second on development hardware, with exact targets refined through benchmarks.
-- **NFR-003**: The default deployment MUST run within resource budgets suitable for Raspberry Pi-class hardware.
-- **NFR-004**: The system MUST degrade through explicit backpressure rather than unbounded memory growth.
-- **NFR-005**: The system MUST be operable without external SaaS dependencies.
-- **NFR-006**: Stored payloads MUST be scrubbed of known PII and secrets by default.
-- **NFR-007**: The product MUST prefer simple, inspectable operational components over distributed-system complexity.
+- **NFR-001**: Ingest p95 response time under local durable enqueue SHOULD stay below 10 ms on modest hardware during normal operation. [inferred] No gate measures latency.
+- **NFR-002**: A single-node deployment SHOULD tolerate bursts of at least 1,000 small events per second on development hardware, with exact targets refined through benchmarks. [inferred]
+- **NFR-003**: The default deployment MUST run within resource budgets suitable for Raspberry Pi-class hardware. [inferred]
+- **NFR-004**: The system MUST degrade through explicit backpressure rather than unbounded memory growth. Issues: none found. Tests: `internal/ingesthealth/monitor_test.go::TestSampleStalledIngest`.
+- **NFR-005**: The system MUST be operable without external SaaS dependencies. [inferred]
+- **NFR-006**: Stored payloads MUST be scrubbed of known PII and secrets by default. Tests: `internal/privacy/scrub_test.go::TestScrubRedactsSensitiveKeysAndStringPatterns`.
+- **NFR-007**: The product MUST prefer simple, inspectable operational components over distributed-system complexity. [inferred]
 
 ### Key Entities
 
@@ -208,3 +212,28 @@ As a user, I want releases, alerts, settings, issue resolution, source-map uploa
 - Advanced browser-side symbolication remains a later backend concern.
 - Browser-side scripting source should be authored in TypeScript; generated JavaScript is acceptable as build output, but not as the preferred source format.
 - A future PHP SDK is desired, but it remains out of scope for the foundation release and is tracked in the backlog only.
+
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| Status Draft | Header | The ingest, worker, grouping, API and web UI described here run in production |
+| A PHP SDK is out of scope | Assumptions | `sdks/php/` ships alongside TypeScript, Python and Go (spec 002 FR-112, FR-115) |
+| Single-tenant, production deployment and multi-user roles out of scope | Assumptions | Projects, multiple users, OIDC and a production cluster deployment exist (`internal/auth/`, `deploy/`) |
+| Storage choices may evolve | Assumptions | SQLite with one writer and read-only readers behind a Redis write queue (specs 006, 007) |
+| Raspberry Pi-class resource budget | NFR-003 | No budget or gate measures it; production runs on a cluster. Not established |
+| Ingest latency target | NFR-001 | No gate measures latency. Not established |
+
+## Proof contract
+
+- [ ] An event posted to ingest with a valid key is accepted and spooled without a database insert in the request.
+- [ ] Two events with the same exception type and message differing only in volatile identifiers land in one issue.
+- [ ] Sensitive keys and values are redacted before persistence.
+- [ ] A resolved issue reopens when a new event arrives.
+
+## Sources
+
+- `internal/ingest/`, `internal/worker/`, `internal/fingerprint/`, `internal/storage/`
+- `internal/privacy/`, `internal/normalize/`, `internal/auth/`
+- `.woodpecker/ci.yaml`, `.woodpecker/build-and-test.yaml`, `.woodpecker/release.yaml`

@@ -2,7 +2,11 @@
 
 **Feature Branch**: `007-redis-write-queue`
 **Created**: 2026-06-11
-**Status**: Implemented (phases 1-4); cutover (phase 5) pending production validation
+**Spec**: 007-redis-write-queue
+**Status**: Partial
+**Last verified against the tree**: 2026-10-17 at 70a663f
+**Issues**: none found
+**Principles touched**: I, V
 **Input**: Production writer wedged during a maintenance window (2026-06-11). Root cause was the reader→writer **HTTP write-forwarding + per-pod disk spool** coupling introduced in [006](../006-cqrs-read-write-split/spec.md).
 
 ## Problem
@@ -145,3 +149,48 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 4. Dashboard mutations remain sync-HTTP — fine (low volume), but means the writer still serves some HTTP writes; keep them under the write mutex too.
 
 [project_wal_checkpoint]: ../../.claude memory — single-writer serialization is what makes the WAL TRUNCATE checkpoint viable.
+
+---
+
+## Requirements
+
+### Functional Requirements
+
+- **FR-701**: With `BUGBARN_SPOOL_DIR` and `BUGBARN_REDIS_QUEUE_URL` set, a reader MUST append the request to its spool, reply 202 and publish to the Redis list `bugbarn:write-queue`, advancing the spool cursor only after a successful publish. Issues: none found. Tests: `internal/api/spool_forwarder_redis_test.go::TestRedisSpoolForwarderPublishes`.
+- **FR-702**: The writer MUST drain the queue with a single consumer and persist events through the shared pipeline. Issues: none found. Tests: `internal/ingestproc/ingestproc_test.go::TestConsumerDrainsEventQueue`.
+- **FR-703**: Log items MUST flow through the same queue and consumer. Issues: none found. Tests: `internal/ingestproc/ingestproc_test.go::TestConsumerDrainsLogQueue`.
+- **FR-704**: With `BUGBARN_REDIS_QUEUE_URL` empty, readers MUST fall back to the HTTP forwarding path. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_AuthenticatedPOSTForwarded`.
+- **FR-705**: Dashboard mutations MUST stay on the synchronous `WriteForwarder`. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_DeleteForwarded`.
+- **FR-706**: The consumer MUST push the unfinished tail of a batch back to the queue on shutdown. Issues: none found. Tests: `internal/ingestproc/ingestproc_test.go::TestConsumerRequeuesOnShutdown`.
+- **FR-707**: Events for an unapproved project MUST be held and replayed on approval. Issues: none found. Tests: `internal/ingestproc/held_test.go::TestPersistRecordHeldForPendingProject`, `::TestReplayHeldEventsOnApproval`.
+- **FR-708**: Large publishes MUST be split into bounded batches. Issues: none found. Tests: `internal/queue/queue_test.go::TestPublishBatchesLargeInput`.
+- **FR-709**: The producer MUST NOT block on the writer. [inferred] A Redis outage backs the reader spool up.
+
+### Non-Functional Requirements
+
+- **NFR-701**: The consumer hop is at-most-once: an item is popped before it is persisted. [inferred] `internal/queue/queue.go` pops with `BRPOP`; no test asserts the loss window.
+
+---
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| Phase 5 cutover is pending production validation | Header, phase plan | The Redis path runs in production and staging (`deploy/k8s/production/writer-deployment.yaml`); `internal/ingest/CLAUDE.md` says the HTTP drain and the legacy file-spool worker still exist until phase 5 |
+| Rollout is staged by the pipeline, "prod manual" | Phase 4 | Production deploys automatically after staging (`.woodpecker/deploy-production.yaml`) |
+| Retention and the WAL checkpoint run under the shared write mutex | Architecture | The consumer passes a nil mutex; writes serialise through the single write connection (`internal/storage/CLAUDE.md`) |
+| The WAL checkpoint is re-introduced with phase 5 | Decisions | The writer runs `RunPeriodicCheckpoint` (`internal/storage/checkpoint.go`) since Litestream was removed |
+| `BLMOVE` to a processing list decides at-least-once | Risks 1 | Decided: plain `BRPOP`, at-most-once (`internal/queue/queue.go`) |
+| The queue is the only reader-to-writer ingest path | Solution | With no spool dir the reader proxies synchronously; with a spool dir and no Redis URL it POSTs to the writer |
+| `[project_wal_checkpoint]` link | Last line | Points at a private memory note; not established |
+
+## Proof contract
+
+- [ ] A reader accepts an event with Redis down, and the writer persists it after Redis returns.
+- [ ] A log line posted to a reader appears in the writer's log store.
+- [ ] Events for an unapproved project appear after the project is approved.
+
+## Sources
+
+- `internal/queue/queue.go`, `internal/ingestproc/`, `internal/api/spool_forwarder*.go`
+- `internal/ingest/CLAUDE.md`, `deploy/CLAUDE.md`
