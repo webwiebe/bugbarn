@@ -6,12 +6,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
     "lint": "tsc --noEmit",
-    "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs scripts/project-filter.test.mjs scripts/timeline-stack.test.mjs scripts/release-rows.test.mjs scripts/surfaces.test.mjs",
+    "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs scripts/project-filter.test.mjs scripts/timeline-stack.test.mjs scripts/release-rows.test.mjs scripts/surfaces.test.mjs scripts/boundaries-ratchet.test.mjs",
+    "boundaries": "node scripts/boundaries-ratchet.mjs",
     "test:e2e": "playwright test",
     "screenshots": "playwright test e2e/screenshots.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@swc/core": "^1.16.18",
+    "dependency-cruiser": "18.6.0",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.1",
     "jsdom": "^26.1.0",
