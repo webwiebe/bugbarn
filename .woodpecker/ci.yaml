@@ -251,9 +251,14 @@ steps:
         sh scripts/check-coverage.sh
         # Changed-line coverage, report only until 2026-10-24 (then add
         # --enforce). 80% of the coverable Go lines a PR adds must be executed;
-        # diffs under 10 coverable lines are exempt. Same step in ci.yml.
+        # diffs under 10 coverable lines are exempt. sdks/go is profiled too.
+        # A measurement that cannot be made fails in report mode as well: a
+        # missing profile, an unknown base, a profile listing fewer than 210
+        # repository files, and 10 or more changed lines in files that add a
+        # function but have no block in the profile. Same step in ci.yml.
         if [ "${CI_PIPELINE_EVENT:-}" = pull_request ]; then
-          sh scripts/diff-coverage.sh coverage/go.out "origin/$CI_COMMIT_TARGET_BRANCH"
+          sh scripts/diff-coverage-profile.sh
+          sh scripts/diff-coverage.sh coverage/diff.out "origin/$CI_COMMIT_TARGET_BRANCH"
         fi
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
         pnpm dlx jscpd@latest .

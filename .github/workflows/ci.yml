@@ -299,11 +299,13 @@ jobs:
         shell: bash
         run: sh scripts/check-coverage.sh
       # Changed-line coverage, report only until 2026-10-24 (then add
-      # --enforce). Same step in .woodpecker/ci.yaml.
+      # --enforce). sdks/go is profiled too. Same step in .woodpecker/ci.yaml.
       - name: Diff coverage (report only)
         if: github.event_name == 'pull_request'
         shell: bash
-        run: sh scripts/diff-coverage.sh coverage/go.out "origin/${GITHUB_BASE_REF}"
+        run: |
+          sh scripts/diff-coverage-profile.sh
+          sh scripts/diff-coverage.sh coverage/diff.out "origin/${GITHUB_BASE_REF}"
       - name: Duplication scan (jscpd)
         shell: bash
         run: |
