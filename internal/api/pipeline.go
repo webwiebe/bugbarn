@@ -28,17 +28,9 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 	}
 
 	_, usingSession := s.sessionUser(r)
-	var apiKeyProjectID int64
-	usingAPIKey := false
-	if s.ingestHandler != nil {
-		pid, scope, ok := s.ingestHandler.APIKeyProjectScope(r)
-		if ok {
-			if !s.checkAPIKeyScope(w, r, scope) {
-				return r, false
-			}
-			usingAPIKey = true
-			apiKeyProjectID = pid
-		}
+	apiKeyProjectID, usingAPIKey, proceed := s.authenticateAPIKey(w, r, usingSession)
+	if !proceed {
+		return r, false
 	}
 
 	if !usingSession && !usingAPIKey {
@@ -63,6 +55,31 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 	r = s.resolveProjectScope(r, usingSession, usingAPIKey, apiKeyProjectID)
 
 	return r, true
+}
+
+// authenticateAPIKey reads the request's API key. proceed is false after an
+// error response was written: a key whose scope forbids the endpoint, or a key
+// lookup the store failed with no session to fall back on. That failure is a
+// retryable 503, not a 401 that would make the client retire a good key.
+func (s *Server) authenticateAPIKey(
+	w http.ResponseWriter, r *http.Request, usingSession bool,
+) (projectID int64, usingKey, proceed bool) {
+	if s.ingestHandler == nil {
+		return 0, false, true
+	}
+	pid, scope, ok, keyErr := s.ingestHandler.CheckAPIKey(r)
+	if keyErr != nil && !usingSession {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "api key lookup unavailable", http.StatusServiceUnavailable)
+		return 0, false, false
+	}
+	if !ok {
+		return 0, false, true
+	}
+	if !s.checkAPIKeyScope(w, r, scope) {
+		return 0, false, false
+	}
+	return pid, true, true
 }
 
 // checkAPIKeyScope enforces the ingest-only and read-only API key restrictions
