@@ -1,8 +1,10 @@
 package ingest
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -242,4 +244,54 @@ func mustReadFile(t *testing.T, path string) []byte {
 		t.Fatalf("read file: %v", err)
 	}
 	return data
+}
+
+// A key lookup that fails (busy store, timeout) says nothing about the key. It
+// must answer a retryable 503, never the 401 that tells an SDK to drop the event.
+func TestServeHTTPKeyLookupErrorIsRetryable(t *testing.T) {
+	eventSpool, err := spool.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new spool: %v", err)
+	}
+	defer eventSpool.Close()
+
+	failing := auth.New("").WithDBLookup(func(context.Context, string) (int64, string, bool, error) {
+		return 0, "", false, errors.New("database is locked")
+	}, nil)
+	handler := NewHandler(failing, eventSpool, 1024)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"message":"boom"}`))
+	req.Header.Set(auth.HeaderAPIKey, "valid-key")
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("lookup error: got %d, want 503", rr.Code)
+	}
+	if rr.Header().Get("Retry-After") == "" {
+		t.Fatal("lookup error: missing Retry-After")
+	}
+}
+
+func TestServeHTTPUnknownKeyStaysUnauthorized(t *testing.T) {
+	eventSpool, err := spool.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new spool: %v", err)
+	}
+	defer eventSpool.Close()
+
+	notFound := auth.New("").WithDBLookup(func(context.Context, string) (int64, string, bool, error) {
+		return 0, "", false, nil
+	}, nil)
+	handler := NewHandler(notFound, eventSpool, 1024)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"message":"boom"}`))
+	req.Header.Set(auth.HeaderAPIKey, "wrong-key")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown key: got %d, want 401", rr.Code)
+	}
 }

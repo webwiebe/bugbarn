@@ -9,6 +9,7 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
 	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 )
 
@@ -34,7 +35,15 @@ func (s *Server) serveMonitorCheckInEndpoint(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true
 	}
-	if s.ingestHandler == nil || !s.ingestHandler.ValidAPIKey(r) {
+	if s.ingestHandler == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return true
+	}
+	// A key check that failed in the store is retryable; only a rejected key is 401.
+	if _, _, ok, keyErr := s.ingestHandler.CheckAPIKey(r); keyErr != nil {
+		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+		return true
+	} else if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return true
 	}
