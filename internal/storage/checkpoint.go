@@ -3,7 +3,10 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"fmt"
 	"log/slog"
+	"os"
 	"time"
 )
 
@@ -32,7 +35,7 @@ const checkpointTickBudget = 10 * time.Second
 // This loop is the SOLE checkpointer. sqliteDSN sets wal_autocheckpoint(0), so
 // without it nothing ever truncates the WAL and it grows without bound.
 //
-// It must be TRUNCATE, not PASSIVE. A PASSIVE checkpoint gives up at the first
+// It must reach TRUNCATE regularly (CheckpointPolicy), not only PASSIVE. A PASSIVE checkpoint gives up at the first
 // reader snapshot boundary, so under sustained read load it silently never
 // reclaims anything. This deployment has several reader pods holding read
 // snapshots on the same file continuously, so there is no quiet window and
@@ -68,26 +71,33 @@ const checkpointTickBudget = 10 * time.Second
 // backlog kept the gate permanently tripped, so no checkpoint ever ran and the
 // WAL bloated to hundreds of MB — which made every write slow, the precise
 // opposite of the intent (see spanbarn #117, reverted in #131).
-func (s *core) RunPeriodicCheckpoint(ctx context.Context, interval time.Duration, log *slog.Logger) {
+//
+// policy decides how hard each tick pushes (see CheckpointPolicy). The zero
+// value means DefaultCheckpointPolicy.
+func (s *core) RunPeriodicCheckpoint(ctx context.Context, interval time.Duration, policy CheckpointPolicy, log *slog.Logger) {
 	if s == nil || s.db == nil {
 		return // read-only store: nothing to checkpoint.
 	}
-	runCheckpointLoop(ctx, s.db, interval, log, checkpointVacuumPages)
+	runCheckpointLoop(ctx, s.db, interval, policy, log, checkpointVacuumPages)
 }
 
 // RunCheckpointLoop is RunPeriodicCheckpoint for any WAL-mode database opened
 // with wal_autocheckpoint(0) on a single write connection. The telemetry
 // databases (internal/telemetrydb) use it so each file keeps exactly one
-// TRUNCATE checkpointer with the same bounded retry as the main database.
+// TRUNCATE checkpointer with the same bounded retry as the main database. They
+// keep the legacy policy (TRUNCATE on every tick, 10s busy wait): their writers
+// are not behind the check-in path, and their WAL has no tuning knob.
 func RunCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, log *slog.Logger) {
-	runCheckpointLoop(ctx, db, interval, log, 0)
+	runCheckpointLoop(ctx, db, interval, LegacyCheckpointPolicy(), log, 0)
 }
 
 // runCheckpointLoop is RunCheckpointLoop that also returns up to vacuumPages
 // freelist pages to the filesystem after each checkpoint. The main database
 // passes checkpointVacuumPages; the telemetry databases pass 0 because
 // internal/telemetrydb paces its own incremental vacuum.
-func runCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, log *slog.Logger, vacuumPages int) {
+func runCheckpointLoop(
+	ctx context.Context, db *sql.DB, interval time.Duration, policy CheckpointPolicy, log *slog.Logger, vacuumPages int,
+) {
 	if interval <= 0 {
 		interval = DefaultCheckpointInterval
 	}
@@ -95,10 +105,11 @@ func runCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, 
 		log = slog.Default()
 	}
 	log = log.With("component", "wal-checkpoint")
+	policy = policy.normalized()
 
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	for {
+	for tick := 1; ; tick++ {
 		select {
 		case <-ctx.Done():
 			return
@@ -107,13 +118,180 @@ func runCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, 
 			// connection. Giving up early only leaves the WAL untruncated
 			// until the next tick, which then retries from scratch.
 			tickCtx, cancel := context.WithTimeout(ctx, checkpointTickBudget)
-			CheckpointDB(tickCtx, db, checkpointRetryInterval, log)
+			checkpointTick(tickCtx, db, tick, policy, log)
+			reportWALSize(policy, log)
 			if vacuumPages > 0 {
 				incrementalVacuum(tickCtx, db, vacuumPages, log)
 			}
 			cancel()
 		}
 	}
+}
+
+// Defaults for CheckpointPolicy. Production measured TRUNCATE holding the write
+// connection for 12 to 28 s under reader snapshots (bugbarn#236), which failed
+// the check-ins forwarded to the writer in that window.
+const (
+	defaultTruncateEvery       = 10
+	defaultTruncateBusyTimeout = time.Second
+	// legacyTruncateBusyTimeout is the connection's own busy_timeout (sqliteDSN).
+	legacyTruncateBusyTimeout = 10 * time.Second
+)
+
+// CheckpointPolicy tunes the periodic checkpoint without a rebuild
+// (BUGBARN_WAL_TRUNCATE_EVERY, BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS).
+//
+// Most ticks run a PASSIVE checkpoint, which never waits on a reader and so
+// never holds the write connection for more than the copy itself. Every
+// TruncateEvery-th tick runs TRUNCATE, which is what resets the WAL file under
+// the continuous reader snapshots a PASSIVE checkpoint cannot get past
+// (production was 12.8h behind on a 377MB WAL in July 2026 for want of it). A
+// TRUNCATE attempt waits for readers at most TruncateBusyTimeout, so the stall it
+// causes is bounded by that, not by the connection's 10s busy_timeout.
+//
+// LegacyCheckpointPolicy (TruncateEvery 1, TruncateBusyTimeout 10s) reproduces
+// the behavior before bugbarn#236: TRUNCATE on every tick, waiting up to 10s.
+type CheckpointPolicy struct {
+	// TruncateEvery makes every Nth tick a TRUNCATE checkpoint; 1 means every tick.
+	TruncateEvery int
+	// TruncateBusyTimeout bounds how long one TRUNCATE attempt waits for readers.
+	TruncateBusyTimeout time.Duration
+	// WALSize reports the WAL file size in bytes after each tick. Nil skips the
+	// size report (the telemetry databases). Tests inject a fake.
+	WALSize func() (int64, error)
+	// WarnBytes is the WAL size above which the report logs at Error, which
+	// selflog files as an issue in BugBarn itself (BUGBARN_WAL_WARN_BYTES).
+	WarnBytes int64
+}
+
+// defaultWALWarnBytes sits below the 377MB WAL of the 2026-07-16 incident.
+const defaultWALWarnBytes = 256 << 20
+
+// WALFileSize returns a WALSize source that stats dbPath's -wal file; a missing
+// file is 0 bytes (the WAL was just truncated).
+func WALFileSize(dbPath string) func() (int64, error) {
+	return func() (int64, error) {
+		fi, err := os.Stat(dbPath + "-wal")
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		return fi.Size(), nil
+	}
+}
+
+// reportWALSize logs the WAL size after a tick: Info normally, Error once it
+// passes WarnBytes so a WAL that stops truncating files an issue without anyone
+// watching the file by hand.
+func reportWALSize(policy CheckpointPolicy, log *slog.Logger) {
+	if policy.WALSize == nil {
+		return
+	}
+	size, err := policy.WALSize()
+	if err != nil {
+		log.Warn("wal size unreadable", "error", err)
+		return
+	}
+	warn := policy.WarnBytes
+	if warn <= 0 {
+		warn = defaultWALWarnBytes
+	}
+	if size > warn {
+		log.Error("wal file above warn threshold", "wal_bytes", size, "warn_bytes", warn)
+		return
+	}
+	log.Info("wal size", "wal_bytes", size)
+}
+
+// DefaultCheckpointPolicy is TRUNCATE every 10th tick with a 1s reader wait.
+func DefaultCheckpointPolicy() CheckpointPolicy {
+	return CheckpointPolicy{TruncateEvery: defaultTruncateEvery, TruncateBusyTimeout: defaultTruncateBusyTimeout}
+}
+
+// LegacyCheckpointPolicy is the behavior before bugbarn#236.
+func LegacyCheckpointPolicy() CheckpointPolicy {
+	return CheckpointPolicy{TruncateEvery: 1, TruncateBusyTimeout: legacyTruncateBusyTimeout}
+}
+
+// normalized replaces unset (zero or negative) fields with the defaults.
+func (p CheckpointPolicy) normalized() CheckpointPolicy {
+	if p.TruncateEvery <= 0 {
+		p.TruncateEvery = defaultTruncateEvery
+	}
+	if p.TruncateBusyTimeout <= 0 {
+		p.TruncateBusyTimeout = defaultTruncateBusyTimeout
+	}
+	return p
+}
+
+// checkpointTick runs one tick of the loop: PASSIVE, or TRUNCATE with the bounded
+// retry of CheckpointDB when tick is a multiple of TruncateEvery.
+func checkpointTick(ctx context.Context, db *sql.DB, tick int, policy CheckpointPolicy, log *slog.Logger) {
+	policy = policy.normalized()
+	if tick%policy.TruncateEvery != 0 {
+		if _, _, _, err := checkpointAttempt(ctx, db, "PASSIVE", 0); err != nil && ctx.Err() == nil {
+			log.Warn("wal checkpoint error", "mode", "PASSIVE", "error", err)
+		}
+		return
+	}
+	for {
+		busy, walFrames, checkpointed, err := checkpointAttempt(ctx, db, "TRUNCATE", policy.TruncateBusyTimeout)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Warn("wal checkpoint error", "mode", "TRUNCATE", "error", err)
+			}
+			return
+		}
+		if busy == 0 {
+			return
+		}
+		log.Debug("wal checkpoint blocked by reader, retrying",
+			"wal_frames", walFrames, "checkpointed", checkpointed)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(checkpointRetryInterval):
+		}
+	}
+}
+
+// checkpointAttempt runs one `PRAGMA main.wal_checkpoint(mode)` on the write
+// connection. A busyTimeout above zero replaces the connection's busy_timeout
+// for this attempt only: a TRUNCATE blocked by a reader snapshot waits in
+// SQLite's busy handler, which the Go context cannot interrupt, and every other
+// write waits for the connection meanwhile.
+func checkpointAttempt(
+	ctx context.Context, db *sql.DB, mode string, busyTimeout time.Duration,
+) (busy, walFrames, checkpointed int, err error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer func() { _ = conn.Close() }()
+
+	if busyTimeout > 0 {
+		var prior int
+		if err = conn.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&prior); err != nil {
+			return 0, 0, 0, err
+		}
+		if _, err = conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA busy_timeout = %d`, busyTimeout.Milliseconds())); err != nil {
+			return 0, 0, 0, err
+		}
+		defer func() {
+			// Background context: the attempt's own context may be done, and the
+			// pooled connection must not keep the short wait.
+			if _, rerr := conn.ExecContext(context.Background(), fmt.Sprintf(`PRAGMA busy_timeout = %d`, prior)); rerr != nil {
+				// Discard the connection rather than return it with a wrong timeout.
+				_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+			}
+		}()
+	}
+
+	// Scoped to main on purpose, see CheckpointDB.
+	err = conn.QueryRowContext(ctx, `PRAGMA main.wal_checkpoint(`+mode+`)`).Scan(&busy, &walFrames, &checkpointed)
+	return busy, walFrames, checkpointed, err
 }
 
 // FinalCheckpoint runs a single checkpoint on a fresh context. Call it after all
