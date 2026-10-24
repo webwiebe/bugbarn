@@ -256,42 +256,10 @@ func checkpointTick(
 ) {
 	policy = policy.normalized()
 	if tick%policy.TruncateEvery != 0 {
-		_, walFrames, checkpointed, err := checkpointAttempt(ctx, db, "PASSIVE", 0)
-		if err != nil {
-			if ctx.Err() == nil {
-				log.Warn("wal checkpoint error", "mode", "PASSIVE", "error", err)
-			}
-			return
-		}
-		log.Info("wal checkpoint", "mode", "PASSIVE", "wal_frames", walFrames, "checkpointed", checkpointed)
+		checkpointPassive(ctx, db, log)
 		return
 	}
-	var walFrames, checkpointed, attempts int
-	truncated := false
-	for {
-		var busy int
-		var err error
-		busy, walFrames, checkpointed, err = checkpointAttempt(ctx, db, "TRUNCATE", policy.TruncateBusyTimeout)
-		attempts++
-		if err != nil {
-			if ctx.Err() == nil {
-				log.Warn("wal checkpoint error", "mode", "TRUNCATE", "error", err)
-			}
-			break
-		}
-		if busy == 0 {
-			truncated = true
-			break
-		}
-		log.Debug("wal checkpoint blocked by reader, retrying",
-			"wal_frames", walFrames, "checkpointed", checkpointed)
-		select {
-		case <-ctx.Done():
-		case <-time.After(checkpointRetryInterval):
-			continue
-		}
-		break
-	}
+	truncated, attempts, walFrames, checkpointed := truncateWithRetry(ctx, db, policy, log)
 	result := "blocked"
 	if truncated {
 		result = "truncated"
@@ -303,6 +271,47 @@ func checkpointTick(
 		"wal_frames", walFrames, "checkpointed", checkpointed, "failed_truncate_ticks", st.failedTruncates)
 	if !truncated && st.failedTruncates >= backstopAfterTicks {
 		backstop(ctx, db, st, policy, log)
+	}
+}
+
+// checkpointPassive runs and logs one PASSIVE tick.
+func checkpointPassive(ctx context.Context, db *sql.DB, log *slog.Logger) {
+	_, walFrames, checkpointed, err := checkpointAttempt(ctx, db, "PASSIVE", 0)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Warn("wal checkpoint error", "mode", "PASSIVE", "error", err)
+		}
+		return
+	}
+	log.Info("wal checkpoint", "mode", "PASSIVE", "wal_frames", walFrames, "checkpointed", checkpointed)
+}
+
+// truncateWithRetry retries a TRUNCATE that a reader blocks, every
+// checkpointRetryInterval until the tick's context ends. It reports whether the
+// WAL was truncated, how many attempts ran, and the last attempt's frame counts.
+func truncateWithRetry(
+	ctx context.Context, db *sql.DB, policy CheckpointPolicy, log *slog.Logger,
+) (truncated bool, attempts, walFrames, checkpointed int) {
+	for {
+		busy, frames, done, err := checkpointAttempt(ctx, db, "TRUNCATE", policy.TruncateBusyTimeout)
+		attempts++
+		walFrames, checkpointed = frames, done
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Warn("wal checkpoint error", "mode", "TRUNCATE", "error", err)
+			}
+			return false, attempts, walFrames, checkpointed
+		}
+		if busy == 0 {
+			return true, attempts, walFrames, checkpointed
+		}
+		log.Debug("wal checkpoint blocked by reader, retrying",
+			"wal_frames", walFrames, "checkpointed", checkpointed)
+		select {
+		case <-ctx.Done():
+			return false, attempts, walFrames, checkpointed
+		case <-time.After(checkpointRetryInterval):
+		}
 	}
 }
 
