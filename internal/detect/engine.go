@@ -126,13 +126,33 @@ func (e *Engine) Rules() []Rule {
 	return append([]Rule(nil), e.rules...)
 }
 
+// seedAlreadySilent is how long a seeded host must have been silent for the
+// previous writer to have reported it already. A restart takes minutes, so a
+// host whose last report is older than this went quiet while the old process
+// was still running and raised its alert then; raising it again on every
+// restart files a new event for a retired hostname (a Mac that reports as
+// mini.local one day and mini.localdomain the next) on each deploy.
+const seedAlreadySilent = 3 * time.Hour
+
 // SeedHosts tells the heartbeat about hosts known from before a restart, so a
-// host that died while the writer was down still gets reported.
+// host that died while the writer was down still gets reported. A host that
+// was already silent for seedAlreadySilent is seeded as reported: it fires
+// again only after it has reported and gone quiet once more.
 func (e *Engine) SeedHosts(hosts []hostmetrics.HostInfo) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	now := e.now().UTC()
 	for _, h := range hosts {
 		e.touchHost(h)
+		st := e.hosts[h.Host]
+		if st == nil || now.Sub(st.lastSeen) <= seedAlreadySilent {
+			continue
+		}
+		for _, r := range e.rules {
+			if r.Track == TrackHeartbeat {
+				st.silent[r.ID] = true
+			}
+		}
 	}
 }
 
