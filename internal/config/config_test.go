@@ -100,6 +100,39 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+// The checkpoint knobs let production restore the pre-bugbarn#236 behavior
+// (TRUNCATE every tick, 10s wait) without a rebuild.
+func TestLoadWALTruncateKnobs(t *testing.T) {
+	t.Setenv("BUGBARN_WAL_TRUNCATE_EVERY", "")
+	t.Setenv("BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS", "")
+	cfg := Load()
+	if cfg.WALTruncateEvery != 10 || cfg.WALTruncateBusyTimeout != time.Second {
+		t.Errorf("defaults = every %d, wait %v; want 10 and 1s", cfg.WALTruncateEvery, cfg.WALTruncateBusyTimeout)
+	}
+
+	if cfg.WALWarnBytes != 256<<20 {
+		t.Errorf("WALWarnBytes default = %d, want 256 MiB", cfg.WALWarnBytes)
+	}
+	t.Setenv("BUGBARN_WAL_WARN_BYTES", "1048576")
+	if got := Load().WALWarnBytes; got != 1<<20 {
+		t.Errorf("WALWarnBytes override = %d", got)
+	}
+
+	t.Setenv("BUGBARN_WAL_TRUNCATE_EVERY", "1")
+	t.Setenv("BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS", "10000")
+	cfg = Load()
+	if cfg.WALTruncateEvery != 1 || cfg.WALTruncateBusyTimeout != 10*time.Second {
+		t.Errorf("legacy values = every %d, wait %v; want 1 and 10s", cfg.WALTruncateEvery, cfg.WALTruncateBusyTimeout)
+	}
+
+	t.Setenv("BUGBARN_WAL_TRUNCATE_EVERY", "0")
+	t.Setenv("BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS", "-5")
+	cfg = Load()
+	if cfg.WALTruncateEvery != 10 || cfg.WALTruncateBusyTimeout != time.Second {
+		t.Errorf("invalid values should fall back to defaults, got every %d, wait %v", cfg.WALTruncateEvery, cfg.WALTruncateBusyTimeout)
+	}
+}
+
 func TestDefaultFromName(t *testing.T) {
 	cases := map[string]string{
 		"":           "BugBarn",
