@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,8 +27,39 @@ func NewWriteForwarder(writerURL string) *WriteForwarder {
 		writerURL: writerURL,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
+			// The default transport keeps 2 idle connections per host, so a burst
+			// of ~30 concurrent writes dials ~28 fresh connections every time.
+			Transport: forwarderTransport(),
 		},
 	}
+}
+
+func forwarderTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConnsPerHost = 64
+	t.MaxIdleConns = 128
+	return t
+}
+
+// maxReplayableBody bounds the bodies the forwarder buffers so the transport
+// can replay them.
+const maxReplayableBody = 4 << 20
+
+// replayableBody returns body as a rewindable reader when it is small. The
+// transport only retries a request that failed on a reused keep-alive
+// connection (the writer closed it while idle) when it can send the body
+// again; a streamed body turned that race into a 502 for a request the writer
+// never saw. A body over the limit, or one that fails to read, is passed
+// through as a stream.
+func replayableBody(body io.ReadCloser) io.Reader {
+	if body == nil || body == http.NoBody {
+		return nil
+	}
+	buf, err := io.ReadAll(io.LimitReader(body, maxReplayableBody+1))
+	if err != nil || len(buf) > maxReplayableBody {
+		return io.MultiReader(bytes.NewReader(buf), body)
+	}
+	return bytes.NewReader(buf)
 }
 
 // Forward proxies the incoming request to the upstream writer and streams
@@ -44,7 +76,7 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 	r = r.WithContext(ctx)
 
-	upstreamReq, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, r.Body)
+	upstreamReq, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, replayableBody(r.Body))
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		http.Error(w, "upstream writer unavailable", http.StatusBadGateway)
@@ -56,6 +88,14 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 		for _, v := range vals {
 			upstreamReq.Header.Add(key, v)
 		}
+	}
+
+	// The transport replays a POST only when the request carries an
+	// Idempotency-Key entry. An empty entry is never sent, and it limits the
+	// replay to the case that matters: a reused connection that failed before
+	// the writer returned any byte, i.e. one the writer closed while idle.
+	if _, ok := upstreamReq.Header["Idempotency-Key"]; !ok && upstreamReq.GetBody != nil {
+		upstreamReq.Header["Idempotency-Key"] = nil
 	}
 
 	// Set Host to the writer's host, not the original.
