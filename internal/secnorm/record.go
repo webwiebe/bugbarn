@@ -18,18 +18,21 @@ import (
 
 // Record is one normalized security log line.
 type Record struct {
-	TS      time.Time
-	Source  string // traefik, k8saudit, sshd, sudo, journald, macos, cloudflare, or the shipped hint
-	Host    string // reporting node
-	Kind    string // per source: http, auth_failure, invalid_user, auth_success, sudo, <k8s resource>, <cloudflare source>
-	SrcIP   string
-	User    string
-	Action  string // http method class, ssh auth method, k8s verb, cloudflare action
-	Status  int
-	Method  string
-	Path    string
-	Message string
-	Raw     string
+	TS     time.Time
+	Source string // traefik, k8saudit, sshd, sudo, journald, macos, cloudflare, or the shipped hint
+	Host   string // reporting node
+	// RequestHost is the Host the client asked for (traefik, cloudflare); empty
+	// for sources without a request.
+	RequestHost string
+	Kind        string // per source: http, auth_failure, invalid_user, auth_success, sudo, <k8s resource>, <cloudflare source>
+	SrcIP       string
+	User        string
+	Action      string // http method class, ssh auth method, k8s verb, cloudflare action
+	Status      int
+	Method      string
+	Path        string
+	Message     string
+	Raw         string
 }
 
 // Field returns the named field as a string, for rule matching.
@@ -39,6 +42,8 @@ func (r Record) Field(name string) (string, bool) {
 		return r.Source, true
 	case "host":
 		return r.Host, true
+	case "request_host":
+		return r.RequestHost, true
 	case "kind":
 		return r.Kind, true
 	case "src_ip":

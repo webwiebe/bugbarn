@@ -19,6 +19,7 @@ func traefik(base Record, in map[string]any, opts Options) (Record, bool) {
 	base.Kind = "http"
 	base.Method = str(in, "RequestMethod")
 	base.Path = str(in, "RequestPath")
+	base.RequestHost = str(in, "RequestHost")
 	base.Status = num(in, "DownstreamStatus")
 	peer := firstNonEmpty(clientIP(str(in, "ClientHost")), clientIP(str(in, "ClientAddr")))
 	base.SrcIP = firstNonEmpty(
@@ -101,6 +102,7 @@ func cloudflare(base Record, in map[string]any) (Record, bool) {
 	}
 	host := str(in, "clientRequestHTTPHost")
 	base.Host = firstNonEmpty(host, base.Host)
+	base.RequestHost = host
 	base.Message = strings.TrimSpace(fmt.Sprintf("%s %s %s%s (%s, rule %s)",
 		base.Action, base.Method, host, base.Path, str(in, "clientCountryName"), str(in, "ruleId")))
 	return base, true
