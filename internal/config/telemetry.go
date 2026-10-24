@@ -1,6 +1,10 @@
 package config
 
-import "path/filepath"
+import (
+	"net"
+	"os"
+	"path/filepath"
+)
 
 // Telemetry configures the infrastructure telemetry files (internal/telemetrydb).
 type Telemetry struct {
@@ -27,6 +31,12 @@ type Telemetry struct {
 	// keys of this project may post telemetry, and detections file their
 	// issues in it.
 	Project string
+	// TrustedGateways is BUGBARN_TELEMETRY_TRUSTED_GATEWAYS, a comma-separated
+	// list of addresses or CIDRs of reverse proxies in front of Traefik (the
+	// Caddy gateway for the staging and test hosts). Security rules group on the
+	// client address, which is only known from X-Forwarded-For when the peer is
+	// one of these; empty means that header is never used.
+	TrustedGateways []*net.IPNet
 }
 
 func parseTelemetryConfig(dbPath string) Telemetry {
@@ -37,6 +47,7 @@ func parseTelemetryConfig(dbPath string) Telemetry {
 		MetricsDBPath:    getenv("BUGBARN_METRICS_DB_PATH", filepath.Join(dir, "metrics.db")),
 		MetricsMaxBytes:  envInt64Positive("BUGBARN_METRICS_MAX_BYTES", 256<<20),
 		Project:          getenv("BUGBARN_TELEMETRY_PROJECT", "infra"),
+		TrustedGateways:  parseTrustedProxies(os.Getenv("BUGBARN_TELEMETRY_TRUSTED_GATEWAYS")),
 
 		MetricsRawRetentionDays:    envIntPositive("BUGBARN_METRICS_RAW_RETENTION_DAYS", 7),
 		MetricsHourlyRetentionDays: envIntPositive("BUGBARN_METRICS_HOURLY_RETENTION_DAYS", 90),

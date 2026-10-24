@@ -157,6 +157,7 @@ Security logs and host metrics live in their own SQLite files next to the main d
 | `BUGBARN_METRICS_RAW_RETENTION_DAYS` | `7` | No | How long per-minute host samples are kept. The writer rolls each finished hour into an hourly min/avg/max row first, so older ranges stay visible at hourly resolution. |
 | `BUGBARN_METRICS_HOURLY_RETENTION_DAYS` | `90` | No | How long hourly host metric rollups are kept. Hosts that have not reported for this long are removed from the host list. |
 | `BUGBARN_TELEMETRY_PROJECT` | `infra` | No | Project whose ingest keys may post telemetry, and where detections file their issues. |
+| `BUGBARN_TELEMETRY_TRUSTED_GATEWAYS` | empty | No | Comma-separated addresses or CIDRs of reverse proxies in front of Traefik (for example the staging gateway). Security rules read the client address from `X-Forwarded-For` only when the request came from one of these; empty means the header is never used. |
 
 ---
 

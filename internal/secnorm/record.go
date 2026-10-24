@@ -11,6 +11,7 @@ package secnorm
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"strings"
 	"time"
 )
@@ -69,8 +70,23 @@ const telemetryPathPrefix = "/api/v1/telemetry/"
 // Parse decodes an NDJSON body (or a JSON array) of Vector events and returns
 // the normalized records plus how many lines could not be decoded.
 func Parse(body []byte, now time.Time) (records []Record, skipped int) {
+	return ParseWith(body, now, Options{})
+}
+
+// Options tunes how records are normalized.
+type Options struct {
+	// TrustedGateways are the addresses of reverse proxies in front of Traefik
+	// (for example the Caddy gateway for the staging and test hosts). When the
+	// immediate peer of a Traefik request is inside one of them, the client
+	// address is read from X-Forwarded-For; from any other peer that header
+	// is ignored, because the peer could have written anything into it.
+	TrustedGateways []*net.IPNet
+}
+
+// ParseWith is Parse with options.
+func ParseWith(body []byte, now time.Time, opts Options) (records []Record, skipped int) {
 	for _, obj := range splitBody(body, &skipped) {
-		rec, ok := normalize(obj, now)
+		rec, ok := normalize(obj, now, opts)
 		if !ok {
 			continue
 		}
@@ -107,7 +123,7 @@ func splitBody(body []byte, skipped *int) []map[string]any {
 
 // normalize dispatches one Vector event to its source parser. The source hint
 // wins; without one the parser is picked from the payload's shape.
-func normalize(ev map[string]any, now time.Time) (Record, bool) {
+func normalize(ev map[string]any, now time.Time, opts Options) (Record, bool) {
 	inner := innerJSON(ev)
 	base := Record{
 		Source: str(ev, "source"),
@@ -119,7 +135,7 @@ func normalize(ev map[string]any, now time.Time) (Record, bool) {
 	var ok bool
 	switch detectSource(base.Source, ev, inner) {
 	case "traefik":
-		rec, ok = traefik(base, inner)
+		rec, ok = traefik(base, inner, opts)
 	case "k8saudit":
 		rec, ok = k8sAudit(base, inner)
 	case "macos":

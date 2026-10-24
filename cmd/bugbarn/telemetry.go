@@ -39,7 +39,9 @@ func openTelemetry(ctx context.Context, cfg config.Telemetry, wg *sync.WaitGroup
 			met.RunMetricsJobs(ctx, telemetrydb.DefaultMaintenanceInterval, ret, log)
 		}()
 	}
-	return telemetry.New(sec, met, log), func() {
+	ing := telemetry.New(sec, met, log)
+	ing.SetTrustedGateways(cfg.TrustedGateways)
+	return ing, func() {
 		for _, d := range []*telemetrydb.DB{sec, met} {
 			if d != nil {
 				d.FinalCheckpoint(log)
