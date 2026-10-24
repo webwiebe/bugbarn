@@ -727,8 +727,9 @@ Rule fields:
 |---|---|---|
 | `track` | all | `security` (log records), `metrics` (host samples) or `heartbeat` (host silence) |
 | `severity` | all | `WARNING`, `ERROR` or `CRITICAL` |
-| `match` | security | list of `{field, op, value}`; ops `eq`, `ne`, `in`, `not_in`, `prefix`, `not_prefix`, `contains` |
+| `match` | security | list of `{field, op, value}`; ops `eq`, `ne`, `in`, `not_in`, `prefix`, `not_prefix`, `suffix`, `contains`; fields include `src_ip`, `host` (reporting node) and `request_host` (host the client asked for) |
 | `group_by` | security | record fields that make up one group, e.g. `["src_ip"]` |
+| `exclude` | security | list of `{field, op, value}`; a record matching any of them is not counted toward the threshold, but is counted in the `bugbarn.detect.excluded` metric and logged at debug. Empty by default |
 | `threshold` | security, metrics | matching records per `window` (security) or the sample value limit (metrics) |
 | `window` | security, heartbeat | counting window (security) or allowed silence (heartbeat) |
 | `metric` | metrics | metric name glob, `*` matches any run of characters |

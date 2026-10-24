@@ -50,9 +50,14 @@ func (d Detection) GroupKey() string {
 	return strings.Join(parts, ",")
 }
 
-var detectionCounter metric.Int64Counter
+var detectionCounter, excludedCounter metric.Int64Counter
 
 func init() {
+	excludedCounter, _ = tracing.Meter().Int64Counter(
+		"bugbarn.detect.excluded",
+		metric.WithDescription("Records a rule's exclude list kept out of its count, by rule."),
+		metric.WithUnit("{record}"),
+	)
 	detectionCounter, _ = tracing.Meter().Int64Counter(
 		"bugbarn.detect.detections",
 		metric.WithDescription("Detections fired, by rule and outcome (queued, dropped)."),
@@ -141,11 +146,35 @@ func (e *Engine) ObserveSecurity(ctx context.Context, recs []secnorm.Record) {
 			continue
 		}
 		for i := range recs {
-			if matchAll(r.Match, &recs[i]) {
-				e.countRecord(ctx, r, &recs[i], now)
+			if !matchAll(r.Match, &recs[i]) {
+				continue
 			}
+			if excluded(r.Exclude, &recs[i]) {
+				e.noteExcluded(ctx, r, &recs[i])
+				continue
+			}
+			e.countRecord(ctx, r, &recs[i], now)
 		}
 	}
+}
+
+// excluded reports whether rec matches any of the exclusion conditions.
+func excluded(conds []Cond, rec *secnorm.Record) bool {
+	for _, c := range conds {
+		v, _ := rec.Field(c.Field)
+		if c.matches(v) {
+			return true
+		}
+	}
+	return false
+}
+
+// noteExcluded keeps an excluded record visible: it is counted per rule and
+// logged at debug, but never reaches the window.
+func (e *Engine) noteExcluded(ctx context.Context, r Rule, rec *secnorm.Record) {
+	excludedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("rule", r.ID)))
+	e.log.Debug("detect: record excluded by rule", "rule", r.ID, "src_ip", rec.SrcIP,
+		"request_host", rec.RequestHost, "status", rec.Status)
 }
 
 func matchAll(conds []Cond, rec *secnorm.Record) bool {
