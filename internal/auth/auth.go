@@ -154,23 +154,30 @@ func (a *Authorizer) resolveKeyErr(
 		}
 	}
 
-	// Check DB-stored keys.
-	if a.dbLookup != nil {
-		pid, sc, found, lookupErr := a.dbLookup(ctx, hexSum)
-		if lookupErr != nil {
-			return 0, "", false, errors.Join(ErrKeyLookup, lookupErr)
-		}
-		if found {
-			if touch && a.dbTouch != nil {
-				if touchErr := a.dbTouch(ctx, hexSum); touchErr != nil {
-					slog.WarnContext(ctx, "auth: failed to update api key last-used timestamp", "project_id", pid, "error", touchErr)
-				}
-			}
-			return pid, sc, true, nil
+	return a.lookupStoredKey(ctx, hexSum, touch)
+}
+
+// lookupStoredKey checks the DB-stored keys for hexSum. A failed lookup returns
+// an error wrapping ErrKeyLookup; a key that is not found has a nil err.
+func (a *Authorizer) lookupStoredKey(
+	ctx context.Context, hexSum string, touch bool,
+) (projectID int64, scope string, ok bool, err error) {
+	if a.dbLookup == nil {
+		return 0, "", false, nil
+	}
+	pid, sc, found, lookupErr := a.dbLookup(ctx, hexSum)
+	if lookupErr != nil {
+		return 0, "", false, errors.Join(ErrKeyLookup, lookupErr)
+	}
+	if !found {
+		return 0, "", false, nil
+	}
+	if touch && a.dbTouch != nil {
+		if touchErr := a.dbTouch(ctx, hexSum); touchErr != nil {
+			slog.WarnContext(ctx, "auth: failed to update api key last-used timestamp", "project_id", pid, "error", touchErr)
 		}
 	}
-
-	return 0, "", false, nil
+	return pid, sc, true, nil
 }
 
 // ValidWithSetupFallback is like ValidWithProject but also tries setup key
