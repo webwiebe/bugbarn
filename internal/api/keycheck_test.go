@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,6 +62,35 @@ func TestKeyLookupErrorIsRetryableOnEveryKeyedRoute(t *testing.T) {
 				if rr.Code != tc.want {
 					t.Errorf("%s: got %d, want %d: %s", tc.name, rr.Code, tc.want, rr.Body.String())
 				}
+			}
+		})
+	}
+}
+
+// A store that answers the first key check and fails the next: the project
+// resolution after authentication must not turn that into a 400 or an
+// unbound request, it answers 503 as well (bugbarn#234).
+func TestKeyLookupFailureAfterAuthenticationIsRetryable(t *testing.T) {
+	t.Parallel()
+	for _, rt := range []struct{ name, method, path string }{
+		{"logs ingest", http.MethodPost, "/api/v1/logs"},
+		{"monitor check-in", http.MethodPost, "/api/v1/monitors/nightly/check-ins"},
+	} {
+		t.Run(rt.name, func(t *testing.T) {
+			t.Parallel()
+			var calls atomic.Int32
+			srv := keyCheckServer(t, func(context.Context, string) (int64, string, bool, error) {
+				if calls.Add(1) == 1 {
+					return 1, "full", true, nil
+				}
+				return 0, "", false, errors.New("database is locked")
+			})
+			req := httptest.NewRequest(rt.method, rt.path, strings.NewReader(`{"status":"ok"}`))
+			req.Header.Set("X-BugBarn-API-Key", "some-key")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != http.StatusServiceUnavailable {
+				t.Errorf("got %d, want 503: %s", rr.Code, rr.Body.String())
 			}
 		})
 	}

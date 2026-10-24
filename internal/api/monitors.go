@@ -130,7 +130,10 @@ func (s *Server) recordCheckIn(w http.ResponseWriter, r *http.Request, slug stri
 // key is bound to, or the X-BugBarn-Project header for an unbound key. It never
 // creates a project.
 func (s *Server) checkInProject(r *http.Request) (int64, error) {
-	pid, _, ok := s.ingestHandler.APIKeyProjectScope(r)
+	pid, _, ok, err := s.ingestHandler.CheckAPIKey(r)
+	if err != nil {
+		return 0, apperr.Unavailable("api key lookup failed, retry", err)
+	}
 	if ok && pid > 0 {
 		return pid, nil
 	}

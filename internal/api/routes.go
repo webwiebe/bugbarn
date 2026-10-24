@@ -155,7 +155,11 @@ func (s *Server) handleLogsIngestPost(w http.ResponseWriter, r *http.Request) {
 	// Resolve project from API key / header.
 	var logProjectID int64
 	if s.ingestHandler != nil {
-		pid, _, ok := s.ingestHandler.APIKeyProjectScope(r)
+		pid, _, ok, err := s.ingestHandler.CheckAPIKey(r)
+		if err != nil {
+			http.Error(w, "api key lookup failed, retry", http.StatusServiceUnavailable)
+			return
+		}
 		if ok && pid > 0 {
 			logProjectID = pid
 		}
