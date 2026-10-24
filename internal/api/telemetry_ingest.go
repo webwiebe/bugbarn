@@ -53,8 +53,8 @@ func (s *Server) serveTelemetryIngestEndpoint(w http.ResponseWriter, r *http.Req
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true
 	}
-	if !s.telemetryAuthorized(r) {
-		ingestresp.WriteDropped(w, ingestresp.DropUnauthorized)
+	if deny := s.telemetryAuthorized(r); deny != nil {
+		ingestresp.WriteDropped(w, *deny)
 		return true
 	}
 	switch {
@@ -72,22 +72,33 @@ func (s *Server) serveTelemetryIngestEndpoint(w http.ResponseWriter, r *http.Req
 // to the telemetry project. Any other ingest key is refused: browser SDK keys
 // are public, and telemetry feeds detections that page someone, so a page
 // that ships a key must not be able to forge security events.
-func (s *Server) telemetryAuthorized(r *http.Request) bool {
+//
+// It returns nil when the request may proceed, DropUnavailable (retryable)
+// when the key store failed, and DropUnauthorized otherwise.
+func (s *Server) telemetryAuthorized(r *http.Request) *ingestresp.Drop {
+	deny := ingestresp.DropUnauthorized
 	if s.ingestHandler == nil {
-		return false
+		return &deny
 	}
-	pid, scope, ok := s.ingestHandler.APIKeyProjectScope(r)
+	pid, scope, ok, keyErr := s.ingestHandler.CheckAPIKey(r)
+	if keyErr != nil {
+		unavailable := ingestresp.DropUnavailable
+		return &unavailable
+	}
 	if !ok {
-		return false
+		return &deny
 	}
 	if scope == "full" {
-		return true
+		return nil
 	}
 	if s.projects == nil || s.telemetryProject == "" || pid == 0 {
-		return false
+		return &deny
 	}
 	proj, err := s.projects.BySlug(r.Context(), s.telemetryProject)
-	return err == nil && proj.ID == pid
+	if err != nil || proj.ID != pid {
+		return &deny
+	}
+	return nil
 }
 
 func (s *Server) ingestTelemetryLocal(w http.ResponseWriter, r *http.Request, kind string) {

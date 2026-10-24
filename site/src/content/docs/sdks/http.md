@@ -180,8 +180,9 @@ A single API key can route to any number of projects by varying this header.
 | `400 Bad Request` | Malformed JSON or a required field is missing or invalid |
 | `401 Unauthorized` | `X-BugBarn-Api-Key` header is missing or the key is not recognised |
 | `429 Too Many Requests` | The server-side ingest spool is full. Retry after the number of seconds indicated in the `Retry-After` response header |
+| `503 Service Unavailable` | The ingest pipeline is unavailable, or the server could not check the key because its key store failed. Retry after the number of seconds in `Retry-After` |
 
-On `429`, back off before retrying. A simple strategy is to wait the value in `Retry-After` (if present) or use exponential backoff starting at one second.
+On `429` and `503`, back off before retrying. A simple strategy is to wait the value in `Retry-After` (if present) or use exponential backoff starting at one second.
 
 Both endpoints use `Access-Control-Allow-Origin: *`, so browser JavaScript can POST to them directly without a proxy.
 

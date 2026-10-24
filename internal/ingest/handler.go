@@ -174,15 +174,41 @@ func (h *Handler) APIKeyProject(r *http.Request) (projectID int64, ok bool) {
 
 // APIKeyProjectScope validates the API key and returns project ID, scope, and ok.
 func (h *Handler) APIKeyProjectScope(r *http.Request) (projectID int64, scope string, ok bool) {
+	projectID, scope, ok, _ = h.CheckAPIKey(r)
+	return projectID, scope, ok
+}
+
+// CheckAPIKey is APIKeyProjectScope that tells a rejected key from a key check
+// that failed: when the key store errors, ok is false and err wraps
+// auth.ErrKeyLookup. Callers answer that with a retryable status (503), because
+// a 401 makes an SDK drop the event or check-in for good.
+func (h *Handler) CheckAPIKey(r *http.Request) (projectID int64, scope string, ok bool, err error) {
 	if h == nil || h.auth == nil {
-		return 0, "full", true
+		return 0, "full", true, nil
 	}
 	slug := r.Header.Get("x-bugbarn-project")
-	projectID, scope, ok = h.auth.ValidWithSetupFallback(r.Context(), r.Header.Get(auth.HeaderAPIKey), slug)
-	if !ok {
+	projectID, scope, ok, err = h.auth.CheckWithSetupFallback(r.Context(), r.Header.Get(auth.HeaderAPIKey), slug)
+	switch {
+	case err != nil:
+		h.logger.WarnContext(r.Context(), "ingest api key lookup failed; answering retryable", "path", r.URL.Path, "error", err)
+	case !ok:
 		h.logDenied(r)
 	}
-	return projectID, scope, ok
+	return projectID, scope, ok, err
+}
+
+// authorize checks the request's API key. A nil deny means the key is good; a
+// key that is rejected denies with DropUnauthorized, and a key check that failed
+// in the store with the retryable DropUnavailable.
+func (h *Handler) authorize(r *http.Request) (projectID int64, scope string, deny *ingestresp.Drop) {
+	projectID, scope, ok, err := h.CheckAPIKey(r)
+	switch {
+	case err != nil:
+		return 0, "", &ingestresp.DropUnavailable
+	case !ok:
+		return 0, "", &ingestresp.DropUnauthorized
+	}
+	return projectID, scope, nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -204,11 +230,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, scope, ok := h.APIKeyProjectScope(r)
-	if !ok {
-		span.SetStatus(codes.Error, "unauthorized")
-		recordIngestReceived(ctx, ingestresp.DropUnauthorized.Reason)
-		ingestresp.WriteDropped(w, ingestresp.DropUnauthorized)
+	projectID, scope, deny := h.authorize(r)
+	if deny != nil {
+		span.SetStatus(codes.Error, deny.Reason)
+		recordIngestReceived(ctx, deny.Reason)
+		ingestresp.WriteDropped(w, *deny)
 		return
 	}
 
@@ -287,9 +313,9 @@ func (h *Handler) ServeAlertmanagerHTTP(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	projectID, scope, ok := h.APIKeyProjectScope(r)
-	if !ok {
-		ingestresp.WriteDropped(w, ingestresp.DropUnauthorized)
+	projectID, scope, deny := h.authorize(r)
+	if deny != nil {
+		ingestresp.WriteDropped(w, *deny)
 		return
 	}
 	defer func() { _ = r.Body.Close() }()
