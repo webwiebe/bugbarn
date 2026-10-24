@@ -104,7 +104,7 @@ func TestWALTruncatesWithinNTicksAfterSnapshotReleased(t *testing.T) {
 		// 500ms: one 100ms attempt, then the 5s retry wait is cut by the deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
-		checkpointTick(ctx, store.db, tick, policy, quietLogger())
+		checkpointTick(ctx, store.db, tick, &checkpointState{}, policy, quietLogger())
 	}
 
 	// Ticks 1 and 2 are PASSIVE, tick 3 is TRUNCATE and the snapshot blocks it.
@@ -141,7 +141,7 @@ func TestLegacyPolicyTruncatesEveryTick(t *testing.T) {
 	defer store.Close()
 	growWAL(t, store)
 
-	checkpointTick(context.Background(), store.db, 1, LegacyCheckpointPolicy(), quietLogger())
+	checkpointTick(context.Background(), store.db, 1, &checkpointState{}, LegacyCheckpointPolicy(), quietLogger())
 	if got := walSize(t, dbPath); got != 0 {
 		t.Errorf("WAL is %d bytes after one legacy tick, want 0", got)
 	}

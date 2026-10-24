@@ -109,6 +109,7 @@ func runCheckpointLoop(
 
 	t := time.NewTicker(interval)
 	defer t.Stop()
+	st := &checkpointState{}
 	for tick := 1; ; tick++ {
 		select {
 		case <-ctx.Done():
@@ -118,7 +119,7 @@ func runCheckpointLoop(
 			// connection. Giving up early only leaves the WAL untruncated
 			// until the next tick, which then retries from scratch.
 			tickCtx, cancel := context.WithTimeout(ctx, checkpointTickBudget)
-			checkpointTick(tickCtx, db, tick, policy, log)
+			checkpointTick(tickCtx, db, tick, st, policy, log)
 			reportWALSize(policy, log)
 			if vacuumPages > 0 {
 				incrementalVacuum(tickCtx, db, vacuumPages, log)
@@ -226,35 +227,113 @@ func (p CheckpointPolicy) normalized() CheckpointPolicy {
 	return p
 }
 
+// checkpointState carries what one tick tells the next.
+type checkpointState struct {
+	// failedTruncates counts consecutive TRUNCATE ticks that ended with the WAL
+	// still pinned by a reader (or an error).
+	failedTruncates int
+}
+
+// Backstop: after backstopAfterTicks consecutive blocked TRUNCATE ticks with a
+// WAL above backstopBytes, one TRUNCATE waits the full backstopWait for readers.
+// The short per-tick wait trades WAL growth for write availability; the backstop
+// caps the growth. With the default policy a TRUNCATE tick comes every 10th
+// interval, so 3 failures means roughly half an hour of a pinned WAL.
+//
+// Variables so the tests can shrink them.
+var (
+	backstopAfterTicks       = 3
+	backstopBytes      int64 = 64 << 20
+	backstopWait             = 15 * time.Second
+)
+
 // checkpointTick runs one tick of the loop: PASSIVE, or TRUNCATE with the bounded
-// retry of CheckpointDB when tick is a multiple of TruncateEvery.
-func checkpointTick(ctx context.Context, db *sql.DB, tick int, policy CheckpointPolicy, log *slog.Logger) {
+// retry of CheckpointDB when tick is a multiple of TruncateEvery. It logs the
+// outcome of every tick so a WAL that stops truncating shows in the logs before
+// the size alarm fires.
+func checkpointTick(
+	ctx context.Context, db *sql.DB, tick int, st *checkpointState, policy CheckpointPolicy, log *slog.Logger,
+) {
 	policy = policy.normalized()
 	if tick%policy.TruncateEvery != 0 {
-		if _, _, _, err := checkpointAttempt(ctx, db, "PASSIVE", 0); err != nil && ctx.Err() == nil {
-			log.Warn("wal checkpoint error", "mode", "PASSIVE", "error", err)
+		_, walFrames, checkpointed, err := checkpointAttempt(ctx, db, "PASSIVE", 0)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Warn("wal checkpoint error", "mode", "PASSIVE", "error", err)
+			}
+			return
 		}
+		log.Info("wal checkpoint", "mode", "PASSIVE", "wal_frames", walFrames, "checkpointed", checkpointed)
 		return
 	}
+	var walFrames, checkpointed, attempts int
+	truncated := false
 	for {
-		busy, walFrames, checkpointed, err := checkpointAttempt(ctx, db, "TRUNCATE", policy.TruncateBusyTimeout)
+		var busy int
+		var err error
+		busy, walFrames, checkpointed, err = checkpointAttempt(ctx, db, "TRUNCATE", policy.TruncateBusyTimeout)
+		attempts++
 		if err != nil {
 			if ctx.Err() == nil {
 				log.Warn("wal checkpoint error", "mode", "TRUNCATE", "error", err)
 			}
-			return
+			break
 		}
 		if busy == 0 {
-			return
+			truncated = true
+			break
 		}
 		log.Debug("wal checkpoint blocked by reader, retrying",
 			"wal_frames", walFrames, "checkpointed", checkpointed)
 		select {
 		case <-ctx.Done():
-			return
 		case <-time.After(checkpointRetryInterval):
+			continue
 		}
+		break
 	}
+	result := "blocked"
+	if truncated {
+		result = "truncated"
+		st.failedTruncates = 0
+	} else {
+		st.failedTruncates++
+	}
+	log.Info("wal checkpoint", "mode", "TRUNCATE", "result", result, "attempts", attempts,
+		"wal_frames", walFrames, "checkpointed", checkpointed, "failed_truncate_ticks", st.failedTruncates)
+	if !truncated && st.failedTruncates >= backstopAfterTicks {
+		backstop(ctx, db, st, policy, log)
+	}
+}
+
+// backstop runs one TRUNCATE that waits the full backstopWait for readers, when
+// the WAL has grown past backstopBytes. It holds the write connection for up to
+// that wait, so it only fires after repeated failures of the short attempt.
+func backstop(ctx context.Context, db *sql.DB, st *checkpointState, policy CheckpointPolicy, log *slog.Logger) {
+	if policy.WALSize == nil {
+		return
+	}
+	size, err := policy.WALSize()
+	if err != nil || size <= backstopBytes {
+		return
+	}
+	log.Warn("wal checkpoint backstop: waiting for readers", "wal_bytes", size,
+		"failed_truncate_ticks", st.failedTruncates, "wait", backstopWait.String())
+	// The tick's budget is spent by now; the wait is the point of the backstop.
+	bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*backstopWait)
+	defer cancel()
+	busy, walFrames, checkpointed, err := checkpointAttempt(bctx, db, "TRUNCATE", backstopWait)
+	if err != nil {
+		log.Warn("wal checkpoint backstop error", "error", err)
+		return
+	}
+	result := "blocked"
+	if busy == 0 {
+		result = "truncated"
+		st.failedTruncates = 0
+	}
+	log.Info("wal checkpoint backstop done", "result", result,
+		"wal_frames", walFrames, "checkpointed", checkpointed)
 }
 
 // checkpointAttempt runs one `PRAGMA main.wal_checkpoint(mode)` on the write
