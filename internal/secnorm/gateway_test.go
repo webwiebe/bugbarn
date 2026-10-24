@@ -66,3 +66,22 @@ func TestForwardedForSpoofedPrefixIgnored(t *testing.T) {
 		t.Fatalf("src_ip = %q, want the peer for an unparseable header", got)
 	}
 }
+
+// A list made only of gateways names no client, and a peer that is not an
+// address cannot be matched against the gateway ranges.
+func TestForwardedForWithoutClient(t *testing.T) {
+	opts := Options{TrustedGateways: nets(t, "192.168.4.0/24")}
+	if got := srcIP(t, opts, "192.168.4.111", "192.168.4.5, 192.168.4.6"); got != "192.168.4.111" {
+		t.Fatalf("src_ip = %q, want the peer when every listed address is a gateway", got)
+	}
+	if got := forwardedClient("198.51.100.1", "not-an-ip", opts.TrustedGateways); got != "" {
+		t.Fatalf("forwardedClient = %q, want empty for an unparseable peer", got)
+	}
+}
+
+func TestFieldRequestHost(t *testing.T) {
+	r := Record{RequestHost: "main.nijmegen.wiebe.xyz"}
+	if got, ok := r.Field("request_host"); !ok || got != "main.nijmegen.wiebe.xyz" {
+		t.Fatalf("Field(request_host) = %q, %v", got, ok)
+	}
+}
