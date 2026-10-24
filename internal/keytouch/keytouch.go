@@ -36,7 +36,7 @@ const maxPending = 10000
 
 // Batch is the signed body of one flush.
 type Batch struct {
-	TS      int64                 `json:"ts"`
+	TS      int64                `json:"ts"`
 	Touches []domain.APIKeyTouch `json:"touches"`
 }
 
