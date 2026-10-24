@@ -157,6 +157,7 @@ func (s *Server) handleLogsIngestPost(w http.ResponseWriter, r *http.Request) {
 	if s.ingestHandler != nil {
 		pid, _, ok, err := s.ingestHandler.CheckAPIKey(r)
 		if err != nil {
+			w.Header().Set("Retry-After", "1")
 			http.Error(w, "api key lookup failed, retry", http.StatusServiceUnavailable)
 			return
 		}

@@ -114,6 +114,13 @@ func (a *Authorizer) ProjectForKey(ctx context.Context, provided string) (projec
 	return a.resolveKey(ctx, provided, false)
 }
 
+// ProjectForKeyErr is ProjectForKey that also reports a failed store lookup: err
+// wraps ErrKeyLookup and ok is false, so a caller can retry instead of treating
+// the key as unbound.
+func (a *Authorizer) ProjectForKeyErr(ctx context.Context, provided string) (projectID int64, scope string, ok bool, err error) {
+	return a.resolveKeyErr(ctx, provided, false)
+}
+
 // ErrKeyLookup marks a key check that could not be answered because the key
 // store failed (busy database, timeout). It says nothing about the key, so
 // callers answer a retryable status, never 401.
@@ -134,6 +141,9 @@ func (a *Authorizer) resolveKeyErr(
 	}
 
 	provided = strings.TrimSpace(provided)
+	if provided == "" {
+		return 0, "", false, nil
+	}
 	sum := sha256.Sum256([]byte(provided))
 	hexSum := hex.EncodeToString(sum[:])
 

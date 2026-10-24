@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"sort"
@@ -142,6 +143,9 @@ func (s *Server) checkInProject(r *http.Request) (int64, error) {
 		return 0, apperr.InvalidInput("the key is not bound to a project: send X-BugBarn-Project", nil)
 	}
 	proj, err := s.projects.BySlug(r.Context(), slug)
+	if err != nil && !errors.Is(err, apperr.ErrNotFound) {
+		return 0, apperr.Unavailable("project lookup failed, retry", err)
+	}
 	if err != nil || !projectIsActive(proj.Status) {
 		return 0, apperr.NotFound("unknown or inactive project", err)
 	}
