@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"net/http"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
