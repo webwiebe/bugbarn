@@ -171,6 +171,10 @@ class Transport:
             self._warn_once(what, f"ingest answered HTTP {err.code}{_error_detail(err)}")
         except urllib.error.URLError as err:
             self._warn_once(what, f"ingest unreachable: {err.reason}")
+        except OSError as err:
+            # A read timeout or a reset connection after the request went out is not a
+            # URLError. Letting it escape ends the transport thread for good.
+            self._warn_once(what, f"ingest failed: {err!r}")
 
     def _warn_once(self, what: str, reason: str) -> None:
         key = f"{what}:{reason}"
@@ -410,4 +414,7 @@ def check_in(
     submit = getattr(_transport, "submit_check_in", None)
     if submit is None:
         return False
-    return submit(CheckIn(slug=slug, body=body))
+    if submit(CheckIn(slug=slug, body=body)):
+        return True
+    _transport._warn_once("check-in", f"queue full, {slug} not sent")
+    return False
