@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"testing"
 	"time"
 )
@@ -249,5 +250,59 @@ func TestProjectForKeyDoesNotTouch(t *testing.T) {
 	}
 	if touched != 1 {
 		t.Errorf("touch called %d times after ValidWithProject, want 1", touched)
+	}
+}
+
+// An empty key can match nothing, so it is rejected without a store query: a
+// request with no key gets 401 during a store outage, not a retryable 503.
+func TestEmptyKeyIsRejectedWithoutALookup(t *testing.T) {
+	lookups := 0
+	a := New("").WithDBLookup(func(context.Context, string) (int64, string, bool, error) {
+		lookups++
+		return 0, "", false, errors.New("database is locked")
+	}, nil)
+	for _, key := range []string{"", "   "} {
+		_, _, ok, err := a.resolveKeyErr(context.Background(), key, false)
+		if ok || err != nil {
+			t.Errorf("key %q: ok=%v err=%v, want a plain rejection", key, ok, err)
+		}
+	}
+	if lookups != 0 {
+		t.Errorf("store queried %d times for an empty key", lookups)
+	}
+}
+
+// A store error during the key lookup is not a verdict on the key: it comes back
+// as ErrKeyLookup, the setup fallback is not tried, and a key that is simply
+// missing stays a plain rejection with no error.
+func TestCheckWithSetupFallbackSeparatesLookupErrorFromMissingKey(t *testing.T) {
+	setupCalled := false
+	verifier := func(context.Context, string, string) (int64, bool) {
+		setupCalled = true
+		return 9, true
+	}
+
+	failing := New("").
+		WithDBLookup(func(context.Context, string) (int64, string, bool, error) {
+			return 0, "", false, errors.New("database is locked")
+		}, nil).
+		WithSetupKeyVerifier(verifier)
+	_, _, ok, err := failing.CheckWithSetupFallback(context.Background(), "k", "proj")
+	if ok || !errors.Is(err, ErrKeyLookup) {
+		t.Fatalf("lookup error: ok=%v err=%v, want ok=false and ErrKeyLookup", ok, err)
+	}
+	if setupCalled {
+		t.Fatal("setup fallback ran after a failed lookup")
+	}
+	if _, _, valid := failing.ValidWithSetupFallback(context.Background(), "k", "proj"); valid {
+		t.Fatal("ValidWithSetupFallback accepted a key whose lookup failed")
+	}
+
+	missing := New("").WithDBLookup(func(context.Context, string) (int64, string, bool, error) {
+		return 0, "", false, nil
+	}, nil)
+	_, _, ok, err = missing.CheckWithSetupFallback(context.Background(), "k", "")
+	if ok || err != nil {
+		t.Fatalf("missing key: ok=%v err=%v, want ok=false and nil error", ok, err)
 	}
 }

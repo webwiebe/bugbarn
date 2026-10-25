@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -326,5 +327,28 @@ func TestMonitorCheckInWithSchedule(t *testing.T) {
 		if rr := h.post("bad-cron", h.key, payload); rr.Code != http.StatusBadRequest {
 			t.Errorf("%s: got %d: %s", name, rr.Code, rr.Body.String())
 		}
+	}
+}
+
+// A failing key lookup must not look like a bad key: the check-in client treats
+// 401 as final and drops the beat, while 503 is retried.
+func TestMonitorCheckInKeyLookupErrorIsRetryable(t *testing.T) {
+	t.Parallel()
+	store := mustOpenStore(t)
+	t.Cleanup(func() { store.Close() })
+	failing := auth.New("").WithDBLookup(func(context.Context, string) (int64, string, bool, error) {
+		return 0, "", false, errors.New("database is locked")
+	}, nil)
+	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")
+	server := NewServerWithAuth(ingest.NewHandler(failing, nil, 1<<20), store, userAuth,
+		auth.NewSessionManager("secret", time.Hour), nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitors/pending-sweep/check-ins", strings.NewReader(`{"status":"ok"}`))
+	req.Header.Set("X-BugBarn-API-Key", "valid-key")
+	rr := httptest.NewRecorder()
+	server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("lookup error: got %d, want 503: %s", rr.Code, rr.Body.String())
 	}
 }

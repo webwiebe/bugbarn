@@ -1,0 +1,12 @@
+# gitleaks ignore list: fingerprints only (commit:file:rule:line), never a secret value.
+# It may only shrink; scripts/secret-scan.sh fails a pull request that adds a line.
+# These are the findings in history when the gate was added (2026-10-17).
+6a3dfbf56d57c9d230abb78fc75eb8b685ec1d35:docs/sdks/http.md:curl-auth-header:158
+6a3dfbf56d57c9d230abb78fc75eb8b685ec1d35:docs/sdks/http.md:curl-auth-header:216
+6a3dfbf56d57c9d230abb78fc75eb8b685ec1d35:docs/sdks/http.md:curl-auth-header:35
+7a50b9bf3558d8f50689c2778d1d2386d972f8af:site/src/components/Analytics.astro:generic-api-key:6
+7fa3f1f5daa973dae2825b15288172a6daa6da09:site/src/content/docs/sdks/http.md:curl-auth-header:158
+7fa3f1f5daa973dae2825b15288172a6daa6da09:site/src/content/docs/sdks/http.md:curl-auth-header:216
+7fa3f1f5daa973dae2825b15288172a6daa6da09:site/src/content/docs/sdks/http.md:curl-auth-header:35
+9b3832848656e6446a4460f397ce6f1cb53cb910:README.md:curl-auth-header:44
+effcee5bf381bcdb38ee4da67be02c4add4450cf:specs/001-personal-error-tracker/quickstart.md:curl-auth-header:45

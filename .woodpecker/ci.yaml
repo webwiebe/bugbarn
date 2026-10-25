@@ -263,3 +263,31 @@ steps:
         fi
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
         pnpm dlx jscpd@latest .
+
+  # Secret scan (gitleaks 8.30.1, scripts/secret-scan.sh). Pull requests scan their
+  # own commits, pushes to main and manual runs scan all history. Report-only until
+  # 2026-10-31: findings are printed and the step passes; flip SECRET_SCAN_MODE to
+  # enforce then. A scan that cannot run (shallow clone, missing gitleaks, scanned
+  # fewer commits than the floor) fails the step in both modes. Known hits in
+  # history are fingerprints in .gitleaksignore, which may only shrink. The wrapper
+  # tests itself against a planted fake secret first.
+  - name: secret-scan
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+      SECRET_SCAN_MODE: report
+      SECRET_SCAN_MIN_COMMITS: "400"
+    commands:
+      - |
+        set -euo pipefail
+        bash scripts/tests/secret-scan.test.sh
+        # The clone is shallow; the scan reads every commit and the PR base.
+        git remote set-url origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+        git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=2000 origin
+        if [ "${CI_PIPELINE_EVENT:-}" = pull_request ]; then
+          bash scripts/secret-scan.sh diff "origin/$CI_COMMIT_TARGET_BRANCH"
+        else
+          bash scripts/secret-scan.sh history
+        fi

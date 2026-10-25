@@ -111,7 +111,7 @@ func TestRunPeriodicCheckpointStopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		store.RunPeriodicCheckpoint(ctx, 5*time.Millisecond, quietLogger())
+		store.RunPeriodicCheckpoint(ctx, 5*time.Millisecond, CheckpointPolicy{}, quietLogger())
 		close(done)
 	}()
 
@@ -161,7 +161,7 @@ func TestRunPeriodicCheckpointNoopOnReadOnlyStore(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		// Must return immediately despite the long interval.
-		reader.RunPeriodicCheckpoint(context.Background(), time.Hour, quietLogger())
+		reader.RunPeriodicCheckpoint(context.Background(), time.Hour, CheckpointPolicy{}, quietLogger())
 		close(done)
 	}()
 	select {

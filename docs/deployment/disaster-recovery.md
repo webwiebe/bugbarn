@@ -38,6 +38,18 @@ reproduce the "database is locked" spam.
 Tunable via `BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS` (default 60) if the WAL
 needs to be bounded harder during an incident.
 
+Most ticks run a PASSIVE checkpoint; every `BUGBARN_WAL_TRUNCATE_EVERY`-th tick
+(default 10) runs TRUNCATE, which waits for reader snapshots at most
+`BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS` (default 1000) while holding the write
+connection. Before bugbarn#236 every tick was a TRUNCATE that waited up to 10s,
+which stalled forwarded check-ins for 12 to 28s. Set `BUGBARN_WAL_TRUNCATE_EVERY=1`
+and `BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS=10000` to restore that behaviour if the
+WAL grows. Watch the `-wal` file size after changing either value.
+
+The writer logs the `-wal` file size after every tick. Above
+`BUGBARN_WAL_WARN_BYTES` (default 268435456, 256 MiB) it logs at Error, which
+BugBarn files as an issue in its own `bugbarn-service` project.
+
 ## Where snapshots live
 
 ```
