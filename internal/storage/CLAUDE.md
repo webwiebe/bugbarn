@@ -49,6 +49,13 @@ blocked TRUNCATE ticks with a WAL over 64 MiB, one TRUNCATE waits 15s (the backs
 every tick logs `wal checkpoint` with its result. Do not add a second
 checkpointer, and keep WAL mode: the readers depend on it.
 
+Reader pods mount the volume read-only, so a reader cannot rebuild a bad wal-index and
+the driver answers `SQLITE_READONLY_RECOVERY` (264). The API key lookup retries it three
+times (`retryReadonlyRecovery`, 175 ms in all), counts the outcome in
+`bugbarn.storage.readonly_recovery` and puts the WAL's size and age on a span event
+(#242). The cause is unconfirmed; a synthetic run with a separate reader process did not
+reproduce it.
+
 ## Free space
 
 bugbarn.db was created with `auto_vacuum=NONE`, so rows the retention sweep deletes leave
