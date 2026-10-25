@@ -174,6 +174,50 @@ func TestMigrateFingerprintsMergesStaleIntoCurrent(t *testing.T) {
 	}
 }
 
+// #241: a client that put the page URL in its message filed one issue per page.
+// After the fingerprint stops seeing the path, the migration rewrites one of
+// them in place and leaves the rest; a new event for another page then lands on
+// the rewritten issue and is not new, so no new-issue mail goes out for it.
+func TestMigrateFingerprintsURLRegroupDoesNotCreateIssues(t *testing.T) {
+	t.Parallel()
+	store := openForMigration(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+
+	page := func(path string, observed time.Time) event.Event {
+		evt := migrationEvent(observed)
+		evt.Exception = event.Exception{Type: "*scrape.StatusError", Message: "GET https://mywed.com/" + path + ": 418 I'm a teapot"}
+		return evt
+	}
+	const oldMaterial = `{"exceptionType":"*scrape.statuserror","algorithm":"per-url"}`
+	for i, path := range []string{"en/france/lyon/", "en/italy/rome/", "nl/gent/"} {
+		material := oldMaterial + path
+		evt := page(path, at.Add(time.Duration(i)*time.Minute))
+		if _, _, isNew, _, err := store.PersistProcessedEvent(ctx, withFingerprint(evt, sha256Hex(material), material)); err != nil || !isNew {
+			t.Fatalf("setup %s: isNew=%v err=%v", path, isNew, err)
+		}
+	}
+
+	if err := store.migrateFingerprints(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := issueFingerprints(t, store); len(got) != 3 {
+		t.Fatalf("migration must not add or delete issues, got %d", len(got))
+	}
+
+	later := page("fr/paris/", at.Add(time.Hour))
+	issue, _, isNew, _, err := store.PersistProcessedEvent(ctx, withFingerprint(later, fingerprint.Fingerprint(later), ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isNew {
+		t.Fatalf("an event for another page must group onto an existing issue, got new %s", issue.ID)
+	}
+	if got := issueFingerprints(t, store); len(got) != 3 {
+		t.Fatalf("issues = %d, want 3", len(got))
+	}
+}
+
 // By default a collision leaves the stale issue untouched: nothing is deleted,
 // so its key keeps resolving and its history stays.
 func TestMigrateFingerprintsLeavesCollidingIssueAloneByDefault(t *testing.T) {

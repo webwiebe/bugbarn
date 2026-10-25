@@ -26,7 +26,14 @@ var (
 	sourceLocation    = regexp.MustCompile(`:\d+(?::\d+)+`)
 	whitespace        = regexp.MustCompile(`\s+`)
 	pathNumberSegment = regexp.MustCompile(`/\d+`)
+	// urlPathPattern matches the path, query and fragment of an absolute URL in
+	// free text. Scheme and host stay: a different host is a different failing
+	// service, a different page on the same host is the same failure.
+	urlPathPattern = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*://[^/\s?#"'<>()\[\]]+)[/?#][^\s"'<>()\[\]]*`)
 )
+
+// urlPathPlaceholder replaces the path and query of a URL in a message.
+const urlPathPlaceholder = "/<path>"
 
 type Snapshot struct {
 	Material    string
@@ -68,9 +75,9 @@ func Explanation(evt event.Event) []string {
 
 func SnapshotFor(evt event.Event) Snapshot {
 	normalizedExceptionType := normalize(evt.Exception.Type)
-	normalizedMessage := normalize(evt.Exception.Message)
+	normalizedMessage := normalizeMessage(evt.Exception.Message)
 	if normalizedMessage == "" {
-		normalizedMessage = normalize(evt.Message)
+		normalizedMessage = normalizeMessage(evt.Message)
 	}
 
 	// When exception is empty but rawScrubbed has data, use it as fallback
@@ -79,9 +86,9 @@ func SnapshotFor(evt event.Event) Snapshot {
 	if normalizedExceptionType == "" && normalizedMessage == "" && len(evt.Exception.Stacktrace) == 0 {
 		if raw := rawScrubbedFallback(evt.RawScrubbed); raw.name != "" || raw.message != "" {
 			normalizedExceptionType = normalize(raw.name)
-			normalizedMessage = normalize(raw.message)
+			normalizedMessage = normalizeMessage(raw.message)
 			if normalizedMessage == "" {
-				normalizedMessage = normalize(raw.source)
+				normalizedMessage = normalizeMessage(raw.source)
 			}
 		}
 	}
@@ -138,7 +145,7 @@ func stableContext(evt event.Event) map[string]string {
 		if !isStableContextKey(normalizedKey) {
 			continue
 		}
-		if value := normalize(fields[key]); value != "" {
+		if value := normalizeContextValue(normalizedKey, fields[key]); value != "" {
 			out[normalizedKey] = value
 		}
 	}
@@ -255,6 +262,33 @@ func rawScrubbedFallback(rawScrubbed map[string]any) rawScrubbedData {
 		source, _ = props["url"].(string)
 	}
 	return rawScrubbedData{name: name, message: message, source: source}
+}
+
+// normalizeMessage is normalize for free text that may carry a URL: the path
+// and query of every absolute URL collapse, so a client that reports the same
+// failure once per page lands in one issue. The title and the stored event keep
+// the full URL; only the fingerprint sees the placeholder.
+func normalizeMessage(value string) string {
+	return normalize(urlPathPattern.ReplaceAllString(value, "$1"+urlPathPlaceholder))
+}
+
+// pathValueKeys are the context keys whose values are route templates
+// ("/users/:id"): low cardinality by construction, so they keep their slashes.
+var pathValueKeys = map[string]bool{"http.route": true, "route": true}
+
+// normalizeContextValue normalizes one allowlisted context value. A value that
+// holds a path separator (a "region" of "france/saint-georges") or a URL is
+// per-page data, not a category, and collapses to a placeholder so it cannot
+// give every page its own issue.
+func normalizeContextValue(key, value string) string {
+	if pathValueKeys[key] || strings.HasSuffix(key, ".route") {
+		return normalize(value)
+	}
+	value = normalizeMessage(value)
+	if strings.Contains(value, "/") && !strings.Contains(value, "://") {
+		return "<path>"
+	}
+	return value
 }
 
 func normalize(value string) string {

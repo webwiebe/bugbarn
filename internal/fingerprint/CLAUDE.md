@@ -44,6 +44,20 @@ timestamps (`<ts>`, before the number rule, which would leave their two-digit pa
 (`normalizeTitle`) and `internal/issues` have their own, slightly different regex set for
 the normalised issue title. Those do not affect grouping.
 
+URLs: `normalizeMessage` (message text and the raw-scrubbed fallback) keeps the scheme and
+host of an absolute URL and replaces its path, query and fragment with `/<path>`, so a
+client that reports one failure per page lands in one issue (#241). Context values go
+through `normalizeContextValue`: a value holding `/` (a `region` of `france/lyon`)
+becomes `<path>`; `http.route` and `route` keep their slashes because they are templates.
+Stack frame files are not touched, so a JS bundle URL still identifies its frame. The
+title and the stored event keep the full URL; only the material shows the placeholder.
+
+A change like this rewrites issues in place on the next start. The migration emits no
+domain event, so it sends no mail. An event that arrives for a not-yet-rewritten page
+before the migration reaches it opens a new issue; the per-project new-issue mail cap
+(`internal/alert/new_issue_limit.go`: 5 per 10 minutes, then one summary) bounds that
+window to a handful of mails.
+
 `internal/normalize` only maps fields (`body`/`message`/`exception.message`, frame key
 aliases, severity canonicalisation, breadcrumb cap of 100). It does not rewrite values.
 

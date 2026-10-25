@@ -83,6 +83,7 @@ bus.Publish(domainevents.IssueEventRecorded{Issue: issue, ProjectID: projectID})
 - **FR-302**: A threshold of 0 or less MUST NOT trigger a firing. [inferred] `internal/alert/evaluator.go` skips a threshold of 0 or less; no test names it.
 - **FR-303**: Cooldown enforcement from Phase 2 (per alert/issue pair, configurable `cooldown_minutes`) MUST apply to `event_count_exceeds` identically to other conditions. Issues: none found. Tests: `internal/alert/evaluator_test.go::TestEvaluator_CooldownPreventsDoubleFire`, `::TestEvaluator_CooldownExpiredAllowsFire`.
 - **FR-304**: The alert payload MUST include `event_count` in the `issue` block so the receiver can display the current volume. Issues: none found. Tests: `internal/alert/deliverer_test.go::TestDeliverer_GenericPayload`.
+- **FR-305**: New-issue email MUST be capped per project: after `newIssueMailMax` (5) in a 10 minute window, further new issues send no email of their own (admin mail and project rules with an email address alike) and are reported in one summary mail when the window ends. Webhook-only rules are not capped. Suppressed issues are counted in `bugbarn.alert.new_issue_suppressed`. Issues: [#241](https://github.com/webwiebe/bugbarn/issues/241). Tests: `internal/alert/new_issue_limit_test.go::TestEvaluator_NewIssueFloodMailsFiveThenOneSummary`, `::TestEvaluator_RuleMailsShareTheNewIssueCap`.
 
 ### Non-Functional Requirements
 

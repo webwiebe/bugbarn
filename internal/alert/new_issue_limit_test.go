@@ -103,3 +103,41 @@ func TestEvaluator_NewIssueFloodMailsFiveThenOneSummary(t *testing.T) {
 		t.Errorf("label = %q", got)
 	}
 }
+
+func TestEvaluator_RuleMailsShareTheNewIssueCap(t *testing.T) {
+	t.Parallel()
+
+	rules := []Rule{
+		{ID: "alert-mail", Name: "Mail", Enabled: true, Condition: "new_issue", EmailTo: "owner@example.com"},
+		{ID: "alert-hook", Name: "Hook", Enabled: true, Condition: "new_issue", WebhookURL: "http://hook.test"},
+	}
+	notif := &fakeNotifier{configured: true}
+	evaluator := NewEvaluator(newFakeRepo(rules), notif, "http://example.com", "", slog.Default())
+	clock := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	evaluator.newIssues.now = func() time.Time { return clock }
+
+	var bus domainevents.Bus
+	bus.Subscribe(evaluator.HandleEvent)
+	const burst = 40
+	for i := 0; i < burst; i++ {
+		bus.Publish(domainevents.IssueCreated{Issue: storage.Issue{ID: "i", ProjectSlug: "leadgen"}, ProjectID: 9})
+	}
+
+	// Every webhook fires; the email rule stops at the cap.
+	calls := waitForCalls(notif, burst+newIssueMailMax)
+	var mails, hooks int
+	for _, c := range calls {
+		switch c.ID {
+		case "alert-mail":
+			mails++
+		case "alert-hook":
+			hooks++
+		}
+	}
+	if mails != newIssueMailMax {
+		t.Errorf("rule mails = %d, want the cap of %d", mails, newIssueMailMax)
+	}
+	if hooks != burst {
+		t.Errorf("webhook rule fired %d times, want %d", hooks, burst)
+	}
+}
