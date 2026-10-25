@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"syscall"
 	"time"
 
@@ -175,9 +174,9 @@ func classifyForwardError(err error) (class string, neverSent bool) {
 		return "canceled", false
 	case errors.Is(err, context.DeadlineExceeded), isNetTimeout(err):
 		return "timeout", false
-	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), strings.Contains(err.Error(), "connection reset"):
+	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE):
 		return "reset", false
-	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), strings.HasSuffix(err.Error(), "EOF"):
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return "eof", false
 	}
 	return "other", false
