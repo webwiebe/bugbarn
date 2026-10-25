@@ -142,7 +142,12 @@ func run() error {
 	// and Litestream — which used to own checkpointing — is gone. Without this
 	// loop the WAL grows without bound and every write slows down as it walks
 	// an ever-larger WAL index.
-	go store.RunPeriodicCheckpoint(ctx, cfg.WALCheckpointInterval, logger)
+	go store.RunPeriodicCheckpoint(ctx, cfg.WALCheckpointInterval, storage.CheckpointPolicy{
+		TruncateEvery:       cfg.WALTruncateEvery,
+		TruncateBusyTimeout: cfg.WALTruncateBusyTimeout,
+		WALSize:             storage.WALFileSize(cfg.DBPath),
+		WarnBytes:           cfg.WALWarnBytes,
+	}, logger)
 
 	// Wire the domain event bus and alert evaluator.
 	bus := &domainevents.Bus{}
