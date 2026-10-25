@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -60,6 +61,7 @@ type Ingester struct {
 	observer Observer
 	log      *slog.Logger
 	now      func() time.Time
+	opts     secnorm.Options
 }
 
 // New builds an Ingester. Either DB may be nil; its kind then fails with
@@ -73,6 +75,10 @@ func New(security, metrics *telemetrydb.DB, log *slog.Logger) *Ingester {
 		now:      time.Now,
 	}
 }
+
+// SetTrustedGateways sets the reverse proxies whose X-Forwarded-For is believed
+// when normalizing Traefik access logs. Call before serving traffic.
+func (i *Ingester) SetTrustedGateways(g []*net.IPNet) { i.opts.TrustedGateways = g }
 
 // SetObserver wires the detection engine. Call before serving traffic.
 func (i *Ingester) SetObserver(o Observer) { i.observer = o }
@@ -101,7 +107,7 @@ func (i *Ingester) ingestSecurity(ctx context.Context, body []byte) error {
 		return ErrUnavailable
 	}
 	now := i.now().UTC()
-	recs, skipped := secnorm.Parse(body, now)
+	recs, skipped := secnorm.ParseWith(body, now, i.opts)
 	count(ctx, KindSecurity, "skipped", skipped)
 	if len(recs) == 0 {
 		return nil

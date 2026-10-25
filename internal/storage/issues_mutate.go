@@ -5,11 +5,16 @@ import (
 	"fmt"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
-	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // MuteIssue sets an issue to muted status with the given mute mode.
 // muteMode must be one of "until_regression" or "forever".
+//
+// The row is addressed by its resolved row ID alone, like ResolveIssue: the
+// request's project scope already shaped the display-ID lookup, and a second
+// project filter on the UPDATE matched zero rows whenever the context held the
+// default project (an API key without X-BugBarn-Project), leaving the issue
+// unmuted while the call reported success.
 func (s *IssueStore) MuteIssue(ctx context.Context, issueID string, muteMode string) (Issue, error) {
 	if muteMode != "until_regression" && muteMode != "forever" {
 		return Issue{}, apperr.InvalidInput(fmt.Sprintf("invalid mute_mode %q: must be 'until_regression' or 'forever'", muteMode), nil)
@@ -18,21 +23,10 @@ func (s *IssueStore) MuteIssue(ctx context.Context, issueID string, muteMode str
 	if err != nil {
 		return Issue{}, err
 	}
-	projectID, ok := domain.ProjectIDFromContext(ctx)
-	if !ok {
-		projectID = s.defaultProjectID
-	}
-	if projectID != 0 {
-		_, err = s.db.ExecContext(ctx, `
-UPDATE issues SET status = 'muted', mute_mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?`,
-			muteMode, rowID, projectID)
-	} else {
-		_, err = s.db.ExecContext(ctx, `
+	if _, err := s.db.ExecContext(ctx, `
 UPDATE issues SET status = 'muted', mute_mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-			muteMode, rowID)
-	}
-	if err != nil {
-		return Issue{}, err
+		muteMode, rowID); err != nil {
+		return Issue{}, wrapErr(err, "mute issue")
 	}
 	return s.GetIssue(ctx, issueID)
 }
@@ -43,22 +37,10 @@ func (s *IssueStore) UnmuteIssue(ctx context.Context, issueID string) (Issue, er
 	if err != nil {
 		return Issue{}, err
 	}
-	projectID, ok := domain.ProjectIDFromContext(ctx)
-	if !ok {
-		projectID = s.defaultProjectID
-	}
-	var err2 error
-	if projectID != 0 {
-		_, err2 = s.db.ExecContext(ctx, `
-UPDATE issues SET status = 'unresolved', mute_mode = '', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?`,
-			rowID, projectID)
-	} else {
-		_, err2 = s.db.ExecContext(ctx, `
+	if _, err := s.db.ExecContext(ctx, `
 UPDATE issues SET status = 'unresolved', mute_mode = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-			rowID)
-	}
-	if err2 != nil {
-		return Issue{}, err2
+		rowID); err != nil {
+		return Issue{}, wrapErr(err, "unmute issue")
 	}
 	return s.GetIssue(ctx, issueID)
 }

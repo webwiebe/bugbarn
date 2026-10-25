@@ -1,15 +1,23 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
+	"syscall"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -26,8 +34,39 @@ func NewWriteForwarder(writerURL string) *WriteForwarder {
 		writerURL: writerURL,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
+			// The default transport keeps 2 idle connections per host, so a burst
+			// of ~30 concurrent writes dials ~28 fresh connections every time.
+			Transport: forwarderTransport(),
 		},
 	}
+}
+
+func forwarderTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConnsPerHost = 64
+	t.MaxIdleConns = 128
+	return t
+}
+
+// maxReplayableBody bounds the bodies the forwarder buffers so the transport
+// can replay them.
+const maxReplayableBody = 4 << 20
+
+// replayableBody returns body as a rewindable reader when it is small. The
+// transport only retries a request that failed on a reused keep-alive
+// connection (the writer closed it while idle) when it can send the body
+// again; a streamed body turned that race into a 502 for a request the writer
+// never saw. A body over the limit, or one that fails to read, is passed
+// through as a stream.
+func replayableBody(body io.ReadCloser) io.Reader {
+	if body == nil || body == http.NoBody {
+		return nil
+	}
+	buf, err := io.ReadAll(io.LimitReader(body, maxReplayableBody+1))
+	if err != nil || len(buf) > maxReplayableBody {
+		return io.MultiReader(bytes.NewReader(buf), body)
+	}
+	return bytes.NewReader(buf)
 }
 
 // Forward proxies the incoming request to the upstream writer and streams
@@ -44,7 +83,7 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 	r = r.WithContext(ctx)
 
-	upstreamReq, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, r.Body)
+	upstreamReq, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, replayableBody(r.Body))
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		http.Error(w, "upstream writer unavailable", http.StatusBadGateway)
@@ -58,6 +97,14 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The transport replays a POST only when the request carries an
+	// Idempotency-Key entry. An empty entry is never sent, and it limits the
+	// replay to the case that matters: a reused connection that failed before
+	// the writer returned any byte, i.e. one the writer closed while idle.
+	if _, ok := upstreamReq.Header["Idempotency-Key"]; !ok && upstreamReq.GetBody != nil {
+		upstreamReq.Header["Idempotency-Key"] = nil
+	}
+
 	// Set Host to the writer's host, not the original.
 	parsed, err := url.Parse(f.writerURL)
 	if err == nil {
@@ -66,7 +113,18 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := f.client.Do(upstreamReq)
 	if err != nil {
+		class, neverSent := classifyForwardError(err)
+		span.RecordError(err)
+		span.SetAttributes(attribute.String("forward.error_class", class))
 		span.SetStatus(codes.Error, err.Error())
+		slog.Warn("forward to writer failed", "error_class", class, "error", err,
+			"method", r.Method, "path", r.URL.Path, "writer_may_have_acted", !neverSent)
+		if neverSent {
+			// The request never left this pod, so the SDK can retry without
+			// duplicating anything.
+			ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+			return
+		}
 		http.Error(w, "upstream writer unavailable", http.StatusBadGateway)
 		return
 	}
@@ -101,4 +159,31 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 
 	// Stream the body without buffering.
 	io.Copy(w, resp.Body)
+}
+
+// classifyForwardError names why a forward failed and whether the request cannot
+// have reached the writer. Only a failed dial qualifies: once a connection
+// exists the request may have been written and acted on, so a retry could
+// duplicate an ingest event.
+func classifyForwardError(err error) (class string, neverSent bool) {
+	var opErr *net.OpError
+	var dnsErr *net.DNSError
+	switch {
+	case errors.As(err, &opErr) && opErr.Op == "dial", errors.As(err, &dnsErr):
+		return "dial", true
+	case errors.Is(err, context.Canceled):
+		return "canceled", false
+	case errors.Is(err, context.DeadlineExceeded), isNetTimeout(err):
+		return "timeout", false
+	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), strings.Contains(err.Error(), "connection reset"):
+		return "reset", false
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), strings.HasSuffix(err.Error(), "EOF"):
+		return "eof", false
+	}
+	return "other", false
+}
+
+func isNetTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }

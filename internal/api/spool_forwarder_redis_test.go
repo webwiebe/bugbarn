@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -110,11 +112,11 @@ func newTestRedisForwarder(t *testing.T) (*SpoolForwarder, *queue.RedisQueue) {
 // consumer then dropped — ~91% of production log ingest, lost behind a 202.
 func TestRedisSpoolForwarderResolvesProjectFromAPIKey(t *testing.T) {
 	sf, q := newTestRedisForwarder(t)
-	sf.SetProjectResolver(func(_ context.Context, apiKey string) string {
+	sf.SetProjectResolver(func(_ context.Context, apiKey string) (string, error) {
 		if apiKey == "scoped-key" {
-			return "svc"
+			return "svc", nil
 		}
-		return ""
+		return "", nil
 	})
 
 	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
@@ -144,7 +146,7 @@ func TestRedisSpoolForwarderResolvesProjectFromAPIKey(t *testing.T) {
 // override and wins over the project the key is scoped to.
 func TestRedisSpoolForwarderHeaderBeatsAPIKey(t *testing.T) {
 	sf, q := newTestRedisForwarder(t)
-	sf.SetProjectResolver(func(context.Context, string) string { return "from-key" })
+	sf.SetProjectResolver(func(context.Context, string) (string, error) { return "from-key", nil })
 
 	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
 	req.Header.Set("X-Bugbarn-Api-Key", "scoped-key")
@@ -172,7 +174,7 @@ func TestRedisSpoolForwarderHeaderBeatsAPIKey(t *testing.T) {
 // direct path, which 400s on the same condition.
 func TestRedisSpoolForwarderRejectsLogsWithoutProject(t *testing.T) {
 	sf, _ := newTestRedisForwarder(t)
-	sf.SetProjectResolver(func(context.Context, string) string { return "" })
+	sf.SetProjectResolver(func(context.Context, string) (string, error) { return "", nil })
 
 	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
 	req.Header.Set("X-Bugbarn-Api-Key", "global-key")
@@ -183,6 +185,29 @@ func TestRedisSpoolForwarderRejectsLogsWithoutProject(t *testing.T) {
 	}
 	if pending := sf.Pending(); pending != 0 {
 		t.Errorf("Pending = %d, want 0 — a rejected log must not be spooled", pending)
+	}
+}
+
+// A failed key lookup must not spool the event without a project: an event with
+// no project falls back to the Default Project, so it would land in the wrong
+// one. The reader answers a retryable 503 and the SDK sends it again.
+func TestRedisSpoolForwarderRetriesWhenTheKeyLookupFails(t *testing.T) {
+	sf, _ := newTestRedisForwarder(t)
+	sf.SetProjectResolver(func(context.Context, string) (string, error) {
+		return "", errors.New("database is locked")
+	})
+
+	for _, path := range []string{"/api/v1/events", "/api/v1/logs"} {
+		req := httptest.NewRequest("POST", path, strings.NewReader(`{"message":"boom"}`))
+		req.Header.Set("X-Bugbarn-Api-Key", "scoped-key")
+		rec := httptest.NewRecorder()
+		sf.Forward(rec, req)
+		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+			t.Errorf("%s: status = %d, Retry-After %q, want a retryable 503", path, rec.Code, rec.Header().Get("Retry-After"))
+		}
+	}
+	if pending := sf.Pending(); pending != 0 {
+		t.Errorf("Pending = %d, want 0 — nothing may be spooled without its project", pending)
 	}
 }
 

@@ -10,8 +10,8 @@ import (
 // traefik maps a Traefik JSON access-log line. Behind Cloudflare, ClientHost
 // is a Cloudflare edge address, so the real client comes from the
 // Cf-Connecting-Ip header (kept with Traefik's accesslog.fields.headers), then
-// X-Forwarded-For, then ClientHost.
-func traefik(base Record, in map[string]any) (Record, bool) {
+// X-Forwarded-For when the peer is a trusted gateway, then ClientHost.
+func traefik(base Record, in map[string]any, opts Options) (Record, bool) {
 	if in == nil {
 		return base, false
 	}
@@ -19,12 +19,13 @@ func traefik(base Record, in map[string]any) (Record, bool) {
 	base.Kind = "http"
 	base.Method = str(in, "RequestMethod")
 	base.Path = str(in, "RequestPath")
+	base.RequestHost = str(in, "RequestHost")
 	base.Status = num(in, "DownstreamStatus")
+	peer := firstNonEmpty(clientIP(str(in, "ClientHost")), clientIP(str(in, "ClientAddr")))
 	base.SrcIP = firstNonEmpty(
 		clientIP(str(in, "request_Cf-Connecting-Ip")),
-		firstForwarded(str(in, "request_X-Forwarded-For")),
-		clientIP(str(in, "ClientHost")),
-		clientIP(str(in, "ClientAddr")),
+		forwardedClient(str(in, "request_X-Forwarded-For"), peer, opts.TrustedGateways),
+		peer,
 	)
 	base.User = strings.Trim(str(in, "ClientUsername"), "-")
 	base.Action = str(in, "RouterName")
@@ -101,6 +102,7 @@ func cloudflare(base Record, in map[string]any) (Record, bool) {
 	}
 	host := str(in, "clientRequestHTTPHost")
 	base.Host = firstNonEmpty(host, base.Host)
+	base.RequestHost = host
 	base.Message = strings.TrimSpace(fmt.Sprintf("%s %s %s%s (%s, rule %s)",
 		base.Action, base.Method, host, base.Path, str(in, "clientCountryName"), str(in, "ruleId")))
 	return base, true

@@ -362,6 +362,34 @@ func TestHeartbeatGraceAfterStart(t *testing.T) {
 	}
 }
 
+// A host that went quiet long before the restart (a hostname the Mac no longer
+// reports under) was alerted by the previous process; every deploy used to
+// raise it again exactly one window after start.
+func TestHeartbeatDoesNotRealertLongSilentHostAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	now := t0
+	e := testEngine(t, []Rule{rule(t, "host-silent")}, now)
+	e.started = now.Add(-2 * time.Minute)
+	e.SeedHosts([]hostmetrics.HostInfo{
+		{Host: "mini.local", LastSeen: t0.Add(-18 * time.Hour)},
+		{Host: "k3s2", LastSeen: t0.Add(-time.Hour)},
+	})
+	e.now = func() time.Time { return t0.Add(10 * time.Minute) }
+	e.CheckHeartbeats(ctx)
+	got := drain(e)
+	if len(got) != 1 || got[0].GroupKey() != "host=k3s2" {
+		t.Fatalf("detections = %+v, want only k3s2: mini.local was silent 18h before the restart", got)
+	}
+
+	// Back, then silent again: the long-silent host alerts like any other.
+	e.ObserveMetrics(ctx, nil, []hostmetrics.HostInfo{{Host: "mini.local", LastSeen: t0.Add(10 * time.Minute)}})
+	e.now = func() time.Time { return t0.Add(20 * time.Minute) }
+	e.CheckHeartbeats(ctx)
+	if got := drain(e); len(got) != 1 || got[0].GroupKey() != "host=mini.local" {
+		t.Fatalf("detections after it returned and went quiet = %+v, want mini.local", got)
+	}
+}
+
 func TestHeartbeatForgetsRetiredHosts(t *testing.T) {
 	e := testEngine(t, []Rule{rule(t, "host-silent")}, t0)
 	e.started = t0.Add(-30 * 24 * time.Hour)

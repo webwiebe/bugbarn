@@ -35,6 +35,12 @@ type Rule struct {
 	// key; Threshold within Window fires.
 	Match   []Cond   `json:"match,omitempty"`
 	GroupBy []string `json:"group_by,omitempty"`
+	// Exclude lists records that are known and expected: a record matching ANY
+	// of these conditions is not counted toward the threshold, so it cannot
+	// page. Each one is still counted in bugbarn.detect.excluded (by rule) and
+	// logged at debug, so excluded denials stay visible. Set per deployment
+	// through the rules API; the defaults carry none.
+	Exclude []Cond `json:"exclude,omitempty"`
 
 	// Metrics: series whose name matches Metric (a glob where * matches any
 	// run of characters, slashes included, e.g. "fs.*.used_pct") compared with Op against Threshold, multiplied by the
@@ -55,7 +61,7 @@ type Rule struct {
 // Cond matches one secnorm.Record field.
 type Cond struct {
 	Field string `json:"field"`
-	Op    string `json:"op"` // eq, ne, in, not_in, prefix, not_prefix, contains
+	Op    string `json:"op"` // eq, ne, in, not_in, prefix, not_prefix, suffix, contains
 	Value any    `json:"value"`
 }
 
@@ -152,6 +158,11 @@ func (r Rule) validateSecurity() error {
 			return err
 		}
 	}
+	for _, c := range r.Exclude {
+		if err := c.validate(); err != nil {
+			return fmt.Errorf("exclude: %w", err)
+		}
+	}
 	for _, f := range r.GroupBy {
 		if !knownField(f) {
 			return fmt.Errorf("unknown group_by field %q", f)
@@ -177,7 +188,7 @@ func (r Rule) validateMetrics() error {
 }
 
 var knownFields = map[string]bool{
-	"source": true, "host": true, "kind": true, "src_ip": true, "user": true,
+	"source": true, "host": true, "request_host": true, "kind": true, "src_ip": true, "user": true,
 	"action": true, "status": true, "method": true, "path": true, "message": true,
 }
 
@@ -188,7 +199,7 @@ func (c Cond) validate() error {
 		return fmt.Errorf("unknown match field %q", c.Field)
 	}
 	switch c.Op {
-	case "eq", "ne", "prefix", "not_prefix", "contains":
+	case "eq", "ne", "prefix", "not_prefix", "suffix", "contains":
 		if _, ok := c.Value.(string); !ok {
 			if _, isNum := c.Value.(float64); !isNum {
 				return fmt.Errorf("%s on %s needs a single value", c.Op, c.Field)
@@ -215,6 +226,8 @@ func (c Cond) matches(v string) bool {
 		return strings.HasPrefix(v, scalar(c.Value))
 	case "not_prefix":
 		return !strings.HasPrefix(v, scalar(c.Value))
+	case "suffix":
+		return strings.HasSuffix(v, scalar(c.Value))
 	case "contains":
 		return strings.Contains(v, scalar(c.Value))
 	case "in":

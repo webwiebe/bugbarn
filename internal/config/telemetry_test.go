@@ -21,6 +21,17 @@ func TestTelemetryDefaultsFollowDBPath(t *testing.T) {
 	}
 }
 
+func TestTelemetryTrustedGateways(t *testing.T) {
+	if got := parseTelemetryConfig("/d/bugbarn.db"); len(got.TrustedGateways) != 0 {
+		t.Fatalf("default gateways = %v, want none", got.TrustedGateways)
+	}
+	t.Setenv("BUGBARN_TELEMETRY_TRUSTED_GATEWAYS", "192.168.4.111, 10.0.0.0/8, nonsense")
+	got := parseTelemetryConfig("/d/bugbarn.db")
+	if len(got.TrustedGateways) != 2 || got.TrustedGateways[0].String() != "192.168.4.111/32" {
+		t.Fatalf("gateways = %v", got.TrustedGateways)
+	}
+}
+
 func TestTelemetryOverrides(t *testing.T) {
 	t.Setenv("BUGBARN_SECURITY_DB_PATH", "/data/sec.db")
 	t.Setenv("BUGBARN_SECURITY_MAX_BYTES", "1048576")

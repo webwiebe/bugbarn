@@ -75,8 +75,7 @@ func (s *Server) serveAlertmanagerIngestEndpoint(w http.ResponseWriter, r *http.
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true
 	}
-	if s.ingestHandler != nil && !s.ingestHandler.ValidAPIKey(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !s.requireIngestKey(w, r) {
 		return true
 	}
 	if s.ingestSpool != nil {
@@ -104,8 +103,7 @@ func (s *Server) serveEventsIngestEndpoint(w http.ResponseWriter, r *http.Reques
 		return true
 	}
 	if r.Method == http.MethodPost {
-		if s.ingestHandler != nil && !s.ingestHandler.ValidAPIKey(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if !s.requireIngestKey(w, r) {
 			return true
 		}
 		if s.ingestSpool != nil {
@@ -143,8 +141,7 @@ func (s *Server) serveLogsIngestEndpoint(w http.ResponseWriter, r *http.Request)
 // otherwise resolves the project and persists the batch locally.
 func (s *Server) handleLogsIngestPost(w http.ResponseWriter, r *http.Request) {
 	setWildcardCORS(w, "POST, OPTIONS", ingestCORSHeaders)
-	if s.ingestHandler != nil && !s.ingestHandler.ValidAPIKey(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !s.requireIngestKey(w, r) {
 		return
 	}
 	if s.ingestSpool != nil {
@@ -158,7 +155,12 @@ func (s *Server) handleLogsIngestPost(w http.ResponseWriter, r *http.Request) {
 	// Resolve project from API key / header.
 	var logProjectID int64
 	if s.ingestHandler != nil {
-		pid, _, ok := s.ingestHandler.APIKeyProjectScope(r)
+		pid, _, ok, err := s.ingestHandler.CheckAPIKey(r)
+		if err != nil {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "api key lookup failed, retry", http.StatusServiceUnavailable)
+			return
+		}
 		if ok && pid > 0 {
 			logProjectID = pid
 		}

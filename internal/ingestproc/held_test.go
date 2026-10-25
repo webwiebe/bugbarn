@@ -152,8 +152,7 @@ func TestConsumerHoldsAndReplaysLog(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	go c.Run(runCtx)
+	stop := runConsumer(t, c)
 
 	// Wait for the queue to drain into held_events (not log_entries).
 	var proj storage.Project
@@ -172,7 +171,7 @@ func TestConsumerHoldsAndReplaysLog(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	cancel()
+	stop()
 
 	// No log entries persisted while pending.
 	entries, _ := store.ListLogEntries(ctx, proj.ID, 0, "", 50, 0)
