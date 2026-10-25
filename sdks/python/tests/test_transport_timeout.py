@@ -21,7 +21,7 @@ class _StallOnce:
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
-            def do_POST(self) -> None:  # noqa: N802
+            def do_POST(self) -> None:
                 length = int(self.headers.get("content-length", 0))
                 self.rfile.read(length)
                 if not owner.first.is_set():
