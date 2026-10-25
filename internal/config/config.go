@@ -125,19 +125,14 @@ func Load() Config {
 	loadConfigFiles()
 
 	cfg := Config{
-		Addr:                getenv("BUGBARN_ADDR", ":8080"),
-		APIKey:              os.Getenv("BUGBARN_API_KEY"),
-		APIKeySHA256:        os.Getenv("BUGBARN_API_KEY_SHA256"),
-		AdminUsername:       os.Getenv("BUGBARN_ADMIN_USERNAME"),
-		AdminPassword:       os.Getenv("BUGBARN_ADMIN_PASSWORD"),
-		AdminPasswordBcrypt: os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT"),
-		SmokeUsername:       os.Getenv("BUGBARN_SMOKE_USERNAME"),
-		SmokePasswordHash:   os.Getenv("BUGBARN_SMOKE_PASSWORD_HASH"),
-		SessionSecret:       os.Getenv("BUGBARN_SESSION_SECRET"),
-		AllowedOrigins:      parseCSVEnv("BUGBARN_ALLOWED_ORIGINS"),
-		TrustedProxies:      parseTrustedProxies(os.Getenv("BUGBARN_TRUSTED_PROXIES")),
-		SpoolDir:            getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
-		DBPath:              getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
+		Addr:           getenv("BUGBARN_ADDR", ":8080"),
+		APIKey:         os.Getenv("BUGBARN_API_KEY"),
+		APIKeySHA256:   os.Getenv("BUGBARN_API_KEY_SHA256"),
+		SessionSecret:  os.Getenv("BUGBARN_SESSION_SECRET"),
+		AllowedOrigins: parseCSVEnv("BUGBARN_ALLOWED_ORIGINS"),
+		TrustedProxies: parseTrustedProxies(os.Getenv("BUGBARN_TRUSTED_PROXIES")),
+		SpoolDir:       getenv("BUGBARN_SPOOL_DIR", ".data/spool"),
+		DBPath:         getenv("BUGBARN_DB_PATH", ".data/bugbarn.db"),
 		// Mirrors storage.DefaultCheckpointInterval; kept as a literal so config
 		// does not have to depend on the storage package.
 		WALCheckpointInterval: envDurationSeconds("BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS", 60*time.Second),
@@ -196,9 +191,20 @@ func Load() Config {
 	}
 
 	loadIngestHealth(&cfg)
+	loadWebLogins(&cfg)
 
 	validateMode(cfg)
 	return cfg
+}
+
+// loadWebLogins reads the admin login and the optional smoke login (both
+// empty means the smoke login is disabled).
+func loadWebLogins(cfg *Config) {
+	cfg.AdminUsername = os.Getenv("BUGBARN_ADMIN_USERNAME")
+	cfg.AdminPassword = os.Getenv("BUGBARN_ADMIN_PASSWORD")
+	cfg.AdminPasswordBcrypt = os.Getenv("BUGBARN_ADMIN_PASSWORD_BCRYPT")
+	cfg.SmokeUsername = os.Getenv("BUGBARN_SMOKE_USERNAME")
+	cfg.SmokePasswordHash = os.Getenv("BUGBARN_SMOKE_PASSWORD_HASH")
 }
 
 // loadIngestHealth reads the ingest-health monitor's settings. Out-of-band
