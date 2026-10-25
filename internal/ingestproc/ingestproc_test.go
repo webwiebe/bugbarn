@@ -36,6 +36,26 @@ func newProcessor(t *testing.T) (*Processor, *storage.Store) {
 	return NewProcessor(store, pub, nil, true), store
 }
 
+// runConsumer starts c and returns a stop func that cancels it and waits for
+// Run to return. The cleanup calls stop too, and it is registered after the
+// processor's cleanups, so it runs before the store closes and the temp dir is
+// removed: a consumer still writing then no longer races that teardown.
+func runConsumer(t *testing.T, c *Consumer) (stop func()) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.Run(ctx)
+	}()
+	stop = func() {
+		cancel()
+		<-done
+	}
+	t.Cleanup(stop)
+	return stop
+}
+
 func eventBody(t *testing.T) string {
 	t.Helper()
 	raw, err := os.ReadFile(fixturePath)
@@ -123,9 +143,7 @@ func TestConsumerDrainsEventQueue(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go c.Run(runCtx)
+	runConsumer(t, c)
 
 	// Wait until the queue drains and the event is persisted.
 	deadline := time.Now().Add(5 * time.Second)
@@ -176,9 +194,7 @@ func TestConsumerDrainsLogQueue(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go c.Run(runCtx)
+	runConsumer(t, c)
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {

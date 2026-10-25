@@ -1,0 +1,36 @@
+# gitleaks configuration (same shape as iambarn's): the bundled ruleset plus
+# allowlisted paths that legitimately hold secret-shaped strings. Known hits in
+# history go in .gitleaksignore as fingerprints; do not widen the path list for them.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "SOPS/age-encrypted secret stores (ciphertext, not plaintext credentials)"
+paths = [
+  '''deploy/k8s/[a-z]+/secret\.yaml$''',
+  '''deploy/vector/.+/secret\.yaml$''',
+]
+
+# The bundled rules match token shapes. Credentials written into documentation as
+# bullets or backticked values (the shape a spec once carried in the iambarn repo) have no token
+# shape, so these two rules match the documentation shape instead.
+# Rules hold patterns only, never values.
+[[rules]]
+id = "documented-credential"
+description = "Credential-named variable followed by a long backticked value in markdown"
+regex = '''(?i)`[A-Z0-9_]*(?:SEED|KEY|PASS|PASSWORD|SECRET|TOKEN)[A-Z0-9_]*`[ \t]*[—–:=-]+[ \t]*`([^`\s]{12,})`'''
+secretGroup = 1
+entropy = 3.3
+keywords = ["`"]
+
+[[rules.allowlists]]
+description = "Placeholders and path-like values"
+regexTarget = "secret"
+regexes = ['''(?i)^(?:<.*>|\$\{?.*|REPLACE.*|CHANGE.*|example.*|your.*|xxx+.*|\.{2,}.*|/.*)$''']
+
+[[rules]]
+id = "documented-hex-secret"
+description = "Backticked 64-character hex string in markdown (seed or key length)"
+regex = '''`([0-9a-f]{64})`'''
+secretGroup = 1
+keywords = ["`"]

@@ -55,9 +55,9 @@ func TestTraefikSampleWithoutCallerHeaders(t *testing.T) {
 
 func TestTraefikDetectedWithoutHintAndForwardedFor(t *testing.T) {
 	line := `{"message":"{\"ClientHost\":\"10.42.0.1\",\"DownstreamStatus\":200,\"RequestMethod\":\"GET\",\"RequestPath\":\"/\",\"request_X-Forwarded-For\":\"198.51.100.4, 10.0.0.1\"}"}`
-	r := parseOne(t, line)
-	if r.Source != "traefik" || r.SrcIP != "198.51.100.4" {
-		t.Fatalf("got %+v", r)
+	recs, _ := ParseWith([]byte(line), now, Options{TrustedGateways: nets(t, "10.0.0.0/8")})
+	if len(recs) != 1 || recs[0].Source != "traefik" || recs[0].SrcIP != "198.51.100.4" {
+		t.Fatalf("got %+v", recs)
 	}
 }
 

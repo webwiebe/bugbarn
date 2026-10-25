@@ -252,7 +252,7 @@ A scheduled job or worker reports that it ran. A monitor that stays silent past 
 - `timezone`: IANA zone of `schedule`, such as `Europe/Amsterdam`. Defaults to `UTC`. Scheduled times follow the zone's wall clock across daylight saving: a time skipped in spring runs at the shifted time that day, and a time repeated in autumn counts once. Needs a `schedule`.
 - `grace`: extra time after the interval or scheduled time before the monitor counts as missed. Defaults to 0. With an interval it may not exceed the interval; with a schedule it may not exceed `31d`.
 
-**Responses:** `201` monitor created, `200` monitor updated, `400` invalid input, `401` bad key, `404` unknown monitor and no `interval` or `schedule` sent, `409` monitor limit reached.
+**Responses:** `201` monitor created, `200` monitor updated, `400` invalid input, `401` bad key, `503` the key could not be checked because the key store failed (retry), `404` unknown monitor and no `interval` or `schedule` sent, `409` monitor limit reached.
 
 **Issues:** a miss opens `Monitor missed: <slug>`, an error check-in opens `Monitor failed: <slug>`. Both are issues in the monitor's project and go through the normal alert path. An `ok` check-in records a recovery event with the check-in time and resolves the open issue; a later miss regresses the same issue. A muted or resolved issue is left alone. An incident that stays unresolved is reported again after 24 hours. For 5 minutes after a BugBarn restart no monitor is marked missed.
 
@@ -727,8 +727,9 @@ Rule fields:
 |---|---|---|
 | `track` | all | `security` (log records), `metrics` (host samples) or `heartbeat` (host silence) |
 | `severity` | all | `WARNING`, `ERROR` or `CRITICAL` |
-| `match` | security | list of `{field, op, value}`; ops `eq`, `ne`, `in`, `not_in`, `prefix`, `not_prefix`, `contains` |
+| `match` | security | list of `{field, op, value}`; ops `eq`, `ne`, `in`, `not_in`, `prefix`, `not_prefix`, `suffix`, `contains`; fields include `src_ip`, `host` (reporting node) and `request_host` (host the client asked for) |
 | `group_by` | security | record fields that make up one group, e.g. `["src_ip"]` |
+| `exclude` | security | list of `{field, op, value}`; a record matching any of them is not counted toward the threshold, but is counted in the `bugbarn.detect.excluded` metric and logged at debug. Empty by default |
 | `threshold` | security, metrics | matching records per `window` (security) or the sample value limit (metrics) |
 | `window` | security, heartbeat | counting window (security) or allowed silence (heartbeat) |
 | `metric` | metrics | metric name glob, `*` matches any run of characters |

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"sort"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
 	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 )
 
@@ -34,7 +36,15 @@ func (s *Server) serveMonitorCheckInEndpoint(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true
 	}
-	if s.ingestHandler == nil || !s.ingestHandler.ValidAPIKey(r) {
+	if s.ingestHandler == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return true
+	}
+	// A key check that failed in the store is retryable; only a rejected key is 401.
+	if _, _, ok, keyErr := s.ingestHandler.CheckAPIKey(r); keyErr != nil {
+		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+		return true
+	} else if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return true
 	}
@@ -121,7 +131,10 @@ func (s *Server) recordCheckIn(w http.ResponseWriter, r *http.Request, slug stri
 // key is bound to, or the X-BugBarn-Project header for an unbound key. It never
 // creates a project.
 func (s *Server) checkInProject(r *http.Request) (int64, error) {
-	pid, _, ok := s.ingestHandler.APIKeyProjectScope(r)
+	pid, _, ok, err := s.ingestHandler.CheckAPIKey(r)
+	if err != nil {
+		return 0, apperr.Unavailable("api key lookup failed, retry", err)
+	}
 	if ok && pid > 0 {
 		return pid, nil
 	}
@@ -130,6 +143,9 @@ func (s *Server) checkInProject(r *http.Request) (int64, error) {
 		return 0, apperr.InvalidInput("the key is not bound to a project: send X-BugBarn-Project", nil)
 	}
 	proj, err := s.projects.BySlug(r.Context(), slug)
+	if err != nil && !errors.Is(err, apperr.ErrNotFound) {
+		return 0, apperr.Unavailable("project lookup failed, retry", err)
+	}
 	if err != nil || !projectIsActive(proj.Status) {
 		return 0, apperr.NotFound("unknown or inactive project", err)
 	}

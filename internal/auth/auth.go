@@ -114,51 +114,99 @@ func (a *Authorizer) ProjectForKey(ctx context.Context, provided string) (projec
 	return a.resolveKey(ctx, provided, false)
 }
 
+// ProjectForKeyErr is ProjectForKey that also reports a failed store lookup: err
+// wraps ErrKeyLookup and ok is false, so a caller can retry instead of treating
+// the key as unbound.
+func (a *Authorizer) ProjectForKeyErr(ctx context.Context, provided string) (projectID int64, scope string, ok bool, err error) {
+	return a.resolveKeyErr(ctx, provided, false)
+}
+
+// ErrKeyLookup marks a key check that could not be answered because the key
+// store failed (busy database, timeout). It says nothing about the key, so
+// callers answer a retryable status, never 401.
+var ErrKeyLookup = errors.New("api key lookup failed")
+
 func (a *Authorizer) resolveKey(ctx context.Context, provided string, touch bool) (projectID int64, scope string, ok bool) {
+	projectID, scope, ok, _ = a.resolveKeyErr(ctx, provided, touch)
+	return projectID, scope, ok
+}
+
+// resolveKeyErr is resolveKey that also reports a failed store lookup: err wraps
+// ErrKeyLookup and ok is false. A key that is simply not found has a nil err.
+func (a *Authorizer) resolveKeyErr(
+	ctx context.Context, provided string, touch bool,
+) (projectID int64, scope string, ok bool, err error) {
 	if a == nil || !a.Enabled() {
-		return 0, "full", true
+		return 0, "full", true, nil
 	}
 
 	provided = strings.TrimSpace(provided)
+	if provided == "" {
+		return 0, "", false, nil
+	}
 	sum := sha256.Sum256([]byte(provided))
 	hexSum := hex.EncodeToString(sum[:])
 
 	// Check static env-var hash first (global access, no project binding).
 	if len(a.apiKeyHash) == sha256.Size {
 		if subtle.ConstantTimeCompare(sum[:], a.apiKeyHash) == 1 {
-			return 0, "full", true
+			return 0, "full", true, nil
 		}
 	}
 
-	// Check DB-stored keys.
-	if a.dbLookup != nil {
-		pid, sc, found, err := a.dbLookup(ctx, hexSum)
-		if err == nil && found {
-			if touch && a.dbTouch != nil {
-				if touchErr := a.dbTouch(ctx, hexSum); touchErr != nil {
-					slog.WarnContext(ctx, "auth: failed to update api key last-used timestamp", "project_id", pid, "error", touchErr)
-				}
-			}
-			return pid, sc, true
+	return a.lookupStoredKey(ctx, hexSum, touch)
+}
+
+// lookupStoredKey checks the DB-stored keys for hexSum. A failed lookup returns
+// an error wrapping ErrKeyLookup; a key that is not found has a nil err.
+func (a *Authorizer) lookupStoredKey(
+	ctx context.Context, hexSum string, touch bool,
+) (projectID int64, scope string, ok bool, err error) {
+	if a.dbLookup == nil {
+		return 0, "", false, nil
+	}
+	pid, sc, found, lookupErr := a.dbLookup(ctx, hexSum)
+	if lookupErr != nil {
+		return 0, "", false, errors.Join(ErrKeyLookup, lookupErr)
+	}
+	if !found {
+		return 0, "", false, nil
+	}
+	if touch && a.dbTouch != nil {
+		if touchErr := a.dbTouch(ctx, hexSum); touchErr != nil {
+			slog.WarnContext(ctx, "auth: failed to update api key last-used timestamp", "project_id", pid, "error", touchErr)
 		}
 	}
-
-	return 0, "", false
+	return pid, sc, true, nil
 }
 
 // ValidWithSetupFallback is like ValidWithProject but also tries setup key
 // verification using the project slug when normal auth fails.
 func (a *Authorizer) ValidWithSetupFallback(ctx context.Context, provided, projectSlug string) (projectID int64, scope string, ok bool) {
-	pid, sc, valid := a.ValidWithProject(ctx, provided)
+	projectID, scope, ok, _ = a.CheckWithSetupFallback(ctx, provided, projectSlug)
+	return projectID, scope, ok
+}
+
+// CheckWithSetupFallback is ValidWithSetupFallback that tells a rejected key from
+// a key check that failed: when the key store errors, ok is false and err wraps
+// ErrKeyLookup. The setup fallback is skipped then, since it would write to the
+// same failing store.
+func (a *Authorizer) CheckWithSetupFallback(
+	ctx context.Context, provided, projectSlug string,
+) (projectID int64, scope string, ok bool, err error) {
+	pid, sc, valid, err := a.resolveKeyErr(ctx, provided, true)
 	if valid {
-		return pid, sc, true
+		return pid, sc, true, nil
+	}
+	if err != nil {
+		return 0, "", false, err
 	}
 	if a.setupVerifier != nil && projectSlug != "" {
 		if setupPID, setupOK := a.setupVerifier(ctx, strings.TrimSpace(provided), projectSlug); setupOK {
-			return setupPID, "ingest", true
+			return setupPID, "ingest", true, nil
 		}
 	}
-	return 0, "", false
+	return 0, "", false, nil
 }
 
 // ValidWithContext checks the provided key against the env-var hash first, then

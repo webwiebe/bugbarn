@@ -88,6 +88,18 @@ type Config struct {
 	// Exposed as an env knob so it can be tuned during an incident without a
 	// rebuild.
 	WALCheckpointInterval time.Duration
+	// WALTruncateEvery is BUGBARN_WAL_TRUNCATE_EVERY: every Nth checkpoint tick
+	// is a TRUNCATE, the rest PASSIVE. Default 10; 1 restores TRUNCATE on every
+	// tick (the behavior before bugbarn#236).
+	WALTruncateEvery int
+	// WALTruncateBusyTimeout is BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS: how long
+	// one TRUNCATE attempt waits for reader snapshots while holding the write
+	// connection. Default 1000; 10000 restores the old wait.
+	WALTruncateBusyTimeout time.Duration
+	// WALWarnBytes is BUGBARN_WAL_WARN_BYTES: a WAL file larger than this after a
+	// checkpoint tick is logged at Error, so it files an issue in BugBarn itself.
+	// Default 256 MiB, below the 377MB WAL of the 2026-07-16 incident.
+	WALWarnBytes int64
 	// Compact is the one-time storage compaction at writer start (compact.go).
 	Compact       Compact
 	RedisQueueURL string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
@@ -129,9 +141,13 @@ func Load() Config {
 		// Mirrors storage.DefaultCheckpointInterval; kept as a literal so config
 		// does not have to depend on the storage package.
 		WALCheckpointInterval: envDurationSeconds("BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS", 60*time.Second),
-		MaxBodyBytes:          envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
-		MaxSpoolBytes:         envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
-		MaxSourceMapBytes:     envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),
+		// Mirror storage.DefaultCheckpointPolicy, same reason as above.
+		WALTruncateEvery:       envIntPositive("BUGBARN_WAL_TRUNCATE_EVERY", 10),
+		WALTruncateBusyTimeout: time.Duration(envInt64Positive("BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS", 1000)) * time.Millisecond,
+		WALWarnBytes:           envInt64Positive("BUGBARN_WAL_WARN_BYTES", 256<<20),
+		MaxBodyBytes:           envInt64Positive("BUGBARN_MAX_BODY_BYTES", 1<<20),
+		MaxSpoolBytes:          envInt64Positive("BUGBARN_MAX_SPOOL_BYTES", 0),
+		MaxSourceMapBytes:      envInt64Positive("BUGBARN_MAX_SOURCE_MAP_BYTES", 0),
 		// The session TTL is the ABSOLUTE session cap — day-to-day validity is
 		// bound to the ~15m IdP access token via the refresh flow, so the cap
 		// can be a comfortable 12h instead of forcing hourly re-logins.

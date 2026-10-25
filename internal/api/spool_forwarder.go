@@ -75,14 +75,14 @@ type SpoolForwarder struct {
 
 	// resolveSlug maps an ingest API key to the slug of the project it is
 	// scoped to, or "" when the key carries no project binding (static
-	// env-var keys) or cannot be resolved. Optional; nil disables key-based
-	// project resolution.
-	resolveSlug func(ctx context.Context, apiKey string) string
+	// env-var keys). An error means the lookup itself failed and the request
+	// is retried. Optional; nil disables key-based project resolution.
+	resolveSlug func(ctx context.Context, apiKey string) (string, error)
 }
 
 // SetProjectResolver wires the API-key → project-slug lookup used to stamp a
 // project onto spooled requests that carry no X-BugBarn-Project header.
-func (s *SpoolForwarder) SetProjectResolver(fn func(ctx context.Context, apiKey string) string) {
+func (s *SpoolForwarder) SetProjectResolver(fn func(ctx context.Context, apiKey string) (string, error)) {
 	s.resolveSlug = fn
 }
 
@@ -217,7 +217,13 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	// queue.Item, and the consumer drops any item with an empty slug. The
 	// header, when present, wins — it is the caller's explicit override.
 	if headers[projectHeader] == "" && s.resolveSlug != nil {
-		if slug := s.resolveSlug(r.Context(), headers[apiKeyHeader]); slug != "" {
+		slug, err := s.resolveSlug(r.Context(), headers[apiKeyHeader])
+		if err != nil {
+			s.logger.Warn("spool forward: project lookup failed, asking the client to retry", "error", err)
+			ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+			return
+		}
+		if slug != "" {
 			headers[projectHeader] = slug
 		}
 	}

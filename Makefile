@@ -15,7 +15,7 @@ export PATH := $(COREPACK_BIN):$(PATH)
 PNPM := $(COREPACK_BIN)/pnpm
 
 .PHONY: help setup test lint build dev docker-build spec-check \
-	lint-go check-file-length coverage dup quality test-gates ts-budget \
+	lint-go check-file-length check-typed-boundaries coverage dup quality test-gates ts-budget secret-scan \
 	woodpecker-secrets-edit woodpecker-secrets-sync
 
 help:
@@ -26,8 +26,10 @@ help:
 		'  lint         run available linters and static checks' \
 		'  lint-go      golangci-lint: full-tree ratchet + diff-scoped run' \
 		'  check-file-length  fail on any source file over 500 lines' \
+		'  check-typed-boundaries  count raw DB errors and error-text matching outside their layer (report-only until 2026-10-31)' \
 		'  coverage     measure Go coverage and ratchet against baseline' \
 		'  ts-budget    TypeScript size/complexity soak (needs web/node_modules)' \
+		'  secret-scan  gitleaks scan of the full git history (report-only until 2026-10-31)' \
 		'  test-gates   run the tests for the gate scripts themselves' \
 		'  dup          scan the repo for cross-file duplication (jscpd)' \
 		'  quality      run every code-quality gate (needs `make setup` first)' \
@@ -177,9 +179,16 @@ test-gates:
 	@sh scripts/gates_test.sh
 	@bash scripts/ghcr-prune_test.sh
 	@sh scripts/diff-coverage_test.sh
+	@bash scripts/tests/secret-scan.test.sh
+
+secret-scan:
+	@bash scripts/secret-scan.sh history
 
 check-file-length:
 	@sh scripts/check-file-length.sh
+
+check-typed-boundaries:
+	@sh scripts/check-typed-boundaries.sh
 
 coverage:
 	@set -eu; \
@@ -196,7 +205,7 @@ $(PNPM):
 # Umbrella gate used by CI: every code-quality check in one target. The gate
 # scripts' own tests run first, so a gate that has stopped failing is reported
 # before the gates it protects are trusted.
-quality: test-gates check-file-length lint-go coverage ts-budget dup
+quality: test-gates check-file-length check-typed-boundaries lint-go coverage ts-budget dup
 
 build: $(PNPM)
 	@set -eu; \

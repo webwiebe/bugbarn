@@ -39,8 +39,14 @@ point lookups.
 
 `sqliteDSN` sets `journal_mode(wal)` and `wal_autocheckpoint(0)`. `RunPeriodicCheckpoint`
 (`checkpoint.go`, writer only, every `BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS`) is the
-sole checkpointer and must stay TRUNCATE with a bounded retry per tick. Reader pods hold
-snapshots continuously, so a PASSIVE checkpoint never completes. Do not add a second
+sole checkpointer. It runs PASSIVE on most ticks and TRUNCATE every
+`BUGBARN_WAL_TRUNCATE_EVERY`-th tick (`CheckpointPolicy`), with a bounded retry per tick.
+Reader pods hold snapshots continuously, so PASSIVE alone never resets the WAL file; the
+TRUNCATE tick must stay. A TRUNCATE attempt waits for readers at most
+`BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS` (default 1s, not the connection's 10s) because it
+holds the single write connection while it waits (bugbarn#236). After 3 consecutive
+blocked TRUNCATE ticks with a WAL over 64 MiB, one TRUNCATE waits 15s (the backstop), and
+every tick logs `wal checkpoint` with its result. Do not add a second
 checkpointer, and keep WAL mode: the readers depend on it.
 
 ## Free space

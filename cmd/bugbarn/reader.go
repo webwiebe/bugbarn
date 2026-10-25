@@ -121,17 +121,23 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	// queue, so resolve the key here at ingest time. Read-only SELECTs, safe on
 	// the reader's read-only store.
 	if ingestSpool != nil {
-		ingestSpool.SetProjectResolver(func(ctx context.Context, apiKey string) string {
-			pid, _, ok := apiAuthorizer.ProjectForKey(ctx, apiKey)
+		// A failed lookup returns an error so the request answers a retryable
+		// 503: spooling the event without a project would put it in the Default
+		// Project.
+		ingestSpool.SetProjectResolver(func(ctx context.Context, apiKey string) (string, error) {
+			pid, _, ok, err := apiAuthorizer.ProjectForKeyErr(ctx, apiKey)
+			if err != nil {
+				return "", err
+			}
 			if !ok || pid == 0 {
-				return ""
+				return "", nil
 			}
 			proj, perr := store.ProjectByID(ctx, pid)
 			if perr != nil {
 				logger.Error("resolve project for ingest api key", "project_id", pid, "error", perr)
-				return ""
+				return "", perr
 			}
-			return proj.Slug
+			return proj.Slug, nil
 		})
 	}
 	userAuth, err := newUserAuthenticator(cfg)

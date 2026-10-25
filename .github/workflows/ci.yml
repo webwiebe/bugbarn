@@ -280,6 +280,9 @@ jobs:
       - name: File-length gate (all languages)
         shell: bash
         run: sh scripts/check-file-length.sh
+      - name: Typed-boundaries gate (report-only until 2026-10-31)
+        shell: bash
+        run: sh scripts/check-typed-boundaries.sh
       # Full-tree ratchet on every event plus a diff-scoped run on pull
       # requests. This used to be the diff-scoped half only, run
       # unconditionally, so on a push to main it compared main to itself and
@@ -299,11 +302,13 @@ jobs:
         shell: bash
         run: sh scripts/check-coverage.sh
       # Changed-line coverage, report only until 2026-10-24 (then add
-      # --enforce). Same step in .woodpecker/ci.yaml.
+      # --enforce). sdks/go is profiled too. Same step in .woodpecker/ci.yaml.
       - name: Diff coverage (report only)
         if: github.event_name == 'pull_request'
         shell: bash
-        run: sh scripts/diff-coverage.sh coverage/go.out "origin/${GITHUB_BASE_REF}"
+        run: |
+          sh scripts/diff-coverage-profile.sh
+          sh scripts/diff-coverage.sh coverage/diff.out "origin/${GITHUB_BASE_REF}"
       - name: Duplication scan (jscpd)
         shell: bash
         run: |
