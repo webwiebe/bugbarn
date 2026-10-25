@@ -234,6 +234,7 @@ steps:
         bash scripts/assert-version_test.sh
         sh scripts/diff-coverage_test.sh
         sh scripts/check-file-length.sh
+        sh scripts/check-typed-boundaries.sh
         # Create the origin/* remote-tracking refs (a plain `git fetch origin main`
         # only updates FETCH_HEAD), with enough depth for the diff base. Without
         # this golangci-lint's diff mode treats the whole tree as new. (A colon
