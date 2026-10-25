@@ -169,6 +169,24 @@ func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.
 	e.evaluateRules(ctx, projectID, issue, conditionType, false)
 }
 
+// ruleMatches reports whether rule applies to issue for conditionType, before
+// the cooldown check. With mailCapped set, rules that send email never match.
+func ruleMatches(rule Rule, issue domain.Issue, conditionType string, mailCapped bool) bool {
+	if !rule.Enabled || rule.Condition != conditionType {
+		return false
+	}
+	if mailCapped && rule.EmailTo != "" {
+		return false
+	}
+	switch conditionType {
+	case "event_count_exceeds":
+		return rule.Threshold > 0 && issue.EventCount > rule.Threshold
+	case "message_contains":
+		return rule.Param != "" && strings.Contains(strings.ToLower(issue.Title), strings.ToLower(rule.Param))
+	}
+	return true
+}
+
 // evaluateRules fires the matching project rules. With mailCapped set, rules
 // that send email are skipped (the project is over its new-issue mail cap).
 func (e *Evaluator) evaluateRules(ctx context.Context, projectID int64, issue domain.Issue, conditionType string, mailCapped bool) {
@@ -179,56 +197,40 @@ func (e *Evaluator) evaluateRules(ctx context.Context, projectID int64, issue do
 	}
 
 	for _, rule := range rules {
-		if !rule.Enabled {
+		if !ruleMatches(rule, issue, conditionType, mailCapped) {
 			continue
-		}
-		if rule.Condition != conditionType {
-			continue
-		}
-		if mailCapped && rule.EmailTo != "" {
-			continue
-		}
-		if conditionType == "event_count_exceeds" && (rule.Threshold <= 0 || issue.EventCount <= rule.Threshold) {
-			continue
-		}
-		if conditionType == "message_contains" {
-			if rule.Param == "" {
-				continue
-			}
-			if !strings.Contains(strings.ToLower(issue.Title), strings.ToLower(rule.Param)) {
-				continue
-			}
 		}
 		if !e.cooldownPassed(ctx, rule, issue.ID) {
 			continue
 		}
 
-		// Capture loop vars for the goroutine.
-		r := rule
-		iss := issue
-		go func() {
-			defer func() {
-				if p := recover(); p != nil {
-					e.log.Error("alert delivery panic", "alert_id", r.ID, "issue_id", iss.ID, "panic", p)
-				}
-			}()
+		go e.fireRule(ctx, rule, issue)
+	}
+}
 
-			fireCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
+// fireRule delivers one rule's alert and records the firing. It runs in its own
+// goroutine, so a panic is recovered and logged here.
+func (e *Evaluator) fireRule(ctx context.Context, r Rule, iss domain.Issue) {
+	defer func() {
+		if p := recover(); p != nil {
+			e.log.Error("alert delivery panic", "alert_id", r.ID, "issue_id", iss.ID, "panic", p)
+		}
+	}()
 
-			if err := e.deliverer.Fire(fireCtx, r, iss, e.publicURL); err != nil {
-				e.log.Error("failed to fire alert", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
-				return
-			}
-			e.log.Info("alert sent", "alert_id", r.ID, "issue_id", iss.ID, "project", iss.ProjectSlug, "condition", r.Condition)
+	fireCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-			if err := e.repo.RecordFiring(ctx, r.ID, iss.ID); err != nil {
-				e.log.Error("failed to record firing", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
-			}
-			if err := e.repo.UpdateLastFired(ctx, r.ID, time.Now().UTC()); err != nil {
-				e.log.Error("failed to update last_fired", "alert_id", r.ID, "error", err)
-			}
-		}()
+	if err := e.deliverer.Fire(fireCtx, r, iss, e.publicURL); err != nil {
+		e.log.Error("failed to fire alert", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
+		return
+	}
+	e.log.Info("alert sent", "alert_id", r.ID, "issue_id", iss.ID, "project", iss.ProjectSlug, "condition", r.Condition)
+
+	if err := e.repo.RecordFiring(ctx, r.ID, iss.ID); err != nil {
+		e.log.Error("failed to record firing", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
+	}
+	if err := e.repo.UpdateLastFired(ctx, r.ID, time.Now().UTC()); err != nil {
+		e.log.Error("failed to update last_fired", "alert_id", r.ID, "error", err)
 	}
 }
 
