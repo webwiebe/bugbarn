@@ -268,7 +268,7 @@ func run() error {
 	if err := ensureProductionAPIKeyAuth(cfg, apiAuthorizer); err != nil {
 		return err
 	}
-	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
+	userAuth, err := newUserAuthenticator(cfg)
 	if err != nil {
 		return err
 	}

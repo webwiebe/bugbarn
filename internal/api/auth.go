@@ -94,7 +94,8 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid login payload", http.StatusBadRequest)
 		return
 	}
-	if !s.users.Valid(request.Username, request.Password) {
+	loginName, valid := s.users.Authenticate(request.Username, request.Password)
+	if !valid {
 		s.logger.Warn("auth: failed login", "username", request.Username, "ip", ip)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -106,7 +107,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// Local admin logins get a web_sessions row too (empty token columns) so
 	// one middleware and one revocation story cover both auth methods.
 	handle, expires, err := s.createWebSession(r.Context(), domain.WebSession{
-		Username:   s.users.Username(),
+		Username:   loginName,
 		AuthMethod: domain.WebSessionAuthLocal,
 	})
 	if err != nil {
@@ -119,7 +120,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	secure := s.secureCookie(r)
 	http.SetCookie(w, auth.SessionCookie(handle, expires, secure))
 	http.SetCookie(w, s.sessions.CSRFCookie(handle, expires, secure))
-	writeJSON(w, map[string]any{"authenticated": true, "authEnabled": true, "username": s.users.Username()})
+	writeJSON(w, map[string]any{"authenticated": true, "authEnabled": true, "username": loginName})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
