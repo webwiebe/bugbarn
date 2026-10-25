@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -84,7 +87,7 @@ func TestForwardResetAfterTheRequestWasSentStays502(t *testing.T) {
 
 func TestClassifyForwardError(t *testing.T) {
 	refused := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}
-	reset := &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
+	reset := &net.OpError{Op: "read", Net: "tcp", Err: os.NewSyscallError("read", syscall.ECONNRESET)}
 	cases := []struct {
 		name      string
 		err       error
@@ -93,7 +96,9 @@ func TestClassifyForwardError(t *testing.T) {
 	}{
 		{"refused dial", refused, "dial", true},
 		{"dns", &net.DNSError{Err: "no such host", Name: "bugbarn-writer"}, "dial", true},
-		{"eof", errors.New("EOF"), "eof", false},
+		{"eof", io.EOF, "eof", false},
+		{"unexpected eof", io.ErrUnexpectedEOF, "eof", false},
+		{"broken pipe", syscall.EPIPE, "reset", false},
 		{"reset", reset, "reset", false},
 		{"deadline", context.DeadlineExceeded, "timeout", false},
 		{"canceled", context.Canceled, "canceled", false},
