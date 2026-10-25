@@ -248,7 +248,7 @@ func (e *Engine) ObserveMetrics(ctx context.Context, samples []hostmetrics.Sampl
 			continue
 		}
 		for _, s := range samples {
-			if globMatch(r.Metric, s.Metric) && r.matchesHost(s.Host) {
+			if r.matchesMetric(s.Metric) && r.matchesHost(s.Host) {
 				e.evalSample(ctx, r, s)
 			}
 		}

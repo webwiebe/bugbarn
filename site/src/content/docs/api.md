@@ -733,12 +733,24 @@ Rule fields:
 | `threshold` | security, metrics | matching records per `window` (security) or the sample value limit (metrics) |
 | `window` | security, heartbeat | counting window (security) or allowed silence (heartbeat) |
 | `metric` | metrics | metric name glob, `*` matches any run of characters |
+| `exclude_metric` | metrics | metric globs the rule skips. The built-in `disk-full` skips `/Volumes/Recovery` and the container bind mounts `/etc/*`, `/var/lib/vector` and `/var/log` |
 | `op` | metrics | `gt` or `lt` |
 | `per_core` | metrics | multiply the threshold by the host's core count |
 | `for` | metrics | how long the value must stay past the threshold |
 | `cooldown` | all | minimum time between two detections for one group |
 
 Durations are strings like `"5m"` or a number of seconds.
+
+**Host roles.** The shipped rules cannot know your host names, so scope them per deployment with a stored override whose `match` holds a `host` condition:
+
+| Role | Examples | `host-silent` | `load-high` | `disk-full`, `memory-low` |
+|---|---|---|---|---|
+| server | k3s1, k3s2, layer7-prod, ssd-wiebe | yes (`match` with `host in [...]`) | yes | yes |
+| CI runner | the build mac-minis | no | no, load from CI jobs is expected | yes |
+| laptop | developer machines | no, they sleep | no | yes |
+| short-lived | e2e-check | no | no | no |
+
+Use `in` for an include list on `host-silent` and `not_in` for an exclude list on `load-high`. A new host follows the table: a machine that is meant to be always on and idle-ish is a server.
 
 ---
 

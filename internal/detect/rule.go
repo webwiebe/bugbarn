@@ -49,6 +49,9 @@ type Rule struct {
 	Op      string   `json:"op,omitempty"` // gt or lt
 	PerCore bool     `json:"per_core,omitempty"`
 	For     Duration `json:"for,omitempty"`
+	// ExcludeMetric lists metric globs (same syntax as Metric) a metric rule
+	// skips, e.g. pseudo and read-only mounts under fs.*.used_pct.
+	ExcludeMetric []string `json:"exclude_metric,omitempty"`
 
 	// Threshold is a record count for security rules and a value for metric
 	// rules. Heartbeat rules use Window as the allowed silence.
@@ -139,6 +142,20 @@ func (r Rule) validateHostMatch() error {
 	return nil
 }
 
+// matchesMetric reports whether the rule evaluates a series: it matches
+// Metric and none of ExcludeMetric.
+func (r Rule) matchesMetric(name string) bool {
+	if !globMatch(r.Metric, name) {
+		return false
+	}
+	for _, g := range r.ExcludeMetric {
+		if globMatch(g, name) {
+			return false
+		}
+	}
+	return true
+}
+
 // matchesHost reports whether every match condition accepts host.
 func (r Rule) matchesHost(host string) bool {
 	for _, c := range r.Match {
@@ -180,6 +197,11 @@ func (r Rule) validateSecurity() error {
 func (r Rule) validateMetrics() error {
 	if r.Metric == "" {
 		return errors.New("metric rules need a metric")
+	}
+	for _, g := range r.ExcludeMetric {
+		if g == "" {
+			return errors.New("exclude_metric entries may not be empty")
+		}
 	}
 	if r.Op != "gt" && r.Op != "lt" {
 		return errors.New("op must be gt or lt")

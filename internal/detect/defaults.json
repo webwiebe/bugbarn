@@ -89,6 +89,12 @@
     "severity": "ERROR",
     "track": "metrics",
     "metric": "fs.*.used_pct",
+    "exclude_metric": [
+      "fs./Volumes/Recovery.used_pct",
+      "fs./etc/*.used_pct",
+      "fs./var/lib/vector.used_pct",
+      "fs./var/log.used_pct"
+    ],
     "op": "gt",
     "threshold": 90,
     "for": "10m",
