@@ -99,8 +99,10 @@ func TestMerge(t *testing.T) {
 }
 
 func TestRecordPayload(t *testing.T) {
+	perGroup := rule(t, "ssh-bruteforce")
+	perGroup.IssueBy = ""
 	d := Detection{
-		Rule:  rule(t, "ssh-bruteforce"),
+		Rule:  perGroup,
 		Group: []KV{{Key: "src_ip", Value: "203.0.113.9"}},
 		At:    t0, Count: 31, Limit: 30, Sample: "Failed password for root from 203.0.113.9",
 	}

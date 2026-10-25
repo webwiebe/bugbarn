@@ -10,6 +10,7 @@
       {"field": "kind", "op": "in", "value": ["auth_failure", "invalid_user"]}
     ],
     "group_by": ["src_ip"],
+    "issue_by": "day",
     "threshold": 30,
     "window": "5m",
     "cooldown": "1h"
@@ -30,7 +31,7 @@
   },
   {
     "id": "http-auth-denied",
-    "name": "Repeated 401/403 from one client",
+    "name": "Repeated 401/403 from clients",
     "enabled": true,
     "severity": "WARNING",
     "track": "security",
@@ -39,6 +40,7 @@
       {"field": "status", "op": "in", "value": ["401", "403"]}
     ],
     "group_by": ["src_ip"],
+    "issue_by": "day",
     "threshold": 100,
     "window": "5m",
     "cooldown": "1h"

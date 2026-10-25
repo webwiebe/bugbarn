@@ -729,6 +729,7 @@ Rule fields:
 | `severity` | all | `WARNING`, `ERROR` or `CRITICAL` |
 | `match` | security | list of `{field, op, value}`; ops `eq`, `ne`, `in`, `not_in`, `prefix`, `not_prefix`, `suffix`, `contains`; fields include `src_ip`, `host` (reporting node) and `request_host` (host the client asked for) |
 | `group_by` | security | record fields that make up one group, e.g. `["src_ip"]` |
+| `issue_by` | security | `day` files all groups of the rule under one issue per UTC day; counting and cooldown stay per group and each group is its own event. Empty (default) is one issue per group. The built-in `ssh-bruteforce` and `http-auth-denied` use `day` |
 | `exclude` | security | list of `{field, op, value}`; a record matching any of them is not counted toward the threshold, but is counted in the `bugbarn.detect.excluded` metric and logged at debug. Empty by default |
 | `threshold` | security, metrics | matching records per `window` (security) or the sample value limit (metrics) |
 | `window` | security, heartbeat | counting window (security) or allowed silence (heartbeat) |

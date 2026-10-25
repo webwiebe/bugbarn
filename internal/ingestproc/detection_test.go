@@ -45,8 +45,8 @@ func TestDetectionBecomesIssueWithSourceIP(t *testing.T) {
 	if !first.IsNew || first.Issue.Fingerprint != detect.Fingerprint(d) {
 		t.Fatalf("issue new=%v fingerprint=%q", first.IsNew, first.Issue.Fingerprint)
 	}
-	if !strings.Contains(first.Issue.Title, "203.0.113.9") {
-		t.Errorf("title %q lost the source IP", first.Issue.Title)
+	if want := d.At.Format("2006-01-02"); !strings.Contains(first.Issue.Title, want) {
+		t.Errorf("title %q does not name the day %s", first.Issue.Title, want)
 	}
 	attrs, _ := json.Marshal(first.Issue.RepresentativeEvent.Attributes)
 	if !strings.Contains(string(attrs), "203.0.113.9") || strings.Contains(string(attrs), "redacted-ip") {
@@ -56,6 +56,11 @@ func TestDetectionBecomesIssueWithSourceIP(t *testing.T) {
 	second := persist()
 	if second.IsNew || second.Issue.ID != first.Issue.ID {
 		t.Fatalf("repeat detection made a new issue (%s vs %s)", second.Issue.ID, first.Issue.ID)
+	}
+	// A second address over the threshold the same day lands on the same issue.
+	d.Group = []detect.KV{{Key: "src_ip", Value: "203.0.113.10"}}
+	if other := persist(); other.IsNew || other.Issue.ID != first.Issue.ID {
+		t.Fatalf("second address opened a new issue (%s vs %s)", other.Issue.ID, first.Issue.ID)
 	}
 	issues, err := store.ListIssues(projectCtx(t, ctx, store, "infra"))
 	if err != nil {
