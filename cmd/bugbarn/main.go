@@ -274,6 +274,7 @@ func run() error {
 	}
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
+	handler.SetProjectSlugResolver(projectSlugResolver(store))
 	go handler.Start(ctx)
 
 	logHub := logstream.NewHub()

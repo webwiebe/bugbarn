@@ -157,6 +157,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
 
 	handler := ingest.NewHandler(apiAuthorizer, nil, cfg.MaxBodyBytes)
+	handler.SetProjectSlugResolver(projectSlugResolver(store))
 
 	logHub := logstream.NewHub()
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)

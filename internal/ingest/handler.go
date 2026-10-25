@@ -57,6 +57,9 @@ type Handler struct {
 	// funnelbarnLastFired throttles the "event_ingested" product event: see
 	// trackEventIngested.
 	funnelbarnLastFired sync.Map // map[int64]time.Time, keyed by project ID
+
+	// foreign measures bound keys that name another project (#235); nil disables it.
+	foreign *foreignProjectObserver
 }
 
 // funnelbarnEventThrottle bounds how often the "event_ingested" product event
@@ -193,6 +196,8 @@ func (h *Handler) CheckAPIKey(r *http.Request) (projectID int64, scope string, o
 		h.logger.WarnContext(r.Context(), "ingest api key lookup failed; answering retryable", "path", r.URL.Path, "error", err)
 	case !ok:
 		h.logDenied(r)
+	default:
+		h.observeProjectHeader(r.Context(), projectID, scope, slug)
 	}
 	return projectID, scope, ok, err
 }
