@@ -15,7 +15,7 @@ export PATH := $(COREPACK_BIN):$(PATH)
 PNPM := $(COREPACK_BIN)/pnpm
 
 .PHONY: help setup test lint build dev docker-build spec-check \
-	lint-go check-file-length coverage dup quality test-gates ts-budget \
+	lint-go check-file-length coverage dup quality test-gates ts-budget secret-scan \
 	woodpecker-secrets-edit woodpecker-secrets-sync
 
 help:
@@ -28,6 +28,7 @@ help:
 		'  check-file-length  fail on any source file over 500 lines' \
 		'  coverage     measure Go coverage and ratchet against baseline' \
 		'  ts-budget    TypeScript size/complexity soak (needs web/node_modules)' \
+		'  secret-scan  gitleaks scan of the full git history (report-only until 2026-10-31)' \
 		'  test-gates   run the tests for the gate scripts themselves' \
 		'  dup          scan the repo for cross-file duplication (jscpd)' \
 		'  quality      run every code-quality gate (needs `make setup` first)' \
@@ -177,6 +178,10 @@ test-gates:
 	@sh scripts/gates_test.sh
 	@bash scripts/ghcr-prune_test.sh
 	@sh scripts/diff-coverage_test.sh
+	@bash scripts/tests/secret-scan.test.sh
+
+secret-scan:
+	@bash scripts/secret-scan.sh history
 
 check-file-length:
 	@sh scripts/check-file-length.sh
