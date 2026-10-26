@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 
 WORKDIR /src
 
@@ -21,7 +21,7 @@ RUN go build -ldflags "-X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}"
 # keyed only on go.{mod,sum}, so `--cache-to/--cache-from type=registry` shares
 # it across every build runner via GHCR — whichever machine picks up the job
 # starts from a warm cache instead of recompiling SQLite from scratch.
-FROM golang:1.26-alpine AS deps
+FROM golang:1.27-alpine AS deps
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY sdks/go/go.mod sdks/go/go.sum ./sdks/go/
