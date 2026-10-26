@@ -353,7 +353,10 @@ func cmdMute(args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeRaw(data)
+	if err := writeRaw(data); err != nil {
+		return err
+	}
+	return requireIssueStatus(data, remaining[0], "muted")
 }
 
 func cmdUnmute(args []string) error {
@@ -377,7 +380,10 @@ func cmdUnmute(args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeRaw(data)
+	if err := writeRaw(data); err != nil {
+		return err
+	}
+	return requireIssueStatus(data, remaining[0], "unresolved")
 }
 
 func resolveProject(flag string, c *Client) string {
