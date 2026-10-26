@@ -85,6 +85,14 @@ duplicates an event. Each failure is logged at warn and tagged on the span with
 `forward.error_class` (dial, eof, reset, timeout, canceled, other).
 Use `ingestresp` for any new ingest response.
 
+## Foreign project header (#235)
+
+`CheckAPIKey` counts requests where a bound, non-full-scope key names another project in
+`X-BugBarn-Project` (`bugbarn.ingest.foreign_project_header`, plus one info log per
+key-project/header-project pair). Ingest still routes by the header; the counter is the
+evidence needed before binding ingest keys the way the authenticated routes already are
+(`internal/api/keybind.go`). Wired in both entrypoints through `SetProjectSlugResolver`.
+
 ## Stall detection (`ingesthealth`)
 
 Runs in every role. Every 60s it samples `MAX(received_at)` of events, Redis `LLEN`
