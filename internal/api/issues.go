@@ -185,6 +185,11 @@ func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
 	displayByRowID := make(map[int64]string, len(parts))
 	for _, p := range parts {
 		displayID := strings.TrimSpace(p)
+		if bound, confined := boundProject(r.Context()); confined {
+			if issue, getErr := s.issues.Get(r.Context(), displayID); getErr != nil || issue.ProjectID != bound {
+				continue
+			}
+		}
 		rowID, err := s.issues.RowIDByDisplayID(r.Context(), displayID)
 		if err != nil {
 			s.logger.Warn("issues: sparkline lookup failed for display id", "display_id", displayID, "error", err)

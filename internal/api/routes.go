@@ -343,7 +343,9 @@ func (s *Server) dispatchIssueRoutes(w http.ResponseWriter, r *http.Request) boo
 	case r.URL.Path == "/api/v1/issues/sparklines" && r.Method == http.MethodGet:
 		s.issueSparklines(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/issues/"):
-		s.serveIssueRoute(w, r)
+		if s.requireIssueInScope(w, r, issueIDFromPath(r.URL.Path)) {
+			s.serveIssueRoute(w, r)
+		}
 	default:
 		return false
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 	}
 
 	_, usingSession := s.sessionUser(r)
-	apiKeyProjectID, usingAPIKey, proceed := s.authenticateAPIKey(w, r, usingSession)
+	apiKeyProjectID, apiKeyScope, usingAPIKey, proceed := s.authenticateAPIKey(w, r, usingSession)
 	if !proceed {
 		return r, false
 	}
@@ -52,9 +53,36 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 	s.refreshCSRFCookie(w, r, usingSession)
 	s.annotateCaller(r, usingSession, usingAPIKey, apiKeyProjectID)
 
+	r, proceed = s.confineBoundKey(w, r, usingSession, usingAPIKey, apiKeyProjectID, apiKeyScope)
+	if !proceed {
+		return r, false
+	}
+
 	r = s.resolveProjectScope(r, usingSession, usingAPIKey, apiKeyProjectID)
 
 	return r, true
+}
+
+// confineProjectNames answers 403 when a confined caller names another project in
+// the X-BugBarn-Project header or the project_slug query parameter. It returns
+// false after writing the response.
+func (s *Server) confineProjectNames(w http.ResponseWriter, r *http.Request) bool {
+	for _, slug := range []string{r.Header.Get("X-BugBarn-Project"), r.URL.Query().Get("project_slug")} {
+		if slug == "" {
+			continue
+		}
+		if _, err := s.projectForSlug(r, slug); err != nil {
+			if errors.Is(err, errForeignProject) {
+				s.logger.Warn("auth: bound key named another project", "method", r.Method, "path", r.URL.Path)
+				http.Error(w, "forbidden: api key is bound to another project", http.StatusForbidden)
+				return false
+			}
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "project lookup unavailable", http.StatusServiceUnavailable)
+			return false
+		}
+	}
+	return true
 }
 
 // authenticateAPIKey reads the request's API key. proceed is false after an
@@ -63,23 +91,23 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 // retryable 503, not a 401 that would make the client retire a good key.
 func (s *Server) authenticateAPIKey(
 	w http.ResponseWriter, r *http.Request, usingSession bool,
-) (projectID int64, usingKey, proceed bool) {
+) (projectID int64, scope string, usingKey, proceed bool) {
 	if s.ingestHandler == nil {
-		return 0, false, true
+		return 0, "", false, true
 	}
 	pid, scope, ok, keyErr := s.ingestHandler.CheckAPIKey(r)
 	if keyErr != nil && !usingSession {
 		w.Header().Set("Retry-After", "1")
 		http.Error(w, "api key lookup unavailable", http.StatusServiceUnavailable)
-		return 0, false, false
+		return 0, "", false, false
 	}
 	if !ok {
-		return 0, false, true
+		return 0, "", false, true
 	}
 	if !s.checkAPIKeyScope(w, r, scope) {
-		return 0, false, false
+		return 0, "", false, false
 	}
-	return pid, true, true
+	return pid, scope, true, true
 }
 
 // checkAPIKeyScope enforces the ingest-only and read-only API key restrictions
