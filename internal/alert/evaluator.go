@@ -7,9 +7,25 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
+
+// newIssueSuppressedCounter counts new issues whose mail was held back by the
+// per-project cap, by project.
+var newIssueSuppressedCounter metric.Int64Counter
+
+func init() {
+	newIssueSuppressedCounter, _ = tracing.Meter().Int64Counter(
+		"bugbarn.alert.new_issue_suppressed",
+		metric.WithDescription("New-issue mails held back by the per-project cap and reported in a summary."),
+		metric.WithUnit("{issue}"),
+	)
+}
 
 // notifier delivers alert notifications. *Deliverer is the production
 // implementation; tests substitute a fake.
@@ -45,9 +61,12 @@ func (e *Evaluator) HandleEvent(evt any) {
 	ctx := context.Background()
 	switch v := evt.(type) {
 	case domainevents.IssueCreated:
-		e.evaluate(ctx, v.ProjectID, v.Issue, "new_issue")
+		capped := !e.admitNewIssue(v.Issue)
+		e.evaluateRules(ctx, v.ProjectID, v.Issue, "new_issue", capped)
 		e.evaluate(ctx, v.ProjectID, v.Issue, "message_contains")
-		e.notifyNewIssue(v.Issue)
+		if !capped {
+			e.notifyAdmin(v.Issue, "new_issue")
+		}
 	case domainevents.IssueRegressed:
 		e.evaluate(ctx, v.ProjectID, v.Issue, "regression")
 		e.evaluate(ctx, v.ProjectID, v.Issue, "message_contains")
@@ -75,18 +94,20 @@ func isSpikeMilestone(count int) bool {
 	return count == 1
 }
 
-// notifyNewIssue mails the admin about a new issue unless its project already
-// sent newIssueMailMax such mails in the current window. Suppressed issues are
-// counted and reported in one summary mail when the window ends, so a grouping
-// gap that opens an issue per event costs a handful of mails, not one per event.
-func (e *Evaluator) notifyNewIssue(issue domain.Issue) {
+// admitNewIssue counts a new issue against its project's mail cap and reports
+// whether its own mail may go out. Past newIssueMailMax in the current window the
+// issue is counted and reported in one summary mail when the window ends, so a
+// grouping gap that opens an issue per event costs a handful of mails, not one
+// per event. The cap covers the admin mail and every project rule that sends
+// email; webhook-only rules are not mail and are not capped.
+func (e *Evaluator) admitNewIssue(issue domain.Issue) bool {
 	slug := issue.ProjectSlug
 	a := e.newIssues.admit(slug)
 	if a.Summarize > 0 {
 		e.notifySuppressed(slug, a.Summarize)
 	}
-	if a.Send {
-		e.notifyAdmin(issue, "new_issue")
+	if !a.Send {
+		newIssueSuppressedCounter.Add(context.Background(), 1, metric.WithAttributes(attribute.String("project", slug)))
 	}
 	if a.ScheduleSummary {
 		start := a.WindowStart
@@ -96,6 +117,7 @@ func (e *Evaluator) notifyNewIssue(issue domain.Issue) {
 			}
 		})
 	}
+	return a.Send
 }
 
 // notifySuppressed mails one summary for new issues that were not mailed
@@ -144,6 +166,30 @@ func (e *Evaluator) notifyAdmin(issue domain.Issue, conditionType string) {
 }
 
 func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.Issue, conditionType string) {
+	e.evaluateRules(ctx, projectID, issue, conditionType, false)
+}
+
+// ruleMatches reports whether rule applies to issue for conditionType, before
+// the cooldown check. With mailCapped set, rules that send email never match.
+func ruleMatches(rule Rule, issue domain.Issue, conditionType string, mailCapped bool) bool {
+	if !rule.Enabled || rule.Condition != conditionType {
+		return false
+	}
+	if mailCapped && rule.EmailTo != "" {
+		return false
+	}
+	switch conditionType {
+	case "event_count_exceeds":
+		return rule.Threshold > 0 && issue.EventCount > rule.Threshold
+	case "message_contains":
+		return rule.Param != "" && strings.Contains(strings.ToLower(issue.Title), strings.ToLower(rule.Param))
+	}
+	return true
+}
+
+// evaluateRules fires the matching project rules. With mailCapped set, rules
+// that send email are skipped (the project is over its new-issue mail cap).
+func (e *Evaluator) evaluateRules(ctx context.Context, projectID int64, issue domain.Issue, conditionType string, mailCapped bool) {
 	rules, err := e.repo.ListForProject(ctx, projectID)
 	if err != nil {
 		e.log.Error("failed to list rules for project", "project_id", projectID, "error", err)
@@ -151,53 +197,40 @@ func (e *Evaluator) evaluate(ctx context.Context, projectID int64, issue domain.
 	}
 
 	for _, rule := range rules {
-		if !rule.Enabled {
+		if !ruleMatches(rule, issue, conditionType, mailCapped) {
 			continue
-		}
-		if rule.Condition != conditionType {
-			continue
-		}
-		if conditionType == "event_count_exceeds" && (rule.Threshold <= 0 || issue.EventCount <= rule.Threshold) {
-			continue
-		}
-		if conditionType == "message_contains" {
-			if rule.Param == "" {
-				continue
-			}
-			if !strings.Contains(strings.ToLower(issue.Title), strings.ToLower(rule.Param)) {
-				continue
-			}
 		}
 		if !e.cooldownPassed(ctx, rule, issue.ID) {
 			continue
 		}
 
-		// Capture loop vars for the goroutine.
-		r := rule
-		iss := issue
-		go func() {
-			defer func() {
-				if p := recover(); p != nil {
-					e.log.Error("alert delivery panic", "alert_id", r.ID, "issue_id", iss.ID, "panic", p)
-				}
-			}()
+		go e.fireRule(ctx, rule, issue)
+	}
+}
 
-			fireCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
+// fireRule delivers one rule's alert and records the firing. It runs in its own
+// goroutine, so a panic is recovered and logged here.
+func (e *Evaluator) fireRule(ctx context.Context, r Rule, iss domain.Issue) {
+	defer func() {
+		if p := recover(); p != nil {
+			e.log.Error("alert delivery panic", "alert_id", r.ID, "issue_id", iss.ID, "panic", p)
+		}
+	}()
 
-			if err := e.deliverer.Fire(fireCtx, r, iss, e.publicURL); err != nil {
-				e.log.Error("failed to fire alert", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
-				return
-			}
-			e.log.Info("alert sent", "alert_id", r.ID, "issue_id", iss.ID, "project", iss.ProjectSlug, "condition", r.Condition)
+	fireCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-			if err := e.repo.RecordFiring(ctx, r.ID, iss.ID); err != nil {
-				e.log.Error("failed to record firing", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
-			}
-			if err := e.repo.UpdateLastFired(ctx, r.ID, time.Now().UTC()); err != nil {
-				e.log.Error("failed to update last_fired", "alert_id", r.ID, "error", err)
-			}
-		}()
+	if err := e.deliverer.Fire(fireCtx, r, iss, e.publicURL); err != nil {
+		e.log.Error("failed to fire alert", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
+		return
+	}
+	e.log.Info("alert sent", "alert_id", r.ID, "issue_id", iss.ID, "project", iss.ProjectSlug, "condition", r.Condition)
+
+	if err := e.repo.RecordFiring(ctx, r.ID, iss.ID); err != nil {
+		e.log.Error("failed to record firing", "alert_id", r.ID, "issue_id", iss.ID, "error", err)
+	}
+	if err := e.repo.UpdateLastFired(ctx, r.ID, time.Now().UTC()); err != nil {
+		e.log.Error("failed to update last_fired", "alert_id", r.ID, "error", err)
 	}
 }
 
