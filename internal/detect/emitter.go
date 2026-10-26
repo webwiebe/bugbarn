@@ -87,8 +87,11 @@ func (e *Emitter) send(ctx context.Context, d Detection) {
 }
 
 // Fingerprint is the issue identity of a detection: one issue per rule and
-// group, so repeats land on the same issue and a resolved one regresses.
+// group (per rule and UTC day when the rule sets issue_by "day"), so repeats land on the same issue and a resolved one regresses.
 func Fingerprint(d Detection) string {
+	if d.Rule.IssueBy == IssueByDay {
+		return "detect:" + d.Rule.ID + ":day:" + d.At.UTC().Format("2006-01-02")
+	}
 	sum := sha256.Sum256([]byte(d.GroupKey()))
 	return "detect:" + d.Rule.ID + ":" + hex.EncodeToString(sum[:8])
 }
@@ -162,6 +165,9 @@ func payload(d Detection, env string) map[string]any {
 func title(d Detection) string {
 	if len(d.Group) == 0 {
 		return d.Rule.Name
+	}
+	if d.Rule.IssueBy == IssueByDay {
+		return fmt.Sprintf("%s: %s", d.Rule.Name, d.At.UTC().Format("2006-01-02"))
 	}
 	return fmt.Sprintf("%s: %s", d.Rule.Name, d.GroupKey())
 }

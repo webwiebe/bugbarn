@@ -22,6 +22,9 @@ const (
 	TrackHeartbeat = "heartbeat"
 )
 
+// IssueByDay is the issue_by value that groups a rule's detections per UTC day.
+const IssueByDay = "day"
+
 // Rule is one detection rule. The JSON shape is shared by defaults.json, the
 // detection_rules table and the rules API.
 type Rule struct {
@@ -35,6 +38,11 @@ type Rule struct {
 	// key; Threshold within Window fires.
 	Match   []Cond   `json:"match,omitempty"`
 	GroupBy []string `json:"group_by,omitempty"`
+	// IssueBy widens the issue identity beyond the group. Empty keeps one
+	// issue per group. "day" files every group of the rule under one issue per
+	// UTC day, while counting, cooldown and the event's group stay per
+	// GroupBy key, so each address shows up as an event on the shared issue.
+	IssueBy string `json:"issue_by,omitempty"`
 	// Exclude lists records that are known and expected: a record matching ANY
 	// of these conditions is not counted toward the threshold, so it cannot
 	// page. Each one is still counted in bugbarn.detect.excluded (by rule) and
@@ -185,11 +193,21 @@ func (r Rule) validateSecurity() error {
 			return fmt.Errorf("unknown group_by field %q", f)
 		}
 	}
+	if err := r.validateIssueBy(); err != nil {
+		return err
+	}
 	if r.Threshold < 1 {
 		return errors.New("security rules need a threshold of at least 1")
 	}
 	if r.Threshold > 1 && r.Window <= 0 {
 		return errors.New("a threshold above 1 needs a window")
+	}
+	return nil
+}
+
+func (r Rule) validateIssueBy() error {
+	if r.IssueBy != "" && r.IssueBy != IssueByDay {
+		return fmt.Errorf("unknown issue_by %q (use \"day\" or leave empty)", r.IssueBy)
 	}
 	return nil
 }
