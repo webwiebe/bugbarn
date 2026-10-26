@@ -163,6 +163,9 @@ type Monitor struct {
 	// spoolClearAt is the last sample that found the spool empty, or the
 	// first sample; only the sample loop touches it.
 	spoolClearAt time.Time
+	// lastEventFails and queueFails count consecutive failed reads; only the
+	// sample loop touches them.
+	lastEventFails, queueFails int
 
 	notifiers []Notifier
 
@@ -234,6 +237,21 @@ func (m *Monitor) Start(ctx context.Context) {
 	}
 }
 
+// readFailureErrorAfter is how many consecutive failed reads of one signal
+// turn the log line into an error. A single failure (a SQLite locking protocol
+// error while the writer checkpoints, a canceled shutdown) leaves one sample
+// without that signal and the next tick reads it again, so nothing is lost.
+const readFailureErrorAfter = 3
+
+func (m *Monitor) logReadFailure(ctx context.Context, fails *int, msg string, err error) {
+	*fails++
+	level := slog.LevelWarn
+	if *fails >= readFailureErrorAfter && ctx.Err() == nil {
+		level = slog.LevelError
+	}
+	m.logger.Log(ctx, level, msg, "error", err, "consecutive_failures", *fails)
+}
+
 // sample collects the raw signals, evaluates health, stores the snapshot, and
 // emits a throttled log when unhealthy.
 func (m *Monitor) sample(ctx context.Context) {
@@ -243,8 +261,8 @@ func (m *Monitor) sample(ctx context.Context) {
 	if m.deps.LastEventAt != nil {
 		last, err := m.deps.LastEventAt(ctx)
 		if err != nil {
-			m.logger.Error("ingest-health: query last event time", "error", err)
-		} else if last.IsZero() {
+			m.logReadFailure(ctx, &m.lastEventFails, "ingest-health: query last event time", err)
+		} else if m.lastEventFails = 0; last.IsZero() {
 			// No events ever persisted — treat as "no data" rather than stalled,
 			// so a fresh deployment is not flagged.
 			snap.HasEvents = false
@@ -258,8 +276,9 @@ func (m *Monitor) sample(ctx context.Context) {
 	if m.deps.QueueDepth != nil {
 		depth, err := m.deps.QueueDepth(ctx)
 		if err != nil {
-			m.logger.Error("ingest-health: query queue depth", "error", err)
+			m.logReadFailure(ctx, &m.queueFails, "ingest-health: query queue depth", err)
 		} else {
+			m.queueFails = 0
 			snap.QueueDepthKnown = true
 			snap.QueueDepth = depth
 		}
