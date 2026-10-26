@@ -11,6 +11,8 @@
     "lint:knip": "node scripts/knip-ratchet.mjs",
     "lint:knip-test": "node --test scripts/knip-ratchet.test.mjs",
     "test:e2e": "playwright test",
+    "smoke:deploy": "playwright test -c playwright.smoke.config.ts",
+    "serve:local": "node scripts/serve-local.mjs",
     "screenshots": "playwright test e2e/screenshots.spec.ts"
   },
   "devDependencies": {
