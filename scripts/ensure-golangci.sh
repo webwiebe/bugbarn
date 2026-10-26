@@ -13,7 +13,7 @@
 # moment the runners moved to Go 1.27. Bump this in step with the runners' Go.
 set -eu
 
-VERSION="v2.13.2"
+VERSION="v2.15.0"
 DEST="$(pwd)/.tools"
 
 mkdir -p "$DEST"
