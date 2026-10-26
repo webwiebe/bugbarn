@@ -24,6 +24,8 @@ const (
 	MaxInterval = 31 * 24 * time.Hour
 	// MaxMessageLen caps the free text of a check-in.
 	MaxMessageLen = 200
+	// reportTimeout bounds the incident report that follows a stored check-in.
+	reportTimeout = 30 * time.Second
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -129,7 +131,13 @@ func (s *Service) CheckIn(ctx context.Context, projectID int64, in CheckInInput)
 		Monitor: res.Monitor, Created: res.Created, PreviousState: res.PreviousState,
 		Message: cleanMessage(in.Message),
 	}
-	s.report(ctx, out)
+	// The check-in is stored, and a recovery is only reported on the beat that
+	// flips the state. A client that hangs up or a pod that stops now would
+	// leave the incident issue open for good, so the report outlives the
+	// request.
+	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
+	defer cancel()
+	s.report(reportCtx, out)
 	return out, nil
 }
 

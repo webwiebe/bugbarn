@@ -45,6 +45,7 @@ func (f *fakeRepo) RecordMonitorCheckIn(_ context.Context, in storage.MonitorChe
 type fakeReporter struct {
 	errored, recovered int
 	err                error
+	recoveredCtxErr    error
 }
 
 func (r *fakeReporter) Errored(context.Context, domain.Monitor, string) error {
@@ -52,8 +53,9 @@ func (r *fakeReporter) Errored(context.Context, domain.Monitor, string) error {
 	return r.err
 }
 
-func (r *fakeReporter) Recovered(context.Context, domain.Monitor, time.Time) error {
+func (r *fakeReporter) Recovered(ctx context.Context, _ domain.Monitor, _ time.Time) error {
 	r.recovered++
+	r.recoveredCtxErr = ctx.Err()
 	return r.err
 }
 
@@ -242,5 +244,28 @@ func TestCheckInValidatesSchedules(t *testing.T) {
 	}
 	if repo.got.Schedule == nil || *repo.got.Schedule != "0 6 * * *" || *repo.got.Timezone != "Europe/Amsterdam" || repo.got.Interval != nil {
 		t.Fatalf("stored input: %+v", repo.got)
+	}
+}
+
+// A recovery is reported only on the beat that flips the state, so a request
+// that is canceled after the check-in is stored must not abort it.
+func TestCheckInReportsRecoveryAfterRequestCancel(t *testing.T) {
+	t.Parallel()
+	repo := &fakeRepo{result: &storage.MonitorCheckInResult{PreviousState: domain.MonitorStateError,
+		Monitor: domain.Monitor{ID: 3, State: domain.MonitorStateOK}}}
+	rep := &fakeReporter{}
+	s := newService(repo)
+	s.SetReporter(rep)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := s.CheckIn(ctx, 1, CheckInInput{Slug: "sweep", Status: domain.CheckInOK}); err != nil {
+		t.Fatal(err)
+	}
+	if rep.recovered != 1 {
+		t.Fatalf("recovered = %d, want 1", rep.recovered)
+	}
+	if rep.recoveredCtxErr != nil {
+		t.Fatalf("recovery ran with a canceled context: %v", rep.recoveredCtxErr)
 	}
 }
