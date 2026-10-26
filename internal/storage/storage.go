@@ -147,7 +147,7 @@ func OpenReadOnly(path string) (*Store, error) {
 		return nil, err
 	}
 
-	return newStore(&core{db: nil, roDB: roDB}), nil
+	return newStore(&core{db: nil, roDB: roDB, walPath: absPath + "-wal"}), nil
 }
 
 func Open(path string) (*Store, error) {
@@ -188,7 +188,10 @@ func open(path string, autoMigrate bool) (*Store, error) {
 	roDB.SetMaxOpenConns(4)
 	registerDBStats(roDB, "read")
 
-	c := &core{db: db, roDB: roDB, mergeFingerprintCollisions: os.Getenv("BUGBARN_FINGERPRINT_MERGE") == "true"}
+	c := &core{
+		db: db, roDB: roDB, walPath: absPath + "-wal",
+		mergeFingerprintCollisions: os.Getenv("BUGBARN_FINGERPRINT_MERGE") == "true",
+	}
 	ctx := context.Background()
 	if err := c.init(ctx); err != nil {
 		unregisterDBStats(roDB)

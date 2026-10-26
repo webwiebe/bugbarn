@@ -130,7 +130,10 @@ ON CONFLICT(key_sha256) DO NOTHING`,
 // ValidAPIKeySHA256 returns the project_id and scope for the API key matching the given SHA-256 hex digest.
 // Returns (0, "", false, nil) when no matching key exists.
 func (s *APIKeyStore) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error) {
-	err = s.readDB().QueryRowContext(ctx, `SELECT project_id, scope FROM api_keys WHERE key_sha256 = ?`, keySHA256).Scan(&projectID, &scope)
+	err = retryReadonlyRecovery(ctx, s.walPath, func() error {
+		row := s.readDB().QueryRowContext(ctx, `SELECT project_id, scope FROM api_keys WHERE key_sha256 = ?`, keySHA256)
+		return row.Scan(&projectID, &scope)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, "", false, nil
 	}

@@ -17,6 +17,11 @@ type core struct {
 	roDB             *sql.DB
 	defaultProjectID int64
 
+	// walPath is the main database's -wal file, read by the reader's
+	// SQLITE_READONLY_RECOVERY retry to put a failure next to the writer's
+	// checkpoints (#242).
+	walPath string
+
 	// mergeFingerprintCollisions lets the background fingerprint migration fold an
 	// issue into another one that already holds its recomputed fingerprint. Off by
 	// default: a merge deletes the folded issue, so its key stops resolving and
