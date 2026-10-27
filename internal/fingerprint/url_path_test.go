@@ -57,13 +57,41 @@ func TestFingerprintKeepsDifferentHostsAndCategoriesApart(t *testing.T) {
 	if Fingerprint(base) == Fingerprint(scrapeError("https://other.com/a/", "eu-west-1")) {
 		t.Error("a different host must stay a different issue")
 	}
-	if Fingerprint(base) == Fingerprint(scrapeError("https://mywed.com/a/", "us-east-1")) {
-		t.Error("a low-cardinality region must stay in the fingerprint")
+	prod := scrapeError("https://mywed.com/a/", "eu-west-1")
+	staging := scrapeError("https://mywed.com/a/", "eu-west-1")
+	staging.Attributes["environment"] = "staging"
+	if Fingerprint(prod) == Fingerprint(staging) {
+		t.Error("a different environment must stay a different issue")
 	}
 	other := scrapeError("https://mywed.com/a/", "eu-west-1")
 	other.Exception.Message = "GET https://mywed.com/a/: 500 server error"
 	if Fingerprint(base) == Fingerprint(other) {
 		t.Error("a different failure must stay a different issue")
+	}
+}
+
+// A client that reports one error per region must not open an issue per region
+// (#241): region is not in the context allowlist, in any spelling.
+func TestRegionDoesNotSplitIssues(t *testing.T) {
+	t.Parallel()
+
+	first := scrapeError("https://mywed.com/a/", "eu-west-1")
+	for _, other := range []event.Event{
+		scrapeError("https://mywed.com/a/", "us-east-1"),
+		scrapeError("https://mywed.com/a/", "france/lyon"),
+		scrapeError("https://mywed.com/a/", ""),
+	} {
+		if Fingerprint(first) != Fingerprint(other) {
+			t.Errorf("region split the issue:\n%s\n%s", Material(first), Material(other))
+		}
+	}
+	cloud := scrapeError("https://mywed.com/a/", "eu-west-1")
+	cloud.Resource = map[string]any{"cloud": map[string]any{"region": "eu-central-1"}}
+	if Fingerprint(first) != Fingerprint(cloud) {
+		t.Error("cloud.region split the issue")
+	}
+	if strings.Contains(strings.Join(Explanation(first), "|"), "context.region") {
+		t.Error("the explanation must not list region as fingerprint context")
 	}
 }
 
@@ -81,7 +109,7 @@ func TestExplanationShowsTheURLPlaceholder(t *testing.T) {
 	t.Parallel()
 
 	got := strings.Join(Explanation(scrapeError("https://mywed.com/en/x/", "france/lyon")), "|")
-	for _, want := range []string{"exception.message=get https://mywed.com/<path>", "context.region=<path>"} {
+	for _, want := range []string{"exception.message=get https://mywed.com/<path>", "context.environment=production"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("explanation lacks %q: %s", want, got)
 		}
