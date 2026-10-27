@@ -26,8 +26,45 @@ clone:
       GIT_TRACE: "1"
       GIT_TRACE_CURL: "1"
       GIT_TRACE_CURL_NO_DATA: "1"
+    failure: ignore
+    settings:
+      remote: https://git.nijmegen.wiebe.xyz/webwiebe/bugbarn-clone-probe-missing.git
 
 steps:
+  - name: clone-fallback
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+    commands:
+      - |
+        set -eu
+        if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+          echo "clone ok; fallback not needed"
+          exit 0
+        fi
+        echo "default clone left no checkout; cloning with the read token"
+        URL=https://git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git
+        git remote remove origin 2>/dev/null || true
+        git remote add origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        if [ "$CI_PIPELINE_EVENT" = pull_request ]; then
+          git fetch --no-tags origin "+$CI_COMMIT_REF"
+        else
+          git fetch --tags origin "+$CI_COMMIT_SHA"
+        fi
+        git checkout -qf "$CI_COMMIT_SHA"
+        git remote set-url origin "$URL"
+        git log --oneline -1
+
+  - name: probe-verify
+    image: bash
+    commands:
+      - |
+        set -eu
+        git log --oneline -1
+        test -f Makefile
+        git remote -v | head -1
+
   - name: spec
     image: bash
     commands:
