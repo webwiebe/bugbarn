@@ -32,8 +32,12 @@ Client::init(
     endpoint:        'https://bugbarn.example.com/api/v1/events',
     installHandlers: true,   // install set_exception_handler + shutdown fatal catcher
     projectSlug:     'my-app',
+    release:         '1.4.2', // optional; sent as attributes.release on every event
 );
 ```
+
+BugBarn shows the release per issue ("Releases" block, release filter). A
+`release` key in a capture call's attributes overrides the value from `init`.
 
 ### Manual capture
 
