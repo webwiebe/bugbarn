@@ -351,6 +351,15 @@ func (m *Monitor) evaluate(snap *Snapshot, now time.Time) {
 // to BugBarn, so a transient condition is still visible in the pod's log.
 func (m *Monitor) confirm(snap *Snapshot) {
 	if snap.Healthy {
+		if m.streak > 0 {
+			m.logger.Info("ingest-health: recovered",
+				"environment", m.cfg.Environment,
+				"unhealthy_samples", m.streak,
+				"alerted", m.streak >= m.cfg.ConfirmSamples,
+				"queue_depth", snap.QueueDepth,
+				"queue_depth_known", snap.QueueDepthKnown,
+				"last_event_age_seconds", snap.LastEventAgeSeconds)
+		}
 		m.streak = 0
 		return
 	}
