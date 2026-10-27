@@ -47,12 +47,18 @@ type material struct {
 	Context       map[string]string `json:"context,omitempty"`
 }
 
+// stableContextKeys is the allowlist of resource and attribute keys that enter
+// the fingerprint, matched by exact name or by a ".key" / "/key" suffix. A key
+// belongs here only when its values form a small, fixed set that tells two
+// failures apart (method, route template, status code, service). Free-form or
+// per-target values such as region, host, url, user or tenant stay out, because
+// a client that reports one error per target would open an issue per target
+// (#241). Everything else is still stored on the event and searchable.
 var stableContextKeys = []string{
 	"environment",
 	"http.method",
 	"http.route",
 	"http.status_code",
-	"region",
 	"route",
 	"service.name",
 	"service.namespace",
@@ -277,7 +283,7 @@ func normalizeMessage(value string) string {
 var pathValueKeys = map[string]bool{"http.route": true, "route": true}
 
 // normalizeContextValue normalizes one allowlisted context value. A value that
-// holds a path separator (a "region" of "france/saint-georges") or a URL is
+// holds a path separator (a "service.name" of "scrape/lyon") or a URL is
 // per-page data, not a category, and collapses to a placeholder so it cannot
 // give every page its own issue.
 func normalizeContextValue(key, value string) string {

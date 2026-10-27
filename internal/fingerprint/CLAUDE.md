@@ -33,7 +33,10 @@ on the consumer side.
 - `stacktrace`: every frame in order as `module:function:file`. No in-app/library split,
   no frame limit. Line and column are excluded, so a code move does not split an issue.
 - `context`: a small allowlist of scalar resource/attribute keys (`environment`,
-  `service.name`, `http.route`, `http.status_code`, `region`, ...). See `stableContextKeys`.
+  `service.name`, `http.route`, `http.status_code`, ...). See `stableContextKeys`. A key is added only when its
+  values form a small fixed set; per-target values (`region`, host, url, user) stay out, so
+  one error reported per target stays one issue (#241). The material shows the allowlisted
+  values as `context.<key>=<value>` lines in `fingerprint_explanation`.
 - Browser fallback: when type, message and stack are all empty (promise rejections,
   cross-origin errors arriving as `exception: {}`), `RawScrubbed.name` / `properties.*`
   stand in.
@@ -47,7 +50,7 @@ the normalised issue title. Those do not affect grouping.
 URLs: `normalizeMessage` (message text and the raw-scrubbed fallback) keeps the scheme and
 host of an absolute URL and replaces its path, query and fragment with `/<path>`, so a
 client that reports one failure per page lands in one issue (#241). Context values go
-through `normalizeContextValue`: a value holding `/` (a `region` of `france/lyon`)
+through `normalizeContextValue`: a value holding `/` (a `service.name` of `scrape/lyon`)
 becomes `<path>`; `http.route` and `route` keep their slashes because they are templates.
 Stack frame files are not touched, so a JS bundle URL still identifies its frame. The
 title and the stored event keep the full URL; only the material shows the placeholder.
