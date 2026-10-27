@@ -91,6 +91,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 - **FR-508**: Project groups MUST exist as a parent entity with member projects. Issues: none found. Tests: `internal/storage/projects_test.go::TestGroupCRUD`.
 - **FR-509**: Selecting a group in the project dropdown MUST aggregate issues, analytics and alerts across its members. [inferred]
 - **FR-510**: The issue detail page MUST stay readable below 600px: the fingerprint truncates, JSON blocks scroll horizontally and action buttons wrap. [inferred]
+- **FR-511**: A project MUST be able to carry a FunnelBarn URL, set in Settings through `PUT /api/v1/projects/:slug/funnelbarn`. The value is empty or an absolute http(s) URL without credentials; `{surface}` in it is replaced per row. The "By surface" table on the Issues page links each row to it and shows no link column when the setting is empty. BugBarn never calls FunnelBarn. Issues: [#222](https://github.com/webwiebe/bugbarn/issues/222). Tests: `internal/api/project_funnelbarn_test.go::TestProjectFunnelBarnURLIsSetListedAndCleared`, `::TestProjectFunnelBarnURLRejectsUnsafeValues`, `internal/service/projects/funnelbarn_test.go`, `web/scripts/surfaces.test.mjs`.
 
 ---
 

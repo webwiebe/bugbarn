@@ -210,6 +210,12 @@ function renderSettingsProjects(
               <strong>${escapeHtml(name)}</strong>
               <span class="project-slug">${escapeHtml(slug)}</span>
               ${group ? `<span class="chip" style="font-size:11px">${escapeHtml(group.name)}</span>` : ""}
+              ${status === 'pending' ? "" : `<form class="funnelbarn-form" data-funnelbarn-form="${escapeAttr(slug)}">
+                <input type="url" name="funnelbarn_url" maxlength="2048" value="${escapeAttr(String(p.funnelbarn_url ?? ""))}"
+                  placeholder="FunnelBarn funnel URL, {surface} is replaced per row"
+                  aria-label="FunnelBarn URL for ${escapeAttr(slug)}">
+                <button type="submit" class="btn-sm">Save link</button>
+              </form>`}
             </div>
             <div class="project-actions">
               <div class="project-usage">

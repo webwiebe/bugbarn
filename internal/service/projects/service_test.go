@@ -19,6 +19,8 @@ type fakeRepo struct {
 	limitsSlug      string
 	limitsRetention *int
 	limitsSampling  string
+
+	funnelSlug, funnelURL string
 }
 
 func (f *fakeRepo) UpdateProjectLimits(_ context.Context, slug string, retentionDays *int, sampling string) error {
@@ -30,6 +32,14 @@ func (f *fakeRepo) UpdateProjectLimits(_ context.Context, slug string, retention
 }
 
 func (f *fakeRepo) SampleAfter() int64 { return 1000 }
+
+func (f *fakeRepo) UpdateProjectFunnelBarnURL(_ context.Context, slug, url string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.funnelSlug, f.funnelURL = slug, url
+	return nil
+}
 
 func (f *fakeRepo) ListProjects(context.Context) ([]domain.Project, error) {
 	return nil, f.err

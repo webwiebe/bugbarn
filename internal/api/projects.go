@@ -66,6 +66,9 @@ type projectWithUsage struct {
 	// deployment window; SamplingMode is "" when it inherits the default.
 	RetentionDays *int   `json:"retention_days"`
 	SamplingMode  string `json:"sampling_mode"`
+
+	// FunnelBarnURL is the link target of the project's By surface rows.
+	FunnelBarnURL string `json:"funnelbarn_url"`
 }
 
 func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +137,30 @@ func (s *Server) updateProjectLimits(w http.ResponseWriter, r *http.Request) {
 		"sampling_mode":  req.SamplingMode,
 		"clamped":        clamped,
 	})
+}
+
+// updateProjectFunnelBarnURL handles PUT /api/v1/projects/:slug/funnelbarn: the
+// FunnelBarn page the project's By surface rows link to. An empty funnelbarn_url
+// clears it.
+func (s *Server) updateProjectFunnelBarnURL(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/funnelbarn")
+	if slug == "" {
+		http.Error(w, "project slug is required", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		FunnelBarnURL string `json:"funnelbarn_url"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		http.Error(w, "invalid payload", http.StatusBadRequest)
+		return
+	}
+	link, err := s.projects.UpdateFunnelBarnURL(r.Context(), slug, req.FunnelBarnURL)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "funnelbarn_url": link})
 }
 
 // renameProject handles PUT /api/v1/projects/:slug
@@ -394,6 +421,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 			// field missing here silently never reaches the UI.
 			RetentionDays: p.RetentionDays,
 			SamplingMode:  p.SamplingMode,
+			FunnelBarnURL: p.FunnelBarnURL,
 		}
 	}
 

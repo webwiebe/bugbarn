@@ -171,6 +171,8 @@ export interface ApiProject extends RawRecord {
   retention_days?: number | null;
   /** "" inherit | "on" | "off" */
   sampling_mode?: string;
+  /** FunnelBarn page the By surface rows link to; "{surface}" is replaced per row. "" means none. */
+  funnelbarn_url?: string;
 }
 
 export interface ApiProjectGroup {

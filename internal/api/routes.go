@@ -400,6 +400,8 @@ func (s *Server) dispatchProjectItemRoutes(w http.ResponseWriter, r *http.Reques
 	// matches any path under /api/v1/projects/ and treats the whole tail as a slug.
 	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/limits"):
 		s.updateProjectLimits(w, r)
+	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/funnelbarn"):
+		s.updateProjectFunnelBarnURL(w, r)
 	case r.Method == http.MethodPut:
 		s.renameProject(w, r)
 	case r.Method == http.MethodDelete:

@@ -842,7 +842,7 @@ List all observed values for a given facet key.
 
 #### GET /api/v1/surfaces
 
-Issues seen per value of the `surface` event attribute (for example `wordpress`, `lightroom`, `mcp`) in the current project. Facets are an issue-level set, so the numbers count issues. Only issues last seen in the past 7 days are listed; `open` counts unresolved and regressed ones. The Issues page shows the same table as "By surface" for a single project and hides it when no issue carries a surface.
+Issues seen per value of the `surface` event attribute (for example `wordpress`, `lightroom`, `mcp`) in the current project. Facets are an issue-level set, so the numbers count issues. Only issues last seen in the past 7 days are listed; `open` counts unresolved and regressed ones. The Issues page shows the same table as "By surface" for a single project and hides it when no issue carries a surface. When the project has a `funnelbarn_url`, each row gets a FunnelBarn link (see `PUT /api/v1/projects/:slug/funnelbarn`).
 
 **Response:**
 ```json
@@ -886,6 +886,26 @@ The counts are served from a short-lived cache. `usage_available` is `false` whe
 `event_count` is the number of events *currently retained*. Events older than the retention window — the project's own `retention_days` when set, otherwise `BUGBARN_EVENT_RETENTION_DAYS` (default 30) — are expired, so this is a live count, not a lifetime total; lifetime counts live on each issue. Sampled events still count: this figure sums what each stored event stands for, not how many rows survived sampling.
 
 Each project also carries `retention_days` (null when it inherits the deployment window) and `sampling_mode` (`""` inherit, `"on"`, `"off"`), and the response carries a `defaults` object with the `retention_days` and `sample_after` an unset project inherits.
+
+Each project also carries `funnelbarn_url`, the FunnelBarn page its "By surface" rows link to (`""` when unset).
+
+---
+
+#### PUT /api/v1/projects/:slug/funnelbarn
+
+Set the FunnelBarn page the project's "By surface" rows link to. BugBarn only renders a link: it never calls FunnelBarn and stores no key for it. Send an empty `funnelbarn_url` to clear it. The value must be an absolute `http` or `https` URL without credentials, at most 2048 characters. `{surface}` in the URL is replaced by each row's surface name (URL-encoded); a URL without it is used as is for every row.
+
+**Request body:**
+```json
+{"funnelbarn_url": "https://funnelbarn.example/p/profotograaf/funnels?surface={surface}"}
+```
+
+**Response:**
+```json
+{"ok": true, "funnelbarn_url": "https://funnelbarn.example/p/profotograaf/funnels?surface={surface}"}
+```
+
+`400` for a value that is not an allowed URL, `404` for an unknown project.
 
 ---
 

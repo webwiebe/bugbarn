@@ -115,6 +115,9 @@ type Project struct {
 	RetentionDays *int `json:"retention_days"`
 	// SamplingMode is "" (inherit the deployment default), "on" or "off".
 	SamplingMode string `json:"sampling_mode"`
+	// FunnelBarnURL is the FunnelBarn page the By surface rows link to. "" means
+	// the project has none. A "{surface}" in it is replaced by each row's surface.
+	FunnelBarnURL string `json:"funnelbarn_url"`
 }
 
 // ProjectGroup represents a named collection of related projects.
