@@ -180,6 +180,15 @@ func (s *Server) listKeyRequests(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	if bound, confined := boundProject(r.Context()); confined {
+		own := make([]domain.KeyRequest, 0, len(list))
+		for _, kr := range list {
+			if kr.ProjectID == bound {
+				own = append(own, kr)
+			}
+		}
+		list = own
+	}
 	if list == nil {
 		list = []domain.KeyRequest{}
 	}

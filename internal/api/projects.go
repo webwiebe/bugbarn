@@ -302,15 +302,7 @@ func (s *Server) serveGroupRoute(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveAliasesRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		aliases, err := s.projects.ListAliases(r.Context())
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		if aliases == nil {
-			aliases = []domain.ProjectAlias{}
-		}
-		writeJSON(w, map[string]any{"aliases": aliases})
+		s.listAliases(w, r)
 	case http.MethodPost:
 		var req struct {
 			Alias   string `json:"alias"`
@@ -339,6 +331,28 @@ func (s *Server) serveAliasesRoot(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// listAliases handles GET /api/v1/aliases; a confined caller sees its own project's aliases only.
+func (s *Server) listAliases(w http.ResponseWriter, r *http.Request) {
+	aliases, err := s.projects.ListAliases(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if bound, confined := boundProject(r.Context()); confined {
+		own := make([]domain.ProjectAlias, 0, len(aliases))
+		for _, a := range aliases {
+			if a.ProjectID == bound {
+				own = append(own, a)
+			}
+		}
+		aliases = own
+	}
+	if aliases == nil {
+		aliases = []domain.ProjectAlias{}
+	}
+	writeJSON(w, map[string]any{"aliases": aliases})
 }
 
 func (s *Server) deleteAlias(w http.ResponseWriter, r *http.Request) {
