@@ -148,7 +148,11 @@ func (f *WriteForwarder) forward(w http.ResponseWriter, r *http.Request, parent 
 	if resp.StatusCode >= 500 {
 		span.SetStatus(codes.Error, http.StatusText(resp.StatusCode))
 	}
+	relayResponse(w, resp)
+}
 
+// relayResponse copies the writer's answer to the client.
+func relayResponse(w http.ResponseWriter, resp *http.Response) {
 	// Copy response headers, excluding CORS headers that the outer ServeHTTP
 	// already set. Copying them would produce duplicates, and the Fetch spec
 	// requires exactly one Access-Control-Allow-Origin value.
