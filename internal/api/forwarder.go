@@ -71,9 +71,24 @@ func replayableBody(body io.ReadCloser) io.Reader {
 // Forward proxies the incoming request to the upstream writer and streams
 // the response back to the client. On connection failure it returns 502.
 func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
+	f.forward(w, r, r.Context())
+}
+
+// ForwardDetached proxies a request whose write is worth finishing after the
+// client hangs up. The upstream call ignores the client's cancellation and runs
+// under its own deadline, so a stalled writer holds this handler for at most
+// timeout and starts no goroutine of its own. Use it only for writes that are
+// safe to apply late and twice, such as a monitor check-in.
+func (f *WriteForwarder) ForwardDetached(w http.ResponseWriter, r *http.Request, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), timeout)
+	defer cancel()
+	f.forward(w, r, ctx)
+}
+
+func (f *WriteForwarder) forward(w http.ResponseWriter, r *http.Request, parent context.Context) {
 	upstreamURL := f.writerURL + r.URL.RequestURI()
 
-	ctx, span := tracing.Tracer().Start(r.Context(), "forwarder.Forward",
+	ctx, span := tracing.Tracer().Start(parent, "forwarder.Forward",
 		trace.WithAttributes(
 			attribute.String("http.target", upstreamURL),
 			attribute.String("http.method", r.Method),
@@ -133,7 +148,11 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode >= 500 {
 		span.SetStatus(codes.Error, http.StatusText(resp.StatusCode))
 	}
+	relayResponse(w, resp)
+}
 
+// relayResponse copies the writer's answer to the client.
+func relayResponse(w http.ResponseWriter, resp *http.Response) {
 	// Copy response headers, excluding CORS headers that the outer ServeHTTP
 	// already set. Copying them would produce duplicates, and the Fetch spec
 	// requires exactly one Access-Control-Allow-Origin value.

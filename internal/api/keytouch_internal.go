@@ -17,6 +17,9 @@ import (
 // served in the interval, so a real batch is a handful.
 const maxKeyTouches = 10000
 
+// keyTouchApplyTimeout bounds the writer's apply of one batch.
+const keyTouchApplyTimeout = 30 * time.Second
+
 // KeyToucher applies API key last-use times. The storage layer implements it.
 type KeyToucher interface {
 	TouchAPIKeysAt(ctx context.Context, touches []domain.APIKeyTouch) error
@@ -71,7 +74,12 @@ func (s *Server) serveInternalKeyTouch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if err := s.keyToucher.TouchAPIKeysAt(r.Context(), batch.Touches); err != nil {
+	// A reader gives up after 10s and sends the batch again on its next tick, so
+	// the apply outlives the request under its own deadline. Each touch only
+	// moves last_used_at forward, which makes the repeat harmless.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), keyTouchApplyTimeout)
+	defer cancel()
+	if err := s.keyToucher.TouchAPIKeysAt(ctx, batch.Touches); err != nil {
 		if !clientGone(err) {
 			s.logger.Error("internal api key touch: apply failed", "error", err)
 		}
