@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -17,6 +18,15 @@ import (
 const (
 	monitorsPathPrefix = "/api/v1/monitors/"
 	checkInsSuffix     = "/check-ins"
+
+	// checkInStoreTimeout bounds the write of a check-in on the writer once the
+	// request is accepted, however soon the caller hangs up. A check-in assigns
+	// the monitor's latest state, so a beat that lands late, or twice because
+	// the worker retried, leaves the same monitor as one beat.
+	checkInStoreTimeout = 20 * time.Second
+	// checkInForwardTimeout is how long a reader waits for the writer to answer a
+	// check-in. It exceeds checkInStoreTimeout so the writer gives up first.
+	checkInForwardTimeout = 25 * time.Second
 )
 
 // serveMonitorCheckInEndpoint handles POST /api/v1/monitors/<slug>/check-ins.
@@ -49,7 +59,8 @@ func (s *Server) serveMonitorCheckInEndpoint(w http.ResponseWriter, r *http.Requ
 		return true
 	}
 	if s.writeForwarder != nil {
-		s.writeForwarder.Forward(w, r)
+		// A worker hangs up after a few seconds; the beat still lands.
+		s.writeForwarder.ForwardDetached(w, r, checkInForwardTimeout)
 		return true
 	}
 	if s.monitors == nil {
@@ -105,7 +116,9 @@ func (s *Server) recordCheckIn(w http.ResponseWriter, r *http.Request, slug stri
 		writeServiceError(w, err)
 		return
 	}
-	res, err := s.monitors.CheckIn(r.Context(), projectID, in)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), checkInStoreTimeout)
+	defer cancel()
+	res, err := s.monitors.CheckIn(ctx, projectID, in)
 	if err != nil {
 		writeServiceError(w, err)
 		return
