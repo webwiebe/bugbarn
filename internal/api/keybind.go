@@ -96,6 +96,22 @@ func (s *Server) requireIssueInScope(w http.ResponseWriter, r *http.Request, iss
 	return true
 }
 
+// projectsInScope drops the projects a confined caller may not see, so a bound
+// key cannot list the names and slugs of other projects.
+func projectsInScope(ctx context.Context, projects []domain.Project) []domain.Project {
+	bound, confined := boundProject(ctx)
+	if !confined {
+		return projects
+	}
+	own := make([]domain.Project, 0, 1)
+	for _, p := range projects {
+		if p.ID == bound {
+			own = append(own, p)
+		}
+	}
+	return own
+}
+
 // issueIDFromPath extracts the display ID from /api/v1/issues/{id}[/suffix].
 func issueIDFromPath(path string) string {
 	rest := strings.TrimPrefix(path, "/api/v1/issues/")

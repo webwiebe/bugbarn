@@ -31,6 +31,7 @@ func (s *Server) servePendingProjectCount(w http.ResponseWriter, r *http.Request
 		writeServiceError(w, err)
 		return
 	}
+	projects = projectsInScope(r.Context(), projects)
 	var pending []string
 	for _, p := range projects {
 		if p.Status == "pending" {
@@ -190,6 +191,10 @@ func (s *Server) serveGroupsRoot(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeServiceError(w, err)
 			return
+		}
+		// Groups span projects, so a confined key sees none of them.
+		if _, confined := boundProject(r.Context()); confined {
+			groups = nil
 		}
 		writeJSON(w, map[string]any{"groups": groups})
 	case http.MethodPost:
@@ -358,6 +363,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	projects = projectsInScope(r.Context(), projects)
 
 	out := make([]projectWithUsage, len(projects))
 	for i, p := range projects {
