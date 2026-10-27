@@ -46,15 +46,49 @@ labels:
 # binary runs, GIT_TRACE_CURL shows whether the fetch sent an Authorization
 # header after the 401. GIT_TRACE_REDACT stays at its default (on), so
 # credentials are redacted; request and response bodies are not traced.
+# The clone token is the one Woodpecker bakes into the pipeline when it is
+# created, and Gitea gives it a one hour life. Woodpecker refreshes it only when
+# a pipeline is created after it expired, so a pipeline created in the last
+# seconds of its life carries a token that dies before a later workflow clones
+# (#202: tag pipeline 704 created 15:08:58, token expired ~15:09:25, release
+# cloned at 15:08:59, tag-check and deploy-production at 15:09:50 and got a 401).
+# The default clone may therefore fail; `clone-fallback` then clones with the
+# long-lived read token, as the quality step does. A clone that fails for any
+# other reason fails the fallback too, so the workflow still goes red.
 clone:
   git:
     image: woodpeckerci/plugin-git
+    failure: ignore
     environment:
       GIT_TRACE: "1"
       GIT_TRACE_CURL: "1"
       GIT_TRACE_CURL_NO_DATA: "1"
 
 steps:
+  - name: clone-fallback
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+    commands:
+      - |
+        set -eu
+        if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+          exit 0
+        fi
+        echo "default clone left no checkout; cloning with the read token"
+        URL=https://git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git
+        git remote remove origin 2>/dev/null || true
+        git remote add origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        if [ "$CI_PIPELINE_EVENT" = pull_request ]; then
+          git fetch --no-tags origin "+$CI_COMMIT_REF"
+        else
+          git fetch --tags origin "+$CI_COMMIT_SHA"
+        fi
+        git checkout -qf "$CI_COMMIT_SHA"
+        git remote set-url origin "$URL"
+        git log --oneline -1
+
   - name: version-and-tag
     image: bash
     environment:
