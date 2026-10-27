@@ -88,21 +88,37 @@ function withEnvironment(attributes?: Record<string, unknown>): Record<string, u
   return merged;
 }
 
+/**
+ * Adds the release as attributes.release, the key the server reads for the
+ * release facet, unless the caller set one for this event. The top-level
+ * `release` on the envelope stays for source map lookup.
+ */
+function withRelease(
+  attributes: Record<string, unknown> | undefined,
+  release: string | undefined,
+): Record<string, unknown> | undefined {
+  if (!release || (attributes && "release" in attributes)) {
+    return attributes;
+  }
+  return { ...attributes, release };
+}
+
 function buildEnvelope(error: unknown, options?: CaptureOptions): BugBarnEnvelope {
   const normalized = normalizeError(error);
   const crumbs = getBreadcrumbs();
+  const release = options?.release ?? currentRelease;
   return {
     timestamp: new Date().toISOString(),
     severityText: "ERROR",
     body: normalized.message,
-    release: options?.release ?? currentRelease,
+    release,
     dist: options?.dist ?? currentDist,
     exception: {
       type: normalized.name || "Error",
       message: normalized.message,
       stacktrace: parseStacktrace(normalized.stack),
     },
-    attributes: withEnvironment(options?.attributes),
+    attributes: withRelease(withEnvironment(options?.attributes), release),
     tags: options?.tags,
     extra: options?.extra,
     user: getUser() ?? undefined,

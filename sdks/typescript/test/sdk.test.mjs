@@ -30,6 +30,7 @@ test("init stores transport and api key", async () => {
   assert.equal(events[0].exception.type, "Error");
   assert.equal(events[0].exception.message, "boom");
   assert.equal(events[0].release, "1.2.3");
+  assert.equal(events[0].attributes.release, "1.2.3");
   assert.equal(events[0].dist, "web");
   assert.equal(events[0].tags?.service, "api");
   assert.equal(events[0].sender.sdk.name, "bugbarn.typescript");
@@ -273,6 +274,25 @@ test("environment option is sent as the environment attribute", async () => {
   assert.deepEqual(events[1].attributes, { region: "eu", environment: "staging", "deployment.environment": "staging" });
   assert.equal(events[2].attributes.environment, "override");
   assert.equal(events[2].attributes["deployment.environment"], "override");
+});
+
+test("release is sent as the release attribute and a per-event release wins", async () => {
+  const events = [];
+  const transport = { async send(event) { events.push(event); }, async flush() {} };
+
+  init({ apiKey: "k", release: "1.2.3", transport, installDefaultHandlers: false });
+  await captureException(new Error("a"));
+  await captureException(new Error("b"), { attributes: { region: "eu" } });
+  await captureException(new Error("c"), { release: "2.0.0" });
+  await captureException(new Error("d"), { attributes: { release: "attr" } });
+  init({ apiKey: "k", transport, installDefaultHandlers: false });
+  await captureException(new Error("e"));
+
+  assert.deepEqual(events[0].attributes, { release: "1.2.3" });
+  assert.deepEqual(events[1].attributes, { region: "eu", release: "1.2.3" });
+  assert.equal(events[2].attributes.release, "2.0.0");
+  assert.equal(events[3].attributes.release, "attr");
+  assert.equal(events[4].attributes, undefined);
 });
 
 test("environment falls back to BUGBARN_ENVIRONMENT and is omitted when unset", async () => {

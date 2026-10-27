@@ -108,6 +108,41 @@ final class ClientTest extends TestCase
         self::assertSame($frames, $payload['exception']['stacktrace']);
     }
 
+    public function testReleaseFromInitBecomesAnAttribute(): void
+    {
+        Client::init('test-key', 'http://localhost:19999/api/v1/events', release: '1.4.2');
+
+        self::assertSame(
+            ['plan' => 'pro', 'release' => '1.4.2'],
+            Client::eventAttributes(['plan' => 'pro']),
+        );
+    }
+
+    public function testReleaseInCaptureAttributesWins(): void
+    {
+        Client::init('test-key', 'http://localhost:19999/api/v1/events', release: '1.4.2');
+
+        self::assertSame(
+            ['release' => '2.0.0'],
+            Client::eventAttributes(['release' => '2.0.0']),
+        );
+    }
+
+    public function testNoReleaseAttributeWithoutOne(): void
+    {
+        Client::init('test-key', 'http://localhost:19999/api/v1/events');
+
+        self::assertSame([], Client::eventAttributes([]));
+    }
+
+    public function testShutdownForgetsTheRelease(): void
+    {
+        Client::init('test-key', 'http://localhost:19999/api/v1/events', release: '1.4.2');
+        Client::shutdown();
+
+        self::assertSame([], Client::eventAttributes([]));
+    }
+
     public function testQueueCapExcludesOverflow(): void
     {
         Client::init('test-key', 'http://localhost:19999/api/v1/events');

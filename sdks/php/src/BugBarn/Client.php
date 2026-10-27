@@ -10,6 +10,7 @@ final class Client
 
     private static ?Transport $transport    = null;
     private static bool       $handlersInstalled = false;
+    private static string     $release      = '';
 
     /**
      * Initialise the SDK.
@@ -17,16 +18,22 @@ final class Client
      * @param string $endpoint Full URL or base URL (path appended automatically if missing)
      * @param bool $installHandlers  When true, installs set_exception_handler and a
      *                               register_shutdown_function to capture fatal errors.
+     * @param string $release        Version of the app that sends the events. Sent as
+     *                               attributes.release, which BugBarn shows per issue.
+     *                               A release passed in a capture call's attributes wins.
      */
     public static function init(
         string $apiKey,
         string $endpoint = self::DEFAULT_ENDPOINT,
         bool   $installHandlers = false,
         string $projectSlug     = '',
+        string $release         = '',
     ): void {
         if (!str_contains($endpoint, '/api/')) {
             $endpoint = rtrim($endpoint, '/') . self::DEFAULT_ENDPOINT;
         }
+
+        self::$release = $release;
 
         self::$transport = new Transport(
             apiKey:      $apiKey,
@@ -115,7 +122,7 @@ final class Client
             exceptionType:    'Error',
             exceptionMessage: $message,
             stacktrace:       null,
-            attributes:       $attributes,
+            attributes:       self::eventAttributes($attributes),
             user:             User::getUser(),
             breadcrumbs:      Breadcrumbs::get(),
         ));
@@ -137,6 +144,7 @@ final class Client
         self::flush();
         self::$transport         = null;
         self::$handlersInstalled = false;
+        self::$release           = '';
     }
 
     // ------------------------------------------------------------------
@@ -155,10 +163,25 @@ final class Client
             exceptionType:    get_class($e),
             exceptionMessage: $e->getMessage(),
             stacktrace:       self::extractStacktrace($e),
-            attributes:       $attributes,
+            attributes:       self::eventAttributes($attributes),
             user:             User::getUser(),
             breadcrumbs:      Breadcrumbs::get(),
         ));
+    }
+
+    /**
+     * Adds the configured release as attributes.release unless the caller set one.
+     *
+     * @internal
+     * @param array<string,mixed> $attributes
+     * @return array<string,mixed>
+     */
+    public static function eventAttributes(array $attributes): array
+    {
+        if (self::$release !== '' && !isset($attributes['release'])) {
+            $attributes['release'] = self::$release;
+        }
+        return $attributes;
     }
 
     /**
