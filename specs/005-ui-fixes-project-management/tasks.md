@@ -17,7 +17,7 @@
 ## Phase 3: Project Delete/Reject (P2)
 
 - [ ] T007 Add `DELETE /api/v1/projects/:slug` endpoint — deletes project and cascades to issues, events, analytics, alerts, API keys.
-- [ ] T008 Add `POST /api/v1/projects/:slug/reject` endpoint — same as delete but only for pending projects.
+- [x] T008 Retired (#228): `DELETE /api/v1/projects/:slug` already does what reject does, and the Reject button in settings calls it. No `/reject` route.
 - [ ] T009 Add "Reject" button to pending project rows in settings UI.
 - [ ] T010 Add "Delete" button to active project rows (with confirmation dialog for projects with data).
 - [ ] T011 Add service and storage tests for project deletion cascade.

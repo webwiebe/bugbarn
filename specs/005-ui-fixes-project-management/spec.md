@@ -85,7 +85,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 - **FR-502**: The issues API MUST return `"issues": []` for an empty result. Issues: none found. Tests: `internal/api/issues_test.go::TestListIssuesPagination`.
 - **FR-503**: The "All projects" view MUST list issues from every project. [inferred]
 - **FR-504**: An admin MUST be able to delete a project with its related data through `DELETE /api/v1/projects/:slug`. Issues: none found. Tests: `internal/storage/projects_test.go::TestDeleteProjectWithRelatedData`.
-- **FR-505**: A pending project MUST be rejectable. Issues: [#228](https://github.com/webwiebe/bugbarn/issues/228). [gap] The tree has `POST /api/v1/projects/:slug/approve` and `DELETE`; there is no `/reject` route.
+- **FR-505**: A pending project MUST be rejectable. Rejecting is `DELETE /api/v1/projects/:slug`; there is no `/reject` route (#228). Issues: [#228](https://github.com/webwiebe/bugbarn/issues/228). Tests: `internal/storage/project_reject_test.go::TestDeletePendingProjectRejectsIt`.
 - **FR-506**: Renaming a project MUST keep the old slug as an alias that routes events to the renamed project. Issues: none found. Tests: `internal/storage/projects_test.go::TestRenameProjectCreatesAlias`, `::TestEnsureProjectResolvesAlias`.
 - **FR-507**: Merging a project MUST move its data to the target, turn the source slug into an alias and delete the source. Issues: none found. Tests: `internal/storage/projects_test.go::TestMergeProjectsMovesDataAndCreatesAlias`.
 - **FR-508**: Project groups MUST exist as a parent entity with member projects. Issues: none found. Tests: `internal/storage/projects_test.go::TestGroupCRUD`.
@@ -99,7 +99,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 | Claim | Source | Tree |
 |---|---|---|
 | Status Draft; every task in `tasks.md` unchecked | Header, tasks.md | Delete, rename, merge, aliases and groups ship (`internal/api/routes.go`, `internal/storage/projects.go`, `groups.go`) |
-| `POST /api/v1/projects/:slug/reject` | tasks.md T008 | Route not present; `approve`, `merge`, `PUT` rename and `DELETE` exist |
+| `POST /api/v1/projects/:slug/reject` | tasks.md T008 | Retired in #228. `DELETE` removes the project row, its held ingest payloads and its key requests, and the settings Reject button calls it. A reject route would add no record, because nothing reads one. Ingest for the same slug afterwards creates a new pending project |
 | Delete of an active project with issues requires confirmation | Story 3, scenario 3 | Confirmation is a UI concern; not established from the API |
 | Layout fixes verified at 375, 600, 1120 and 1440px | tasks.md T003 | Not established |
 

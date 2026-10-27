@@ -362,7 +362,7 @@ BUGBARN_SELF_PROJECT=bugbarn-service
 - **FR-108**: The issue list API MUST return `hourly_counts` (24 integers) per issue without a per-issue subquery. Issues: none found. Tests: `internal/storage/issues_test.go::TestHourlyEventCounts`, `internal/api/issues_test.go::TestListIssuesIncludesHourlyCounts`.
 - **FR-109**: The web UI MUST render a 24-bar sparkline per issue row using only CSS (no JS charting library). [inferred] Rendered in `web/src/components/issues-list.ts`.
 - **FR-110**: The canonical event model MUST support a `user` context object with `id`, `email`, and `username`. Issues: none found. Tests: `internal/normalize/normalize_test.go::TestNormalizeUserExtraction`.
-- **FR-111**: `user.id` MUST be indexed as a facet key for issue filtering. [gap] `extractFacets` in `internal/storage/facets.go` does not index a user facet; see Drift. Issues: [#227](https://github.com/webwiebe/bugbarn/issues/227).
+- **FR-111**: `user.id` MUST be indexed as a facet key for issue filtering. `extractFacets` in `internal/storage/facets.go` reads the id from the event's `user` context, then from a `user.id` attribute. The id stays out of the fingerprint. Issues: [#227](https://github.com/webwiebe/bugbarn/issues/227). Tests: `internal/storage/facets_user_test.go::TestUserIDIsAFacetAndNotInTheFingerprint`.
 - **FR-112**: TypeScript, Python, and PHP SDKs MUST expose `setUser` / `clearUser`. Issues: none found. Tests: `sdks/python/tests/test_user.py::test_set_user_stores_fields`, `sdks/php/tests/UserTest.php::testSetUserStoresValues`, `sdks/typescript/test/user.test.mjs::setUser stores a copy of the user object`.
 - **FR-113**: The canonical event model MUST support a `breadcrumbs` array capped at 100 entries per event. Issues: none found. Tests: `internal/normalize/normalize_test.go::TestNormalizeBreadcrumbCap`.
 - **FR-114**: The TypeScript SDK MUST automatically intercept `console`, `fetch`/`XHR`, and navigation events when `autoBreadcrumbs: true` (default). Issues: none found. Tests: `sdks/typescript/test/interceptors.test.mjs::console interceptor adds a breadcrumb for each wrapped method`.
@@ -415,7 +415,7 @@ BUGBARN_SELF_PROJECT=bugbarn-service
 
 | Claim | Source | Tree |
 |---|---|---|
-| `user.id` is indexed as a facet key | FR-111 | `extractFacets` in `internal/storage/facets.go` indexes resource and attribute fields, severity, environment and release. It has no user facet |
+| `user.id` is indexed as a facet key | FR-111 | Holds since #227: `extractFacets` indexes `user.id` from the user context or a `user.id` attribute, and `?user.id=u-123` filters issues |
 | Self-reporting configured by `BUGBARN_SELF_ENDPOINT` alone | FR-118, FR-119 | `internal/selflog/CLAUDE.md`: the handler installs only when `BUGBARN_SELF_ENDPOINT` and `BUGBARN_SELF_API_KEY` are both set |
 | Self-reporting covers panics and dead-lettered records | FR-118 | Dead-lettering logs at ERROR in `cmd/bugbarn/worker.go`; the selflog handler reports every ERROR record |
 | Alert delivery is Slack Block Kit or generic JSON | FR-102 | `internal/alert/deliverer.go` also detects Discord webhooks, as Open Question 1 recommended |

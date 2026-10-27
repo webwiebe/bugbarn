@@ -172,6 +172,7 @@ func (s *ProjectStore) DeleteProject(_ context.Context, slug string) error {
 		"api_keys",
 		"log_entries",
 		"project_aliases",
+		"held_events",
 	}
 	for _, table := range childTables {
 		if err := deleteInBatches(ctx, s.db, table, projectID); err != nil {
