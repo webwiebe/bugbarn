@@ -307,6 +307,15 @@ func (s *Server) serveAliasesRoot(w http.ResponseWriter, r *http.Request) {
 			writeServiceError(w, err)
 			return
 		}
+		if bound, confined := boundProject(r.Context()); confined {
+			own := make([]domain.ProjectAlias, 0, len(aliases))
+			for _, a := range aliases {
+				if a.ProjectID == bound {
+					own = append(own, a)
+				}
+			}
+			aliases = own
+		}
 		if aliases == nil {
 			aliases = []domain.ProjectAlias{}
 		}
