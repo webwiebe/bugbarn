@@ -48,6 +48,11 @@ func TestBuildEnvelopeSendsReleaseAsAttribute(t *testing.T) {
 		t.Fatalf("caller attributes must survive, got %v", got)
 	}
 
+	env = buildEnvelope(err, captureOpts{release: "1.4.2", attributes: map[string]any{"release": "2.0.0"}})
+	if got := env.Attributes["release"]; got != "2.0.0" {
+		t.Fatalf("a release in the capture attributes must win, got %v", got)
+	}
+
 	env = buildEnvelope(err, captureOpts{attributes: map[string]any{}})
 	if _, ok := env.Attributes["release"]; ok {
 		t.Fatal("no release configured must send no release attribute")
