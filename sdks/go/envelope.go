@@ -67,7 +67,7 @@ func buildEnvelope(err error, opts captureOpts) envelope {
 	for k, v := range opts.attributes {
 		attrs[k] = v
 	}
-	if opts.release != "" {
+	if _, set := attrs["release"]; !set && opts.release != "" {
 		attrs["release"] = opts.release
 	}
 	if opts.environment != "" {
