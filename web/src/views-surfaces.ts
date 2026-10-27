@@ -1,8 +1,8 @@
 // "By surface" panel on the issues page: issues seen per sign-up surface.
 import { state } from "./core.js";
-import { escapeHtml } from "./format.js";
+import { escapeAttr, escapeHtml } from "./format.js";
 import { fetchJson } from "./http.js";
-import { surfaceRows, surfacesApply, type SurfaceActivity } from "./surfaces.js";
+import { surfaceLink, surfaceRows, surfacesApply, type SurfaceActivity } from "./surfaces.js";
 
 let rows: SurfaceActivity[] = [];
 let generation = 0;
@@ -15,15 +15,21 @@ export function renderSurfacesSlot(): void {
     slot.innerHTML = "";
     return;
   }
+  const template = state.projects.find((p) => String(p.slug ?? p.Slug ?? "") === state.currentProject)?.funnelbarn_url;
+  const linked = rows.some((r) => surfaceLink(template, r.surface) !== null);
   const body = rows
-    .map(
-      (r) =>
-        `<tr><td>${escapeHtml(r.surface)}</td><td>${r.issues_24h}</td><td>${r.issues_7d}</td><td>${r.open}</td></tr>`,
-    )
+    .map((r) => {
+      const href = surfaceLink(template, r.surface);
+      const cell = linked
+        ? `<td>${href ? `<a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">Funnel</a>` : ""}</td>`
+        : "";
+      return `<tr><td>${escapeHtml(r.surface)}</td><td>${r.issues_24h}</td><td>${r.issues_7d}</td><td>${r.open}</td>${cell}</tr>`;
+    })
     .join("");
+  const head = linked ? "<th>FunnelBarn</th>" : "";
   slot.innerHTML = `<section class="surface-panel" aria-label="Issues by surface">
     <h3>By surface</h3>
-    <table><thead><tr><th>Surface</th><th>Issues 24h</th><th>Issues 7d</th><th>Open</th></tr></thead><tbody>${body}</tbody></table>
+    <table><thead><tr><th>Surface</th><th>Issues 24h</th><th>Issues 7d</th><th>Open</th>${head}</tr></thead><tbody>${body}</tbody></table>
   </section>`;
 }
 

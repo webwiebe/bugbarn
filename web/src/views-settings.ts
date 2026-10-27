@@ -124,6 +124,8 @@ function wireSettingsActions(): void {
 
   wireKeyRequestActions();
 
+  wireFunnelbarnForms();
+
   elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-delete-project]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const slug = btn.dataset["deleteProject"];
@@ -231,6 +233,39 @@ async function resolveKeyRequest(id: string, action: "approve" | "deny", btn: HT
     btn.disabled = false;
     btn.textContent = label;
     showFlash(`Key request ${action} failed: ${errorMessage(error)}`, "error", 8000);
+  }
+}
+
+function wireFunnelbarnForms(): void {
+  elements.overviewView.querySelectorAll<HTMLFormElement>("[data-funnelbarn-form]").forEach((form) => {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const slug = form.dataset["funnelbarnForm"];
+      if (slug) void saveFunnelbarnUrl(slug, form);
+    });
+  });
+}
+
+async function saveFunnelbarnUrl(slug: string, form: HTMLFormElement): Promise<void> {
+  const input = form.querySelector<HTMLInputElement>("input[name=funnelbarn_url]");
+  const btn = form.querySelector<HTMLButtonElement>("button[type=submit]");
+  if (!input) return;
+  const label = btn?.textContent ?? "";
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  try {
+    const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(slug)}/funnelbarn`, {
+      method: "PUT",
+      body: JSON.stringify({ funnelbarn_url: input.value.trim() }),
+    });
+    if (!res.ok) {
+      const text = (await res.text().catch(() => "")).trim();
+      throw new Error(text || res.statusText);
+    }
+    showFlash(input.value.trim() === "" ? `FunnelBarn link cleared for ${slug}.` : `FunnelBarn link saved for ${slug}.`, "success");
+    await loadSettings();
+  } catch (error) {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    showFlash(`Saving the FunnelBarn link failed: ${errorMessage(error)}`, "error", 8000);
   }
 }
 

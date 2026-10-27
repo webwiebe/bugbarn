@@ -40,6 +40,9 @@ type Repository interface {
 	UpdateProjectLimits(ctx context.Context, slug string, retentionDays *int, sampling string) error
 	SampleAfter() int64
 
+	// FunnelBarn link shown next to the By surface table.
+	UpdateProjectFunnelBarnURL(ctx context.Context, slug, url string) error
+
 	// Group operations
 	CreateGroup(ctx context.Context, name, slug string) (domain.ProjectGroup, error)
 	ListGroups(context.Context) ([]domain.ProjectGroup, error)

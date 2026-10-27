@@ -45,7 +45,7 @@ func (s *ProjectStore) ListProjects(ctx context.Context) ([]Project, error) {
 		var createdAt string
 		var retention sql.NullInt64
 		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter,
-			&p.GroupID, &createdAt, &retention, &p.SamplingMode); err != nil {
+			&p.GroupID, &createdAt, &retention, &p.SamplingMode, &p.FunnelBarnURL); err != nil {
 			return nil, err
 		}
 		p.CreatedAt, _ = parseTime(createdAt)
@@ -57,7 +57,8 @@ func (s *ProjectStore) ListProjects(ctx context.Context) ([]Project, error) {
 
 // projectColumns is the column list every single-project lookup selects, in the
 // order scanProject expects them.
-const projectColumns = `id, name, slug, status, issue_prefix, issue_counter, group_id, created_at, retention_days, sampling_mode`
+const projectColumns = `id, name, slug, status, issue_prefix, issue_counter, group_id, created_at,
+	retention_days, sampling_mode, funnelbarn_url`
 
 // scanProject reads one project row, turning the nullable retention column into
 // the pointer the domain type uses.
@@ -66,7 +67,7 @@ func scanProject(row interface{ Scan(dest ...any) error }) (Project, error) {
 	var createdAt string
 	var retention sql.NullInt64
 	if err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter,
-		&p.GroupID, &createdAt, &retention, &p.SamplingMode); err != nil {
+		&p.GroupID, &createdAt, &retention, &p.SamplingMode, &p.FunnelBarnURL); err != nil {
 		return Project{}, wrapNotFound(err, "project not found")
 	}
 	p.CreatedAt, _ = parseTime(createdAt)

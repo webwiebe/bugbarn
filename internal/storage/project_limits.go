@@ -188,6 +188,19 @@ func (s *ProjectStore) UpdateProjectLimits(ctx context.Context, slug string, ret
 	return nil
 }
 
+// UpdateProjectFunnelBarnURL sets the FunnelBarn page a project's surface rows
+// link to. An empty url clears it. The caller validates the url.
+func (s *ProjectStore) UpdateProjectFunnelBarnURL(ctx context.Context, slug, url string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET funnelbarn_url = ? WHERE slug = ?`, url, slug)
+	if err != nil {
+		return wrapErr(err, "update project funnelbarn url")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return apperr.NotFound("project not found", nil)
+	}
+	return nil
+}
+
 // ProjectsWithRetentionOverride returns the id and window of every project that
 // has its own retention window, for the retention sweep's per-project pass.
 func (s *ProjectStore) ProjectsWithRetentionOverride(ctx context.Context) (map[int64]int, error) {

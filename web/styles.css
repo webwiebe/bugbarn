@@ -2147,6 +2147,18 @@ button:disabled {
   color: var(--muted);
 }
 
+.funnelbarn-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.funnelbarn-form input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
 .project-actions {
   display: flex;
   align-items: center;
