@@ -16,7 +16,7 @@ All specs were last verified against the tree on 2026-10-17 at `70a663f`.
 | Spec | Status | What it covers |
 |---|---|---|
 | [001 Personal error tracker](./001-personal-error-tracker/spec.md) | Shipped | Ingest, the spool and worker, normalization, privacy scrubbing, fingerprint grouping, issues and events, the API and web UI, auth, the SDKs, and the delivery pipeline. |
-| [002 Phase 2 and 3 improvements](./002-phase2-improvements/spec.md) | Partial | Alert rules and delivery, muting, the hourly sparkline, user context, breadcrumbs, the Go SDK and self-reporting. The user facet (FR-111) is open. |
+| [002 Phase 2 and 3 improvements](./002-phase2-improvements/spec.md) | Partial | Alert rules and delivery, muting, the hourly sparkline, user context, breadcrumbs, the Go SDK and self-reporting. |
 | [003 Alerting rules](./003-alerting-rules/spec.md) | Shipped | The `event_count_exceeds` condition, its threshold and its cooldown. |
 | [004 Weekly digest](./004-weekly-digest/spec.md) | Shipped | The scheduled digest over webhook and email, its period, top issues and time budgets. |
 | [005 UI fixes and project management](./005-ui-fixes-project-management/spec.md) | Partial | Narrow-screen layout, the issues list, deleting projects, aliases, merges and groups. Rejecting a pending project has no route. Its [tasks](./005-ui-fixes-project-management/tasks.md) are the original checklist. |

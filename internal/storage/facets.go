@@ -49,6 +49,10 @@ func extractFacets(evt event.Event) map[string]string {
 		}
 	}
 
+	if uid := userIDOf(evt); uid != "" {
+		out["user.id"] = uid
+	}
+
 	if evt.Severity != "" {
 		out["severity"] = evt.Severity
 	}
@@ -65,6 +69,16 @@ func extractFacets(evt event.Event) map[string]string {
 	}
 
 	return out
+}
+
+// userIDOf returns the id of the user an event reports: the structured user
+// context first, then a user.id attribute for senders that flatten it. The id
+// is a facet only; it never enters the fingerprint (#241, #227).
+func userIDOf(evt event.Event) string {
+	if evt.User.ID != "" {
+		return evt.User.ID
+	}
+	return stringFromMap(evt.Attributes, "user.id")
 }
 
 // releaseOf returns the release an event reports. Senders spell it several
