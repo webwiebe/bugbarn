@@ -46,6 +46,7 @@ func TestBoundKeyIsConfinedToItsProject(t *testing.T) {
 	alphaRead := addKey("alpha-read", alpha.ID, storage.APIKeyScopeRead)
 	homeRead := addKey("home-read", home.ID, storage.APIKeyScopeRead)
 	alphaFull := addKey("alpha-full", alpha.ID, storage.APIKeyScopeFull)
+	alphaIngest := addKey("alpha-ingest", alpha.ID, storage.APIKeyScopeIngest)
 
 	authorizer := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")
@@ -79,6 +80,10 @@ func TestBoundKeyIsConfinedToItsProject(t *testing.T) {
 		{"foreign project_slug", alphaRead, http.MethodGet, "/api/v1/issues?project_slug=default", nil, http.StatusForbidden},
 		{"unknown project header creates nothing", alphaRead, http.MethodGet, "/api/v1/issues", map[string]string{"X-BugBarn-Project": "brand-new"}, http.StatusForbidden},
 		{"own project header", alphaRead, http.MethodGet, "/api/v1/issues", map[string]string{"X-BugBarn-Project": "alpha"}, http.StatusOK},
+		// The release marker is the one non-ingest route an ingest key may call.
+		{"ingest key release marker for another project", alphaIngest, http.MethodPost, "/api/v1/releases", map[string]string{"X-BugBarn-Project": "default"}, http.StatusForbidden},
+		{"ingest key release marker project_slug", alphaIngest, http.MethodPost, "/api/v1/releases?project_slug=default", nil, http.StatusForbidden},
+		{"ingest key may not read another project's issue", alphaIngest, http.MethodGet, issuePath, nil, http.StatusForbidden},
 		{"own issue", homeRead, http.MethodGet, issuePath, nil, http.StatusOK},
 		{"full-scope key stays cross-project", alphaFull, http.MethodGet, issuePath, nil, http.StatusOK},
 		{"full-scope key may name another project", alphaFull, http.MethodGet, "/api/v1/issues", map[string]string{"X-BugBarn-Project": "default"}, http.StatusOK},
