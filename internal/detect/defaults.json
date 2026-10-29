@@ -104,9 +104,22 @@
   },
   {
     "id": "load-high",
-    "name": "Load above twice the core count",
+    "name": "Five-minute load above three times the core count",
     "enabled": true,
     "severity": "WARNING",
+    "track": "metrics",
+    "metric": "load5",
+    "op": "gt",
+    "per_core": true,
+    "threshold": 3,
+    "for": "10m",
+    "cooldown": "1h"
+  },
+  {
+    "id": "load-spike",
+    "name": "One-minute load above twice the core count",
+    "enabled": true,
+    "severity": "INFO",
     "track": "metrics",
     "metric": "load1",
     "op": "gt",

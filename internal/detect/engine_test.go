@@ -299,7 +299,7 @@ func TestLoadPerCore(t *testing.T) {
 	ctx := context.Background()
 	feed := func(v float64) {
 		for m := range 11 {
-			e.ObserveMetrics(ctx, []hostmetrics.Sample{sample("h", "load1", t0.Add(time.Duration(m)*time.Minute), v)}, nil)
+			e.ObserveMetrics(ctx, []hostmetrics.Sample{sample("h", "load5", t0.Add(time.Duration(m)*time.Minute), v)}, nil)
 		}
 	}
 	feed(50)
@@ -307,14 +307,29 @@ func TestLoadPerCore(t *testing.T) {
 		t.Fatalf("unknown core count fired %d detections", len(got))
 	}
 	e.ObserveMetrics(ctx, nil, []hostmetrics.HostInfo{{Host: "h", Cores: 4, LastSeen: t0}})
-	feed(7) // below 2 x 4
+	feed(11) // below 3 x 4
 	if got := drain(e); len(got) != 0 {
-		t.Fatalf("load 7 on 4 cores fired %d detections", len(got))
+		t.Fatalf("load5 11 on 4 cores fired %d detections", len(got))
 	}
 	e.SetRules([]Rule{rule(t, "load-high")})
-	feed(9)
-	if got := drain(e); len(got) != 1 || got[0].Limit != 8 {
-		t.Fatalf("detections = %+v, want one with limit 8", got)
+	feed(13)
+	if got := drain(e); len(got) != 1 || got[0].Limit != 12 {
+		t.Fatalf("detections = %+v, want one with limit 12", got)
+	}
+}
+
+// A load1 burst between 2x and 3x the core count is the INFO rule only; the
+// WARNING rule watches load5.
+func TestLoadSpikeIsInfoOnly(t *testing.T) {
+	e := testEngine(t, []Rule{rule(t, "load-high"), rule(t, "load-spike")}, t0.Add(time.Hour))
+	ctx := context.Background()
+	e.ObserveMetrics(ctx, nil, []hostmetrics.HostInfo{{Host: "h", Cores: 4, LastSeen: t0}})
+	for m := range 11 {
+		e.ObserveMetrics(ctx, []hostmetrics.Sample{sample("h", "load1", t0.Add(time.Duration(m)*time.Minute), 9)}, nil)
+	}
+	got := drain(e)
+	if len(got) != 1 || got[0].Rule.ID != "load-spike" || got[0].Rule.Severity != "INFO" || got[0].Limit != 8 {
+		t.Fatalf("detections = %+v, want one INFO load-spike with limit 8", got)
 	}
 }
 

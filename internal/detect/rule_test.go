@@ -38,7 +38,7 @@ func TestValidateRejects(t *testing.T) {
 	base := rule(t, "ssh-bruteforce")
 	cases := map[string]func(r *Rule){
 		"id with colon":   func(r *Rule) { r.ID = "a:b" },
-		"bad severity":    func(r *Rule) { r.Severity = "INFO" },
+		"bad severity":    func(r *Rule) { r.Severity = "NOTICE" },
 		"bad track":       func(r *Rule) { r.Track = "x" },
 		"unknown field":   func(r *Rule) { r.Match = []Cond{{Field: "nope", Op: "eq", Value: "x"}} },
 		"in without list": func(r *Rule) { r.Match = []Cond{{Field: "kind", Op: "in", Value: "x"}} },
