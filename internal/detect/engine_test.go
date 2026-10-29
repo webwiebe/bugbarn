@@ -246,6 +246,39 @@ func TestDiskFullHoldsForDuration(t *testing.T) {
 	}
 }
 
+// The CI laptop has its own disk rule at 97.5% on the data volume; disk-full skips
+// that host, so one full disk raises one detection and a server at 95% still pages.
+func TestCIHostDiskRule(t *testing.T) {
+	const laptop = "MacBookPro.localdomain"
+	const data = "fs./System/Volumes/Data.used_pct"
+	feed := func(e *Engine, host, metric string, v float64) {
+		for m := range 11 {
+			e.ObserveMetrics(context.Background(), []hostmetrics.Sample{sample(host, metric, t0.Add(time.Duration(m)*time.Minute), v)}, nil)
+		}
+	}
+	engine := func() *Engine {
+		return testEngine(t, []Rule{rule(t, "disk-full"), rule(t, "disk-full-ci-host")}, t0.Add(time.Hour))
+	}
+
+	e := engine()
+	feed(e, laptop, data, 98)
+	if got := drain(e); len(got) != 1 || got[0].Rule.ID != "disk-full-ci-host" || got[0].Limit != 97.5 {
+		t.Fatalf("laptop at 98%% = %+v, want one disk-full-ci-host detection with limit 97.5", got)
+	}
+
+	e = engine()
+	feed(e, laptop, data, 95)
+	if got := drain(e); len(got) != 0 {
+		t.Fatalf("laptop at 95%% fired %d detections, want none (about 46 GiB free)", len(got))
+	}
+
+	e = engine()
+	feed(e, "k3s1", "fs./.used_pct", 95)
+	if got := drain(e); len(got) != 1 || got[0].Rule.ID != "disk-full" {
+		t.Fatalf("k3s1 at 95%% = %+v, want one disk-full detection", got)
+	}
+}
+
 func TestMetricRuleSkipsExcludedHost(t *testing.T) {
 	r := rule(t, "disk-full")
 	r.Match = []Cond{{Field: "host", Op: "ne", Value: "laptop"}}

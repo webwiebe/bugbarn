@@ -104,6 +104,19 @@
     "cooldown": "6h"
   },
   {
+    "id": "disk-full-ci-host",
+    "name": "CI laptop data volume over 97.5% full, about 23 GiB free; the runner janitor starts at 10 GiB free, see vibecortex #77",
+    "enabled": true,
+    "severity": "ERROR",
+    "track": "metrics",
+    "match": [{"field": "host", "op": "eq", "value": "MacBookPro.localdomain"}],
+    "metric": "fs./System/Volumes/Data.used_pct",
+    "op": "gt",
+    "threshold": 97.5,
+    "for": "10m",
+    "cooldown": "6h"
+  },
+  {
     "id": "load-high",
     "name": "Five-minute load above three times the core count",
     "enabled": true,
