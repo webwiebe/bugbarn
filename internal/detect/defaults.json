@@ -90,6 +90,7 @@
     "enabled": true,
     "severity": "ERROR",
     "track": "metrics",
+    "match": [{"field": "host", "op": "ne", "value": "MacBookPro.localdomain"}],
     "metric": "fs.*.used_pct",
     "exclude_metric": [
       "fs./Volumes/Recovery.used_pct",
@@ -108,6 +109,7 @@
     "enabled": true,
     "severity": "WARNING",
     "track": "metrics",
+    "match": [{"field": "host", "op": "ne", "value": "MacBookPro.localdomain"}],
     "metric": "load5",
     "op": "gt",
     "per_core": true,

@@ -318,6 +318,31 @@ func TestLoadPerCore(t *testing.T) {
 	}
 }
 
+// With no stored row the built-ins apply as shipped: the laptop is excluded from
+// disk-full and load-high (what prod's old overrides added), disk-full carries its
+// metric exclusions and load-high watches load5.
+func TestMergeWithoutStoredRowsYieldsNewDefaults(t *testing.T) {
+	byID := map[string]Rule{}
+	for _, r := range Merge(Defaults(), nil) {
+		byID[r.ID] = r
+	}
+	for _, id := range []string{"disk-full", "load-high"} {
+		r := byID[id]
+		if len(r.Match) != 1 || r.Match[0].Field != "host" || r.Match[0].Op != "ne" || r.Match[0].Value != "MacBookPro.localdomain" {
+			t.Errorf("%s match = %+v, want host ne MacBookPro.localdomain", id, r.Match)
+		}
+		if r.matchesHost("MacBookPro.localdomain") || !r.matchesHost("k3s1") {
+			t.Errorf("%s host matching is wrong", id)
+		}
+	}
+	if got := byID["disk-full"].ExcludeMetric; len(got) != 4 || got[0] != "fs./Volumes/Recovery.used_pct" {
+		t.Errorf("disk-full exclude_metric = %v", got)
+	}
+	if lh := byID["load-high"]; lh.Metric != "load5" || lh.Threshold != 3 {
+		t.Errorf("load-high = %s > %v, want load5 > 3", lh.Metric, lh.Threshold)
+	}
+}
+
 // load-spike keeps the old load1 threshold and an INFO detection still opens an
 // issue, so it ships off and is an opt-in.
 func TestLoadSpikeShipsDisabled(t *testing.T) {
