@@ -217,6 +217,44 @@ func TestFilesystem(t *testing.T) {
 	}
 }
 
+// On macOS "/" is the sealed system volume, so it is dropped for hosts that also
+// report the data volume, whichever of the two arrives first. A Linux host keeps "/".
+func TestMacRootDroppedWhenDataVolumePresent(t *testing.T) {
+	root := func() []string {
+		return []string{
+			gauge("filesystem_total_bytes", t0, 100, fsTags("/", "apfs")),
+			gauge("filesystem_used_bytes", t0, 91, fsTags("/", "apfs")),
+		}
+	}
+	data := func() []string {
+		return []string{
+			gauge("filesystem_total_bytes", t0, 100, fsTags(macDataVolume, "apfs")),
+			gauge("filesystem_used_bytes", t0, 40, fsTags(macDataVolume, "apfs")),
+		}
+	}
+	for name, lines := range map[string][]string{
+		"root first": append(root(), data()...),
+		"data first": append(data(), root()...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			clock := t0
+			n := newTestNormalizer(&clock)
+			samples, _, _ := n.Parse(body(lines...))
+			if len(samples) != 1 {
+				t.Fatalf("samples = %+v, want only the data volume", samples)
+			}
+			wantValue(t, samples, "fs."+macDataVolume+".used_pct", 40)
+		})
+	}
+
+	t.Run("linux keeps root", func(t *testing.T) {
+		clock := t0
+		n := newTestNormalizer(&clock)
+		samples, _, _ := n.Parse(body(root()...))
+		wantValue(t, samples, "fs./.used_pct", 91)
+	})
+}
+
 func cpuLines(ts time.Time, idle, user, iowait float64, cpus int) []string {
 	var out []string
 	for i := 0; i < cpus; i++ {

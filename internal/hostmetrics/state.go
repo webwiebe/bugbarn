@@ -8,6 +8,7 @@ type hostState struct {
 	cores        int
 	mem          ratio
 	sawAvailable bool
+	mac          bool // the host reports the macOS data volume
 	fs           map[string]*ratio
 	cpu          cpuState
 	counters     map[string]counterPoint

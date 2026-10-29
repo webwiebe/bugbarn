@@ -59,7 +59,24 @@ func (n *Normalizer) Parse(body []byte) (samples []Sample, hosts []HostInfo, ski
 		n.apply(b, &events[i], now)
 	}
 	n.applyCPU(b)
+	n.dropMacRoot(b)
 	return b.sortedSamples(), n.hostInfos(b), skipped
+}
+
+// dropMacRoot removes "/" for hosts that report the macOS data volume. On
+// macOS "/" is the sealed, read-only system volume: its fill level says
+// nothing about free space, which lives on the data volume.
+func (n *Normalizer) dropMacRoot(b *batch) {
+	kept := b.out.list[:0]
+	for _, s := range b.out.list {
+		if s.Metric == "fs./.used_pct" {
+			if st, ok := n.hosts[s.Host]; ok && st.mac {
+				continue
+			}
+		}
+		kept = append(kept, s)
+	}
+	b.out.list = kept
 }
 
 func (n *Normalizer) evict(now time.Time) {
@@ -140,6 +157,9 @@ func (b *batch) applyFS(st *hostState, e *event, minute time.Time) {
 	mp, keep := normalizeMount(e.tags["mountpoint"])
 	if !keep {
 		return
+	}
+	if mp == macDataVolume {
+		st.mac = true
 	}
 	r, ok := st.fs[mp]
 	if !ok {
