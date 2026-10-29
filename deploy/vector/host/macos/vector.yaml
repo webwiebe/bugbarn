@@ -41,7 +41,21 @@ sources:
     filesystem:
       mountpoints:
         # APFS system volumes and simulator images mirror the data volume.
-        excludes: ["/System/Volumes/*", "/Library/Developer/*", "/private/var/*", "/dev"]
+        # /System/Volumes/Data stays: it is the volume that fills up, and
+        # internal/hostmetrics drops the sealed root once it is reported.
+        excludes:
+          - "/System/Volumes/BaseSystem"
+          - "/System/Volumes/FieldService*"
+          - "/System/Volumes/Hardware"
+          - "/System/Volumes/Preboot"
+          - "/System/Volumes/Recovery"
+          - "/System/Volumes/Update*"
+          - "/System/Volumes/VM"
+          - "/System/Volumes/iSCPreboot"
+          - "/System/Volumes/xarts"
+          - "/Library/Developer/*"
+          - "/private/var/*"
+          - "/dev"
       devices:
         excludes: [devfs, autofs]
     network:
