@@ -318,6 +318,20 @@ func TestLoadPerCore(t *testing.T) {
 	}
 }
 
+// load-spike keeps the old load1 threshold and an INFO detection still opens an
+// issue, so it ships off and is an opt-in.
+func TestLoadSpikeShipsDisabled(t *testing.T) {
+	for _, r := range Defaults() {
+		if r.ID == "load-spike" {
+			if r.Enabled {
+				t.Fatal("load-spike must be disabled by default")
+			}
+			return
+		}
+	}
+	t.Fatal("no built-in rule load-spike")
+}
+
 // A load1 burst between 2x and 3x the core count is the INFO rule only; the
 // WARNING rule watches load5.
 func TestLoadSpikeIsInfoOnly(t *testing.T) {

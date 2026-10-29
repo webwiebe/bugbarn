@@ -118,7 +118,7 @@
   {
     "id": "load-spike",
     "name": "One-minute load above twice the core count",
-    "enabled": true,
+    "enabled": false,
     "severity": "INFO",
     "track": "metrics",
     "metric": "load1",
