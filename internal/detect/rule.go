@@ -31,7 +31,7 @@ type Rule struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Enabled  bool   `json:"enabled"`
-	Severity string `json:"severity"` // WARNING, ERROR or CRITICAL
+	Severity string `json:"severity"` // INFO, WARNING, ERROR or CRITICAL
 	Track    string `json:"track"`
 
 	// Security: records matching every condition are counted per GroupBy
@@ -106,7 +106,7 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-var validSeverity = map[string]bool{"WARNING": true, "ERROR": true, "CRITICAL": true}
+var validSeverity = map[string]bool{"INFO": true, "WARNING": true, "ERROR": true, "CRITICAL": true}
 
 // Validate reports the first problem that would make the rule misbehave.
 func (r Rule) Validate() error {
@@ -117,7 +117,7 @@ func (r Rule) Validate() error {
 		return errors.New("name is required")
 	}
 	if !validSeverity[r.Severity] {
-		return errors.New("severity must be WARNING, ERROR or CRITICAL")
+		return errors.New("severity must be INFO, WARNING, ERROR or CRITICAL")
 	}
 	switch r.Track {
 	case TrackSecurity:

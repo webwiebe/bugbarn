@@ -726,7 +726,7 @@ Rule fields:
 | Field | Applies to | Meaning |
 |---|---|---|
 | `track` | all | `security` (log records), `metrics` (host samples) or `heartbeat` (host silence) |
-| `severity` | all | `WARNING`, `ERROR` or `CRITICAL` |
+| `severity` | all | `INFO`, `WARNING`, `ERROR` or `CRITICAL` |
 | `match` | security | list of `{field, op, value}`; ops `eq`, `ne`, `in`, `not_in`, `prefix`, `not_prefix`, `suffix`, `contains`; fields include `src_ip`, `host` (reporting node) and `request_host` (host the client asked for) |
 | `group_by` | security | record fields that make up one group, e.g. `["src_ip"]` |
 | `issue_by` | security | `day` files all groups of the rule under one issue per UTC day; counting and cooldown stay per group and each group is its own event. Empty (default) is one issue per group. The built-in `ssh-bruteforce` and `http-auth-denied` use `day` |
@@ -751,7 +751,7 @@ Durations are strings like `"5m"` or a number of seconds.
 | laptop | developer machines | no, they sleep | no | yes |
 | short-lived | e2e-check | no | no | no |
 
-Use `in` for an include list on `host-silent` and `not_in` for an exclude list on `load-high`. A new host follows the table: a machine that is meant to be always on and idle-ish is a server.
+Use `in` for an include list on `host-silent` and `not_in` for an exclude list on `load-high` and `load-spike`. A new host follows the table: a machine that is meant to be always on and idle-ish is a server.
 
 ---
 
