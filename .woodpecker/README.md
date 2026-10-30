@@ -56,6 +56,7 @@ pipelines can't read them.
 | `r2_endpoint` | R2 account S3 endpoint | binary-release (brew CDN) |
 | `r2_bucket` | R2 bucket name, `webwiebe-apt-repository-production` | binary-release (brew CDN) |
 | `ghcr_prune_token` | GitHub PAT with **read:packages + delete:packages**, `cron` event only | ghcr-prune |
+| `gitea_read_token` | Gitea token with read access to this repo, `manual`, `pull_request`, `push`, `tag` and `cron` events | quality step and `clone-fallback` in every workflow |
 
 SSH keys are **not** secrets — they're already on the Mac Mini host (`~/.ssh`),
 reused by the local backend. `BUGBARN_ENDPOINT` is hardcoded (`https://bugbarn.wiebe.xyz`).
