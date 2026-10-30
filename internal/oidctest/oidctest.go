@@ -132,20 +132,25 @@ func (p *IdP) SignJWT(claims map[string]any) string {
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
+// OrganizationID is the organization IDTokenClaims issues tokens in.
+const OrganizationID = "org-test"
+
 // IDTokenClaims returns a baseline valid ID-token claim set that tests can
 // tweak before SignJWT.
 func (p *IdP) IDTokenClaims(sub, sid, nonce string, groups []string) map[string]any {
 	now := time.Now()
 	return map[string]any{
-		"iss":    p.server.URL,
-		"aud":    p.ClientID,
-		"sub":    sub,
-		"sid":    sid,
-		"nonce":  nonce,
-		"groups": groups,
-		"email":  sub + "@example.com",
-		"iat":    now.Unix(),
-		"exp":    now.Add(5 * time.Minute).Unix(),
+		"iss":             p.server.URL,
+		"aud":             p.ClientID,
+		"sub":             sub,
+		"sid":             sid,
+		"nonce":           nonce,
+		"organization_id": OrganizationID,
+		"roles":           []string{"owner"},
+		"groups":          groups,
+		"email":           sub + "@example.com",
+		"iat":             now.Unix(),
+		"exp":             now.Add(5 * time.Minute).Unix(),
 	}
 }
 

@@ -16,16 +16,20 @@ import (
 
 func buildOIDCClient(cfg config.Config, logger *slog.Logger) *auth.OIDCClient {
 	oc := auth.OIDCConfig{
-		Issuer:        cfg.OIDCIssuer,
-		ClientID:      cfg.OIDCClientID,
-		ClientSecret:  cfg.OIDCClientSecret,
-		RedirectURL:   cfg.OIDCRedirectURL,
-		RequiredGroup: cfg.OIDCRequiredGroup,
+		Issuer:                 cfg.OIDCIssuer,
+		ClientID:               cfg.OIDCClientID,
+		ClientSecret:           cfg.OIDCClientSecret,
+		RedirectURL:            cfg.OIDCRedirectURL,
+		RequiredOrganizationID: cfg.OIDCOrganizationID,
 	}
 	if !oc.Enabled() {
 		return nil
 	}
-	logger.Info("oidc: enabled", "issuer", oc.Issuer, "client_id", oc.ClientID, "required_group", oc.RequiredGroup)
+	logger.Info("oidc: enabled", "issuer", oc.Issuer, "client_id", oc.ClientID,
+		"required_organization_id", oc.RequiredOrganizationID)
+	if oc.RequiredOrganizationID == "" {
+		logger.Error("oidc: BUGBARN_OIDC_ORGANIZATION_ID is not set, every OIDC sign-in will be refused")
+	}
 	return auth.NewOIDCClient(oc)
 }
 

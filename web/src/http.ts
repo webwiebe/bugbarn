@@ -2,6 +2,7 @@
 // session bootstrap, login/logout, and the login screen / OIDC redirect flow.
 import { normalizeObject, readString } from "./data.js";
 import { errorMessage } from "./format.js";
+import { oidcDeniedMessage } from "./oidc-denied.js";
 import type { RawRecord } from "./types.js";
 import {
   apiUrl,
@@ -321,24 +322,37 @@ function readOIDCErrorFromURL(): { code: string; identity: string } | null {
 
 async function renderOIDCAccessDenied(err: { code: string; identity: string }): Promise<void> {
   let oc: OIDCRuntime | undefined;
+  let iambarnURL = "";
   try {
     const res = await fetch("/api/v1/runtime-config");
     if (res.ok) {
-      const cfg = await res.json() as { oidc?: OIDCRuntime };
+      const cfg = await res.json() as { oidc?: OIDCRuntime; iambarn?: { serverURL?: string } };
       oc = cfg?.oidc;
+      iambarnURL = cfg?.iambarn?.serverURL ?? "";
     }
   } catch {
     // Best-effort — we still render a useful message even without runtime config.
   }
   if (loginError) {
-    const who = err.identity ? ` as ${err.identity}` : "";
     loginError.hidden = false;
     loginError.textContent = "";
     const msg = document.createElement("div");
-    msg.textContent = `You're signed in to IAMBarn${who}, but that account doesn't have access to BugBarn.`;
+    msg.textContent = oidcDeniedMessage(err.code, err.identity);
     loginError.appendChild(msg);
     const actions = document.createElement("div");
     actions.className = "login-error-actions";
+    if (err.code === "wrong_organization" && iambarnURL) {
+      const a = document.createElement("a");
+      a.href = iambarnURL;
+      a.textContent = "Open IAMBarn";
+      actions.appendChild(a);
+    }
+    if (err.code === "wrong_organization" && oc?.loginURL) {
+      const a = document.createElement("a");
+      a.href = oc.loginURL;
+      a.textContent = "Sign in again";
+      actions.appendChild(a);
+    }
     if (oc?.switchAccountURL ?? oc?.loginURL) {
       const a = document.createElement("a");
       a.href = oc.switchAccountURL ?? oc.loginURL!;

@@ -31,11 +31,11 @@ func newOIDCServer(t *testing.T) (*Server, *oidctest.IdP, *storage.Store) {
 	sessions := auth.NewSessionManager("test-secret", 12*time.Hour)
 	server := NewServerWithAuth(nil, store, userAuth, sessions, nil, nil)
 	server.SetOIDCClient(auth.NewOIDCClient(auth.OIDCConfig{
-		Issuer:        idp.Issuer(),
-		ClientID:      "bugbarn-test",
-		ClientSecret:  "sek",
-		RedirectURL:   "http://bugbarn.example.com/api/v1/oidc/callback",
-		RequiredGroup: "bugbarn-users",
+		Issuer:                 idp.Issuer(),
+		ClientID:               "bugbarn-test",
+		ClientSecret:           "sek",
+		RedirectURL:            "http://bugbarn.example.com/api/v1/oidc/callback",
+		RequiredOrganizationID: oidctest.OrganizationID,
 	}))
 	return server, idp, store
 }

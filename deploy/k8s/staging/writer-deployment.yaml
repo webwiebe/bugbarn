@@ -208,6 +208,12 @@ spec:
                   name: bugbarn-secrets
                   key: BUGBARN_OIDC_REDIRECT_URL
                   optional: true
+            - name: BUGBARN_OIDC_ORGANIZATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_OIDC_ORGANIZATION_ID
+                  optional: true
             # Cloudflare firewall-event poller (internal/cfpoller). It starts
             # only when both the token and at least one zone tag are set.
             - name: BUGBARN_CLOUDFLARE_API_TOKEN

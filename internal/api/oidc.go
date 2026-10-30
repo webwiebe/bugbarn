@@ -164,7 +164,7 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	claims := result.Claims
 	if !s.oidc.Allowed(claims) {
 		s.logger.Warn("oidc: access denied",
-			"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
+			"sub", claims.Subject, "organization_id", claims.OrganizationID, "groups", claims.Groups, "roles", claims.Roles)
 		// Clear the short-lived state/nonce cookies before redirecting so the
 		// SPA's "Switch account" button starts a clean flow.
 		secure := s.secureCookie(r)
@@ -172,7 +172,11 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
 		http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
 		q := url.Values{}
-		q.Set("oidc_error", "access_denied")
+		if s.oidc.WrongOrganization(claims) {
+			q.Set("oidc_error", "wrong_organization")
+		} else {
+			q.Set("oidc_error", "access_denied")
+		}
 		if id := claims.PreferredName(); id != "" {
 			q.Set("identity", id)
 		}

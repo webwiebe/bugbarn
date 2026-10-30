@@ -38,11 +38,11 @@ func newReaderHarness(t *testing.T) *readerHarness {
 	}
 	t.Cleanup(idp.Close)
 	oidcCfg := auth.OIDCConfig{
-		Issuer:        idp.Issuer(),
-		ClientID:      "bugbarn-test",
-		ClientSecret:  "sek",
-		RedirectURL:   "http://bugbarn.example.com/api/v1/oidc/callback",
-		RequiredGroup: "bugbarn-users",
+		Issuer:                 idp.Issuer(),
+		ClientID:               "bugbarn-test",
+		ClientSecret:           "sek",
+		RedirectURL:            "http://bugbarn.example.com/api/v1/oidc/callback",
+		RequiredOrganizationID: oidctest.OrganizationID,
 	}
 	userAuth, err := auth.NewUserAuthenticator("admin", "change-me", "")
 	if err != nil {

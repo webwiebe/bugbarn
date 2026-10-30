@@ -81,7 +81,8 @@ type RefreshedTokens struct {
 	RefreshToken string
 	ExpiresAt    time.Time
 	// IDToken and Claims are set when the token response included a fresh
-	// id_token (iambarn does on refresh). Claims lets the caller re-snapshot
+	// id_token. Iambarn's refresh grant sends none today, so the caller must
+	// also handle nil Claims. When present, Claims lets the caller re-snapshot
 	// groups/roles so central role changes propagate on the next refresh
 	// instead of the next login.
 	IDToken string

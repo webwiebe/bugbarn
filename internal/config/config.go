@@ -105,14 +105,16 @@ type Config struct {
 	RedisQueueURL string // BUGBARN_REDIS_QUEUE_URL: write-queue Redis URL; empty falls back to HTTP forwarding (spec 007)
 	// OIDCIssuer is BUGBARN_OIDC_ISSUER — when all four OIDC vars are set,
 	// OIDC login is offered alongside local auth.
-	OIDCIssuer        string
-	OIDCClientID      string        // BUGBARN_OIDC_CLIENT_ID
-	OIDCClientSecret  string        // BUGBARN_OIDC_CLIENT_SECRET
-	OIDCRedirectURL   string        // BUGBARN_OIDC_REDIRECT_URL
-	OIDCRequiredGroup string        // BUGBARN_OIDC_REQUIRED_GROUP — defaults to "bugbarn-users"
-	OIDCRefreshGrace  time.Duration // BUGBARN_OIDC_REFRESH_GRACE_SECONDS — bounded grace for transient refresh failures (default 1h)
-	Telemetry         Telemetry
-	Cloudflare        Cloudflare
+	OIDCIssuer       string
+	OIDCClientID     string        // BUGBARN_OIDC_CLIENT_ID
+	OIDCClientSecret string        // BUGBARN_OIDC_CLIENT_SECRET
+	OIDCRedirectURL  string        // BUGBARN_OIDC_REDIRECT_URL
+	OIDCRefreshGrace time.Duration // BUGBARN_OIDC_REFRESH_GRACE_SECONDS — bounded grace for transient refresh failures (default 1h)
+	// OIDCOrganizationID is BUGBARN_OIDC_ORGANIZATION_ID, the only IAMBarn
+	// organization that may sign in. Unset refuses every OIDC sign-in.
+	OIDCOrganizationID string
+	Telemetry          Telemetry
+	Cloudflare         Cloudflare
 }
 
 // IsProduction reports whether this instance runs in the production tier.
@@ -174,7 +176,7 @@ func Load() Config {
 		OIDCClientID:        os.Getenv("BUGBARN_OIDC_CLIENT_ID"),
 		OIDCClientSecret:    os.Getenv("BUGBARN_OIDC_CLIENT_SECRET"),
 		OIDCRedirectURL:     os.Getenv("BUGBARN_OIDC_REDIRECT_URL"),
-		OIDCRequiredGroup:   getenv("BUGBARN_OIDC_REQUIRED_GROUP", "bugbarn-users"),
+		OIDCOrganizationID:  os.Getenv("BUGBARN_OIDC_ORGANIZATION_ID"),
 	}
 
 	cfg.Digest = parseDigestConfig(cfg.PublicURL, cfg.Environment)

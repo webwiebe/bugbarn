@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
     "lint": "tsc --noEmit",
-    "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs scripts/project-filter.test.mjs scripts/timeline-stack.test.mjs scripts/release-rows.test.mjs scripts/surfaces.test.mjs scripts/app-actions.test.mjs scripts/boundaries-ratchet.test.mjs",
+    "test": "tsc -p tsconfig.json --noEmit && node --test scripts/infinite-scroll.test.mjs scripts/project-filter.test.mjs scripts/timeline-stack.test.mjs scripts/release-rows.test.mjs scripts/surfaces.test.mjs scripts/oidc-denied.test.mjs scripts/app-actions.test.mjs scripts/boundaries-ratchet.test.mjs",
     "boundaries": "node scripts/boundaries-ratchet.mjs",
     "lint:knip": "node scripts/knip-ratchet.mjs",
     "lint:knip-test": "node --test scripts/knip-ratchet.test.mjs",
