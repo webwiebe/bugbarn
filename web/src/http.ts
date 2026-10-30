@@ -2,7 +2,7 @@
 // session bootstrap, login/logout, and the login screen / OIDC redirect flow.
 import { normalizeObject, readString } from "./data.js";
 import { errorMessage } from "./format.js";
-import { oidcDeniedMessage } from "./oidc-denied.js";
+import { oidcDeniedLinks, oidcDeniedMessage } from "./oidc-denied.js";
 import type { RawRecord } from "./types.js";
 import {
   apiUrl,
@@ -341,30 +341,10 @@ async function renderOIDCAccessDenied(err: { code: string; identity: string }): 
     loginError.appendChild(msg);
     const actions = document.createElement("div");
     actions.className = "login-error-actions";
-    if (err.code === "wrong_organization" && iambarnURL) {
+    for (const link of oidcDeniedLinks(err.code, oc, iambarnURL, window.location.origin)) {
       const a = document.createElement("a");
-      a.href = iambarnURL;
-      a.textContent = "Open IAMBarn";
-      actions.appendChild(a);
-    }
-    if (err.code === "wrong_organization" && oc?.loginURL) {
-      const a = document.createElement("a");
-      a.href = oc.loginURL;
-      a.textContent = "Sign in again";
-      actions.appendChild(a);
-    }
-    if (oc?.switchAccountURL ?? oc?.loginURL) {
-      const a = document.createElement("a");
-      a.href = oc.switchAccountURL ?? oc.loginURL!;
-      a.textContent = "Switch account";
-      actions.appendChild(a);
-    }
-    if (oc?.endSessionURL) {
-      const a = document.createElement("a");
-      const ret = `${window.location.origin}/`;
-      const sep = oc.endSessionURL.includes("?") ? "&" : "?";
-      a.href = `${oc.endSessionURL}${sep}post_logout_redirect_uri=${encodeURIComponent(ret)}`;
-      a.textContent = "Sign out of IAMBarn";
+      a.href = link.href;
+      a.textContent = link.label;
       actions.appendChild(a);
     }
     if (actions.children.length) loginError.appendChild(actions);
