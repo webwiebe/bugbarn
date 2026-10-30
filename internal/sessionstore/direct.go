@@ -155,7 +155,17 @@ func (d *Direct) applyRefreshedTokens(
 	ws.AccessExpiresAt = refreshed.ExpiresAt.UTC()
 	ws.LastRefreshAt = now
 	ws.RefreshFailingSince = time.Time{}
-	if refreshed.Claims != nil {
+	if refreshed.Claims == nil {
+		// No fresh id_token: apply the policy to the claims stored at login. An
+		// IdP refresh keeps the organization of the grant, so that part of the
+		// snapshot stays accurate. A row with no usable snapshot is refused.
+		var snapshot auth.Claims
+		_ = json.Unmarshal([]byte(ws.ClaimsJSON), &snapshot)
+		if !d.oidc.Allowed(snapshot) {
+			_ = d.db.DeleteWebSession(ctx, ws.IDHash)
+			return domain.WebSession{}, ErrRevoked
+		}
+	} else {
 		if !d.oidc.Allowed(*refreshed.Claims) {
 			_ = d.db.DeleteWebSession(ctx, ws.IDHash)
 			return domain.WebSession{}, ErrRevoked
