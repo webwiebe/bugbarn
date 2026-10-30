@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -53,7 +54,20 @@ func MetricsHandler() http.Handler { return metricsHandler }
 //
 // Returns a shutdown function that flushes pending telemetry. Every failure is
 // non-fatal: telemetry degrades to no-ops rather than blocking startup.
+//
+// Only the first call does the wiring; later calls return the same shutdown. A
+// second Prometheus exporter on the default registry makes every scrape answer 500.
 func Init(_ context.Context, version string) (shutdown func(context.Context) error, err error) {
+	initOnce.Do(func() { initShutdown = setup(version) })
+	return initShutdown, nil
+}
+
+var (
+	initOnce     sync.Once
+	initShutdown func(context.Context) error
+)
+
+func setup(version string) func(context.Context) error {
 	res := buildResource(version)
 
 	// Metrics: Prometheus pull exporter. Registers with the default Prometheus
@@ -85,7 +99,7 @@ func Init(_ context.Context, version string) (shutdown func(context.Context) err
 			}
 		}
 		return shutErr
-	}, nil
+	}
 }
 
 // initTraces builds and registers the OTLP trace pipeline. Returns nil on any

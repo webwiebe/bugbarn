@@ -23,6 +23,12 @@ func TestInitExposesMetrics(t *testing.T) {
 	}
 	defer shutdown(context.Background())
 
+	// A second Init must not register a second exporter: the duplicate target_info
+	// made every scrape on a reader answer 500.
+	if _, err := Init(context.Background(), "test"); err != nil {
+		t.Fatalf("second Init: %v", err)
+	}
+
 	h := MetricsHandler()
 	if h == nil {
 		t.Fatal("MetricsHandler() = nil, want a Prometheus handler")

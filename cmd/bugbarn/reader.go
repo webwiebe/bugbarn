@@ -55,13 +55,6 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 		logger.Info("funnelbarn tracking enabled", "endpoint", cfg.FunnelBarnEndpoint, "project", funnelbarnProjectName)
 	}
 
-	shutdownTracing, err := tracing.Init(context.Background(), Version)
-	if err != nil {
-		logger.Warn("tracing init failed", "error", err)
-	} else {
-		defer shutdownTracing(context.Background())
-	}
-
 	store, err := storage.OpenReadOnly(cfg.DBPath)
 	if err != nil {
 		return fmt.Errorf("open read-only storage: %w", err)
