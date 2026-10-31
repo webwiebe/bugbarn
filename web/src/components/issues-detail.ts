@@ -1,4 +1,5 @@
 import { collectKeyValues, hasKeys, isRecord, readFirst, readString } from "../data.js";
+import { httpUrl } from "../surfaces.js";
 import {
   eventContext,
   eventException,
@@ -237,7 +238,7 @@ function renderNearbyReleasesPanel(releases: ApiRelease[], lastSeen: unknown): s
             const name = readString(release, ["name", "Name"]) || "Untitled release";
             const environment = readString(release, ["environment", "Environment"]) || "n/a";
             const version = readString(release, ["version", "Version"]);
-            const url = readString(release, ["url"]);
+            const url = httpUrl(readString(release, ["url"]));
             const age = formatAge(ts);
             return `
               <article class="route-item">
