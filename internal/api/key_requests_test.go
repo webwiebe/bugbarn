@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -170,6 +173,50 @@ func TestKeyRequestAnonymousNeverGetsKeyWithoutApproval(t *testing.T) {
 	rr = h.do(http.MethodGet, "/api/v1/setup/geo/key-requests/"+c.ID, "", "", false)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("missing secret: got %d", rr.Code)
+	}
+}
+
+func TestKeyRequestDecisionRefusesAPIKeys(t *testing.T) {
+	t.Parallel()
+	h := newKeyRequestHarness(t)
+	c := h.create("agent")
+
+	const rawKey = "test-full-scope-key"
+	sum := sha256.Sum256([]byte(rawKey))
+	project, err := h.store.EnsureProject(context.Background(), "admin-home")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := h.store.CreateAPIKey(context.Background(), "admin", project.ID, hex.EncodeToString(sum[:]), domain.APIKeyScopeFull); err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	// The key does reach the list, so a refusal below comes from the decision route.
+	list := httptest.NewRequest(http.MethodGet, "/api/v1/key-requests", nil)
+	list.Header.Set(auth.HeaderAPIKey, rawKey)
+	listed := httptest.NewRecorder()
+	h.server.ServeHTTP(listed, list)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("list with the key: got %d", listed.Code)
+	}
+
+	for _, action := range []string{"approve", "deny"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/key-requests/"+c.ID+"/"+action, strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(auth.HeaderAPIKey, rawKey)
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("%s with a full-scope key: got %d, want 403", action, rr.Code)
+		}
+	}
+
+	if code, out := h.poll(c); out["status"] != "pending" || out["apiKey"] != nil {
+		t.Fatalf("the request must stay pending: %d %v", code, out)
+	}
+	// A session still decides it.
+	if rr := h.do(http.MethodPost, "/api/v1/key-requests/"+c.ID+"/approve", "{}", "", true); rr.Code != http.StatusOK {
+		t.Fatalf("approve with a session: %d %s", rr.Code, rr.Body.String())
 	}
 }
 

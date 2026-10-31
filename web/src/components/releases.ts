@@ -1,6 +1,7 @@
 import { readFirst, readNumber, readString } from "../data.js";
 import { issueTitle } from "../domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatTime } from "../format.js";
+import { httpUrl } from "../surfaces.js";
 import type { ApiIssue, ApiRelease } from "../types.js";
 import { renderField } from "./shared.js";
 
@@ -65,7 +66,7 @@ function renderReleaseList(releases: ApiRelease[]): string {
           const observedAt = formatTime(readFirst(release, ["observedAt", "observed_at", "ObservedAt", "createdAt", "created_at", "CreatedAt"])) || "n/a";
           const version = readString(release, ["version", "Version"]);
           const commitSha = readString(release, ["commitSha", "commit_sha", "CommitSHA"]);
-          const url = readString(release, ["url", "URL"]);
+          const url = httpUrl(readString(release, ["url", "URL"]));
           const notes = readString(release, ["notes", "Notes"]);
           return `
             <article class="route-item" role="button" tabindex="0" style="cursor:pointer" data-release-id="${escapeAttr(id)}">
@@ -99,7 +100,7 @@ export function renderReleaseDetailMarkup(
   const observedAt = formatTime(readFirst(release, ["observedAt", "observed_at", "ObservedAt"]));
   const version = readString(release, ["version", "Version"]);
   const commitSha = readString(release, ["commitSha", "commit_sha", "CommitSHA"]);
-  const url = readString(release, ["url", "URL"]);
+  const url = httpUrl(readString(release, ["url", "URL"]));
   const notes = readString(release, ["notes", "Notes"]);
   const createdBy = readString(release, ["createdBy", "created_by", "CreatedBy"]);
   const nextTitle = nextRelease ? readString(nextRelease, ["name", "Name"]) : null;

@@ -89,7 +89,7 @@ X-BugBarn-Api-Key: <plaintext-key>
 
 | Scope | Permitted endpoints |
 |---|---|
-| `full` | All authenticated endpoints |
+| `full` | All protected endpoints, except approving or denying a key request, which takes a signed-in session |
 | `ingest` | `POST /api/v1/events` and `POST /api/v1/logs` only |
 
 An `ingest`-scoped key presented to any other protected endpoint receives `403 Forbidden`.

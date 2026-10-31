@@ -23,7 +23,7 @@ API keys have one of two scopes:
 | Scope | Access |
 |---|---|
 | `ingest` | May only call `POST /api/v1/events` and `POST /api/v1/logs`. |
-| `full` | May call all protected endpoints. |
+| `full` | All protected endpoints, except approving or denying a key request, which takes a signed-in session. |
 
 Keys are created with `bugbarn apikey create` or via `POST /api/v1/apikeys`. The plaintext key is shown only once at creation time.
 

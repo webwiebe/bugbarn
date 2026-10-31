@@ -18,21 +18,28 @@ export function surfaceRows(payload: unknown): SurfaceActivity[] {
 }
 
 /**
- * The FunnelBarn page for one surface row, or null when the project has no
- * link. "{surface}" in the setting is replaced by the encoded surface name; a
- * setting without it is used as is. Only absolute http(s) URLs qualify, so a
+ * The value as a link target, or null. Only absolute http(s) URLs qualify, so a
  * stored value can never become a javascript: link.
  */
-export function surfaceLink(template: string | undefined | null, surface: string): string | null {
-  const raw = (template ?? "").trim();
-  if (raw === "") return null;
-  const filled = raw.split("{surface}").join(encodeURIComponent(surface));
+export function httpUrl(value: unknown): string | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
   try {
-    const u = new URL(filled);
+    const u = new URL(value.trim());
     return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The FunnelBarn page for one surface row, or null when the project has no
+ * link. "{surface}" in the setting is replaced by the encoded surface name; a
+ * setting without it is used as is.
+ */
+export function surfaceLink(template: string | undefined | null, surface: string): string | null {
+  const raw = (template ?? "").trim();
+  if (raw === "") return null;
+  return httpUrl(raw.split("{surface}").join(encodeURIComponent(surface)));
 }
 
 /** The panel is per project: it stays hidden for the all-projects and group scopes. */
