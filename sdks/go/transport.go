@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -18,6 +19,7 @@ type transport struct {
 	done        chan struct{}
 	client      *http.Client
 	inflight    sync.WaitGroup // check-ins being delivered
+	drops       *dropLog
 }
 
 func newTransport(apiKey, endpoint, projectSlug string, queueSize int) *transport {
@@ -28,6 +30,7 @@ func newTransport(apiKey, endpoint, projectSlug string, queueSize int) *transpor
 		queue:       make(chan envelope, queueSize),
 		done:        make(chan struct{}),
 		client:      &http.Client{Timeout: 5 * time.Second},
+		drops:       newDropLog(os.Stderr),
 	}
 	go t.run()
 	return t
@@ -45,7 +48,9 @@ func (t *transport) enqueue(env envelope) bool {
 func (t *transport) run() {
 	defer close(t.done)
 	for env := range t.queue {
-		_ = t.send(env) // log failure silently
+		if err := t.send(env); err != nil {
+			t.drops.record("event", t.endpoint, err)
+		}
 	}
 }
 
@@ -117,5 +122,5 @@ func (t *transport) send(env envelope) error {
 		return err
 	}
 	resp.Body.Close()
-	return nil
+	return checkResponse(resp.StatusCode)
 }
