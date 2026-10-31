@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
@@ -30,7 +29,7 @@ func (s *Service) UpdateFunnelBarnURL(ctx context.Context, slug, raw string) (st
 		}
 	}
 	if err := s.repo.UpdateProjectFunnelBarnURL(ctx, slug, link); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "update project funnelbarn url", "slug", slug, "error", err)
 		return "", err
 	}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -107,11 +106,11 @@ func (s *Service) reportInsertErr(ctx context.Context, span trace.Span, err erro
 		// The writer was busy for longer than we are willing to hold the batch.
 		// Nothing is lost yet — the caller retries — so this is back-pressure,
 		// not a fault. Reporting it as one is what filed BS2-83 6866 times.
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.WarnContext(ctx, "insert log entries deferred, writer contended", "count", count, "error", err)
 		return err
 	}
-	span.SetStatus(codes.Error, err.Error())
+	tracing.SetError(span, err)
 	s.logger.ErrorContext(ctx, "insert log entries", "count", count, "error", err)
 	return err
 }
@@ -126,7 +125,7 @@ func (s *Service) List(ctx context.Context, projectID int64, levelMin int, query
 			s.logger.InfoContext(ctx, "list log entries canceled", "project_id", projectID)
 			return nil, err
 		}
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "list log entries", "project_id", projectID, "error", err)
 		return nil, err
 	}

@@ -4,8 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"go.opentelemetry.io/otel/codes"
-
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -38,7 +36,7 @@ func (s *Service) InsertPageView(ctx context.Context, pv analytics.PageView) err
 	ctx, span := tracing.Tracer().Start(ctx, "service.analytics.InsertPageView")
 	defer span.End()
 	if err := s.repo.InsertPageView(ctx, pv); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		return err
 	}
 	return nil
@@ -49,7 +47,7 @@ func (s *Service) QueryOverview(ctx context.Context, q analytics.Query) (analyti
 	defer span.End()
 	result, err := s.repo.QueryOverview(ctx, q)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "query overview", "error", err)
 		return analytics.OverviewResult{}, err
 	}
@@ -61,7 +59,7 @@ func (s *Service) QueryPages(ctx context.Context, q analytics.Query) ([]analytic
 	defer span.End()
 	pages, err := s.repo.QueryPages(ctx, q)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return pages, err
 }
@@ -71,7 +69,7 @@ func (s *Service) QueryTimeline(ctx context.Context, q analytics.Query, granular
 	defer span.End()
 	buckets, err := s.repo.QueryTimeline(ctx, q, granularity)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return buckets, err
 }
@@ -81,7 +79,7 @@ func (s *Service) QueryReferrers(ctx context.Context, q analytics.Query) ([]anal
 	defer span.End()
 	refs, err := s.repo.QueryReferrers(ctx, q)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return refs, err
 }
@@ -91,7 +89,7 @@ func (s *Service) QuerySegments(ctx context.Context, q analytics.Query, dimKey s
 	defer span.End()
 	segments, err := s.repo.QuerySegments(ctx, q, dimKey)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return segments, err
 }
@@ -101,7 +99,7 @@ func (s *Service) QueryPageFlow(ctx context.Context, q analytics.Query, pathname
 	defer span.End()
 	result, err := s.repo.QueryPageFlow(ctx, q, pathname)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return result, err
 }
@@ -111,7 +109,7 @@ func (s *Service) QueryScrollDepth(ctx context.Context, q analytics.Query, pathn
 	defer span.End()
 	result, err := s.repo.QueryScrollDepth(ctx, q, pathname)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return result, err
 }
@@ -121,7 +119,7 @@ func (s *Service) QueryDropout(ctx context.Context, q analytics.Query) ([]analyt
 	defer span.End()
 	stats, err := s.repo.QueryDropout(ctx, q)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return stats, err
 }

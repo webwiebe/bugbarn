@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
@@ -97,7 +96,7 @@ func (s *Service) List(ctx context.Context) ([]domain.Project, error) {
 	defer span.End()
 	projects, err := s.repo.ListProjects(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return projects, err
 }
@@ -108,7 +107,7 @@ func (s *Service) Create(ctx context.Context, name, slug string) (domain.Project
 	defer span.End()
 	proj, err := s.repo.CreateProject(ctx, name, slug)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "create project", "slug", slug, "error", err)
 		return domain.Project{}, err
 	}
@@ -123,7 +122,7 @@ func (s *Service) Ensure(ctx context.Context, slug string) (domain.Project, erro
 	defer span.End()
 	proj, err := s.repo.EnsureProject(ctx, slug)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return proj, err
 }
@@ -134,7 +133,7 @@ func (s *Service) EnsurePending(ctx context.Context, slug string) (domain.Projec
 	defer span.End()
 	proj, err := s.repo.EnsureProjectPending(ctx, slug)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return proj, err
 }
@@ -150,7 +149,7 @@ func (s *Service) Delete(ctx context.Context, slug string) error {
 			s.logger.InfoContext(ctx, "project already deleted", "slug", slug)
 			return nil
 		}
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "delete project", "slug", slug, "error", err)
 		return err
 	}
@@ -164,7 +163,7 @@ func (s *Service) Approve(ctx context.Context, slug string) error {
 		trace.WithAttributes(attribute.String("slug", slug)))
 	defer span.End()
 	if err := s.repo.ApproveProject(ctx, slug); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "approve project", "slug", slug, "error", err)
 		return err
 	}
@@ -198,7 +197,7 @@ func (s *Service) BySlug(ctx context.Context, slug string) (domain.Project, erro
 	defer span.End()
 	proj, err := s.repo.ProjectBySlug(ctx, slug)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !errors.Is(err, apperr.ErrNotFound) {
 			s.logger.ErrorContext(ctx, "project by slug", "slug", slug, "error", err)
 		}
@@ -216,7 +215,7 @@ func (s *Service) ListAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
 	defer span.End()
 	keys, err := s.repo.ListAPIKeys(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return keys, err
 }
@@ -226,7 +225,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, name string, projectID int64
 	defer span.End()
 	key, err := s.repo.CreateAPIKey(ctx, name, projectID, keySHA256, scope)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "create api key", "name", name, "error", err)
 		return domain.APIKey{}, err
 	}
@@ -239,7 +238,7 @@ func (s *Service) DeleteAPIKey(ctx context.Context, id int64) error {
 		trace.WithAttributes(attribute.Int64("api_key_id", id)))
 	defer span.End()
 	if err := s.repo.DeleteAPIKey(ctx, id); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "delete api key", "id", id, "error", err)
 		return err
 	}
@@ -250,7 +249,7 @@ func (s *Service) EnsureSetupAPIKey(ctx context.Context, name string, projectID 
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.EnsureSetupAPIKey")
 	defer span.End()
 	if err := s.repo.EnsureSetupAPIKey(ctx, name, projectID, keySHA256); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		return err
 	}
 	return nil
@@ -261,7 +260,7 @@ func (s *Service) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (proj
 	defer span.End()
 	projectID, scope, found, err = s.repo.ValidAPIKeySHA256(ctx, keySHA256)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return
 }
@@ -270,7 +269,7 @@ func (s *Service) TouchAPIKey(ctx context.Context, keySHA256 string) error {
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.TouchAPIKey")
 	defer span.End()
 	if err := s.repo.TouchAPIKey(ctx, keySHA256); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		return err
 	}
 	return nil
@@ -281,7 +280,7 @@ func (s *Service) GetSettings(ctx context.Context) (map[string]string, error) {
 	defer span.End()
 	result, err := s.repo.GetSettings(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return result, err
 }
@@ -290,7 +289,7 @@ func (s *Service) UpdateSettings(ctx context.Context, values map[string]string) 
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.UpdateSettings")
 	defer span.End()
 	if err := s.repo.UpdateSettings(ctx, values); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "update settings", "error", err)
 		return err
 	}
@@ -304,7 +303,7 @@ func (s *Service) CreateAlias(ctx context.Context, aliasSlug string, projectID i
 		trace.WithAttributes(attribute.String("alias", aliasSlug), attribute.Int64("project_id", projectID)))
 	defer span.End()
 	if err := s.repo.CreateAlias(ctx, aliasSlug, projectID); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "create alias", "alias", aliasSlug, "project_id", projectID, "error", err)
 		return err
 	}
@@ -317,7 +316,7 @@ func (s *Service) DeleteAlias(ctx context.Context, aliasSlug string) error {
 		trace.WithAttributes(attribute.String("alias", aliasSlug)))
 	defer span.End()
 	if err := s.repo.DeleteAlias(ctx, aliasSlug); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "delete alias", "alias", aliasSlug, "error", err)
 		return err
 	}
@@ -331,7 +330,7 @@ func (s *Service) ResolveAlias(ctx context.Context, slug string) (int64, error) 
 	defer span.End()
 	id, err := s.repo.ResolveAlias(ctx, slug)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return id, err
 }
@@ -341,7 +340,7 @@ func (s *Service) ListAliases(ctx context.Context) ([]domain.ProjectAlias, error
 	defer span.End()
 	aliases, err := s.repo.ListAliases(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return aliases, err
 }
@@ -353,7 +352,7 @@ func (s *Service) Rename(ctx context.Context, oldSlug, newSlug, newName string) 
 		trace.WithAttributes(attribute.String("old_slug", oldSlug), attribute.String("new_slug", newSlug)))
 	defer span.End()
 	if err := s.repo.RenameProject(ctx, oldSlug, newSlug, newName); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "rename project", "old_slug", oldSlug, "new_slug", newSlug, "error", err)
 		return err
 	}
@@ -367,7 +366,7 @@ func (s *Service) UpdateLimits(ctx context.Context, slug string, retentionDays *
 		trace.WithAttributes(attribute.String("slug", slug), attribute.String("sampling", sampling)))
 	defer span.End()
 	if err := s.repo.UpdateProjectLimits(ctx, slug, retentionDays, sampling); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "update project limits", "slug", slug, "error", err)
 		return err
 	}
@@ -388,7 +387,7 @@ func (s *Service) Merge(ctx context.Context, sourceSlug, targetSlug string) erro
 		trace.WithAttributes(attribute.String("source", sourceSlug), attribute.String("target", targetSlug)))
 	defer span.End()
 	if err := s.repo.MergeProjects(ctx, sourceSlug, targetSlug); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "merge projects", "source", sourceSlug, "target", targetSlug, "error", err)
 		return err
 	}
@@ -405,7 +404,7 @@ func (s *Service) CreateGroup(ctx context.Context, name, slug string) (domain.Pr
 	defer span.End()
 	g, err := s.repo.CreateGroup(ctx, name, slug)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "create group", "slug", slug, "error", err)
 		return domain.ProjectGroup{}, err
 	}
@@ -418,7 +417,7 @@ func (s *Service) ListGroups(ctx context.Context) ([]domain.ProjectGroup, error)
 	defer span.End()
 	groups, err := s.repo.ListGroups(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return groups, err
 }
@@ -428,7 +427,7 @@ func (s *Service) DeleteGroup(ctx context.Context, slug string) error {
 		trace.WithAttributes(attribute.String("slug", slug)))
 	defer span.End()
 	if err := s.repo.DeleteGroup(ctx, slug); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "delete group", "slug", slug, "error", err)
 		return err
 	}
@@ -441,7 +440,7 @@ func (s *Service) AssignProjectToGroup(ctx context.Context, projectSlug, groupSl
 		trace.WithAttributes(attribute.String("project", projectSlug), attribute.String("group", groupSlug)))
 	defer span.End()
 	if err := s.repo.AssignProjectToGroup(ctx, projectSlug, groupSlug); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "assign project to group", "project", projectSlug, "group", groupSlug, "error", err)
 		return err
 	}
@@ -454,7 +453,7 @@ func (s *Service) RemoveProjectFromGroup(ctx context.Context, projectSlug string
 		trace.WithAttributes(attribute.String("project", projectSlug)))
 	defer span.End()
 	if err := s.repo.RemoveProjectFromGroup(ctx, projectSlug); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "remove project from group", "project", projectSlug, "error", err)
 		return err
 	}
@@ -468,7 +467,7 @@ func (s *Service) ListGroupProjects(ctx context.Context, groupSlug string) ([]do
 	defer span.End()
 	projects, err := s.repo.ListGroupProjects(ctx, groupSlug)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return projects, err
 }

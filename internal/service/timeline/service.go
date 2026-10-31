@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/codes"
-
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -122,7 +120,7 @@ func (s *Service) ErrorTimeline(ctx context.Context, rangeName string) (Timeline
 	first := alignedStart(now, spec).Add(-time.Duration(spec.count-1) * spec.step)
 	rows, err := s.repo.ErrorTimelineRows(refreshCtx, first)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !apperr.IsContextError(err) {
 			s.logger.ErrorContext(ctx, "error timeline", "range", rangeName, "error", err)
 		}

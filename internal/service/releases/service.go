@@ -5,7 +5,6 @@ import (
 	"log/slog"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
@@ -41,7 +40,7 @@ func (s *Service) List(ctx context.Context) ([]domain.Release, error) {
 	defer span.End()
 	releases, err := s.repo.ListReleases(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return releases, err
 }
@@ -52,7 +51,7 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Release, error) {
 	defer span.End()
 	release, err := s.repo.GetRelease(ctx, id)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "get release", "release_id", id, "error", err)
 		return domain.Release{}, err
 	}
@@ -64,7 +63,7 @@ func (s *Service) Create(ctx context.Context, release domain.Release) (domain.Re
 	defer span.End()
 	created, err := s.repo.CreateRelease(ctx, release)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !apperr.IsContextError(err) {
 			s.logger.ErrorContext(ctx, "create release", "name", release.Name, "error", err)
 		}
@@ -80,7 +79,7 @@ func (s *Service) Update(ctx context.Context, id string, release domain.Release)
 	defer span.End()
 	updated, err := s.repo.UpdateRelease(ctx, id, release)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "update release", "release_id", id, "error", err)
 		return domain.Release{}, err
 	}
@@ -92,7 +91,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		trace.WithAttributes(attribute.String("release_id", id)))
 	defer span.End()
 	if err := s.repo.DeleteRelease(ctx, id); err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "delete release", "release_id", id, "error", err)
 		return err
 	}
@@ -105,7 +104,7 @@ func (s *Service) UploadSourceMap(ctx context.Context, upload domain.SourceMapUp
 	defer span.End()
 	sm, err := s.repo.UploadSourceMap(ctx, upload)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "upload source map", "release", upload.Release, "error", err)
 		return domain.SourceMap{}, err
 	}
@@ -118,7 +117,7 @@ func (s *Service) ListSourceMaps(ctx context.Context) ([]domain.SourceMapMeta, e
 	defer span.End()
 	maps, err := s.repo.ListSourceMaps(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return maps, err
 }

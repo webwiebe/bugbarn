@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -106,7 +105,7 @@ func (s *Service) UsageAll(ctx context.Context) (map[int64]storage.ProjectUsage,
 
 	usage, stale, err := s.usage.get(ctx, s.repo.ProjectUsageAll)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		// Context errors mean the caller went away mid-query, which is not a
 		// fault of ours; logging them at error level self-reports a bug on
 		// every client disconnect.

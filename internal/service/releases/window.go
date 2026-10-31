@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"go.opentelemetry.io/otel/codes"
-
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -20,12 +18,12 @@ func (s *Service) NewIssueWindow(ctx context.Context, id string) (from, before t
 
 	release, err := s.repo.GetRelease(ctx, id)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		return time.Time{}, time.Time{}, err
 	}
 	all, err := s.repo.ListReleases(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		return time.Time{}, time.Time{}, err
 	}
 	for _, other := range all {

@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"time"
 
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
@@ -179,7 +178,7 @@ func (s *Service) fail(ctx context.Context, span trace.Span, op string, err erro
 		s.logger.InfoContext(ctx, "telemetry read canceled", "op", op)
 		return err
 	}
-	span.SetStatus(codes.Error, err.Error())
+	tracing.SetError(span, err)
 	s.logger.ErrorContext(ctx, "telemetry read failed", "op", op, "error", err)
 	return err
 }
