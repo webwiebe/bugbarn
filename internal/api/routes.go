@@ -432,6 +432,8 @@ func (s *Server) dispatchAPIKeyFacetAnalyticsRoutes(w http.ResponseWriter, r *ht
 	switch {
 	case r.URL.Path == "/api/v1/apikeys" && r.Method == http.MethodGet:
 		s.listAPIKeys(w, r)
+	case r.URL.Path == "/api/v1/apikeys/revoke-setup" && r.Method == http.MethodPost:
+		s.revokeSetupKey(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/apikeys/") && r.Method == http.MethodDelete:
 		s.deleteAPIKey(w, r)
 	case r.URL.Path == "/api/v1/surfaces" && r.Method == http.MethodGet:

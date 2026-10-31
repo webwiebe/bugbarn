@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -111,7 +112,8 @@ WHERE key_sha256 = ?2 AND (last_used_at IS NULL OR last_used_at < ?1)`)
 	return wrapErr(tx.Commit(), "touch api keys: commit")
 }
 
-// EnsureSetupAPIKey creates the API key if no key with the same sha256 exists yet (idempotent).
+// EnsureSetupAPIKey creates the API key if no key with the same sha256 exists yet
+// (idempotent). A revoked setup key stays gone.
 func (s *APIKeyStore) EnsureSetupAPIKey(ctx context.Context, name string, projectID int64, keySHA256 string) error {
 	if s.db == nil {
 		// Read-only replica — writer will lazily create the key when the
@@ -120,9 +122,10 @@ func (s *APIKeyStore) EnsureSetupAPIKey(ctx context.Context, name string, projec
 	}
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO api_keys (name, project_id, key_sha256, scope, created_at)
-VALUES (?, ?, ?, 'ingest', ?)
+SELECT ?, ?, ?, 'ingest', ?
+WHERE NOT EXISTS (SELECT 1 FROM setup_key_revocations WHERE slug = ?)
 ON CONFLICT(key_sha256) DO NOTHING`,
-		name, projectID, keySHA256, formatTime(time.Now().UTC()),
+		name, projectID, keySHA256, formatTime(time.Now().UTC()), strings.TrimSuffix(name, setupKeyNameSuffix),
 	)
 	return err
 }

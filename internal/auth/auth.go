@@ -34,8 +34,9 @@ type DBKeyTouch func(ctx context.Context, keySHA256 string) error
 
 // SetupKeyVerifier is called when normal auth fails. It checks whether the
 // provided raw key is a valid deterministic setup key and, if so, lazily
-// provisions the project and API key. Returns (projectID, true) on success.
-type SetupKeyVerifier func(ctx context.Context, rawKey, projectSlug string) (projectID int64, ok bool)
+// provisions the project and API key. Returns (projectID, true, nil) on success.
+// err reports a check that could not be answered, which says nothing about the key.
+type SetupKeyVerifier func(ctx context.Context, rawKey, projectSlug string) (projectID int64, ok bool, err error)
 
 type Authorizer struct {
 	apiKeyHash    []byte
@@ -202,7 +203,11 @@ func (a *Authorizer) CheckWithSetupFallback(
 		return 0, "", false, err
 	}
 	if a.setupVerifier != nil && projectSlug != "" {
-		if setupPID, setupOK := a.setupVerifier(ctx, strings.TrimSpace(provided), projectSlug); setupOK {
+		setupPID, setupOK, setupErr := a.setupVerifier(ctx, strings.TrimSpace(provided), projectSlug)
+		if setupErr != nil {
+			return 0, "", false, errors.Join(ErrKeyLookup, setupErr)
+		}
+		if setupOK {
 			return setupPID, "ingest", true, nil
 		}
 	}

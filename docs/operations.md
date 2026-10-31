@@ -39,6 +39,7 @@ cp -r "$BUGBARN_SPOOL_DIR" /path/to/spool-backup/
 2. Replace `BUGBARN_DB_PATH` with the backup DB.
 3. Replace `BUGBARN_SPOOL_DIR` contents with the spool backup.
 4. Start BugBarn. The worker resumes from `cursor.json`.
+5. A backup older than a setup key revocation brings that key back: repeat every revocation made since the backup was taken.
 
 **Spool-only recovery** (events not yet in DB):
 - If the DB is lost but the spool is intact, delete or reset the DB, delete `cursor.json`, and restart. All spooled events will replay.

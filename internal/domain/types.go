@@ -160,6 +160,12 @@ type APIKeyTouch struct {
 	At        time.Time `json:"at"`
 }
 
+// SetupKeyRevocation records that a project's derived setup key was ended.
+type SetupKeyRevocation struct {
+	Slug      string    `json:"slug"`
+	RevokedAt time.Time `json:"revokedAt"`
+}
+
 // Key request statuses. "expired" is derived from ExpiresAt, never stored.
 const (
 	KeyRequestPending  = "pending"
