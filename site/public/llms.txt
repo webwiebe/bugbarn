@@ -16,7 +16,7 @@ Four official SDKs are available:
 
 | Language | Package | Install |
 |---|---|---|
-| Go | `github.com/wiebe-xyz/bugbarn-go` | `go get github.com/wiebe-xyz/bugbarn-go` |
+| Go | `github.com/wiebe-xyz/bugbarn-go` | Copy `sdks/go` from the BugBarn repository, add a `replace` in `go.mod` |
 | TypeScript | `@bugbarn/typescript` | `npm install @bugbarn/typescript` |
 | Python | `bugbarn-python` | `pip install bugbarn-python` |
 | PHP | `bugbarn/bugbarn-php` | `composer require bugbarn/bugbarn-php` |
