@@ -96,6 +96,12 @@ so it does not cover a reader answering for a revocation the writer stored.
 layer7 when `deploy/vector/**` changes on main, outside the release chain; see
 `deploy/vector/README.md`.
 
+After each staging and production deploy, the `page-check` step runs
+`deploy/scripts/check-pages.sh` over the public host: root page, sign-in form, and the
+bundle answering as JavaScript (Caddy answers 200 with `index.html` for a missing file
+under `/app/`). A failure on staging stops production; a failure on production fires the
+rollback. It runs no JavaScript and signs in nowhere.
+
 `ghcr-prune` is a daily cron. `.github/workflows/` still holds mirrors; only `ci.yml` and
 `deploy-site.yml` are enabled on GitHub, and the deploy chain there is disabled.
 
