@@ -87,14 +87,22 @@ before the next poll, doubling up to 15 minutes.
    revision that `apply -k` leaves behind, which is why the rollback sets images
    explicitly.
 
-`revocation-check` runs `scripts/revocation-check.py` on testing from a cron of that name,
-added for a run and then removed. It signs in as the e2e login (`BUGBARN_SMOKE_*` in the
-testing secret, password in the cron-only `e2e_testing_password`). Testing is one process,
-so it does not cover a reader answering for a revocation the writer stored.
+`scripts/revocation-check.py` checks a setup key revocation on testing. It ran once from a
+cron workflow, which is gone, so no pipeline runs it now. A Woodpecker cron entry named
+`revocation-check` may remain: it matches no workflow and starts no pipeline. The script
+signs in as the e2e login (`BUGBARN_SMOKE_*` in the testing secret, password in the
+cron-only `e2e_testing_password`). Testing is one process, so it does not cover a reader
+answering for a revocation the writer stored.
 
 `vector` deploys the Vector agents (`deploy/vector/`, namespace `vector`) to k3s1 and
 layer7 when `deploy/vector/**` changes on main, outside the release chain; see
 `deploy/vector/README.md`.
+
+After each staging and production deploy, the `page-check` step runs
+`deploy/scripts/check-pages.sh` over the public host: root page, sign-in form, and the
+bundle answering as JavaScript (Caddy answers 200 with `index.html` for a missing file
+under `/app/`). A failure on staging stops production; a failure on production fires the
+rollback. It runs no JavaScript and signs in nowhere.
 
 `ghcr-prune` is a daily cron. `.github/workflows/` still holds mirrors; only `ci.yml` and
 `deploy-site.yml` are enabled on GitHub, and the deploy chain there is disabled.

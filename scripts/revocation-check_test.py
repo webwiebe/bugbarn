@@ -15,7 +15,6 @@ import threading
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(REPO, "scripts", "revocation-check.py")
-WORKFLOW = os.path.join(REPO, ".woodpecker", "revocation-check.yaml")
 MARKER = "response-body-marker"
 PASSWORD = secrets.token_hex(16)
 SETUP_KEY = secrets.token_hex(20)
@@ -175,14 +174,6 @@ def main():
     check("any other host is refused", result.returncode == 1 and result.stdout.splitlines() == ["FAIL target is testing"])
     result = run("http://bugbarn.test.wiebe.xyz")
     check("testing without TLS is refused", result.returncode == 1 and result.stdout.splitlines() == ["FAIL target is testing"])
-
-    with open(WORKFLOW, encoding="utf-8") as handle:
-        workflow = handle.read()
-    secret_names = set(re.findall(r"from_secret: (\S+)", workflow))
-    check("the workflow runs on its cron alone", "event: cron" in workflow and "cron: revocation-check" in workflow
-          and not re.search(r"event: (pull_request|push|tag|manual)", workflow))
-    check("the workflow holds only the login and the read token",
-          secret_names == {"e2e_testing_password", "gitea_read_token"})
 
     if failures:
         print(f"{failures} check(s) failed")

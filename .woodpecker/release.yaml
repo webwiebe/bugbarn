@@ -158,3 +158,9 @@ steps:
           -H "X-BugBarn-Project: bugbarn-service" \
           -d "{\"name\":\"$CI_COMMIT_TAG\",\"environment\":\"staging\",\"version\":\"$CI_COMMIT_TAG\",\"url\":\"$CI_REPO_URL/releases/tag/$CI_COMMIT_TAG\",\"notes\":\"Deployed by Woodpecker #$CI_PIPELINE_NUMBER\"}" \
           || echo "WARN: BugBarn release marker failed"
+
+  # A failure fails this workflow, and deploy-production depends on it.
+  - name: page-check
+    image: bash
+    commands:
+      - sh deploy/scripts/check-pages.sh https://bugbarn.staging.wiebe.xyz

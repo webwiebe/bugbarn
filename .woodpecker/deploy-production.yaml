@@ -165,6 +165,12 @@ steps:
           sh /tmp/bugbarn-deploy/deploy/scripts/assert-version.sh $NAMESPACE deploy/bugbarn-reader bugbarn $VERSION $SHA
         "
 
+  # A failure runs the rollback step below and skips the release marker.
+  - name: page-check
+    image: bash
+    commands:
+      - sh deploy/scripts/check-pages.sh https://bugbarn.wiebe.xyz
+
   - name: rollback-on-failure
     image: bash
     when:
