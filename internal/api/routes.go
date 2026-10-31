@@ -286,7 +286,8 @@ func (s *Server) dispatchProtected(w http.ResponseWriter, r *http.Request) {
 		s.dispatchKeyRequestRoutes,
 		s.dispatchMonitorRoutes,
 		s.dispatchGroupAliasRoutes,
-		s.dispatchAPIKeyFacetAnalyticsRoutes,
+		s.dispatchAPIKeyRoutes,
+		s.dispatchFacetAnalyticsRoutes,
 		s.dispatchTelemetryRoutes,
 		s.dispatchMiscRoutes,
 	}
@@ -428,12 +429,22 @@ func (s *Server) dispatchGroupAliasRoutes(w http.ResponseWriter, r *http.Request
 	return true
 }
 
-func (s *Server) dispatchAPIKeyFacetAnalyticsRoutes(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) dispatchAPIKeyRoutes(w http.ResponseWriter, r *http.Request) bool {
 	switch {
 	case r.URL.Path == "/api/v1/apikeys" && r.Method == http.MethodGet:
 		s.listAPIKeys(w, r)
+	case r.URL.Path == "/api/v1/apikeys/revoke-setup" && r.Method == http.MethodPost:
+		s.revokeSetupKey(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/apikeys/") && r.Method == http.MethodDelete:
 		s.deleteAPIKey(w, r)
+	default:
+		return false
+	}
+	return true
+}
+
+func (s *Server) dispatchFacetAnalyticsRoutes(w http.ResponseWriter, r *http.Request) bool {
+	switch {
 	case r.URL.Path == "/api/v1/surfaces" && r.Method == http.MethodGet:
 		s.serveSurfaces(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/facets") && r.Method == http.MethodGet:

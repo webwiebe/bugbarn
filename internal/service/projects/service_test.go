@@ -119,6 +119,18 @@ func (f *fakeRepo) TouchAPIKey(_ context.Context, _ string) error {
 	return f.err
 }
 
+func (f *fakeRepo) APIKeyByID(context.Context, int64) (domain.APIKey, error) {
+	return domain.APIKey{}, f.err
+}
+
+func (f *fakeRepo) RevokeSetupKey(context.Context, string, string) error {
+	return f.err
+}
+
+func (f *fakeRepo) ListSetupKeyRevocations(context.Context) ([]domain.SetupKeyRevocation, error) {
+	return nil, f.err
+}
+
 func (f *fakeRepo) GetSettings(context.Context) (map[string]string, error) {
 	return nil, f.err
 }

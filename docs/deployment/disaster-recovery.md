@@ -76,6 +76,7 @@ The snapshot **is** a working database. There is no restore tool.
    on the `bugbarn-data` PVC. Make sure no `-wal`/`-shm` from the dead database
    are left beside it.
 4. Scale the writer back up, then the readers. The writer migrates on open.
+5. A snapshot older than a setup key revocation brings that key back: repeat every revocation made since the snapshot was taken.
 
 ## Verifying a snapshot
 

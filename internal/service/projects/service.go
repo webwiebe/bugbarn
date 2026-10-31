@@ -58,6 +58,9 @@ type Repository interface {
 	EnsureSetupAPIKey(ctx context.Context, name string, projectID int64, keySHA256 string) error
 	ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error)
 	TouchAPIKey(ctx context.Context, keySHA256 string) error
+	APIKeyByID(ctx context.Context, id int64) (domain.APIKey, error)
+	RevokeSetupKey(ctx context.Context, slug, keySHA256 string) error
+	ListSetupKeyRevocations(ctx context.Context) ([]domain.SetupKeyRevocation, error)
 
 	GetSettings(context.Context) (map[string]string, error)
 	UpdateSettings(context.Context, map[string]string) error

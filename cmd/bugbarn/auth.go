@@ -57,7 +57,8 @@ func newAPIAuthorizer(cfg config.Config, store *storage.Store, touch auth.DBKeyT
 	}
 	base = base.WithDBLookup(store.ValidAPIKeySHA256, touch)
 	if cfg.SessionSecret != "" {
-		base = base.WithSetupKeyVerifier(withSetupKeyUsage(newSetupKeyVerifier(cfg.SessionSecret), slog.Default()))
+		verifier := withSetupKeyRevocation(newSetupKeyVerifier(cfg.SessionSecret), store.SetupKeyRevoked)
+		base = base.WithSetupKeyVerifier(withSetupKeyUsage(verifier, slog.Default()))
 	}
 	return base, nil
 }
@@ -69,12 +70,12 @@ func newAPIAuthorizer(cfg config.Config, store *storage.Store, touch auth.DBKeyT
 // consumed; see ingestproc.Processor.EnsureProjectForIngest. ProjectID is 0
 // because the reader resolves projects by slug downstream, not at auth time.
 func newSetupKeyVerifier(secret string) auth.SetupKeyVerifier {
-	return func(_ context.Context, rawKey, projectSlug string) (int64, bool) {
+	return func(_ context.Context, rawKey, projectSlug string) (int64, bool, error) {
 		expected := setupKey(secret, projectSlug)
 		if expected == "" || subtle.ConstantTimeCompare([]byte(rawKey), []byte(expected)) != 1 {
-			return 0, false
+			return 0, false, nil
 		}
-		return 0, true
+		return 0, true, nil
 	}
 }
 

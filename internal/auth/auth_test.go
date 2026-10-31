@@ -184,12 +184,12 @@ func TestValidWithSetupFallback(t *testing.T) {
 	}
 
 	var setupCalled bool
-	setup := func(_ context.Context, rawKey, slug string) (int64, bool) {
+	setup := func(_ context.Context, rawKey, slug string) (int64, bool, error) {
 		setupCalled = true
 		if rawKey == "setupkey" && slug == "my-project" {
-			return 99, true
+			return 99, true, nil
 		}
-		return 0, false
+		return 0, false, nil
 	}
 
 	a := New("").WithDBLookup(lookup, nil).WithSetupKeyVerifier(setup)
@@ -277,9 +277,9 @@ func TestEmptyKeyIsRejectedWithoutALookup(t *testing.T) {
 // missing stays a plain rejection with no error.
 func TestCheckWithSetupFallbackSeparatesLookupErrorFromMissingKey(t *testing.T) {
 	setupCalled := false
-	verifier := func(context.Context, string, string) (int64, bool) {
+	verifier := func(context.Context, string, string) (int64, bool, error) {
 		setupCalled = true
-		return 9, true
+		return 9, true, nil
 	}
 
 	failing := New("").

@@ -35,6 +35,7 @@ var settingsTables = []string{
 	"users",
 	"project_aliases",
 	"api_keys",
+	"setup_key_revocations", // a restore must not bring a revoked setup key back
 	"alerts",
 	"settings",
 	"detection_rules",

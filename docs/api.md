@@ -979,11 +979,25 @@ Create a new API key.
 
 #### DELETE /api/v1/apikeys/{id}
 
-Delete an API key by its numeric ID.
+Delete an API key by its numeric ID. Deleting a project's setup key revokes it: the key stops working and no row comes back. An agent then asks for a new key through `POST /api/v1/setup/{slug}/key-requests`.
 
 **Response:**
 ```json
 {"deleted": true}
+```
+
+#### POST /api/v1/apikeys/revoke-setup
+
+Revoke the setup key of a slug, also when it has no row in the list. Requires a signed-in session; an API key of any scope is refused. Revoked setup keys are listed under `revokedSetupKeys` in `GET /api/v1/apikeys`.
+
+**Request:**
+```json
+{"slug": "my-project"}
+```
+
+**Response:**
+```json
+{"revoked": true}
 ```
 
 ---

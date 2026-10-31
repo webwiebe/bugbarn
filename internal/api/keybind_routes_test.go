@@ -57,6 +57,7 @@ var routesCoveredElsewhere = map[string]string{
 	"/api/v1/settings":                "a read key is refused /settings",
 	"/api/v1/apikeys":                 "a read key is refused /apikeys",
 	"/api/v1/apikeys/":                "a read key is refused /apikeys",
+	"/api/v1/apikeys/revoke-setup":    "POST only, and it takes a signed-in session",
 	"/api/v1/releases/":               "one release by id, filtered by project_id in the store",
 	"/api/v1/alerts/":                 "one alert by id, filtered by project_id in the store",
 	"/api/v1/aliases/":                "DELETE only; a read key is refused every non-GET",

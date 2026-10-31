@@ -93,6 +93,14 @@ key-project/header-project pair). Ingest still routes by the header; the counter
 evidence needed before binding ingest keys the way the authenticated routes already are
 (`internal/api/keybind.go`). Wired in both entrypoints through `SetProjectSlugResolver`.
 
+## Setup keys
+
+A setup key is derived from the session secret and the slug, so the fallback in
+`CheckWithSetupFallback` accepts it with or without an `api_keys` row. A row in
+`setup_key_revocations` ends it; `DELETE /api/v1/apikeys/{id}` on a setup key's row and
+`POST /api/v1/apikeys/revoke-setup` both write one. The check runs after the HMAC matched,
+on every fallback request, and a failed read answers the retryable 503.
+
 ## Stall detection (`ingesthealth`)
 
 Runs in every role. Every 60s it samples `MAX(received_at)` of events, Redis `LLEN`
