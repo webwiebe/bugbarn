@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
@@ -63,7 +62,7 @@ func (s *Service) List(ctx context.Context) ([]domain.Issue, error) {
 	defer span.End()
 	issues, err := s.repo.ListIssues(ctx)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !apperr.IsContextError(err) {
 			s.logger.ErrorContext(ctx, "list issues", "error", err)
 		}
@@ -78,7 +77,7 @@ func (s *Service) ListFiltered(ctx context.Context, filter domain.IssueFilter) (
 	defer span.End()
 	issues, err := s.repo.ListIssuesFiltered(ctx, filter)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !apperr.IsContextError(err) {
 			s.logger.ErrorContext(ctx, "list issues filtered", "error", err)
 		}
@@ -94,7 +93,7 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Issue, error) {
 	defer span.End()
 	issue, err := s.repo.GetIssue(ctx, id)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !isClientError(err) {
 			s.logger.ErrorContext(ctx, "get issue", "issue_id", id, "error", err)
 		}
@@ -117,7 +116,7 @@ func (s *Service) changeStatus(ctx context.Context, id string, c statusChange) (
 	defer span.End()
 	issue, err := c.apply(ctx, id)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !isClientError(err) {
 			s.logger.ErrorContext(ctx, c.failed, "issue_id", id, "error", err)
 		}
@@ -142,7 +141,7 @@ func (s *Service) Mute(ctx context.Context, id, muteMode string) (domain.Issue, 
 	defer span.End()
 	issue, err := s.repo.MuteIssue(ctx, id, muteMode)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !isClientError(err) {
 			s.logger.ErrorContext(ctx, "mute issue", "issue_id", id, "mute_mode", muteMode, "error", err)
 		}
@@ -162,7 +161,7 @@ func (s *Service) HourlyEventCounts(ctx context.Context, issueIDs []int64) (map[
 	defer span.End()
 	counts, err := s.repo.HourlyEventCounts(ctx, issueIDs)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		s.logger.ErrorContext(ctx, "hourly event counts", "error", err)
 		return nil, err
 	}
@@ -175,7 +174,7 @@ func (s *Service) RowIDByDisplayID(ctx context.Context, displayID string) (int64
 	defer span.End()
 	rowID, err := s.repo.IssueRowIDByDisplayID(ctx, displayID)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return rowID, err
 }
@@ -186,7 +185,7 @@ func (s *Service) ListEvents(ctx context.Context, issueID string, limit int, bef
 	defer span.End()
 	events, hasMore, err := s.repo.ListIssueEvents(ctx, issueID, limit, beforeID)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !isClientError(err) {
 			s.logger.ErrorContext(ctx, "list events", "issue_id", issueID, "error", err)
 		}
@@ -208,7 +207,7 @@ func (s *Service) IssueReleases(ctx context.Context, issueID string) ([]domain.I
 	defer span.End()
 	releases, sampled, err := s.repo.IssueReleases(ctx, issueID, ReleaseSampleSize)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !isClientError(err) {
 			s.logger.ErrorContext(ctx, "issue releases", "issue_id", issueID, "error", err)
 		}
@@ -223,7 +222,7 @@ func (s *Service) GetEvent(ctx context.Context, id string) (domain.Event, error)
 	defer span.End()
 	evt, err := s.repo.GetEvent(ctx, id)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !isClientError(err) && !apperr.IsContextError(err) {
 			s.logger.ErrorContext(ctx, "get event", "event_id", id, "error", err)
 		}
@@ -243,7 +242,7 @@ func (s *Service) ListLiveEvents(ctx context.Context, limit int, since time.Time
 	}
 	events, err := s.repo.ListRecentEvents(ctx, limit, since)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 		if !apperr.IsContextError(err) {
 			s.logger.ErrorContext(ctx, "list live events", "error", err)
 		}
@@ -258,7 +257,7 @@ func (s *Service) ListFacetKeys(ctx context.Context, projectID int64) ([]string,
 	defer span.End()
 	keys, err := s.repo.ListFacetKeys(ctx, projectID)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return keys, err
 }
@@ -269,7 +268,7 @@ func (s *Service) SurfaceActivity(ctx context.Context, projectID int64) ([]domai
 	defer span.End()
 	out, err := s.repo.SurfaceActivity(ctx, projectID, time.Now().UTC())
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return out, err
 }
@@ -280,7 +279,7 @@ func (s *Service) ListFacetValues(ctx context.Context, projectID int64, key stri
 	defer span.End()
 	vals, err := s.repo.ListFacetValues(ctx, projectID, key)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
+		tracing.SetError(span, err)
 	}
 	return vals, err
 }
