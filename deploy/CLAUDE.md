@@ -87,6 +87,11 @@ before the next poll, doubling up to 15 minutes.
    revision that `apply -k` leaves behind, which is why the rollback sets images
    explicitly.
 
+`revocation-check` runs `scripts/revocation-check.py` on testing from a cron of that name,
+added for a run and then removed. It signs in as the e2e login (`BUGBARN_SMOKE_*` in the
+testing secret, password in the cron-only `e2e_testing_password`). Testing is one process,
+so it does not cover a reader answering for a revocation the writer stored.
+
 `vector` deploys the Vector agents (`deploy/vector/`, namespace `vector`) to k3s1 and
 layer7 when `deploy/vector/**` changes on main, outside the release chain; see
 `deploy/vector/README.md`.
