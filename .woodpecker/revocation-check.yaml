@@ -1,0 +1,51 @@
+# Checks a setup key revocation on the deployed testing build, from the
+# `revocation-check` Woodpecker cron. Never on a pull request or a push. Testing
+# only. Signs in as the e2e login and prints PASS or FAIL per step.
+# Both secrets allow the cron event; this run holds no deploy key.
+# NB: local backend = one shell per `commands` entry, and Woodpecker pre-
+# substitutes braced variables; so the step is ONE block and all vars use $VAR.
+when:
+  - event: cron
+    cron: revocation-check
+
+labels:
+  type: build
+
+# See ghcr-prune.yaml: a cron pipeline can wait in the queue past the life of the
+# clone token. gitea_read_token must allow the `cron` event.
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    failure: ignore
+
+steps:
+  - name: clone-fallback
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+    commands:
+      - |
+        set -eu
+        if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+          exit 0
+        fi
+        echo "default clone left no checkout; cloning with the read token"
+        URL=https://git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git
+        git remote remove origin 2>/dev/null || true
+        git remote add origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        git fetch --tags origin "+$CI_COMMIT_SHA"
+        git checkout -qf "$CI_COMMIT_SHA"
+        git remote set-url origin "$URL"
+        git log --oneline -1
+
+  - name: check
+    image: bash
+    environment:
+      E2E_TESTING_USER: e2e-bugbarn-smoke@e2e.wiebe.xyz
+      E2E_TESTING_PASSWORD:
+        from_secret: e2e_testing_password
+    commands:
+      - |
+        set -eu
+        python3 -I scripts/revocation-check.py

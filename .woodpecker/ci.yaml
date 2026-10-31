@@ -267,6 +267,7 @@ steps:
         bash scripts/ghcr-prune_test.sh
         bash scripts/assert-version_test.sh
         sh scripts/diff-coverage_test.sh
+        python3 -I scripts/revocation-check_test.py
         sh scripts/check-file-length.sh
         sh scripts/check-typed-boundaries.sh
         # Create the origin/* remote-tracking refs (a plain `git fetch origin main`
