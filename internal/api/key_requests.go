@@ -196,9 +196,13 @@ func (s *Server) listKeyRequests(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveKeyRequest(w http.ResponseWriter, r *http.Request, id, action string) {
+	// Approving mints a new key, so it takes a signed-in admin. An API key of any
+	// scope is refused here.
 	actor, ok := s.sessionUser(r)
 	if !ok {
-		actor = "api-key"
+		s.logger.Warn("auth: key request decision without a session", "method", r.Method, "path", r.URL.Path)
+		http.Error(w, "forbidden: deciding a key request requires an admin session", http.StatusForbidden)
+		return
 	}
 	var err error
 	if action == "approve" {
