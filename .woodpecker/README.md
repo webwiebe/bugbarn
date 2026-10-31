@@ -20,6 +20,7 @@ keychain-free `DOCKER_CONFIG` trick all work unchanged.
 | `deploy-production.yaml` | manual | `deploy-production.yml` |
 | `tag-check.yaml` | tag | `tag-check.yml` |
 | `ghcr-prune.yaml` | cron `ghcr-prune` (daily) | new: deletes GHCR versions older than 7 days |
+| `e2e-nightly.yaml` | cron `e2e-nightly` (daily 01:00 UTC) | new: runs the `web/e2e` specs against testing |
 | `binary-release.yaml` | push main, manual | `binary-release.yml` (GitHub Releases + Homebrew tap + rapid-root APT dispatch) |
 
 ### Still on GitHub Actions (intentionally)
@@ -56,7 +57,7 @@ pipelines can't read them.
 | `r2_endpoint` | R2 account S3 endpoint | binary-release (brew CDN) |
 | `r2_bucket` | R2 bucket name, `webwiebe-apt-repository-production` | binary-release (brew CDN) |
 | `ghcr_prune_token` | GitHub PAT with **read:packages + delete:packages**, `cron` event only | ghcr-prune |
-| `e2e_testing_password` | Password of the e2e login on testing, `cron` event only | no workflow today; kept for the E2E nightly on testing |
+| `e2e_testing_password` | Password of the `e2e-bugbarn-smoke@e2e.wiebe.xyz` login on testing, `cron` event only | e2e-nightly |
 | `gitea_read_token` | Gitea token with read access to this repo, `manual`, `pull_request`, `push`, `tag` and `cron` events | quality step and `clone-fallback` in every workflow |
 
 SSH keys are **not** secrets — they're already on the Mac Mini host (`~/.ssh`),

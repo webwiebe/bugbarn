@@ -19,7 +19,7 @@ const TEST_USER = process.env["BUGBARN_TEST_USER"] ?? "admin";
 const TEST_PASS = process.env["BUGBARN_TEST_PASS"] ?? "password";
 
 async function login(page: Page): Promise<boolean> {
-  await page.goto("/");
+  await page.goto("./");
   const loginForm = page.locator("#login-form");
   const authRequired = await loginForm.isVisible({ timeout: 5_000 }).catch(() => false);
   if (!authRequired) {

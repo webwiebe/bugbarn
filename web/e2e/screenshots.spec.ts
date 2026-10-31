@@ -7,7 +7,7 @@ const TEST_PASS = process.env["BUGBARN_TEST_PASS"] ?? "password";
 const SCREENSHOT_DIR = path.join(import.meta.dirname, "..", "screenshots");
 
 async function login(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("./");
   const loginForm = page.locator("#login-form");
   try {
     await loginForm.waitFor({ state: "visible", timeout: 5_000 });

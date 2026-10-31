@@ -35,9 +35,9 @@ test("the issues page shows the error chart with a legend entry per project", as
   await page.route(/\/api\/v1\/issues(\?|$)/, (route) => route.fulfill({ json: { issues: [], hasMore: false, total: 0 } }));
   await page.route("**/api/v1/issues/sparklines*", (route) => route.fulfill({ json: { sparklines: {} } }));
 
-  await page.goto("/");
+  await page.goto("./");
   await loginIfRequired(page);
-  await page.goto("/#/issues");
+  await page.goto("./#/issues");
 
   const legend = page.locator("#error-timeline .error-timeline-legend-item");
   await expect(legend).toHaveCount(3, { timeout: 8_000 });
