@@ -13,7 +13,38 @@ when:
 labels:
   type: build
 
+# The default clone uses the token Woodpecker baked in when it created the
+# pipeline, and a cron pipeline can wait in the queue past that token's one hour
+# life (#202: pipeline 757 created 04:00, cloned 13:49, 401). `clone-fallback`
+# then clones with the long-lived read token, as in the other workflows. When
+# that fails too, `prune` is skipped and nothing is deleted.
+# gitea_read_token must allow the `cron` event for this workflow to start.
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    failure: ignore
+
 steps:
+  - name: clone-fallback
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+    commands:
+      - |
+        set -eu
+        if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+          exit 0
+        fi
+        echo "default clone left no checkout; cloning with the read token"
+        URL=https://git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git
+        git remote remove origin 2>/dev/null || true
+        git remote add origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        git fetch --tags origin "+$CI_COMMIT_SHA"
+        git checkout -qf "$CI_COMMIT_SHA"
+        git remote set-url origin "$URL"
+        git log --oneline -1
+
   - name: prune
     image: bash
     environment:
