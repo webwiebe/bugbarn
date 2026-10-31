@@ -16,9 +16,9 @@ const PROJECTS = [
 test("the project filter hides rows and shows an empty state", async ({ page }) => {
   await page.route(/\/api\/v1\/projects(\?|$)/, (route) => route.fulfill({ json: { projects: PROJECTS } }));
 
-  await page.goto("/");
+  await page.goto("./");
   await loginIfRequired(page);
-  await page.goto("/#/settings/projects");
+  await page.goto("./#/settings/projects");
 
   const rows = page.locator("#project-list .project-row");
   await expect(rows).toHaveCount(3, { timeout: 8_000 });

@@ -87,13 +87,6 @@ before the next poll, doubling up to 15 minutes.
    revision that `apply -k` leaves behind, which is why the rollback sets images
    explicitly.
 
-`scripts/revocation-check.py` checks a setup key revocation on testing. It ran once from a
-cron workflow, which is gone, so no pipeline runs it now. A Woodpecker cron entry named
-`revocation-check` may remain: it matches no workflow and starts no pipeline. The script
-signs in as the e2e login (`BUGBARN_SMOKE_*` in the testing secret, password in the
-cron-only `e2e_testing_password`). Testing is one process, so it does not cover a reader
-answering for a revocation the writer stored.
-
 `vector` deploys the Vector agents (`deploy/vector/`, namespace `vector`) to k3s1 and
 layer7 when `deploy/vector/**` changes on main, outside the release chain; see
 `deploy/vector/README.md`.
@@ -103,6 +96,12 @@ After each staging and production deploy, the `page-check` step runs
 bundle answering as JavaScript (Caddy answers 200 with `index.html` for a missing file
 under `/app/`). A failure on staging stops production; a failure on production fires the
 rollback. It runs no JavaScript and signs in nowhere.
+
+`e2e-nightly` is a cron (`0 1 * * *`, Woodpecker reads it as UTC) that runs the `web/e2e`
+specs against testing, and never on a PR. A red run shows as a failed `cron/e2e-nightly`
+status on main's head commit; fix a failure, no skips and no quarantine. It signs in as the e2e login (`BUGBARN_SMOKE_*` in the testing secret, password in the
+cron-only `e2e_testing_password`). A cron entry named `revocation-check` may remain from a
+one-off run: it matches no workflow and starts no pipeline.
 
 `ghcr-prune` is a daily cron. `.github/workflows/` still holds mirrors; only `ci.yml` and
 `deploy-site.yml` are enabled on GitHub, and the deploy chain there is disabled.

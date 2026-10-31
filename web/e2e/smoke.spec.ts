@@ -51,7 +51,7 @@ test("login flow", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
 
-  await page.goto("/");
+  await page.goto("./");
 
   // The app always serves index.html at the root.  When auth is required the
   // app renders a login form inside #detail-body (the detail-view becomes
@@ -90,11 +90,11 @@ test("issue list loads", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
 
-  await page.goto("/");
+  await page.goto("./");
   await loginIfRequired(page);
 
   // Navigate to the issues view (hash-based routing).
-  await page.goto("/#/issues");
+  await page.goto("./#/issues");
 
   // The overview-view must not be hidden and must contain #issue-list.
   const overviewView = page.locator("#overview-view");
@@ -122,7 +122,7 @@ test("issue detail navigation", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
 
-  await page.goto("/");
+  await page.goto("./");
   await loginIfRequired(page);
 
   // Check the issues API to see whether any issues exist.
@@ -153,7 +153,7 @@ test("issue detail navigation", async ({ page }) => {
   }
 
   // Navigate to the issue detail via the hash router.
-  await page.goto(`/#/issues/${encodeURIComponent(issueId)}`);
+  await page.goto(`./#/issues/${encodeURIComponent(issueId)}`);
 
   // The detail-view should become visible (not hidden) and contain the issue
   // hero section with an h3 title.
@@ -180,7 +180,7 @@ test("live events page", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
 
-  await page.goto("/");
+  await page.goto("./");
   await loginIfRequired(page);
 
   // The live events panel (#panel-live aside) is always present in the DOM

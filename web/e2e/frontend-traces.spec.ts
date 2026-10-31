@@ -37,7 +37,7 @@ test("starts the SpanBarn SDK and relays spans when the runtime config enables i
   });
   const captured = await captureRelay(page);
 
-  await page.goto("/");
+  await page.goto("./");
   // Leaving the page flushes the SDK queue.
   await expect.poll(async () => {
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
@@ -64,7 +64,7 @@ test("sends traceparent on API calls when the SDK is on", async ({ page }) => {
     }
   });
 
-  await page.goto("/");
+  await page.goto("./");
   await expect.poll(() => traceparents.length, { timeout: 15_000 }).toBeGreaterThan(0);
   expect(traceparents[0]).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
 });
@@ -73,7 +73,7 @@ test("keeps the relay off when the runtime config leaves it disabled", async ({ 
   await stubRuntimeConfig(page, { enabled: false });
   const captured = await captureRelay(page);
 
-  await page.goto("/");
+  await page.goto("./");
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await page.waitForTimeout(500);

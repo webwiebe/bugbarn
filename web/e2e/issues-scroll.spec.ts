@@ -36,9 +36,9 @@ test("scrolling to the end of the issues list loads the next page", async ({ pag
   });
   await page.route("**/api/v1/issues/sparklines*", (route) => route.fulfill({ json: { sparklines: {} } }));
 
-  await page.goto("/");
+  await page.goto("./");
   await loginIfRequired(page);
-  await page.goto("/#/issues");
+  await page.goto("./#/issues");
 
   const rows = page.locator("#issue-list .issue-row");
   await expect(rows).toHaveCount(PAGE_SIZE, { timeout: 8_000 });

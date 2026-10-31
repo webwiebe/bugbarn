@@ -1,0 +1,64 @@
+# Nightly browser run: the web/e2e specs against testing, from the `e2e-nightly`
+# Woodpecker cron. Never on a pull request or a push. Two specs are left out:
+# screenshots.spec.ts writes documentation images and tests no behaviour, and
+# deploy-smoke.spec.ts needs an ingest key this run does not hold.
+# Signs in as the dedicated e2e login. Testing only. The password is cron-only and
+# this run holds no deploy key.
+# NB: local backend = one shell per `commands` entry, and Woodpecker pre-
+# substitutes braced variables; so the step is ONE block and all vars use $VAR.
+when:
+  - event: cron
+    cron: e2e-nightly
+
+labels:
+  type: build
+
+# See ghcr-prune.yaml: a cron pipeline can wait in the queue past the life of the
+# clone token. gitea_read_token must allow the `cron` event.
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    failure: ignore
+
+steps:
+  - name: clone-fallback
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+    commands:
+      - |
+        set -eu
+        if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+          exit 0
+        fi
+        echo "default clone left no checkout; cloning with the read token"
+        URL=https://git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git
+        git remote remove origin 2>/dev/null || true
+        git remote add origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        git fetch --tags origin "+$CI_COMMIT_SHA"
+        git checkout -qf "$CI_COMMIT_SHA"
+        git remote set-url origin "$URL"
+        git log --oneline -1
+
+  - name: e2e
+    image: bash
+    environment:
+      BUGBARN_TEST_URL: https://bugbarn.test.wiebe.xyz/app/
+      BUGBARN_TEST_USER: e2e-bugbarn-smoke@e2e.wiebe.xyz
+      BUGBARN_TEST_PASS:
+        from_secret: e2e_testing_password
+      # The local backend gives each run its own HOME: without this path every
+      # night downloads Chromium again.
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/bugbarn-ci/playwright
+    commands:
+      - |
+        set -euo pipefail
+        cd web
+        . "$CI_WORKSPACE/scripts/use-pnpm.sh"
+        pnpm install --frozen-lockfile
+        pnpm exec playwright install chromium
+        SPECS="$(ls e2e/*.spec.ts | grep -v -e screenshots -e deploy-smoke)"
+        # desktop and tablet run on Chromium. The mobile project is an iPhone
+        # device, which needs WebKit, and this run installs Chromium only.
+        pnpm exec playwright test --project=desktop --project=tablet --workers=1 --global-timeout=1200000 $SPECS
