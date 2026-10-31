@@ -80,7 +80,10 @@ func Open(ctx context.Context, spec Spec, path string, maxBytes int64) (*DB, err
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return nil, fmt.Errorf("%s db dir: %w", spec.Name, err)
 	}
-	w, err := sql.Open(storage.DriverName(), writeDSN(abs))
+	// Only the maintenance and metrics passes set a deadline on this handle, a
+	// budget that ends them on purpose, so an expiry here is no failure. Ingest
+	// inserts run without one; a deadline added there would no longer mark spans.
+	w, err := sql.Open(storage.BudgetedDriverName(), writeDSN(abs))
 	if err != nil {
 		return nil, err
 	}

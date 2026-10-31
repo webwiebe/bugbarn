@@ -49,33 +49,56 @@ var (
 var (
 	registerDriverOnce sync.Once
 	registeredDriver   = baseDriverName
+
+	registerBudgetedOnce sync.Once
+	budgetedDriver       = baseDriverName
 )
 
-// tracedDriver registers (once) an otelsql-wrapped SQLite driver and returns
-// its name. Falls back to the plain driver if registration fails.
+// registerTraced registers an otelsql-wrapped SQLite driver and returns its
+// name. Falls back to the plain driver if registration fails. recordError
+// decides which errors mark a span as failed; nil records all of them.
+func registerTraced(recordError func(error) bool) string {
+	name, err := otelsql.Register(baseDriverName,
+		otelsql.WithAttributes(semconv.DBSystemSqlite),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{
+			OmitConnResetSession: true,
+			OmitConnPrepare:      true,
+			OmitRows:             true,
+			RecordError:          recordError,
+		}),
+		otelsql.WithMeterProvider(otel.GetMeterProvider()),
+	)
+	if err != nil {
+		slog.Warn("otelsql driver registration failed; falling back to plain driver", "err", err)
+		return baseDriverName
+	}
+	return name
+}
+
+// tracedDriver registers (once) the driver the main database uses.
 func tracedDriver() string {
-	registerDriverOnce.Do(func() {
-		name, err := otelsql.Register(baseDriverName,
-			otelsql.WithAttributes(semconv.DBSystemSqlite),
-			otelsql.WithSpanOptions(otelsql.SpanOptions{
-				OmitConnResetSession: true,
-				OmitConnPrepare:      true,
-				OmitRows:             true,
-			}),
-			otelsql.WithMeterProvider(otel.GetMeterProvider()),
-		)
-		if err != nil {
-			slog.Warn("otelsql driver registration failed; falling back to plain driver", "err", err)
-			return
-		}
-		registeredDriver = name
-	})
+	registerDriverOnce.Do(func() { registeredDriver = registerTraced(nil) })
 	return registeredDriver
 }
 
 // DriverName returns the otelsql-wrapped SQLite driver name, so other SQLite
 // files (internal/telemetrydb) get the same tracing as the main database.
 func DriverName() string { return tracedDriver() }
+
+// BudgetedDriverName returns a driver with the same tracing as DriverName,
+// except that an expired context deadline does not mark the span as failed.
+// It is for handles whose work runs under a deadline that ends it on purpose,
+// such as the telemetry maintenance pass, where every expiry would otherwise
+// count as an error trace. The span keeps its statement and duration, and the
+// pass still logs what it could not finish.
+func BudgetedDriverName() string {
+	registerBudgetedOnce.Do(func() {
+		budgetedDriver = registerTraced(func(err error) bool {
+			return !errors.Is(err, context.DeadlineExceeded)
+		})
+	})
+	return budgetedDriver
+}
 
 // dbStatsRegs tracks the otelsql connection-pool metric registrations keyed
 // by the *sql.DB they observe, so Close can unregister the callback and stop
