@@ -17,7 +17,7 @@ from .breadcrumbs import Breadcrumb, get_breadcrumbs
 from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
-SDK_VERSION = "1.4.3"
+SDK_VERSION = "1.4.4"
 DEFAULT_ENDPOINT = "/api/v1/events"
 CHECK_IN_STATUSES = ("ok", "error")
 
@@ -144,6 +144,11 @@ class Transport:
                 continue
             try:
                 self._send(event)
+            except Exception as err:
+                # This thread is the only sender, so anything that escapes here loses
+                # every later message with no further sign.
+                what = "check-in" if isinstance(event, CheckIn) else "event"
+                self._warn_once(what, f"send failed: {type(err).__name__}")
             finally:
                 self.queue.task_done()
 
