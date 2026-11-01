@@ -42,19 +42,43 @@
       no_log: true
 
     # With nothing on stdin, install.sh keeps the key written above. Vector loads
-    # the key to validate the config, so its output stays hidden until the next
-    # task has masked the key.
+    # the key to validate the config, so the output stays on the host, in a file
+    # only the agent's user can read, like the key itself.
     - name: Run the installer
       ansible.builtin.shell:
-        cmd: '"{{ ansible_facts.env.HOME }}/.vector/install/install.sh" < /dev/null'
+        cmd: >-
+          log="{{ bugbarn_vector_install_log }}";
+          (umask 077; : > "$log");
+          "{{ ansible_facts.env.HOME }}/.vector/install/install.sh" < /dev/null > "$log" 2>&1;
+          rc=$?; cat "$log"; exit $rc
       register: bugbarn_vector_install
       failed_when: false
       no_log: true
 
+    # Prints only the text in this list, never a line of the output: a wrapped,
+    # encoded or partial copy of the key would pass any replacement.
     - name: Report a failed install
       ansible.builtin.fail:
         msg: >-
-          install.sh exited {{ bugbarn_vector_install.rc }}:
-          {{ (bugbarn_vector_install.stdout ~ '\n' ~ bugbarn_vector_install.stderr)
-          | replace(bugbarn_vector_key.stdout, '[key]') }}
+          install.sh exited {{ bugbarn_vector_install.rc }}.
+          {{ 'Recognised: ' ~ (bugbarn_vector_install_found | join('; ')) if bugbarn_vector_install_found
+          else 'No known step line matched.' }}
+          Read the full output on the host in {{ bugbarn_vector_install_log }}.
       when: bugbarn_vector_install.rc != 0
+      vars:
+        bugbarn_vector_install_found: >-
+          {{ bugbarn_vector_install_steps
+          | selectattr('match', 'in', bugbarn_vector_install.stdout)
+          | map(attribute='says') | list }}
+        bugbarn_vector_install_steps:
+          - {match: "unsupported architecture", says: "install.sh does not support this architecture"}
+          - {match: "no API key", says: "install.sh found no key in the secrets file"}
+          - {match: "curl:", says: "curl failed to download Vector"}
+          - {match: "tar:", says: "tar failed to unpack Vector"}
+          - {match: "install:", says: "the Vector binary could not be installed"}
+          - {match: "Failed to load", says: "vector validate rejected the config"}
+          - {match: "Bootstrap failed: 5:", says: "launchctl bootstrap failed with 5"}
+          - {match: "Bootstrap failed: 125:", says: "launchctl bootstrap failed with 125"}
+          - {match: "Bootstrap failed", says: "launchctl bootstrap failed"}
+          - {match: "not found", says: "a command or file was not found"}
+          - {match: "Permission denied", says: "permission denied on a file"}

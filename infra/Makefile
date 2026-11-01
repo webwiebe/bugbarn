@@ -12,6 +12,9 @@ setup-runners-macos:
 setup-vector-host:
 	ANSIBLE_ROLES_PATH=$(ANSIBLE_ROLES_PATH) ansible-playbook -i $(INVENTORY) vector-host.yml
 
+test-vector-host:
+	./roles/bugbarn-vector-host/tests/install_output_test.sh
+
 ping:
 	ansible -i $(INVENTORY) -m ping runners
 	ansible -i $(INVENTORY) -m ping macos_runners
@@ -21,5 +24,6 @@ help:
 	@echo "  setup-runners        Provision Linux GitHub Actions runners"
 	@echo "  setup-runners-macos  Provision macOS GitHub Actions runners"
 	@echo "  setup-vector-host    Install the BugBarn host Vector agent (vector_hosts)"
+	@echo "  test-vector-host     Test the macOS install tasks against stubs (no host)"
 	@echo "  ping                 Test runner host connectivity"
 
