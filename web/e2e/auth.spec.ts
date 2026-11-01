@@ -13,7 +13,8 @@
  * logout_url with id_token_hint), completing RP-initiated logout.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 const TEST_USER = process.env["BUGBARN_TEST_USER"] ?? "admin";
 const TEST_PASS = process.env["BUGBARN_TEST_PASS"] ?? "password";

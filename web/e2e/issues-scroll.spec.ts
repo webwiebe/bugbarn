@@ -4,7 +4,8 @@
  * app and, when auth is on, accept the test login.
  */
 
-import { test, expect, type Route } from "@playwright/test";
+import type { Route } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { loginIfRequired } from "./login-helper";
 
 const PAGE_SIZE = 50;
