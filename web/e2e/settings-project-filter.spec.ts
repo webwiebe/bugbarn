@@ -3,7 +3,7 @@
  * when nothing matches. The projects API is stubbed, so the test needs no seeded data.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { loginIfRequired } from "./login-helper";
 
 

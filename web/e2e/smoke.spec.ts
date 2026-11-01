@@ -11,7 +11,8 @@
  *   BUGBARN_TEST_PASS  (default: password)
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 const TEST_USER = process.env["BUGBARN_TEST_USER"] ?? "admin";
 const TEST_PASS = process.env["BUGBARN_TEST_PASS"] ?? "password";
