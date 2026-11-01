@@ -207,7 +207,7 @@ class CheckInTests(unittest.TestCase):
         self.assertTrue(captured["headers"].get("User-agent", "").startswith("bugbarn-python/"))
         transport.close()
 
-    def test_rejected_requests_warn_once_per_reason_with_the_server_message(self):
+    def test_rejected_requests_warn_once_per_status_without_the_server_message(self):
         import io
         import urllib.error
 
@@ -226,8 +226,10 @@ class CheckInTests(unittest.TestCase):
                 transport._send(CheckIn(slug="a", body={"status": "ok"}))
         lines = [line for line in err.getvalue().splitlines() if line.startswith("bugbarn:")]
         self.assertEqual(len(lines), 2, lines)
-        self.assertIn("HTTP 400 (grace must not exceed the interval)", lines[0])
-        self.assertIn("HTTP 403 (error code: 1010)", lines[1])
+        self.assertIn("HTTP 400", lines[0])
+        self.assertIn("HTTP 403", lines[1])
+        self.assertNotIn("grace", err.getvalue())
+        self.assertNotIn("1010", err.getvalue())
         transport.close()
 
     def test_check_in_travels_the_queue_and_flush_waits_for_it(self):

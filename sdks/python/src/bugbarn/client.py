@@ -17,7 +17,7 @@ from .breadcrumbs import Breadcrumb, get_breadcrumbs
 from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
-SDK_VERSION = "1.4.2"
+SDK_VERSION = "1.4.3"
 DEFAULT_ENDPOINT = "/api/v1/events"
 CHECK_IN_STATUSES = ("ok", "error")
 
@@ -83,6 +83,12 @@ class Envelope:
 
 
 class Transport:
+    # A monitor check-in is the one message whose loss raises an alert, so it gets a
+    # longer read limit than an event and is retried when the ingest is slow or
+    # unreachable. Seconds to wait before each attempt.
+    check_in_timeout: float = 10.0
+    check_in_retry_delays: tuple[float, ...] = (0.0, 2.0, 5.0)
+
     def __init__(
         self,
         api_key: str,
@@ -143,7 +149,7 @@ class Transport:
 
     def _send(self, event: Envelope | CheckIn) -> None:
         if isinstance(event, CheckIn):
-            self._post(self._check_in_url(event.slug), event.body, "check-in")
+            self._send_check_in(event)
         else:
             self._post(self.endpoint, event.to_payload(), "event")
 
@@ -152,7 +158,19 @@ class Transport:
         base = self.endpoint.split("/api/", 1)[0] if "/api/" in self.endpoint else self.endpoint.rstrip("/")
         return f"{base}/api/v1/monitors/{urllib.parse.quote(slug, safe='')}/check-ins"
 
-    def _post(self, url: str, body: dict[str, Any], what: str) -> None:
+    def _send_check_in(self, check_in: CheckIn) -> None:
+        url = self._check_in_url(check_in.slug)
+        last = len(self.check_in_retry_delays) - 1
+        for attempt, delay in enumerate(self.check_in_retry_delays):
+            if delay and self._closed.wait(delay):
+                return
+            if self._post(url, check_in.body, "check-in", timeout=self.check_in_timeout, warn=attempt == last):
+                return
+
+    def _post(self, url: str, body: dict[str, Any], what: str, *, timeout: float = 2, warn: bool = True) -> bool:
+        """Send one request. True when the ingest answered, even with an HTTP error;
+        False when the request did not get through (worth a retry). *warn* False holds
+        the warning back for a caller that will try again."""
         payload = json.dumps(body).encode("utf-8")
         headers = {
             "content-type": "application/json",
@@ -165,16 +183,21 @@ class Transport:
         request = urllib.request.Request(url, data=payload, method="POST", headers=headers)
 
         try:
-            with urllib.request.urlopen(request, timeout=2) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 response.read()
         except urllib.error.HTTPError as err:
-            self._warn_once(what, f"ingest answered HTTP {err.code}{_error_detail(err)}")
+            self._warn_once(what, f"ingest answered HTTP {err.code}")
         except urllib.error.URLError as err:
-            self._warn_once(what, f"ingest unreachable: {err.reason}")
+            if warn:
+                self._warn_once(what, f"ingest unreachable: {_reason_name(err)}")
+            return False
         except OSError as err:
             # A read timeout or a reset connection after the request went out is not a
             # URLError. Letting it escape ends the transport thread for good.
-            self._warn_once(what, f"ingest failed: {err!r}")
+            if warn:
+                self._warn_once(what, f"ingest failed: {type(err).__name__}")
+            return False
+        return True
 
     def _warn_once(self, what: str, reason: str) -> None:
         key = f"{what}:{reason}"
@@ -200,13 +223,10 @@ def _with_environment(attributes: dict[str, Any]) -> dict[str, Any]:
     return attributes
 
 
-def _error_detail(err: urllib.error.HTTPError) -> str:
-    """The server's short error text, so a rejected request says why."""
-    try:
-        text = err.read(200).decode("utf-8", "replace").strip()
-    except Exception:
-        return ""
-    return f" ({text})" if text else ""
+def _reason_name(err: urllib.error.URLError) -> str:
+    """The type name of what stopped a request. The reason's text can hold addresses or URLs."""
+    reason = err.reason
+    return type(reason if isinstance(reason, BaseException) else err).__name__
 
 
 def _normalize_exception(exc: BaseException | str | object) -> BaseException:

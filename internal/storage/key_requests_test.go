@@ -76,7 +76,7 @@ func TestKeyRequestResolveRespectsStateAndExpiry(t *testing.T) {
 func TestKeyRequestListCountAndPurge(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	created := time.Now().UTC().Add(-48 * time.Hour)
+	created := time.Now().UTC().Add(-72 * time.Hour)
 	proj := seedKeyRequest(t, s, "old", created)
 	fresh := domain.KeyRequest{ID: "fresh", ProjectID: proj.ID, Label: "x", CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour)}
 	if err := s.CreateKeyRequest(ctx, fresh, "h"); err != nil {
