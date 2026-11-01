@@ -26,8 +26,35 @@
 # install.sh pins the Vector version, validates the config and reloads the
 # LaunchAgent; run it on a new host or when the files changed.
 - name: Install or upgrade the agent
-  ansible.builtin.command:
-    cmd: "{{ ansible_facts.env.HOME }}/.vector/install/install.sh"
-    stdin: "{{ bugbarn_vector_key.stdout }}"
   when: bugbarn_vector_files.changed or bugbarn_vector_loaded.rc != 0
-  no_log: true
+  block:
+    - name: Create the secrets dir
+      ansible.builtin.file:
+        path: "{{ ansible_facts.env.HOME }}/.vector/secrets"
+        state: directory
+        mode: "0700"
+
+    - name: Write the ingest key
+      ansible.builtin.shell:
+        cmd: umask 077; cat > "{{ ansible_facts.env.HOME }}/.vector/secrets/api_key"
+        stdin: "{{ bugbarn_vector_key.stdout }}"
+        stdin_add_newline: false
+      no_log: true
+
+    # With nothing on stdin, install.sh keeps the key written above. Vector loads
+    # the key to validate the config, so its output stays hidden until the next
+    # task has masked the key.
+    - name: Run the installer
+      ansible.builtin.shell:
+        cmd: '"{{ ansible_facts.env.HOME }}/.vector/install/install.sh" < /dev/null'
+      register: bugbarn_vector_install
+      failed_when: false
+      no_log: true
+
+    - name: Report a failed install
+      ansible.builtin.fail:
+        msg: >-
+          install.sh exited {{ bugbarn_vector_install.rc }}:
+          {{ (bugbarn_vector_install.stdout ~ '\n' ~ bugbarn_vector_install.stderr)
+          | replace(bugbarn_vector_key.stdout, '[key]') }}
+      when: bugbarn_vector_install.rc != 0

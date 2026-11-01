@@ -20,6 +20,12 @@
   changed_when: false
   no_log: true
 
+- name: Check the ingest key is not empty
+  ansible.builtin.assert:
+    that: bugbarn_vector_key.stdout | length > 0
+    fail_msg: "api_key in deploy/vector/host/secret.yaml decrypted to nothing"
+    quiet: true
+
 - name: Install on macOS
   ansible.builtin.include_tasks: macos.yml
   when: ansible_facts.system == "Darwin"
