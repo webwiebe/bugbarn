@@ -17,8 +17,12 @@ Pick the SDK for your language and install it:
 
 **Go**
 
+`go get` does not work for this module: `github.com/wiebe-xyz/bugbarn-go` is not a published repository and the SDK has no tagged release. Copy `sdks/go` from the BugBarn repository into your project and point the module path at the copy:
+
 ```bash
-go get github.com/wiebe-xyz/bugbarn-go
+go mod edit \
+  -require=github.com/wiebe-xyz/bugbarn-go@v0.0.0-00010101000000-000000000000 \
+  -replace=github.com/wiebe-xyz/bugbarn-go=./sdks/go-bugbarn
 ```
 
 **TypeScript / JavaScript** (Node.js and browser)

@@ -6,7 +6,7 @@ BugBarn can receive events from your applications through a native SDK or direct
 
 | Integration | Package / install | Best for |
 |---|---|---|
-| **Go SDK** | `go get github.com/wiebe-xyz/bugbarn-go` | Go services and HTTP servers |
+| **Go SDK** | Copy `sdks/go`, add a `replace` in `go.mod` | Go services and HTTP servers |
 | **TypeScript SDK** | `@bugbarn/typescript` (npm) | Node.js backends, browser apps |
 | **Python SDK** | source install (not on PyPI) | Python services and scripts |
 | **Direct HTTP** | Any HTTP client | Any language without an SDK, scripts, CI pipelines |

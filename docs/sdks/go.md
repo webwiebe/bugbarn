@@ -4,9 +4,15 @@ Package: `github.com/wiebe-xyz/bugbarn-go`
 
 ## Installation
 
+`go get` does not work for this module: `github.com/wiebe-xyz/bugbarn-go` is not a published repository and the SDK has no tagged release. Copy `sdks/go` from the BugBarn repository into your project and point the module path at the copy:
+
 ```bash
-go get github.com/wiebe-xyz/bugbarn-go
+go mod edit \
+  -require=github.com/wiebe-xyz/bugbarn-go@v0.0.0-00010101000000-000000000000 \
+  -replace=github.com/wiebe-xyz/bugbarn-go=./sdks/go-bugbarn
 ```
+
+To take a later SDK version, copy `sdks/go` again.
 
 ## Initialisation
 
@@ -183,7 +189,7 @@ The SDK maintains a fixed-size in-memory channel between capture calls and the b
 
 - Events are enqueued **without blocking**. If the channel is full, the new event is dropped and `CaptureError`/`CaptureMessage` returns `false`.
 - The default queue size of 256 is sufficient for the vast majority of applications. Increase `QueueSize` only if you expect sustained bursts of more than 256 errors between delivery cycles.
-- Network errors during delivery are logged silently; the SDK never crashes your application.
+- A delivery that fails is lost: the SDK has no retry. That covers network errors and any response outside 2xx. It prints a line to stderr, at most once per reason per 10 minutes, with the count since the last line, for example `bugbarn: 3 event dropped since the last line, HTTP 401 unauthorized, permanent (https://bugbarn.example/api/v1/events)`. Check-ins report the same way. The API key is never printed, and the SDK never crashes your application.
 
 ## Self-reporting pattern
 

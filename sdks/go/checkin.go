@@ -100,7 +100,9 @@ func CheckIn(slug, status string, options ...CheckInOption) bool {
 	t.inflight.Add(1)
 	go func() {
 		defer t.inflight.Done()
-		_ = t.sendCheckIn(slug, body)
+		if err := t.sendCheckIn(slug, body); err != nil {
+			t.drops.record("check-in", t.endpoint, err)
+		}
 	}()
 	return true
 }
@@ -132,5 +134,6 @@ func (t *transport) sendCheckIn(slug string, body checkInBody) error {
 	if err != nil {
 		return err
 	}
-	return resp.Body.Close()
+	_ = resp.Body.Close()
+	return checkResponse(resp.StatusCode)
 }
