@@ -42,15 +42,11 @@
       no_log: true
 
     # With nothing on stdin, install.sh keeps the key written above. Vector loads
-    # the key to validate the config, so the output stays on the host, in a file
-    # only the agent's user can read, like the key itself.
+    # the key to validate the config, so the output stays in memory and goes to no
+    # file: a plaintext key does not go on disk beyond the agent's own key file.
     - name: Run the installer
       ansible.builtin.shell:
-        cmd: >-
-          log="{{ bugbarn_vector_install_log }}";
-          (umask 077; : > "$log");
-          "{{ ansible_facts.env.HOME }}/.vector/install/install.sh" < /dev/null > "$log" 2>&1;
-          rc=$?; cat "$log"; exit $rc
+        cmd: '"{{ ansible_facts.env.HOME }}/.vector/install/install.sh" < /dev/null 2>&1'
       register: bugbarn_vector_install
       failed_when: false
       no_log: true
@@ -62,8 +58,8 @@
         msg: >-
           install.sh exited {{ bugbarn_vector_install.rc }}.
           {{ 'Recognised: ' ~ (bugbarn_vector_install_found | join('; ')) if bugbarn_vector_install_found
-          else 'No known step line matched.' }}
-          Read the full output on the host in {{ bugbarn_vector_install_log }}.
+          else 'No known step line matched. To see the output, run this in a terminal on the host: "'
+          ~ ansible_facts.env.HOME ~ '/.vector/install/install.sh" < /dev/null' }}
       when: bugbarn_vector_install.rc != 0
       vars:
         bugbarn_vector_install_found: >-

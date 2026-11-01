@@ -7,8 +7,6 @@ bugbarn_vector_age_key_file: "{{ lookup('env', 'HOME') }}/Library/Application Su
 # Vector release for the Linux deb; keep in step with VERSION in
 # deploy/vector/host/macos/install.sh.
 bugbarn_vector_version: "0.58.0"
-# Output of the last macOS install, kept on the host at 0600.
-bugbarn_vector_install_log: "{{ ansible_facts.env.HOME }}/.vector/install/last-run.log"
 bugbarn_vector_deb_arch:
   x86_64: amd64
   aarch64: arm64
