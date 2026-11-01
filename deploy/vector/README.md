@@ -65,7 +65,8 @@ shared ingest key of the `infra` project (`vector-hosts`), SOPS-encrypted in
 Both also run `host_metrics`. Every host in the `vector_hosts` inventory group
 (the macOS runners, `mini.local` and `ssd.wiebe.xyz`) gets the agent from
 Ansible (`infra/roles/bugbarn-vector-host`), which decrypts the key locally. On
-macOS it runs `install.sh` when the files change or the agent is not loaded. On
+macOS it writes the key and runs `install.sh` when the files change or the agent
+is not loaded, and a failed install prints its output with the key masked. On
 Debian/Ubuntu it installs the pinned Vector deb, writes the key and config to
 `/etc/vector`, adds the vector user to `systemd-journal` and enables the
 systemd service. Add a host by listing it under `[vector_hosts]`:
