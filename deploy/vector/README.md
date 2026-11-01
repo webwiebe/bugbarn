@@ -66,8 +66,9 @@ Both also run `host_metrics`. Every host in the `vector_hosts` inventory group
 (the macOS runners, `mini.local` and `ssd.wiebe.xyz`) gets the agent from
 Ansible (`infra/roles/bugbarn-vector-host`), which decrypts the key locally. On
 macOS it writes the key and runs `install.sh` when the files change or the agent
-is not loaded. A failed install prints the exit code and the steps it recognises;
-the full output stays on the host in `~/.vector/install/last-run.log` (0600). On
+is not loaded. A failed install prints the exit code and the steps it recognises,
+and when it recognises none, the command to run the installer by hand in a terminal
+on the host. The output goes to no file. On
 Debian/Ubuntu it installs the pinned Vector deb, writes the key and config to
 `/etc/vector`, adds the vector user to `systemd-journal` and enables the
 systemd service. Add a host by listing it under `[vector_hosts]`:
