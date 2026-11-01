@@ -32,6 +32,14 @@ test("surfaceLink fills {surface} with the encoded name", () => {
   );
 });
 
+test("surfaceLink builds the deep link FunnelBarn's funnels page reads", () => {
+  const link = surfaceLink("https://funnelbarn.example/funnels/p1?funnel=f1&breakdown=signup_surface&group={surface}", "wordpress");
+  const params = new URL(link).searchParams;
+  assert.equal(params.get("funnel"), "f1");
+  assert.equal(params.get("breakdown"), "signup_surface");
+  assert.equal(params.get("group"), "wordpress");
+});
+
 test("surfaceLink uses a template without a placeholder as it is", () => {
   assert.equal(surfaceLink("https://funnelbarn.example/p/x/funnels", "mcp"), "https://funnelbarn.example/p/x/funnels");
 });

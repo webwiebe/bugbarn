@@ -928,16 +928,16 @@ Each project also carries `funnelbarn_url`, the FunnelBarn page its "By surface"
 
 #### PUT /api/v1/projects/:slug/funnelbarn
 
-Set the FunnelBarn page the project's "By surface" rows link to. BugBarn only renders a link: it never calls FunnelBarn and stores no key for it. Send an empty `funnelbarn_url` to clear it. The value must be an absolute `http` or `https` URL without credentials, at most 2048 characters. `{surface}` in the URL is replaced by each row's surface name (URL-encoded); a URL without it is used as is for every row.
+Set the FunnelBarn page the project's "By surface" rows link to. BugBarn only renders a link: it never calls FunnelBarn and stores no key for it. Send an empty `funnelbarn_url` to clear it. The value must be an absolute `http` or `https` URL without credentials, at most 2048 characters. `{surface}` in the URL is replaced by each row's surface name (URL-encoded); a URL without it is used as is for every row. FunnelBarn's funnels page opens one group of a breakdown from `?funnel=<id>&breakdown=<property>&group=<value>`, so a row links to its own surface with `group={surface}`.
 
 **Request body:**
 ```json
-{"funnelbarn_url": "https://funnelbarn.example/p/profotograaf/funnels?surface={surface}"}
+{"funnelbarn_url": "https://funnelbarn.example/funnels/PROJECT_ID?funnel=FUNNEL_ID&breakdown=signup_surface&group={surface}"}
 ```
 
 **Response:**
 ```json
-{"ok": true, "funnelbarn_url": "https://funnelbarn.example/p/profotograaf/funnels?surface={surface}"}
+{"ok": true, "funnelbarn_url": "https://funnelbarn.example/funnels/PROJECT_ID?funnel=FUNNEL_ID&breakdown=signup_surface&group={surface}"}
 ```
 
 `400` for a value that is not an allowed URL, `404` for an unknown project.
