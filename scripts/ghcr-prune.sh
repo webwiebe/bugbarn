@@ -12,6 +12,10 @@
 # Everything else is deleted, oldest first, at most MAX_DELETE per run so one
 # run never eats a large share of the account's shared API budget.
 #
+# GitHub answers a delete with a 5xx now and then. A delete is tried up to three
+# times; a version that still fails is reported, the run goes on with the rest,
+# and the script exits 1 at the end. The next run picks the version up again.
+#
 # Env:
 #   GHCR_TOKEN     PAT with read:packages + delete:packages (required)
 #   GHCR_OWNER     package owner (default webwiebe)
@@ -40,8 +44,28 @@ CUTOFF="$(date -u -v-"$KEEP_DAYS"d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 deleted=0
+failed=0
+RETRY_WAIT="${RETRY_WAIT:-5}"
 
 api() { curl -fsS -H "Authorization: Bearer $GHCR_TOKEN" -H "Accept: application/vnd.github+json" "$@"; }
+
+# Deletes one package version. Sets $status to the last HTTP status, 000 when no
+# answer came. A 404 after a retry counts as done: an earlier attempt that
+# looked failed went through.
+delete_version() {
+  local attempt
+  for attempt in 1 2 3; do
+    status="$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
+      -H "Authorization: Bearer $GHCR_TOKEN" -H "Accept: application/vnd.github+json" "$1")" || status=000
+    case "$status" in
+      2??) return 0 ;;
+      404) [ "$attempt" -gt 1 ] && return 0; return 1 ;;
+      5??|429|000) [ "$attempt" -lt 3 ] && sleep $((attempt * RETRY_WAIT)) ;;
+      *) return 1 ;;
+    esac
+  done
+  return 1
+}
 
 for pkg in $PACKAGES; do
   enc="${pkg//\//%2F}"
@@ -105,8 +129,12 @@ for pkg in $PACKAGES; do
     if [ "$DRY_RUN" = 1 ]; then
       echo "   would delete $created $tags $digest"
     else
-      api -X DELETE "$API/users/$GHCR_OWNER/packages/container/$enc/versions/$id" > /dev/null
-      echo "   deleted $created $tags $digest"
+      if delete_version "$API/users/$GHCR_OWNER/packages/container/$enc/versions/$id"; then
+        echo "   deleted $created $tags $digest"
+      else
+        echo "   FAILED (HTTP $status) $created $tags $digest"
+        failed=$((failed + 1))
+      fi
       # GitHub's secondary rate limit caps content-changing requests per minute.
       sleep 1
     fi
@@ -114,4 +142,5 @@ for pkg in $PACKAGES; do
   done < "$WORK/delete.txt"
 done
 
-echo "done: $deleted versions $([ "$DRY_RUN" = 1 ] && echo 'would be ' || true)deleted"
+echo "done: $((deleted - failed)) versions $([ "$DRY_RUN" = 1 ] && echo 'would be ' || true)deleted, $failed failed"
+[ "$failed" = 0 ]
