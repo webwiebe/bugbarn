@@ -11,76 +11,35 @@
  *   BUGBARN_TEST_PASS  (default: password)
  */
 
-import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
-
-const TEST_USER = process.env["BUGBARN_TEST_USER"] ?? "admin";
-const TEST_PASS = process.env["BUGBARN_TEST_PASS"] ?? "password";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Log in via the login form rendered in #detail-body when auth is required.
- * If auth is not required the app will already be on the issue list, so this
- * is a no-op in that case.
- */
-async function loginIfRequired(page: Page): Promise<void> {
-  // The app renders a login form inside #detail-body when a 401 is returned.
-  // After login the form is replaced by the normal detail panel.
-  const loginForm = page.locator("#login-form");
-  const isVisible = await loginForm.isVisible().catch(() => false);
-  if (!isVisible) {
-    return;
-  }
-
-  await loginForm.locator('input[name="username"]').fill(TEST_USER);
-  await loginForm.locator('input[name="password"]').fill(TEST_PASS);
-  await loginForm.locator('button[type="submit"]').click();
-
-  // After a successful login the login form disappears and the issue list
-  // (or another view) is rendered — wait for the form to be gone.
-  await expect(loginForm).not.toBeVisible({ timeout: 8_000 });
-}
+import { loginIfRequired } from "./login-helper";
+import { EMPTY_STATE } from "./global-setup";
 
 // ---------------------------------------------------------------------------
 // Test: login flow
 // ---------------------------------------------------------------------------
 
-test("login flow", async ({ page }) => {
-  const pageErrors: string[] = [];
-  page.on("pageerror", (err) => pageErrors.push(err.message));
+test.describe("signed out", () => {
+  // This test signs in on the form, so it starts without the shared session.
+  test.use({ storageState: EMPTY_STATE });
 
-  await page.goto("./");
+  test("login flow", async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
 
-  // The app always serves index.html at the root.  When auth is required the
-  // app renders a login form inside #detail-body (the detail-view becomes
-  // visible and overview-view is hidden).  When no auth is required the
-  // overview-view with #issue-list is visible immediately.
-  const loginForm = page.locator("#login-form");
-  const issueList = page.locator("#issue-list");
+    await page.goto("./");
 
-  const authRequired = await loginForm.isVisible({ timeout: 5_000 }).catch(() => false);
+    // When auth is required the app shows #login-form on its login screen and
+    // hides the app frame; signing in brings the issue list back. Without auth the
+    // issue list is on screen at once.
+    await loginIfRequired(page);
+    await expect(page.locator("#issue-list")).toBeVisible({ timeout: 8_000 });
 
-  if (authRequired) {
-    // Fill in credentials and submit.
-    await loginForm.locator('input[name="username"]').fill(TEST_USER);
-    await loginForm.locator('input[name="password"]').fill(TEST_PASS);
-    await loginForm.locator('button[type="submit"]').click();
+    // The URL should stay at / (single-page app, no redirect to /login).
+    expect(page.url()).not.toContain("/login");
 
-    // After login, the login form must disappear and the issue list must appear.
-    await expect(loginForm).not.toBeVisible({ timeout: 8_000 });
-    await expect(issueList).toBeVisible({ timeout: 8_000 });
-  } else {
-    // No auth — app is already on the issue list.
-    await expect(issueList).toBeVisible({ timeout: 5_000 });
-  }
-
-  // The URL should stay at / (single-page app, no redirect to /login).
-  expect(page.url()).not.toContain("/login");
-
-  expect(pageErrors).toHaveLength(0);
+    expect(pageErrors).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -180,6 +139,9 @@ test("issue detail navigation", async ({ page }) => {
 test("live events page", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
+
+  // The stylesheet hides the live panel at 1120px and narrower.
+  test.skip((page.viewportSize()?.width ?? 0) <= 1120, "the live panel is hidden at this width");
 
   await page.goto("./");
   await loginIfRequired(page);

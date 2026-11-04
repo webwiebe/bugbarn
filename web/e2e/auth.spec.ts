@@ -15,22 +15,15 @@
 
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
+import { loginIfRequired } from "./login-helper";
+import { EMPTY_STATE } from "./global-setup";
 
-const TEST_USER = process.env["BUGBARN_TEST_USER"] ?? "admin";
-const TEST_PASS = process.env["BUGBARN_TEST_PASS"] ?? "password";
+// These tests sign in on the form, so they start without the shared session.
+test.use({ storageState: EMPTY_STATE });
 
 async function login(page: Page): Promise<boolean> {
   await page.goto("./");
-  const loginForm = page.locator("#login-form");
-  const authRequired = await loginForm.isVisible({ timeout: 5_000 }).catch(() => false);
-  if (!authRequired) {
-    return false;
-  }
-  await loginForm.locator('input[name="username"]').fill(TEST_USER);
-  await loginForm.locator('input[name="password"]').fill(TEST_PASS);
-  await loginForm.locator('button[type="submit"]').click();
-  await expect(loginForm).not.toBeVisible({ timeout: 8_000 });
-  return true;
+  return loginIfRequired(page);
 }
 
 test("login issues an opaque server-side session", async ({ page, context }) => {
