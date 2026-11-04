@@ -9,6 +9,10 @@
  * is aborted too, because page.route does not see the redirect that follows it.
  *
  * Service workers are blocked because page.route does not see their requests.
+ *
+ * A page that navigates or closes while the config handler waits disposes of the
+ * request under it. The handler then has nothing left to answer, so it drops the
+ * error, and the handlers still running when the test ends are let go.
  */
 import { test as base, expect } from "@playwright/test";
 
@@ -16,12 +20,17 @@ export const test = base.extend({
   serviceWorkers: "block",
   page: async ({ page }, use) => {
     await page.route("**/api/v1/runtime-config", async (route) => {
-      const response = await route.fetch();
-      const config = await response.json();
-      await route.fulfill({ response, json: { ...config, oidc: { ...config.oidc, enabled: false } } });
+      try {
+        const response = await route.fetch();
+        const config = await response.json();
+        await route.fulfill({ response, json: { ...config, oidc: { ...config.oidc, enabled: false } } });
+      } catch {
+        // The request went with its page.
+      }
     });
     await page.route(/\/api\/v1\/oidc\/|^https:\/\/iam\./, (route) => route.abort());
     await use(page);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   },
 });
 

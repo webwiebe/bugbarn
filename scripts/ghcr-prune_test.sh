@@ -39,8 +39,20 @@ mkdir -p "$WORK/bin"
 cat > "$WORK/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 url="${*: -1}"
+# A DELETE prints its HTTP status, as `curl -w '%{http_code}'` does. Lines
+# "<id> <mode>" in $FAKE_DIR/faults make a version fail: once = 500 on the first
+# try, always = 500 on every try, lost = deleted but answered 502, then 404.
 case "$*" in
-  *"-X DELETE"*) echo "${url##*/}" >> "$FAKE_DIR/deleted"; exit 0 ;;
+  *"-X DELETE"*)
+    id="${url##*/}"
+    n="$(grep -cx "$id" "$FAKE_DIR/attempts" || true)"
+    echo "$id" >> "$FAKE_DIR/attempts"
+    case "$(awk -v id="$id" '$1 == id { print $2 }' "$FAKE_DIR/faults")" in
+      once) [ "$n" = 0 ] && { printf 500; exit 0; } ;;
+      always) printf 500; exit 0 ;;
+      lost) if [ "$n" = 0 ]; then echo "$id" >> "$FAKE_DIR/deleted"; printf 502; else printf 404; fi; exit 0 ;;
+    esac
+    echo "$id" >> "$FAKE_DIR/deleted"; printf 204; exit 0 ;;
 esac
 case "$url" in
   *"/versions?"*"page=1") cat "$FAKE_DIR/versions.json" ;;
@@ -55,8 +67,10 @@ chmod +x "$WORK/bin/curl"
 
 run() {
   : > "$WORK/deleted"
+  : > "$WORK/attempts"
+  touch "$WORK/faults"
   PATH="$WORK/bin:$PATH" FAKE_DIR="$WORK" GHCR_TOKEN=x PACKAGES=bugbarn/service \
-    KEEP_DAYS=7 KEEP_RELEASES=3 "$@" bash "$REPO/scripts/ghcr-prune.sh" > "$WORK/out" 2>&1
+    KEEP_DAYS=7 KEEP_RELEASES=3 RETRY_WAIT=0 "$@" bash "$REPO/scripts/ghcr-prune.sh" > "$WORK/out" 2>&1
 }
 
 fail=0
@@ -84,4 +98,19 @@ check "" "$(cat "$WORK/deleted")" "DRY_RUN deletes nothing"
 set +e; run env PROTECT_FILE="$WORK/empty"; rc=$?; set -e
 check "1 " "$rc $(cat "$WORK/deleted")" "refuses to run without running images"
 
+echo "10 once" > "$WORK/faults"
+set +e; run env PROTECT_FILE="$WORK/protect"; rc=$?; set -e
+check "0 7 8 9 10 11" "$rc $(sort -n "$WORK/deleted" | tr '\n' ' ' | sed 's/ $//')" "retries a delete that got a 5xx"
+
+echo "10 always" > "$WORK/faults"
+set +e; run env PROTECT_FILE="$WORK/protect"; rc=$?; set -e
+check "1 7 8 9 11 3" "$rc $(sort -n "$WORK/deleted" | tr '\n' ' ' | sed 's/ $//') $(grep -cx 10 "$WORK/attempts")" \
+  "goes on past a version that keeps failing, tries it 3 times, exits 1"
+check "1" "$(grep -c '^   FAILED (HTTP 500) .*sha:old$' "$WORK/out")" "reports the failed version with its status"
+
+echo "10 lost" > "$WORK/faults"
+set +e; run env PROTECT_FILE="$WORK/protect"; rc=$?; set -e
+check "0 7 8 9 10 11" "$rc $(sort -n "$WORK/deleted" | tr '\n' ' ' | sed 's/ $//')" "a 404 after a retry counts as deleted"
+
+: > "$WORK/faults"
 exit "$fail"

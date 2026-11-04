@@ -77,6 +77,7 @@ var/
 
 # Playwright test output
 web/test-results/
+web/e2e/.auth/
 
 # PHP SDK composer output (CI runs composer inside a pinned container and
 # leaves these in the workspace)
