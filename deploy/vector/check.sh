@@ -12,6 +12,7 @@ rm -rf "$work"
 mkdir -p "$work/secrets"
 printf 'placeholder' > "$work/secrets/api_key"
 printf 'placeholder' > "$work/secrets/prod_api_key"
+printf 'placeholder' > "$work/secrets/logs_api_key"
 
 run() {
 	docker run --rm -e NODE_NAME=check \
@@ -20,10 +21,19 @@ run() {
 }
 
 run test /v/k8s/base/vector.yaml /v/tests/transforms.yaml
+run test /v/k8s/base/vector.yaml /v/k8s/layer7/bugbarn-logs.yaml /v/tests/bugbarn-logs.yaml
+# Each overlay adds every config file in its directory (its configMapGenerator
+# lists the same set); kustomization.yaml and the SOPS secret are no config.
 for sinks in "$here"/k8s/*/sinks.yaml; do
 	overlay=$(basename "$(dirname "$sinks")")
 	echo "== $overlay"
-	run validate --no-environment /v/k8s/base/vector.yaml "/v/k8s/$overlay/sinks.yaml"
+	files=""
+	for f in "$here/k8s/$overlay"/*.yaml; do
+		case $(basename "$f") in kustomization.yaml|secret.yaml) continue ;; esac
+		files="$files /v/k8s/$overlay/$(basename "$f")"
+	done
+	# shellcheck disable=SC2086 # one argument per file
+	run validate --no-environment /v/k8s/base/vector.yaml $files
 done
 
 # Host agents. The macOS file carries a placeholder for its home directory,

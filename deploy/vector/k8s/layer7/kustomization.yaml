@@ -10,3 +10,4 @@ configMapGenerator:
     behavior: merge
     files:
       - sinks.yaml
+      - bugbarn-logs.yaml

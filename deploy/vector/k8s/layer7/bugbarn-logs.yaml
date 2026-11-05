@@ -1,0 +1,58 @@
+# BugBarn's own structured logs (writer and readers) to its log store, project
+# bugbarn-service, so they show in `bb logs --project bugbarn-service` and
+# outlive the pod. kubectl logs loses them when a deploy replaces the pod.
+#
+# Vector tails the node's container log files and keeps a disk buffer, so lines
+# written just before a pod stops still ship. The service logs nothing per log
+# ingest request, so shipping does not feed itself.
+sources:
+  bugbarn_pods:
+    type: kubernetes_logs
+    extra_label_selector: app.kubernetes.io/name=bugbarn
+    extra_field_selector: metadata.namespace=bugbarn-production
+
+transforms:
+  bugbarn_logs_shape:
+    type: remap
+    inputs: [bugbarn_pods]
+    # slog's JSON lines pass through as they are: msg, level and every attr.
+    # The log endpoint reads `time` as epoch milliseconds only, so slog's
+    # RFC 3339 time is converted. Lines that are no JSON (a Go panic trace on
+    # stderr) keep their text; stderr ones are marked warn.
+    source: |
+      if .kubernetes.container_name != "bugbarn" { abort }
+      pod = .kubernetes.pod_name
+      component = .kubernetes.pod_labels."app.kubernetes.io/component"
+      stream = .stream
+      line = string(.message) ?? ""
+      parsed, err = parse_json(line)
+      if err == null && is_object(parsed) {
+        . = object!(parsed)
+        t, terr = parse_timestamp(string(.time) ?? "", format: "%+")
+        if terr == null {
+          .time = to_unix_timestamp(t, unit: "milliseconds")
+        }
+      } else {
+        if strip_whitespace(line) == "" { abort }
+        level = if stream == "stderr" { "warn" } else { "info" }
+        . = {"msg": line, "level": level}
+      }
+      .pod = pod
+      .component = component
+
+sinks:
+  bugbarn_logs:
+    type: http
+    inputs: [bugbarn_logs_shape]
+    uri: http://bugbarn.bugbarn-production.svc.cluster.local:8080/api/v1/logs
+    encoding: {codec: json}
+    framing: {method: newline_delimited}
+    request:
+      headers:
+        x-bugbarn-api-key: "SECRET[bugbarn.logs_api_key]"
+        x-bugbarn-project: bugbarn-service
+        content-type: application/x-ndjson
+      timeout_secs: 30
+    # Below BugBarn's 1MiB ingest body limit.
+    batch: {max_bytes: 900000, timeout_secs: 10}
+    buffer: {type: disk, max_size: 268435488, when_full: drop_newest}

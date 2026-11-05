@@ -200,7 +200,7 @@ Ingest one or more log entries.
 {
   "logs": [
     {
-      "timestamp": "2026-04-26T10:30:00Z",
+      "time": 1777199400000,
       "level": "error",
       "level_num": 50,
       "message": "Database connection failed",
@@ -1172,7 +1172,7 @@ The shape of each entry in `POST /api/v1/logs`:
 
 ```json
 {
-  "timestamp": "2026-04-26T10:30:00Z",
+  "time": 1777199400000,
   "level": "error",
   "level_num": 50,
   "message": "Database connection failed",
@@ -1185,9 +1185,9 @@ The shape of each entry in `POST /api/v1/logs`:
 
 | Field | Type | Description |
 |---|---|---|
-| `timestamp` | RFC 3339 string | When the log entry was produced. |
-| `level` | string | Level name: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. |
-| `level_num` | integer | Pino-style numeric level (10, 20, 30, 40, 50, 60). Used when `level` is absent or for numeric-only loggers. |
+| `time` | integer | When the log entry was produced, in epoch milliseconds. Without it, or in any other form (an RFC 3339 string, or a `timestamp` field, which is kept as data), the entry takes the time BugBarn received it. |
+| `level` | string or integer | Level name (`trace`, `debug`, `info`, `warn`, `error`, `fatal`, any case) or a Pino numeric level (10, 20, 30, 40, 50, 60). Defaults to `info`. |
+| `level_num` | integer | Kept as data; the level is read from `level` only. |
 | `message` | string | Log message text. Also accepted under the key `msg` (Pino convention). |
 | `data` | object | Arbitrary additional structured fields. |
 

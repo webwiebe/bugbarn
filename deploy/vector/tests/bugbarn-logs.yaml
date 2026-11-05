@@ -1,0 +1,97 @@
+# `vector test` cases for the bugbarn_logs_shape transform in
+# k8s/layer7/bugbarn-logs.yaml. Run by check.sh.
+tests:
+  - name: slog JSON line keeps its fields and gets epoch time
+    inputs:
+      - insert_at: bugbarn_logs_shape
+        type: vrl
+        source: |
+          . = {
+            "message": "{\"time\":\"2026-11-05T02:50:01.123456789Z\",\"level\":\"INFO\",\"msg\":\"wal checkpoint\",\"mode\":\"PASSIVE\",\"busy\":0}",
+            "stream": "stdout",
+            "kubernetes": {
+              "container_name": "bugbarn",
+              "pod_name": "bugbarn-writer-7d9f-abcde",
+              "pod_labels": {"app.kubernetes.io/name": "bugbarn", "app.kubernetes.io/component": "writer"},
+            },
+          }
+    outputs:
+      - extract_from: bugbarn_logs_shape
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.msg, "wal checkpoint")
+              assert_eq!(.level, "INFO")
+              assert_eq!(.mode, "PASSIVE")
+              assert_eq!(.busy, 0)
+              assert_eq!(.time, 1793847001123)
+              assert_eq!(.pod, "bugbarn-writer-7d9f-abcde")
+              assert_eq!(.component, "writer")
+              assert!(!exists(.kubernetes))
+              assert!(!exists(.message))
+              assert!(!exists(.stream))
+
+  - name: a panic line on stderr ships as warn text
+    inputs:
+      - insert_at: bugbarn_logs_shape
+        type: vrl
+        source: |
+          . = {
+            "message": "panic: runtime error: invalid memory address or nil pointer dereference",
+            "stream": "stderr",
+            "kubernetes": {
+              "container_name": "bugbarn",
+              "pod_name": "bugbarn-reader-5c4b-xyz12",
+              "pod_labels": {"app.kubernetes.io/name": "bugbarn", "app.kubernetes.io/component": "reader"},
+            },
+          }
+    outputs:
+      - extract_from: bugbarn_logs_shape
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.msg, "panic: runtime error: invalid memory address or nil pointer dereference")
+              assert_eq!(.level, "warn")
+              assert_eq!(.component, "reader")
+
+  - name: a plain stdout line ships as info
+    inputs:
+      - insert_at: bugbarn_logs_shape
+        type: vrl
+        source: |
+          . = {
+            "message": "listening on :8080",
+            "stream": "stdout",
+            "kubernetes": {"container_name": "bugbarn", "pod_name": "p", "pod_labels": {}},
+          }
+    outputs:
+      - extract_from: bugbarn_logs_shape
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.level, "info")
+              assert_eq!(.msg, "listening on :8080")
+
+  - name: other containers in the pod are dropped
+    inputs:
+      - insert_at: bugbarn_logs_shape
+        type: vrl
+        source: |
+          . = {
+            "message": "{\"msg\":\"x\"}",
+            "stream": "stdout",
+            "kubernetes": {"container_name": "migrate", "pod_name": "p", "pod_labels": {}},
+          }
+    no_outputs_from: [bugbarn_logs_shape]
+
+  - name: blank lines are dropped
+    inputs:
+      - insert_at: bugbarn_logs_shape
+        type: vrl
+        source: |
+          . = {
+            "message": "   ",
+            "stream": "stdout",
+            "kubernetes": {"container_name": "bugbarn", "pod_name": "p", "pod_labels": {}},
+          }
+    no_outputs_from: [bugbarn_logs_shape]

@@ -23,12 +23,31 @@ check.sh       runs the tests and validates every overlay and host config
 | k8s audit log | `/var/lib/rancher/k3s/server/logs/audit.log` | `k8saudit` |
 | Traefik access log, JSON lines only | `kubernetes_logs` for the kube-system Traefik pods | `traefik` |
 | CPU, load, memory, filesystems, network | `host_metrics` every 60s | metrics |
+| BugBarn's own writer and reader logs (layer7 only) | `kubernetes_logs` for `app.kubernetes.io/name=bugbarn` in `bugbarn-production`, container `bugbarn` | log store |
 
 Traefik lines in the default CLF format are dropped: behind Cloudflare they
 carry no client IP. Both the Traefik JSON access log and the k8s audit log are
 switched on in the k3s configuration (the k3s-infra repo), and the agents pick
 them up once they exist. The agents drop Traefik lines for their own
 `/api/v1/telemetry/` POSTs.
+
+## BugBarn's own logs
+
+`k8s/layer7/bugbarn-logs.yaml` ships the production writer's and readers' log
+lines to `POST /api/v1/logs` under project `bugbarn-service`, so
+`bb logs --project bugbarn-service` shows them after a deploy has replaced the
+pod. slog's JSON lines keep every field; `time` becomes epoch milliseconds,
+which is the only form the log endpoint reads, and `pod` and `component`
+(writer or reader) are added. A line that is no JSON, such as a panic trace,
+ships as its text at `warn` from stderr and `info` from stdout. ERROR records
+also still become issues through selflog. Testing and staging run no selflog
+and ship nothing here.
+
+The service writes no log line per log ingest request, so shipping does not
+feed itself. The sink uses its own ingest key bound to `bugbarn-service`,
+`logs_api_key` in the layer7 `secret.yaml`, which came through
+`bb key-request bugbarn-service`. The `api_key` there is bound to `infra`
+and would get 403 for the `bugbarn-service` project.
 
 ## Overlays and keys
 

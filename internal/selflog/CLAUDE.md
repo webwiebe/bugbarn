@@ -22,6 +22,10 @@ Captured messages go to the BugBarn instance at `BUGBARN_SELF_ENDPOINT`, which i
 itself. They show up as issues in project `bugbarn-service`
 (`bb issues --project bugbarn-service`).
 
+Records below ERROR do not pass through here. In production the layer7 Vector agent ships
+every line the writer and readers print, at any level, to the log store
+(`bb logs --project bugbarn-service`); see `deploy/vector/README.md`.
+
 ## Rules
 
 - An error path that does not go through `slog` at ERROR is invisible. `log.Printf`,
