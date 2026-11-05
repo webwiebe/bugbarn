@@ -96,7 +96,7 @@ func NewRedisQueue(redisURL string) (*RedisQueue, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, fmt.Errorf("queue: redis ping: %w", err)
 	}
 	return &RedisQueue{client: client}, nil
@@ -133,7 +133,7 @@ func NewRedisQueueWithRetry(ctx context.Context, redisURL string) (*RedisQueue, 
 		if err == nil {
 			return &RedisQueue{client: client}, nil
 		}
-		client.Close()
+		_ = client.Close()
 
 		select {
 		case <-ctx.Done():

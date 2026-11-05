@@ -40,7 +40,7 @@ func (s *Server) uploadSourceMap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "source_map is required", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	limited := io.LimitReader(file, limit+1)
 	blob, err := io.ReadAll(limited)

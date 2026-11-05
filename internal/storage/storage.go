@@ -166,7 +166,7 @@ func OpenReadOnly(path string) (*Store, error) {
 	// Verify the database is reachable.
 	if err := roDB.Ping(); err != nil {
 		unregisterDBStats(roDB)
-		roDB.Close()
+		_ = roDB.Close()
 		return nil, err
 	}
 
@@ -205,7 +205,7 @@ func open(path string, autoMigrate bool) (*Store, error) {
 	roDB, err := sql.Open(tracedDriver(), sqliteReadOnlyDSN(absPath))
 	if err != nil {
 		unregisterDBStats(db)
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	roDB.SetMaxOpenConns(4)
@@ -219,8 +219,8 @@ func open(path string, autoMigrate bool) (*Store, error) {
 	if err := c.init(ctx); err != nil {
 		unregisterDBStats(roDB)
 		unregisterDBStats(db)
-		roDB.Close()
-		db.Close()
+		_ = roDB.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	if autoMigrate {

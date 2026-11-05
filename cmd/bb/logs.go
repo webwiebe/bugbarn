@@ -127,7 +127,7 @@ func streamLogs(client *Client, level, project string, noColor bool) error {
 		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("stream connect: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 

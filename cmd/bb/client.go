@@ -158,7 +158,7 @@ func (c *Client) doRetry(ctx context.Context, method, path string, body any, ret
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

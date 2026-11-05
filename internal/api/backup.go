@@ -49,7 +49,7 @@ func (s *Server) serveDBBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "backup not available", http.StatusInternalServerError)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	stat, err := f.Stat()
 	if err != nil {

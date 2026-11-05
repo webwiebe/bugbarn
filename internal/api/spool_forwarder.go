@@ -404,8 +404,8 @@ func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) err
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 	if resp.StatusCode >= 500 {
 		err := fmt.Errorf("writer returned %d", resp.StatusCode)

@@ -117,8 +117,8 @@ func loginWithPassword(ctx context.Context, baseURL, username, password string) 
 		span.SetStatus(codes.Error, err.Error())
 		return "", "", fmt.Errorf("login request: %w", err)
 	}
-	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.ReadAll(resp.Body)
 
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 
@@ -409,13 +409,13 @@ func resolveGroup(flag string) string {
 func writeOut(v any) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(v)
+	_ = enc.Encode(v)
 }
 
 func writeRaw(data json.RawMessage) error {
 	var buf bytes.Buffer
 	if err := json.Indent(&buf, data, "", "  "); err != nil {
-		os.Stdout.Write(data)
+		_, _ = os.Stdout.Write(data)
 		fmt.Println()
 		return nil
 	}

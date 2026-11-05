@@ -51,10 +51,10 @@ func (s *Server) serveDigestTrigger(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]any{"errors": msgs})
+		_ = json.NewEncoder(w).Encode(map[string]any{"errors": msgs})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 }
