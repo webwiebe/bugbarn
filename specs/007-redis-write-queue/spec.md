@@ -26,11 +26,11 @@ This is exactly the failure mode **spanbarn** avoids by decoupling writes throug
 Introduce a **durable Redis list** as the write queue (CQRS command bus). High-volume ingest (events + logs) flows:
 
 ```
-reader (producer)  →  local spool (durability anchor)  →  LPUSH  →  Redis list  →  BRPOP  →  writer (single consumer)  →  SQLite
+reader (producer)  →  local spool (durability anchor)  →  LPUSH  →  Redis list  →  BLMOVE  →  writer (single consumer)  →  SQLite
 ```
 
 - Readers `LPUSH` write batches and return immediately; they never block on the writer.
-- The single writer `BRPOP`s and drains at its own pace. No HTTP storm, no backpressure on any request path.
+- The single writer takes entries with `BLMOVE` into its processing list and drains at its own pace. No HTTP storm, no backpressure on any request path.
 - The writer serialises **all** DB writes (event persist, log insert, retention, WAL checkpoint) behind a **shared write mutex**, so nothing competes for the SQLite write lock — and the periodic `wal_checkpoint(TRUNCATE)` finally gets clean windows (the [project_wal_checkpoint] finding: that checkpoint pattern only works under serialisation).
 - The reader-side **local spool remains the durability anchor**: its cursor advances only after a successful `LPUSH`, so a Redis outage backs the spool up without data loss (identical durability to today, only the forwarding target changes from HTTP→writer to spool→Redis).
 
@@ -58,7 +58,7 @@ Low-volume dashboard mutations need a synchronous response (e.g. resolve issue �
                               Redis list  bugbarn:write-queue │ (sync writes, low volume)
                                                        │      │
         ┌──────────────────────────────────────────────▼──────▼────────┐  COMMAND side
-        │ writer pod (1):  RedisConsumer BRPOP                          │
+        │ writer pod (1):  RedisConsumer BLMOVE                         │
         │   shared writeMu serialises ALL writes:                      │
         │     event persist · log insert · retention · WAL checkpoint  │
         │            → single SQLite writer connection                 │
@@ -73,7 +73,7 @@ Low-volume dashboard mutations need a synchronous response (e.g. resolve issue �
 ### Queue (`internal/queue`)
 Adapted from spanbarn's `internal/queue/redis_queue.go`:
 - `WriteQueueKey = "bugbarn:write-queue"`, batches of ≤ N records per list item.
-- `Publish(ctx, []QueueItem)` → `LPUSH`. `Consume(ctx)` → `BRPOP` with timeout (returns `nil,nil` on timeout so callers loop). `Len(ctx)` for depth metrics.
+- `Publish(ctx, []QueueItem)` → `LPUSH`. `Consume(ctx)` → `BRPOP` with timeout (returns `nil,nil` on timeout so callers loop), used by tests. `Reserve(ctx, key)` → `BLMOVE` into the processing list, `Ack` → `LREM`, `RecoverProcessing` → `LMOVE` back until empty; the writer uses these. `Len(ctx)` for depth metrics.
 - `NewRedisQueueWithRetry` for writer-mode startup (queue pod may come up after the writer during a rolling deploy).
 
 ### QueueItem envelope
@@ -94,14 +94,15 @@ This reuses the existing `spool.Record` shape so the reader spool and the queue 
 - Log ingest on readers is appended to the **same spool** (as a `Kind:"log"` record) instead of HTTP-proxied, so logs get the same durable, decoupled path as events.
 
 ### Consumer (writer side)
-- New `RedisConsumer` (modeled on spanbarn's `RedisWorker.Run`): `BRPOP` loop → dispatch by `Kind` (event → `PersistProcessedEvent` pipeline; log → `logs.Insert`).
+- New `RedisConsumer` (modeled on spanbarn's `RedisWorker.Run`): `Reserve` loop → dispatch by `Kind` (event → `PersistProcessedEvent` pipeline; log → `logs.Insert`).
 - Holds the **shared write mutex** for the DB-write phase of each batch.
 
 ### Shared write mutex
 A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consumer, the retention/digest/analytics writers, and the WAL checkpointer. Every code path that opens a write transaction acquires it first. This makes the single SQLite writer connection genuinely single-writer at the application level and lets the TRUNCATE checkpoint run without `SQLITE_BUSY` churn.
 
 ### Durability & ordering
-- **At-least-once**: cursor advances only after `LPUSH` success (producer) and the consumer acks by `BRPOP` (Redis removes on pop) only after a successful insert — on consumer crash mid-batch, the batch is lost from Redis but **still in the reader spool** until the reader's cursor... ⚠️ **OPEN QUESTION**: BRPOP removes the item before the insert completes. To get at-least-once on the consumer we need either (a) `BRPOPLPUSH` into a processing list + remove-on-success, or (b) accept at-most-once for the Redis hop and rely on the reader spool retas the anchor. Spanbarn accepts the simple BRPOP model; document the trade-off and decide. Likely (a) `BLMOVE` to a per-consumer processing list.
+- **At-least-once**: the reader's cursor advances only after `LPUSH` success, and from then on the Redis entry is the only copy. The writer takes an entry with `BLMOVE bugbarn:write-queue bugbarn:write-queue:processing:writer RIGHT LEFT 5`, so the pop and the move into its processing list are one step on the server. It acks with `LREM` once every item has a final disposition (stored, held, or dropped as unprocessable). On start, and after a failed read, it moves every entry in the processing list back to the consuming end of the write queue, oldest first. A lost reply or a writer killed between pop and commit therefore loses nothing (bugbarn#257).
+- **Over-count on replay**: queue items carry no stable event id on the reader path, so a replay cannot skip events already stored. A writer killed after its commit and before the ack stores that entry again: each event in it gets a second row and its issue's `event_count` one extra. A reader entry holds one item; a requeued tail or an Alertmanager post holds up to 500. A clean shutdown adds none.
 - **Ordering**: events are fingerprint-grouped and idempotent-ish; strict ordering not required. Logs are append-only. Per-project ordering is preserved well enough by FIFO list semantics.
 
 ### Backpressure
@@ -118,14 +119,14 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 ## Phased implementation plan
 
 - **Phase 1 — Foundation (no behavior change).** ✅ `internal/queue` package + `Item` envelope + `BUGBARN_REDIS_QUEUE_URL` config + go-redis dependency. Unit tests with miniredis.
-- **Phase 2 — Writer consumer.** ✅ `internal/ingestproc` — `Processor.PersistRecord` (extracted event pipeline) + `Consumer` (BRPOP → dispatch). Wired into the writer's `run()` behind the flag; connects in a goroutine so startup never blocks on Redis. The shared write mutex is plumbed (nil for now) and activates when retention + the WAL checkpoint move under it (deferred — see note below).
+- **Phase 2 — Writer consumer.** ✅ `internal/ingestproc` — `Processor.PersistRecord` (extracted event pipeline) + `Consumer` (`Reserve` → dispatch → `Ack`). Wired into the writer's `run()` behind the flag; connects in a goroutine so startup never blocks on Redis. The shared write mutex is plumbed (nil for now) and activates when retention + the WAL checkpoint move under it (deferred — see note below).
 - **Phase 3 — Reader producer.** ✅ `SpoolForwarder` Redis drain (`NewRedisSpoolForwarder`); `internal/logparse` shared pino parsing; consumer `KindLog` path. Reader uses the Redis spool when configured.
 - **Phase 4 — Deploy.** ✅ `redis-queue-deployment.yaml`/`-service.yaml` for staging + production; `BUGBARN_REDIS_QUEUE_URL` on writer + reader; kustomizations updated. Rollout is staged by the pipeline (staging on tag, prod manual).
 - **Phase 5 — Cutover & cleanup.** ⏳ *Deferred until the Redis path is validated in production.* Then retire the reader→writer ingest HTTP path (`SpoolForwarder` HTTP send) and the writer's inbound ingest HTTP handler, and fold the file-spool worker's inline pipeline into `ingestproc`. Keep `WriteForwarder` for sync dashboard mutations. The feature flag stays as the rollback path until this happens.
 
 ### Decisions made during implementation
 
-- **Consumer delivery:** plain `BRPOP` (matches spanbarn) — at-most-once on the consumer hop; a writer crash mid-batch loses that batch. Acceptable for telemetry; the reader spool covers un-published data. A `BLMOVE`-to-processing-list upgrade is the path to exactly-once if needed.
+- **Consumer delivery:** at first plain `BRPOP` (matches spanbarn), at-most-once on the consumer hop. A lost BRPOP reply or a writer kill between pop and commit dropped the entry, and the reader spool had already advanced past it (bugbarn#257). Replaced by `BLMOVE` to a per-writer processing list with an `LREM` ack and a replay on start: at-least-once, with the over-count under Durability.
 - **Write mutex deferred:** `MaxOpenConns(1)` already serialises writes at the pool level, so the consumer passes `nil` for now. The shared mutex becomes meaningful when the app-side WAL `TRUNCATE` checkpoint is re-introduced (it needs an uncontended window) — see [project_wal_checkpoint]; that lands with phase 5 cleanup.
 - **Node hardening (ops, not in this PR):** raise `fs.inotify.max_user_instances` on the writer node — the inotify exhaustion that wedged prod on 2026-06-11 is mitigated structurally by removing the HTTP-forward churn, but the low default is worth bumping.
 
@@ -143,7 +144,7 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 
 ## Risks / open questions
 
-1. **At-least-once on the BRPOP hop** — use `BLMOVE` to a processing list (decide in Phase 2).
+1. **At-least-once on the consumer hop**: done with `BLMOVE` to a processing list (bugbarn#257). Exactly-once would need a stable id per item and a stored set of seen ids.
 2. **Redis as a new SPOF** for ingest — mitigated by reader spool anchor; Redis AOF persistence; `NewRedisQueueWithRetry`.
 3. **Extra moving part** (Redis pod) — acceptable; spanbarn/funnelbarn already run this.
 4. Dashboard mutations remain sync-HTTP — fine (low volume), but means the writer still serves some HTTP writes; keep them under the write mutex too.
@@ -162,13 +163,14 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 - **FR-704**: With `BUGBARN_REDIS_QUEUE_URL` empty, readers MUST fall back to the HTTP forwarding path. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_AuthenticatedPOSTForwarded`.
 - **FR-705**: Dashboard mutations MUST stay on the synchronous `WriteForwarder`. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_DeleteForwarded`.
 - **FR-706**: The consumer MUST push the unfinished tail of a batch back to the queue on shutdown. Issues: none found. Tests: `internal/ingestproc/ingestproc_test.go::TestConsumerRequeuesOnShutdown`.
+- **FR-710**: The writer MUST hold each entry in its processing list from the pop until the entry's items have a final disposition, and MUST move the processing list back to the write queue on start. A writer killed between pop and commit loses nothing. Issues: bugbarn#257. Tests: `internal/ingestproc/consumer_replay_test.go::TestWriterKilledBetweenPopAndCommitLosesNothing`, `::TestConsumerAcksAStoredEntry`, `internal/queue/processing_test.go::TestRecoverProcessingReplaysOldestFirst`, `::TestReserveDropsAnUndecodableEntry`.
 - **FR-707**: Events for an unapproved project MUST be held and replayed on approval. Issues: none found. Tests: `internal/ingestproc/held_test.go::TestPersistRecordHeldForPendingProject`, `::TestReplayHeldEventsOnApproval`.
 - **FR-708**: Large publishes MUST be split into bounded batches. Issues: none found. Tests: `internal/queue/queue_test.go::TestPublishBatchesLargeInput`.
 - **FR-709**: The producer MUST NOT block on the writer. [inferred] A Redis outage backs the reader spool up.
 
 ### Non-Functional Requirements
 
-- **NFR-701**: The consumer hop is at-most-once: an item is popped before it is persisted. [inferred] `internal/queue/queue.go` pops with `BRPOP`; no test asserts the loss window.
+- **NFR-701**: The consumer hop is at-least-once. A writer killed after its commit and before its ack stores that entry a second time, and the issue's `event_count` over-counts by one per event in it. Issues: bugbarn#257. Tests: `internal/ingestproc/consumer_replay_test.go::TestWriterKilledBeforeAckStoresTheEntryTwice`.
 
 ---
 
@@ -181,7 +183,6 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 | Retention and the WAL checkpoint run under the shared write mutex | Architecture | The consumer passes a nil mutex; writes serialise through the single write connection (`internal/storage/CLAUDE.md`) |
 | The WAL checkpoint is re-introduced with phase 5 | Decisions | The writer runs `RunPeriodicCheckpoint` (`internal/storage/checkpoint.go`) since Litestream was removed |
 | The periodic `wal_checkpoint(TRUNCATE)` gets clean windows | Header, Architecture | It does not: readers pin snapshots, and a TRUNCATE held the write connection for 12 to 28s (bugbarn#236). Ticks are now PASSIVE except every `BUGBARN_WAL_TRUNCATE_EVERY`-th (default 10), whose reader wait is `BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS` (default 1000) (`internal/storage/checkpoint.go`) |
-| `BLMOVE` to a processing list decides at-least-once | Risks 1 | Decided: plain `BRPOP`, at-most-once (`internal/queue/queue.go`) |
 | The queue is the only reader-to-writer ingest path | Solution | With no spool dir the reader proxies synchronously; with a spool dir and no Redis URL it POSTs to the writer |
 | `[project_wal_checkpoint]` link | Last line | Points at a private memory note; not established |
 

@@ -49,10 +49,14 @@ Two consumers persist events, and both go through `worker.ProcessRecord`
   ingest, HTTP-mode reader replays, Alertmanager and `POST /api/v1/releases`. Transient
   lock errors retry forever; other failures retry 3 times, then go to
   `deadletter.ndjson`. It creates projects with `EnsureProject` and never holds events.
-- **Redis consumer** (`internal/ingestproc`, spec 007). `BRPOP` batches, `PersistRecord`
-  with up to 5 retries on transient errors. Delivery is at-most-once: an item is popped
-  before it is persisted, and a non-transient failure drops it. On shutdown the
-  unfinished tail is pushed back. Honours pending projects: with
+- **Redis consumer** (`internal/ingestproc`, spec 007). `BLMOVE`s each entry into the
+  writer's processing list (`bugbarn:write-queue:processing:writer`), runs `PersistRecord`
+  with up to 5 retries on transient errors, and acks with `LREM` once every item has a
+  final disposition. A non-transient failure drops the item and acks. On start, and after
+  a failed read, it moves the processing list back to the write queue. Delivery is
+  at-least-once: a writer killed after its commit and before the ack stores that entry
+  again on the next start (bugbarn#257). On shutdown the unfinished tail is pushed back
+  and the entry acked; if that push fails, the whole entry replays. Honours pending projects: with
   `BUGBARN_AUTO_APPROVE_PROJECTS` off, events for an unapproved project are stored via
   `HoldEvent` and replayed by `ingestproc.Replayer` on approval.
 

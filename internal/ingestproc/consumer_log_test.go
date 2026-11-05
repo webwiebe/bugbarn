@@ -13,8 +13,8 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 )
 
-// errorRecorder keeps the ERROR records that mention BRPOP and signals the
-// first one.
+// errorRecorder keeps the ERROR records about a write-queue error (their text
+// carries the "queue: " prefix) and signals the first one.
 type errorRecorder struct {
 	mu      sync.Mutex
 	records []string
@@ -35,7 +35,7 @@ func (h *errorRecorder) Handle(_ context.Context, r slog.Record) error {
 		text += " " + a.Value.String()
 		return true
 	})
-	if !strings.Contains(text, "brpop") {
+	if !strings.Contains(text, "queue: ") {
 		return nil
 	}
 	h.mu.Lock()
@@ -45,13 +45,13 @@ func (h *errorRecorder) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
-// One failed BRPOP is one ERROR record. Each ERROR files an issue through
+// One failed write-queue read is one ERROR record. Each ERROR files an issue through
 // selflog, so a second record for the same failure files a duplicate issue
 // (bugbarn#255: BS2-159 and BS2-160). The queue's own logs go to the default
 // logger, so the test records both that and the consumer's logger.
 //
 // Not parallel: it replaces the default logger.
-func TestOneBRPOPFailureLogsOneError(t *testing.T) {
+func TestOneQueueReadFailureLogsOneError(t *testing.T) {
 	rec := &errorRecorder{first: make(chan struct{})}
 	prev := slog.Default()
 	slog.SetDefault(slog.New(rec))
@@ -66,7 +66,7 @@ func TestOneBRPOPFailureLogsOneError(t *testing.T) {
 		t.Fatalf("queue: %v", err)
 	}
 	t.Cleanup(func() { q.Close() })
-	// With Redis gone every BRPOP fails.
+	// With Redis gone every read fails.
 	mr.Close()
 
 	c := NewConsumer(q, nil, nil, nil, slog.New(rec))
@@ -83,7 +83,7 @@ func TestOneBRPOPFailureLogsOneError(t *testing.T) {
 	case <-rec.first:
 	case <-time.After(30 * time.Second):
 		cancel()
-		t.Fatal("no error was logged for the failed BRPOP")
+		t.Fatal("no error was logged for the failed read")
 	}
 	// The consumer is now in its retry backoff; cancel ends it before a second
 	// attempt.
@@ -93,7 +93,7 @@ func TestOneBRPOPFailureLogsOneError(t *testing.T) {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	if len(rec.records) != 1 {
-		t.Fatalf("one failed BRPOP logged %d ERROR records, want 1:\n%s",
+		t.Fatalf("one failed read logged %d ERROR records, want 1:\n%s",
 			len(rec.records), strings.Join(rec.records, "\n"))
 	}
 }
