@@ -44,7 +44,8 @@ func (s *Server) authenticateAndResolve(w http.ResponseWriter, r *http.Request) 
 	// API key requests are authenticated out-of-band, so CSRF doesn't apply.
 	if usingSession && !usingAPIKey && isCSRFProtected(r) {
 		if !s.validCSRF(r) {
-			s.logger.Warn("csrf: rejected request", "method", r.Method, "path", r.URL.Path, "header_present", r.Header.Get("X-BugBarn-CSRF") != "")
+			s.logger.Warn("csrf: rejected request", "method", r.Method, "path", r.URL.Path,
+				"header_present", r.Header.Get("X-BugBarn-CSRF") != "")
 			http.Error(w, "invalid or missing CSRF token", http.StatusForbidden)
 			return r, false
 		}

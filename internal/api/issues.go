@@ -18,7 +18,9 @@ const mutateTimeout = 5 * time.Second
 // tryMutate races fn against a 5-second deadline.
 // Returns (issue, queued=false, err) on completion, or (zero, queued=true, nil) when
 // the deadline fires and the mutation was successfully queued for async application.
-func tryMutate(ctx context.Context, q *mutqueue.Queue, rec mutqueue.Record, fn func(context.Context) (domain.Issue, error)) (domain.Issue, bool, error) {
+func tryMutate(
+	ctx context.Context, q *mutqueue.Queue, rec mutqueue.Record, fn func(context.Context) (domain.Issue, error),
+) (domain.Issue, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
 	defer cancel()
 

@@ -458,7 +458,8 @@ func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug
 	}
 
 	// Move analytics pageviews.
-	if _, err := tx.ExecContext(ctx, `UPDATE analytics_pageviews SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE analytics_pageviews SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
 		return apperr.Internal("merge: move analytics", err)
 	}
 
@@ -468,7 +469,8 @@ func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug
 	}
 
 	// Create alias from source slug → target project.
-	if _, err := tx.ExecContext(ctx, `INSERT INTO project_aliases (alias_slug, project_id) VALUES (?, ?)`, sourceSlug, targetID); err != nil {
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO project_aliases (alias_slug, project_id) VALUES (?, ?)`, sourceSlug, targetID); err != nil {
 		return wrapErr(err, "merge: create alias")
 	}
 

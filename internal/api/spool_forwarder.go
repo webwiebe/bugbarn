@@ -282,7 +282,7 @@ func (s *SpoolForwarder) Pending() int64 {
 }
 
 // Drain repeatedly reads new records from the spool and forwards them to the
-// writer until the context is cancelled. Records are acked by advancing a
+// writer until the context is canceled. Records are acked by advancing a
 // persisted cursor so a restart resumes where we left off.
 func (s *SpoolForwarder) Drain(ctx context.Context) {
 	const idleSleep = 250 * time.Millisecond

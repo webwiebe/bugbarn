@@ -21,7 +21,7 @@ func BuildNotifiers(cfg Config) []Notifier {
 
 // StartScheduler launches a goroutine that fires the digest at the configured
 // weekday and hour (UTC). It returns immediately; the goroutine runs until ctx
-// is cancelled. No-ops if cfg.Enabled() is false.
+// is canceled. No-ops if cfg.Enabled() is false.
 // If wg is non-nil, it increments the WaitGroup before starting and decrements
 // it when the goroutine exits, so callers can wait for a clean shutdown.
 func StartScheduler(ctx context.Context, cfg Config, store Store, wg *sync.WaitGroup) {

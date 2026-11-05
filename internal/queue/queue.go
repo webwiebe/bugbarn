@@ -115,7 +115,7 @@ func NewRedisQueueLazy(redisURL string) (*RedisQueue, error) {
 }
 
 // NewRedisQueueWithRetry connects to Redis, retrying with capped exponential
-// backoff until ctx is cancelled or the connection succeeds. Used in writer
+// backoff until ctx is canceled or the connection succeeds. Used in writer
 // mode, where the Redis queue pod may start after the writer during a rolling
 // deploy.
 func NewRedisQueueWithRetry(ctx context.Context, redisURL string) (*RedisQueue, error) {
@@ -137,7 +137,7 @@ func NewRedisQueueWithRetry(ctx context.Context, redisURL string) (*RedisQueue, 
 
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("queue: context cancelled waiting for redis: %w", ctx.Err())
+			return nil, fmt.Errorf("queue: context canceled waiting for redis: %w", ctx.Err())
 		case <-time.After(backoff):
 			if backoff < 30*time.Second {
 				backoff *= 2
@@ -146,7 +146,7 @@ func NewRedisQueueWithRetry(ctx context.Context, redisURL string) (*RedisQueue, 
 	}
 }
 
-// Publish serialises items as JSON and LPUSHes them to the queue in batches of
+// Publish serializes items as JSON and LPUSHes them to the queue in batches of
 // up to maxItemsPerBatch. Producers call this after a record is durably in the
 // local spool; the spool cursor advances only once Publish returns nil.
 func (q *RedisQueue) Publish(ctx context.Context, items []Item) error {

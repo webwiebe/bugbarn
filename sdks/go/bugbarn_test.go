@@ -21,7 +21,7 @@ func resetGlobal() {
 func TestCaptureErrorBeforeInit(t *testing.T) {
 	resetGlobal()
 	if CaptureError(errors.New("test")) {
-		t.Fatal("expected false when not initialised")
+		t.Fatal("expected false when not initialized")
 	}
 }
 
@@ -81,7 +81,7 @@ func TestFlushNoopWhenNotInited(t *testing.T) {
 	resetGlobal()
 	// Should return true (nothing to drain) and not panic.
 	if !Flush(100 * time.Millisecond) {
-		t.Fatal("expected true when not initialised")
+		t.Fatal("expected true when not initialized")
 	}
 }
 
