@@ -30,6 +30,7 @@ type Store interface {
 	CountEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
 	DeleteProjectEventsBefore(ctx context.Context, projectID int64, cutoff time.Time, limit int) (int64, error)
 	ProjectsWithRetentionOverride(ctx context.Context) (map[int64]int, error)
+	PruneReleases(ctx context.Context, keep, limit int) (int64, error)
 }
 
 // deleteBatch removes up to limit expired rows and reports how many it deleted.
@@ -201,6 +202,7 @@ func StartWorker(ctx context.Context, store Store, cfg Config, log *slog.Logger,
 		tun := defaultTuning()
 		log.Info("event retention enabled", "retention_days", cfg.RetentionDays)
 		sweep(ctx, store, cfg, tun, log, m)
+		sweepReleases(ctx, store, tun, log)
 
 		t := time.NewTicker(sweepInterval)
 		defer t.Stop()
@@ -210,6 +212,7 @@ func StartWorker(ctx context.Context, store Store, cfg Config, log *slog.Logger,
 				return
 			case <-t.C:
 				sweep(ctx, store, cfg, tun, log, m)
+				sweepReleases(ctx, store, tun, log)
 			}
 		}
 	}()

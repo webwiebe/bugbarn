@@ -574,7 +574,7 @@ List recent events (polling alternative to SSE).
 
 #### GET /api/v1/releases
 
-List all releases.
+List the scoped project's newest 200 releases, newest observed first. Each project keeps its newest 1000 release rows; the writer's hourly retention sweep deletes older ones.
 
 **Response:**
 ```json

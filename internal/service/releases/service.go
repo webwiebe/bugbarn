@@ -14,6 +14,7 @@ import (
 
 type Repository interface {
 	ListReleases(context.Context) ([]domain.Release, error)
+	ListRecentReleases(ctx context.Context, limit int) ([]domain.Release, error)
 	GetRelease(context.Context, string) (domain.Release, error)
 	CreateRelease(context.Context, domain.Release) (domain.Release, error)
 	UpdateRelease(context.Context, string, domain.Release) (domain.Release, error)
@@ -35,10 +36,14 @@ func New(repo Repository, logger *slog.Logger) *Service {
 	return &Service{repo: repo, logger: logger.With("service", "releases")}
 }
 
+// ListLimit is how many releases List returns, newest first.
+const ListLimit = 200
+
+// List returns the scoped project's newest ListLimit releases.
 func (s *Service) List(ctx context.Context) ([]domain.Release, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "service.releases.List")
 	defer span.End()
-	releases, err := s.repo.ListReleases(ctx)
+	releases, err := s.repo.ListRecentReleases(ctx, ListLimit)
 	if err != nil {
 		tracing.SetError(span, err)
 	}

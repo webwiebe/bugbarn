@@ -11,7 +11,22 @@ import (
 
 const releaseIDPrefix = "release-"
 
+// ListReleases returns every release of the scoped project, newest first.
 func (s *ReleaseStore) ListReleases(ctx context.Context) ([]Release, error) {
+	return s.listReleases(ctx, -1)
+}
+
+// ListRecentReleases returns at most limit releases of the scoped project,
+// newest first.
+func (s *ReleaseStore) ListRecentReleases(ctx context.Context, limit int) ([]Release, error) {
+	if limit <= 0 {
+		return nil, apperr.InvalidInput("release list limit must be positive", nil)
+	}
+	return s.listReleases(ctx, limit)
+}
+
+// listReleases lists the scoped project's releases; a negative limit lists all.
+func (s *ReleaseStore) listReleases(ctx context.Context, limit int) ([]Release, error) {
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -31,8 +46,9 @@ SELECT
 	created_at
 FROM releases
 WHERE project_id = ?
-ORDER BY observed_at DESC, id DESC`,
-		projectID,
+ORDER BY observed_at DESC, id DESC
+LIMIT ?`,
+		projectID, limit,
 	)
 	if err != nil {
 		return nil, err

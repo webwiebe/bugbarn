@@ -433,6 +433,10 @@ Events are expired by an hourly sweep on the writer. The deployment-wide window 
 
 The two passes use different indexes on purpose. The global sweep is served by `idx_events_received_at (received_at, id)`; adding a `project_id` predicate to it would stop the scan short-circuiting at `LIMIT` and reintroduce the full-table scan that made the sweep take 98 seconds and starve ingest. The per-project pass is a separate statement shaped for `idx_events_project_received_at (project_id, received_at DESC, id DESC)`, whose leading column is the project.
 
+### Release rows
+
+The same sweep keeps each project's newest 1000 release rows (`retention.ReleasesPerProject`), newest by insertion id, since `observed_at` comes from the client. The projects over the cap are found with a covering scan of `idx_releases_project_observed_at` on the read pool; the write connection only runs the bounded deletes, at most 50 batches of 2000 per sweep. No table refers to a release row by id, so deleting one leaves issues and events intact.
+
 ## Index Strategy
 
 | Index | Table | Columns | Purpose |
