@@ -244,7 +244,7 @@ func ReadRecordsFrom(path string, offset int64) ([]RecordAtOffset, error) {
 		}
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if offset > 0 {
 		info, err := file.Stat()
@@ -297,7 +297,7 @@ func AppendDeadLetter(dir string, record Record) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	payload, err := json.Marshal(record)
 	if err != nil {
@@ -315,7 +315,7 @@ func ReadRecords(path string) ([]Record, error) {
 		}
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var records []Record
 	scanner := bufio.NewScanner(file)

@@ -287,7 +287,7 @@ Generated %s
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Robots-Tag", "noindex")
-	fmt.Fprint(w, page)
+	_, _ = fmt.Fprint(w, page)
 }
 
 // setupEndpoints returns the ingest endpoint the setup page documents and the

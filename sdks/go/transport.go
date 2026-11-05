@@ -121,6 +121,6 @@ func (t *transport) send(env envelope) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return checkResponse(resp.StatusCode)
 }

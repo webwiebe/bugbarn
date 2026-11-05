@@ -10,7 +10,7 @@ func (s *Server) serveOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Write(openapispec.OpenAPISpec)
+	_, _ = w.Write(openapispec.OpenAPISpec)
 }
 
 const apiDocsHTML = `<!doctype html>
@@ -28,5 +28,5 @@ const apiDocsHTML = `<!doctype html>
 func (s *Server) serveAPIDocs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Write([]byte(apiDocsHTML))
+	_, _ = w.Write([]byte(apiDocsHTML))
 }
