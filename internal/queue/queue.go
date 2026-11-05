@@ -187,6 +187,8 @@ func (q *RedisQueue) Publish(ctx context.Context, items []Item) error {
 
 // Consume blocks for up to brpopTimeout waiting for a batch, then returns it.
 // Returns (nil, nil) when the timeout expires with no items — callers loop.
+// It does not log a failure: the caller logs it once (ingestproc.Consumer.Run),
+// since every ERROR record files an issue through selflog (bugbarn#255).
 func (q *RedisQueue) Consume(ctx context.Context) ([]Item, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "queue.Consume",
 		trace.WithAttributes(attribute.String("queue.name", WriteQueueKey)),
@@ -203,7 +205,6 @@ func (q *RedisQueue) Consume(ctx context.Context) ([]Item, error) {
 	if err != nil {
 		err = fmt.Errorf("queue: brpop: %w", err)
 		span.SetStatus(codes.Error, err.Error())
-		slog.ErrorContext(ctx, "queue: consume brpop failed", "queue", WriteQueueKey, "error", err)
 		consumeCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error")))
 		return nil, err
 	}
@@ -212,7 +213,6 @@ func (q *RedisQueue) Consume(ctx context.Context) ([]Item, error) {
 	if err := json.Unmarshal([]byte(result[1]), &items); err != nil {
 		err = fmt.Errorf("queue: unmarshal: %w", err)
 		span.SetStatus(codes.Error, err.Error())
-		slog.ErrorContext(ctx, "queue: consume unmarshal failed", "queue", WriteQueueKey, "error", err)
 		consumeCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error")))
 		return nil, err
 	}
