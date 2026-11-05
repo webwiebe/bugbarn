@@ -2,7 +2,8 @@
 // decouples ingest producers (reader pods) from the single SQLite writer.
 //
 // Producers LPUSH batches of Items and return immediately; the single consumer
-// (the writer pod) BRPOPs and drains at its own pace. This replaces the
+// (the writer pod) moves each entry into its processing list with BLMOVE
+// (Reserve), drains at its own pace and acks once the entry is stored. This replaces the
 // reader→writer HTTP forwarding from spec 006, whose timeout-driven retries
 // could overwhelm the writer under load. See specs/007-redis-write-queue.
 package queue
@@ -50,10 +51,10 @@ const WriteQueueKey = "bugbarn:write-queue"
 
 const (
 	// maxItemsPerBatch caps how many Items are packed into a single list entry,
-	// bounding the size of any one BRPOP payload.
+	// bounding the size of any one list entry.
 	maxItemsPerBatch = 500
-	// brpopTimeout is how long Consume blocks waiting for an entry before
-	// returning (nil, nil) so the caller can re-check its context and loop.
+	// brpopTimeout is how long Consume and Reserve block waiting for an entry
+	// before returning nil so the caller can re-check its context and loop.
 	brpopTimeout = 5 * time.Second
 )
 
@@ -185,8 +186,10 @@ func (q *RedisQueue) Publish(ctx context.Context, items []Item) error {
 	return nil
 }
 
-// Consume blocks for up to brpopTimeout waiting for a batch, then returns it.
-// Returns (nil, nil) when the timeout expires with no items — callers loop.
+// Consume blocks for up to brpopTimeout waiting for a batch, pops it and
+// returns it. Returns (nil, nil) when the timeout expires with no items.
+// Popping removes the entry before the caller has it, so the writer uses
+// Reserve and Ack instead; Consume serves tests and tools that read the queue.
 // It does not log a failure: the caller logs it once (ingestproc.Consumer.Run),
 // since every ERROR record files an issue through selflog (bugbarn#255).
 func (q *RedisQueue) Consume(ctx context.Context) ([]Item, error) {
