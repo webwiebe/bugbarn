@@ -11,9 +11,9 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
-// Measurement for #235: before ingest binds a project-bound key to its project,
-// count the requests where such a key names another project in
-// X-BugBarn-Project. The counter reads 0 for a few days before the binding goes in.
+// Measurement for #235: count the requests where a project-bound key names
+// another project in X-BugBarn-Project. The API layer refuses those requests
+// with 403 (internal/api/keycheck.go); the counter shows how often that happens.
 
 var foreignProjectHeaderCounter, _ = tracing.Meter().Int64Counter(
 	"bugbarn.ingest.foreign_project_header",

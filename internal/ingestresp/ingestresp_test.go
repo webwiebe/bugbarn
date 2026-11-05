@@ -44,6 +44,7 @@ func TestWriteDropped(t *testing.T) {
 	}{
 		{"malformed", DropMalformed, http.StatusBadRequest, false, false},
 		{"unauthorized", DropUnauthorized, http.StatusUnauthorized, false, false},
+		{"forbidden", DropForbidden, http.StatusForbidden, false, false},
 		{"too large", DropTooLarge, http.StatusRequestEntityTooLarge, false, false},
 		{"spool full", DropSpoolFull, http.StatusTooManyRequests, true, true},
 		{"unavailable", DropUnavailable, http.StatusServiceUnavailable, true, true},
@@ -80,7 +81,7 @@ func TestWriteDropped(t *testing.T) {
 // TestDropContract pins the permanent-vs-retryable split: 4xx-class client
 // errors must never be retryable, and transient drops must be.
 func TestDropContract(t *testing.T) {
-	permanent := []Drop{DropMalformed, DropUnauthorized, DropTooLarge}
+	permanent := []Drop{DropMalformed, DropUnauthorized, DropForbidden, DropTooLarge}
 	for _, d := range permanent {
 		if d.Retryable {
 			t.Errorf("%q is a permanent drop but marked retryable", d.Reason)
