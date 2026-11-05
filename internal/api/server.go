@@ -11,6 +11,7 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/ingesthealth"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
@@ -265,6 +266,11 @@ func (s *Server) Start(ctx context.Context) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Services name the caller in their log lines from this.
+	r = r.WithContext(domain.WithRequestInfo(r.Context(), domain.RequestInfo{
+		Route: r.Method + " " + r.URL.Path, UserAgent: r.UserAgent(),
+	}))
+
 	// Unauthenticated wildcard-CORS ingest + public no-CORS endpoints run first.
 	if s.serveSpecialEndpoint(w, r) {
 		return

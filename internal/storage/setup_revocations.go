@@ -41,10 +41,7 @@ ON CONFLICT(slug) DO NOTHING`, slug, formatTime(time.Now().UTC())); err != nil {
 // a missing table answers false.
 func (s *APIKeyStore) SetupKeyRevoked(ctx context.Context, slug string) (bool, error) {
 	var found int
-	err := retryReadonlyRecovery(ctx, s.walPath, func() error {
-		row := s.readDB().QueryRowContext(ctx, `SELECT 1 FROM setup_key_revocations WHERE slug = ?`, slug)
-		return row.Scan(&found)
-	})
+	err := s.readDB().QueryRowContext(ctx, `SELECT 1 FROM setup_key_revocations WHERE slug = ?`, slug).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) || isMissingRevocationsTable(err) {
 		return false, nil
 	}

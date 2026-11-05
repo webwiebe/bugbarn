@@ -58,7 +58,12 @@ var (
 // name. Falls back to the plain driver if registration fails. recordError
 // decides which errors mark a span as failed; nil records all of them.
 func registerTraced(recordError func(error) bool) string {
-	name, err := otelsql.Register(baseDriverName,
+	return registerTracedOn(baseDriverName, recordError)
+}
+
+// registerTracedOn is registerTraced over the registered driver base.
+func registerTracedOn(base string, recordError func(error) bool) string {
+	name, err := otelsql.Register(base,
 		otelsql.WithAttributes(semconv.DBSystemSqlite),
 		otelsql.WithSpanOptions(otelsql.SpanOptions{
 			OmitConnResetSession: true,
@@ -70,7 +75,7 @@ func registerTraced(recordError func(error) bool) string {
 	)
 	if err != nil {
 		slog.Warn("otelsql driver registration failed; falling back to plain driver", "err", err)
-		return baseDriverName
+		return base
 	}
 	return name
 }
@@ -155,8 +160,13 @@ func OpenReadOnly(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	return openReadOnlyDSN(sqliteReadOnlyDSN(absPath))
+}
 
-	roDB, err := sql.Open(tracedDriver(), sqliteReadOnlyDSN(absPath))
+// openReadOnlyDSN is OpenReadOnly on a full DSN. Tests add readonly_shm=1, the
+// state a reader pod is in because its volume is mounted read-only.
+func openReadOnlyDSN(dsn string) (*Store, error) {
+	roDB, err := sql.Open(readonlyTracedDriver(), dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +180,7 @@ func OpenReadOnly(path string) (*Store, error) {
 		return nil, err
 	}
 
-	return newStore(&core{db: nil, roDB: roDB, walPath: absPath + "-wal"}), nil
+	return newStore(&core{db: nil, roDB: roDB}), nil
 }
 
 func Open(path string) (*Store, error) {
@@ -212,7 +222,7 @@ func open(path string, autoMigrate bool) (*Store, error) {
 	registerDBStats(roDB, "read")
 
 	c := &core{
-		db: db, roDB: roDB, walPath: absPath + "-wal",
+		db: db, roDB: roDB,
 		mergeFingerprintCollisions: os.Getenv("BUGBARN_FINGERPRINT_MERGE") == "true",
 	}
 	ctx := context.Background()
