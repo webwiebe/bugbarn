@@ -21,6 +21,11 @@ import (
 // with SQLITE_READONLY_RECOVERY (#242). Three retries, 175 ms in all.
 var readonlyRecoveryBackoffs = []time.Duration{25 * time.Millisecond, 50 * time.Millisecond, 100 * time.Millisecond}
 
+// readonlyRecoveryHook, when set, runs once after a read first fails with 264
+// and before its retries. It is nil in production; a test uses it to make the
+// writer write while the reader waits.
+var readonlyRecoveryHook func()
+
 var readonlyRecoveryCounter, _ = tracing.Meter().Int64Counter(
 	"bugbarn.storage.readonly_recovery",
 	metric.WithDescription("Reads that hit SQLITE_READONLY_RECOVERY on a reader, by outcome (recovered or failed)."),
@@ -53,6 +58,9 @@ func retryReadonlyRecovery(ctx context.Context, walPath string, fn func() error)
 			attribute.Float64("wal.age_seconds", time.Since(fi.ModTime()).Seconds()))
 	}
 	trace.SpanFromContext(ctx).AddEvent("sqlite.readonly_recovery", trace.WithAttributes(attrs...))
+	if readonlyRecoveryHook != nil {
+		readonlyRecoveryHook()
+	}
 
 	for i, wait := range readonlyRecoveryBackoffs {
 		select {

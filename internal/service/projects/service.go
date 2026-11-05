@@ -201,7 +201,16 @@ func (s *Service) BySlug(ctx context.Context, slug string) (domain.Project, erro
 	proj, err := s.repo.ProjectBySlug(ctx, slug)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !errors.Is(err, apperr.ErrNotFound) {
+		switch {
+		case errors.Is(err, apperr.ErrNotFound):
+		case errors.Is(err, apperr.ErrUnavailable):
+			// A reader could not read the database even after its retries
+			// (SQLITE_READONLY_RECOVERY, #261). The caller gets a 503 and can
+			// retry, so nothing is lost; the line names the caller.
+			info := domain.RequestInfoFromContext(ctx)
+			s.logger.WarnContext(ctx, "project by slug: database unavailable on this reader",
+				"slug", slug, "route", info.Route, "user_agent", info.UserAgent, "error", err)
+		default:
 			s.logger.ErrorContext(ctx, "project by slug", "slug", slug, "error", err)
 		}
 		return domain.Project{}, err
