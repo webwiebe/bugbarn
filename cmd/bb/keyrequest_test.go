@@ -96,3 +96,76 @@ func TestReorderFlagsAcceptsSlugAnywhere(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// A poll that fails on the way is retried: the poll secret exists only in the
+// running command, so giving up strands the request (bugbarn#256).
+func TestKeyRequestRetriesTransientPollFailures(t *testing.T) {
+	var polls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A fresh connection per request: net/http silently retries a GET once
+		// when a reused keep-alive connection closes, which would hide a reset.
+		w.Header().Set("Connection", "close")
+		switch {
+		case r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"req1","pollSecret":"sec-xyz","status":"pending","expiresAt":"2099-01-01T00:00:00Z"}`))
+		case r.Header.Get("X-BugBarn-Poll-Secret") != "sec-xyz":
+			http.Error(w, "nope", http.StatusNotFound)
+		default:
+			switch polls.Add(1) {
+			case 1, 2:
+				// Close the connection without an answer, as the proxy did.
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					t.Errorf("hijack: %v", err)
+					return
+				}
+				_ = conn.Close()
+			case 3:
+				http.Error(w, "bad gateway", http.StatusBadGateway)
+			case 4:
+				_, _ = w.Write([]byte(`{"status":"pending"}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"approved","apiKey":"abc123"}`))
+			}
+		}
+	}))
+	defer srv.Close()
+
+	stdout, stderr, err := run(t, srv)
+	if err != nil {
+		t.Fatalf("err = %v\nstderr:\n%s", err, stderr)
+	}
+	if stdout != "abc123\n" {
+		t.Fatalf("stdout = %q, want the key once", stdout)
+	}
+	if n := strings.Count(stderr, "Poll failed, retrying"); n != 3 {
+		t.Fatalf("retry lines = %d, want 3:\n%s", n, stderr)
+	}
+	if strings.Contains(stderr, "sec-xyz") || strings.Contains(stderr, "abc123") {
+		t.Fatalf("stderr leaks a secret:\n%s", stderr)
+	}
+}
+
+// A 4xx other than 410 does not change on retry, so it still ends the command.
+func TestKeyRequestStopsOnAClientError(t *testing.T) {
+	var polls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"req1","pollSecret":"sec","status":"pending","expiresAt":"2099-01-01T00:00:00Z"}`))
+			return
+		}
+		polls.Add(1)
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, _, err := run(t, srv)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Fatalf("err = %v, want HTTP 404", err)
+	}
+	if n := polls.Load(); n != 1 {
+		t.Fatalf("polls = %d, want 1", n)
+	}
+}
