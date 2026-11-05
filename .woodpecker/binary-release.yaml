@@ -103,24 +103,11 @@ steps:
         git remote set-url origin "https://wiebe:$GITEA_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
         git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
         git fetch --tags --unshallow origin 2>/dev/null || git fetch --tags --depth=2000 origin || true
-        LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
-        VER=$${LATEST#v}
-        MAJOR=$(echo "$VER" | cut -d. -f1); MINOR=$(echo "$VER" | cut -d. -f2); PATCH=$(echo "$VER" | cut -d. -f3)
-        PATCH=$(expr "$PATCH" + 1)
-        NEW="v$MAJOR.$MINOR.$PATCH"
-        while git tag | grep -q "^$NEW$"; do PATCH=$(expr "$PATCH" + 1); NEW="v$MAJOR.$MINOR.$PATCH"; done
-        echo "Next version: $NEW"
-        printf 'VERSION=%s\nVERSION_NUM=%s.%s.%s\n' "$NEW" "$MAJOR" "$MINOR" "$PATCH" > .relver
-        cat .relver
         git config user.name woodpecker
         git config user.email ci@wiebe.xyz
-        # Lightweight tag (NOT -a): an annotated tag makes Woodpecker report the
-        # tag-object sha as CI_COMMIT_SHA, which then mismatches the commit-sha
-        # the images are built under and breaks release.yaml's retag.
-        git tag "$NEW"
-        # Push tag to Gitea (triggers release.yaml staging deploy) and to GitHub (for the Release).
-        git push origin "$NEW"
-        git push "https://x-access-token:$GITHUB_TOKEN@github.com/webwiebe/bugbarn.git" "$NEW"
+        # Reuses a tag already on HEAD, so a restart after a failed GitHub push
+        # does not tag the same commit twice (pipeline 853).
+        bash scripts/version-and-tag.sh
 
   - name: build-linux-debs
     image: bash
