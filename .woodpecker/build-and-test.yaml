@@ -132,8 +132,6 @@ steps:
           -d "{\"name\":\"$(echo ${CI_COMMIT_SHA} | cut -c1-7)\",\"environment\":\"testing\",\"version\":\"${CI_COMMIT_SHA}\",\"url\":\"${CI_REPO_URL}/commit/${CI_COMMIT_SHA}\",\"notes\":\"Deployed by Woodpecker #${CI_PIPELINE_NUMBER}\"}" \
           || echo "WARN: BugBarn release marker failed"
 
-  # The post-deploy browser smoke (step smoke-testing, added in #152) is out of
-  # this pipeline until its Woodpecker secret bugbarn_testing_smoke_password
-  # exists: a step that names a missing secret fails the whole pipeline at parse
-  # time, so no testing deploy and no release tag ran. Restore the step from
-  # cf5c01a once webwiebe/bugbarn#230 is done.
+  # Testing runs no browser sign-in per push. e2e-nightly signs in to testing
+  # with its cron-only login and runs every web/e2e spec, and staging and
+  # production run the page check after their deploys (webwiebe/bugbarn#230).
