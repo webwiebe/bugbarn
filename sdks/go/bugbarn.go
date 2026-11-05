@@ -46,7 +46,7 @@ var (
 	opts Options
 )
 
-// Init initialises the SDK. Safe to call multiple times; re-initialises.
+// Init initializes the SDK. Safe to call multiple times; re-initializes.
 func Init(o Options) {
 	mu.Lock()
 	defer mu.Unlock()

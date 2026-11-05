@@ -192,7 +192,7 @@ func isNilNotifier(n Notifier) bool {
 		return true
 	}
 	v := reflect.ValueOf(n)
-	return v.Kind() == reflect.Ptr && v.IsNil()
+	return v.Kind() == reflect.Pointer && v.IsNil()
 }
 
 // New builds a monitor. logger may be nil. now may be nil (defaults to
@@ -217,7 +217,7 @@ func (m *Monitor) Snapshot() Snapshot {
 	return *m.snap.Load()
 }
 
-// Start registers gauges and runs the sample loop until ctx is cancelled. It
+// Start registers gauges and runs the sample loop until ctx is canceled. It
 // performs one sample immediately so the snapshot is populated before the first
 // tick. Safe to run as a goroutine.
 func (m *Monitor) Start(ctx context.Context) {

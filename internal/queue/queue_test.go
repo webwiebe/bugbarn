@@ -56,12 +56,12 @@ func TestConsumeTimeoutReturnsNil(t *testing.T) {
 	q, _ := newTestQueue(t)
 	// brpopTimeout is 5s; bound the test well under that via ctx is not enough
 	// (BRPOP honors the redis-side timeout), so just assert an empty queue with a
-	// short BRPOP by temporarily shrinking via a cancelled context path instead:
+	// short BRPOP by temporarily shrinking via a canceled context path instead:
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := q.Consume(ctx)
 	if err == nil {
-		t.Fatal("expected error from cancelled context BRPOP")
+		t.Fatal("expected error from canceled context BRPOP")
 	}
 }
 

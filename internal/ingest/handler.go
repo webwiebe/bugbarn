@@ -118,7 +118,7 @@ func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyByt
 	}
 }
 
-// Start blocks until ctx is cancelled. It exists for backwards compatibility
+// Start blocks until ctx is canceled. It exists for backwards compatibility
 // with callers that run it as a goroutine; the actual spool write now happens
 // synchronously inside ServeHTTP.
 func (h *Handler) Start(ctx context.Context) {
