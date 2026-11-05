@@ -22,7 +22,7 @@ When the spool file reaches `BUGBARN_MAX_SPOOL_BYTES`, the ingest endpoint retur
 
 ## Retention
 
-Events and issues are kept indefinitely — there is no automatic TTL. Disk usage grows with the SQLite database at `BUGBARN_DB_PATH`.
+An hourly sweep on the writer deletes event rows older than `BUGBARN_EVENT_RETENTION_DAYS` (default 30). Issues and their lifetime event counts are kept. Each project keeps its newest 1000 release markers, by insertion order; the same sweep deletes older ones. The SQLite file at `BUGBARN_DB_PATH` grows with what is kept.
 
 The worker deletes rotated spool segments once it has processed them, so the spool holds at most the active file plus one rotated segment.
 
