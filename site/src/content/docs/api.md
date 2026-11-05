@@ -58,7 +58,7 @@ Send the project slug in this header to scope the request to that project:
 X-BugBarn-Project: my-project
 ```
 
-If the slug does not exist, BugBarn creates the project automatically.
+If the slug does not exist, BugBarn creates the project automatically. A key bound to a project never creates one (see API Key Scoping).
 
 ### All-Projects Mode
 
@@ -66,7 +66,7 @@ Session-authenticated `GET` requests that omit the `X-BugBarn-Project` header re
 
 ### API Key Scoping
 
-When using an API key that was created for a specific project, that project is the implicit scope. The `X-BugBarn-Project` header takes precedence and overrides the key's project binding.
+When using an API key that was created for a specific project, that project is the implicit scope. A `full`-scope key may name another project in `X-BugBarn-Project`. Any other bound key may name only its own project. Another project, or a slug that does not exist, answers `403` on every route, the ingest endpoints (events, logs, Alertmanager, monitor check-ins, release markers) included. On the ingest endpoints the body is `{"accepted":false,"reason":"forbidden","retryable":false}`. Keys without a project, such as the instance key, route by the header.
 
 ---
 
@@ -78,7 +78,7 @@ All error responses use plain text bodies with standard HTTP status codes. Succe
 |---|---|
 | `400` | Bad request — malformed or missing payload. |
 | `401` | Unauthorized — no valid session or API key. |
-| `403` | Forbidden — ingest-only key on a protected endpoint, or missing/invalid CSRF token. |
+| `403` | Forbidden: an ingest-only key on a protected endpoint, a bound key that names another project, or a missing/invalid CSRF token. |
 | `404` | Not found. |
 | `405` | Method not allowed. |
 | `413` | Payload too large — body exceeds `BUGBARN_MAX_BODY_BYTES`. |
@@ -235,7 +235,7 @@ Infrastructure telemetry from Vector agents: security log lines (Traefik access 
 
 A scheduled job or worker reports that it ran. A monitor that stays silent past its interval plus grace opens an issue; an `ok` check-in resolves it again.
 
-**Auth:** API key (`ingest` or `full` scope). The project comes from the key or the `X-BugBarn-Project` header.
+**Auth:** API key (`ingest` or `full` scope). The project is the key's own project. A key without a project names it in `X-BugBarn-Project`. A bound key that names another project gets `403`.
 
 **Slug:** 1 to 64 characters of `a-z`, `0-9`, `.`, `_`, `-`. At most 100 monitors per project.
 
@@ -586,6 +586,8 @@ List all releases.
 #### POST /api/v1/releases
 
 Create a release.
+
+**Auth:** a session, or an API key of `ingest` or `full` scope. A bound `ingest` key posts markers for its own project only. When the project named in `X-BugBarn-Project` cannot be resolved, the marker is refused with a retryable `503` and nothing is stored. `notes` is cut to 2000 characters.
 
 **Request body:**
 ```json

@@ -73,7 +73,7 @@ tries the store for 5s, then appends to `mutations.ndjson` and returns 202
 SDKs decide whether to retry from the status and body alone:
 
 - 202 `{"accepted":true,"ingestId"}` (empty id on readers)
-- permanent, do not retry: 400 `malformed_payload`, 401 `unauthorized`, 413 `payload_too_large`
+- permanent, do not retry: 400 `malformed_payload`, 401 `unauthorized`, 403 `forbidden`, 413 `payload_too_large`
 - transient, retry: 429 `spool_full`, 503 `ingest_unavailable`, with `Retry-After: 1`
 
 `ingest.Handler` runs `normalize.Validate` before replying, so a 202 means the payload
@@ -89,9 +89,12 @@ Use `ingestresp` for any new ingest response.
 
 `CheckAPIKey` counts requests where a bound, non-full-scope key names another project in
 `X-BugBarn-Project` (`bugbarn.ingest.foreign_project_header`, plus one info log per
-key-project/header-project pair). Ingest still routes by the header; the counter is the
-evidence needed before binding ingest keys the way the authenticated routes already are
-(`internal/api/keybind.go`). Wired in both entrypoints through `SetProjectSlugResolver`.
+key-project/header-project pair). Wired in both entrypoints through `SetProjectSlugResolver`.
+`requireIngestKey` (`internal/api/keycheck.go`) refuses those requests with 403 `forbidden`
+on events, logs, Alertmanager and check-ins, the way `internal/api/keybind.go` refuses them on
+the authenticated routes, release markers included. A slug no project has is refused too: a
+bound key never creates a project. Full-scope and unbound keys still route by the header. The
+counter keeps counting the refused requests.
 
 ## Setup keys
 

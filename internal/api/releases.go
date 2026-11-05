@@ -12,6 +12,27 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 )
 
+// refuseUnresolvedProject answers a retryable 503 for a marker whose
+// X-BugBarn-Project header did not resolve to the request's project. The scope
+// middleware falls back to the default project when the named project cannot be
+// looked up or created, and a marker must not land there. It returns true after
+// writing the response.
+func (s *Server) refuseUnresolvedProject(w http.ResponseWriter, r *http.Request) bool {
+	slug := r.Header.Get("X-BugBarn-Project")
+	if slug == "" || s.projects == nil {
+		return false
+	}
+	id, _ := domain.ProjectIDFromContext(r.Context())
+	proj, err := s.projects.BySlug(r.Context(), slug)
+	if err == nil && proj.ID == id && id > 0 {
+		return false
+	}
+	s.logger.Warn("release: named project could not be resolved")
+	w.Header().Set("Retry-After", "1")
+	http.Error(w, "project lookup unavailable", http.StatusServiceUnavailable)
+	return true
+}
+
 func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -22,6 +43,9 @@ func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"releases": releases})
 	case http.MethodPost:
+		if s.refuseUnresolvedProject(w, r) {
+			return
+		}
 		// Fire-and-forget: when an ingest spool/worker is wired, enqueue the
 		// release marker and return immediately. Creating it synchronously here
 		// would grab the single SQLite writer connection that the background

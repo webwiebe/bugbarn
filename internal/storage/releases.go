@@ -85,6 +85,25 @@ WHERE project_id = ? AND id = ?`,
 	return release, nil
 }
 
+// maxReleaseNotesRunes bounds what a marker stores in notes. Deploy pipelines send
+// a short line of under 40 characters; this leaves room for a short changelog.
+const maxReleaseNotesRunes = 2000
+
+// capReleaseNotes cuts notes to maxReleaseNotesRunes on a rune boundary.
+func capReleaseNotes(notes string) string {
+	if len(notes) <= maxReleaseNotesRunes {
+		return notes
+	}
+	count := 0
+	for i := range notes {
+		if count == maxReleaseNotesRunes {
+			return notes[:i]
+		}
+		count++
+	}
+	return notes
+}
+
 func (s *ReleaseStore) CreateRelease(ctx context.Context, release Release) (Release, error) {
 	if strings.TrimSpace(release.Name) == "" {
 		return Release{}, apperr.InvalidInput("release name is required", nil)
@@ -92,6 +111,7 @@ func (s *ReleaseStore) CreateRelease(ctx context.Context, release Release) (Rele
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
 	}
+	release.Notes = capReleaseNotes(release.Notes)
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
@@ -143,6 +163,7 @@ func (s *ReleaseStore) UpdateRelease(ctx context.Context, releaseID string, rele
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
 	}
+	release.Notes = capReleaseNotes(release.Notes)
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
