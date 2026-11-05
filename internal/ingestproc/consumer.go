@@ -94,52 +94,57 @@ const depthLogInterval = 30 * time.Second
 // there was left by a lost reply or a previous process.
 func (c *Consumer) Run(ctx context.Context) {
 	go c.monitorDepth(ctx)
-	recovered := false
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		if !recovered {
-			n, err := c.queue.RecoverProcessing(ctx, c.processingKey)
-			if err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				// The entries stay in the processing list until the next
-				// attempt. Logged like a failed read: Redis is unreachable.
-				c.logger.Error("consume failed", "error", err)
-				if !sleepCtx(ctx, consumerErrBackoff) {
-					return
-				}
-				continue
-			}
-			if n > 0 {
-				c.logger.Info("replayed unacked write-queue entries", "entries", n)
-			}
-			recovered = true
-		}
-
-		d, err := c.queue.Reserve(ctx, c.processingKey)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			c.logger.Error("consume failed", "error", err)
-			recovered = false
-			if !sleepCtx(ctx, consumerErrBackoff) {
-				return
-			}
+	replayed := false
+	for ctx.Err() == nil {
+		if !replayed {
+			replayed = c.replay(ctx)
 			continue
 		}
-		if d == nil {
-			continue // Reserve timed out; loop and re-check ctx.
-		}
-		if c.processBatch(ctx, d.Items) {
-			c.ack(ctx, d)
-		}
+		replayed = c.consumeOne(ctx)
+	}
+}
+
+// replay moves the processing list back to the write queue and reports
+// whether it did. After a failure it has logged and backed off; the entries
+// stay in the list until the next attempt.
+func (c *Consumer) replay(ctx context.Context) bool {
+	n, err := c.queue.RecoverProcessing(ctx, c.processingKey)
+	if err != nil {
+		// Logged like a failed read: Redis is unreachable.
+		c.consumeFailed(ctx, err)
+		return false
+	}
+	if n > 0 {
+		c.logger.Info("replayed unacked write-queue entries", "entries", n)
+	}
+	return true
+}
+
+// consumeOne reserves one entry, stores its items and acks it. It returns
+// false after a failed read, so Run replays the processing list before the
+// next one: a reply lost on the way leaves its entry there.
+func (c *Consumer) consumeOne(ctx context.Context) bool {
+	d, err := c.queue.Reserve(ctx, c.processingKey)
+	if err != nil {
+		c.consumeFailed(ctx, err)
+		return false
+	}
+	if d != nil && c.processBatch(ctx, d.Items) {
+		c.ack(ctx, d)
+	}
+	return true
+}
+
+// consumeFailed logs a failed queue call once and backs off. A failure caused
+// by shutdown is not logged.
+func (c *Consumer) consumeFailed(ctx context.Context, err error) {
+	if ctx.Err() != nil {
+		return
+	}
+	c.logger.Error("consume failed", "error", err)
+	select {
+	case <-ctx.Done():
+	case <-time.After(consumerErrBackoff):
 	}
 }
 
@@ -152,16 +157,6 @@ func (c *Consumer) ack(ctx context.Context, d *queue.Delivery) {
 	if err := c.queue.Ack(ackCtx, d); err != nil {
 		c.logger.Warn("ack write-queue entry failed; it replays on the next start",
 			"items", len(d.Items), "error", err)
-	}
-}
-
-// sleepCtx waits for d or until ctx is done, and reports whether d elapsed.
-func sleepCtx(ctx context.Context, d time.Duration) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	case <-time.After(d):
-		return true
 	}
 }
 
