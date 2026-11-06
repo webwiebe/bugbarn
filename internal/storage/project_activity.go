@@ -23,8 +23,8 @@ type ProjectActivity struct {
 func (s *ProjectStore) ProjectActivity(
 	ctx context.Context, now time.Time, silentFor, lookback time.Duration,
 ) ([]ProjectActivity, error) {
-	recentFrom := now.Add(-silentFor).UTC().Format(time.RFC3339)
-	earlierFrom := now.Add(-silentFor - lookback).UTC().Format(time.RFC3339)
+	recentFrom := formatTime(now.Add(-silentFor))
+	earlierFrom := formatTime(now.Add(-silentFor - lookback))
 
 	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT p.id, p.slug,

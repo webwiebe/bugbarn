@@ -35,7 +35,7 @@ type TimelineRow struct {
 // keeps the SQL grouping on a cheap substr instead of a date parse per row.
 func (s *EventStore) ErrorTimelineRows(ctx context.Context, since time.Time) ([]TimelineRow, error) {
 	scope, scopeArgs := timelineScope(ctx)
-	args := []any{since.UTC().Format(time.RFC3339Nano)}
+	args := []any{formatTime(since)}
 	marks := make([]string, len(ErrorSeverities))
 	for i, sev := range ErrorSeverities {
 		marks[i] = "?"

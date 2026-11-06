@@ -9,7 +9,7 @@ import (
 // WeeklyDigest returns aggregate error stats for the given project since the
 // given time. All queries run under the provided context deadline.
 func (s *DigestStore) WeeklyDigest(ctx context.Context, projectID int64, since time.Time) (DigestData, error) {
-	sinceStr := since.UTC().Format(time.RFC3339)
+	sinceStr := formatTime(since)
 
 	var d DigestData
 
