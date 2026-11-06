@@ -1,6 +1,6 @@
 // Settings view: settings/projects/groups/aliases/keys/system loading,
 // rendering, action wiring, and all the project/group/alias mutations.
-import { wireProjectList } from "./project-filter.js";
+import { restoreProjectList, snapshotProjectList, wireProjectList, type ProjectListSnapshot } from "./project-filter.js";
 import { renderSettingsViewMarkup } from "./components.js";
 import { fetchSystemHealth, normalizeList, normalizeObject } from "./data.js";
 import { errorMessage, escapeHtml } from "./format.js";
@@ -60,8 +60,7 @@ export function renderSettingsView(error: unknown = null): void {
   setActiveView("overview");
   elements.detailTitle.textContent = "Settings";
   elements.detailBody.innerHTML = "";
-  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth, state.keyRequests);
-  wireSettingsActions();
+  renderSettingsBody(error);
   if (state.settingsTab === "system") {
     void loadSystemHealth();
   }
@@ -81,12 +80,20 @@ async function loadSystemHealth(): Promise<void> {
     systemHealthLoading = false;
   }
   if (state.currentRoute === "settings" && state.settingsTab === "system") {
-    elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, null, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth, state.keyRequests);
-    wireSettingsActions();
+    renderSettingsBody(null);
   }
 }
 
-function wireSettingsActions(): void {
+// renderSettingsBody replaces the Settings markup and keeps what the user set on
+// the project controls. The router renders Settings from cached state, and
+// loadSettings renders it again when its fetches land.
+function renderSettingsBody(error: unknown): void {
+  const kept = snapshotProjectList(elements.overviewView);
+  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth, state.keyRequests);
+  wireSettingsActions(kept);
+}
+
+function wireSettingsActions(kept: ProjectListSnapshot | null): void {
   const settingsForm = elements.overviewView.querySelector<HTMLFormElement>("#settings-form");
   const sourceMapForm = elements.overviewView.querySelector<HTMLFormElement>("#source-map-form");
 
@@ -113,7 +120,7 @@ function wireSettingsActions(): void {
   const logoutBtn = elements.overviewView.querySelector<HTMLButtonElement>("#settings-logout");
   logoutBtn?.addEventListener("click", () => { void logout(); });
 
-  wireProjectListControls();
+  wireProjectListControls(kept);
 
   elements.overviewView.querySelectorAll<HTMLButtonElement>("[data-approve-project]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -184,15 +191,17 @@ function wireSettingsActions(): void {
   });
 }
 
-function wireProjectListControls(): void {
+function wireProjectListControls(kept: ProjectListSnapshot | null): void {
   const list = elements.overviewView.querySelector<HTMLElement>("#project-list");
   if (!list) return;
-  wireProjectList({
+  const controls = {
     list,
     filter: elements.overviewView.querySelector<HTMLInputElement>("#project-filter"),
     sort: elements.overviewView.querySelector<HTMLSelectElement>("#project-sort"),
     status: elements.overviewView.querySelector<HTMLSelectElement>("#project-status-filter"),
-  });
+  };
+  wireProjectList(controls);
+  restoreProjectList(controls, kept);
 }
 
 async function approveProject(slug: string, btn?: HTMLButtonElement): Promise<void> {
