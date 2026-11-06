@@ -49,6 +49,12 @@ func pinSnapshot(t *testing.T, store *Store, dbPath string) (release func()) {
 // bugbarn#236: a TRUNCATE attempt that a reader snapshot blocks must hand the
 // write connection back after the policy's wait, not after the connection's 10s
 // busy_timeout. Production stalled 12 to 28s here and failed forwarded check-ins.
+//
+// SQLite's busy handler waits up to the connection's busy_timeout, so the stall
+// is bounded by the busy_timeout in effect when the checkpoint pragma runs. The
+// test reads that value on the attempt's own connection. It used to time the
+// attempt against wait + 1s, and on a loaded CI host the timing failed with the
+// bound intact (2.2s against 2s, Woodpecker pipeline 894).
 func TestCheckpointAttemptStallIsBoundedByPolicyBusyTimeout(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bugbarn.db")
 	store, err := Open(dbPath)
@@ -60,19 +66,25 @@ func TestCheckpointAttemptStallIsBoundedByPolicyBusyTimeout(t *testing.T) {
 	defer release()
 
 	wait := DefaultCheckpointPolicy().TruncateBusyTimeout
-	start := time.Now()
+	inEffect := -1
+	beforeCheckpointPragma = func(conn *sql.Conn) {
+		if err := conn.QueryRowContext(context.Background(), `PRAGMA busy_timeout`).Scan(&inEffect); err != nil {
+			t.Errorf("read busy_timeout on the attempt's connection: %v", err)
+		}
+	}
+	defer func() { beforeCheckpointPragma = nil }()
+
 	busy, _, _, err := checkpointAttempt(context.Background(), store.db, "TRUNCATE", wait)
-	stall := time.Since(start)
 	if err != nil {
 		t.Fatalf("checkpoint attempt: %v", err)
 	}
 	if busy != 1 {
 		t.Fatalf("busy = %d, want 1: the held snapshot did not block TRUNCATE, so this test proves nothing", busy)
 	}
-	// The write connection is held for the whole attempt. Ceiling: the wait plus
-	// one second of slack, an order of magnitude under the 10s it used to take.
-	if limit := wait + time.Second; stall > limit {
-		t.Errorf("TRUNCATE held the write connection for %v, want at most %v", stall, limit)
+	// The write connection is held for the whole attempt, and the busy handler
+	// waits this long before the checkpoint gives up with busy=1.
+	if want := int(wait.Milliseconds()); inEffect != want {
+		t.Errorf("TRUNCATE ran with busy_timeout %dms, want the policy's %dms", inEffect, want)
 	}
 
 	// The shortened wait must not leak into the pooled connection: every other
