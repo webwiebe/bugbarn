@@ -267,6 +267,7 @@ steps:
         bash scripts/ghcr-prune_test.sh
         bash scripts/assert-version_test.sh
         bash scripts/version-and-tag_test.sh
+        bash scripts/pin-images_test.sh
         bash scripts/check-pages_test.sh
         bash scripts/e2e-nightly_test.sh
         sh scripts/diff-coverage_test.sh
