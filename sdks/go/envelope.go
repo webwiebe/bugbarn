@@ -156,7 +156,7 @@ func parsePanicStack(stack []byte) []stackFrame {
 			file := next
 			lineNum := 0
 			if idx := strings.LastIndex(file, ":"); idx >= 0 {
-				fmt.Sscanf(file[idx+1:], "%d", &lineNum)
+				_, _ = fmt.Sscanf(file[idx+1:], "%d", &lineNum)
 				file = file[:idx]
 			}
 			module := file

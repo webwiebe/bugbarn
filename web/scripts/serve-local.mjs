@@ -42,6 +42,9 @@ function proxy(req, res) {
     { host: API.hostname, port: API.port, path: req.url, method: req.method, headers: { ...req.headers, host: API.host } },
     (up) => {
       res.writeHead(up.statusCode ?? 502, up.headers);
+      // Send the headers now: an event stream with no events yet writes no body,
+      // and the browser opens an EventSource only once the headers arrive.
+      res.flushHeaders();
       up.pipe(res);
     },
   );

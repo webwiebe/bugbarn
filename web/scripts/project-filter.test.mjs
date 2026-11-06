@@ -19,7 +19,7 @@ const dom = new JSDOM(`<!doctype html><html><head><style>${css}</style></head><b
 </div></div></body></html>`);
 globalThis.document = dom.window.document;
 
-const { wireProjectList } = await import("../src/project-filter.ts");
+const { wireProjectList, snapshotProjectList, restoreProjectList } = await import("../src/project-filter.ts");
 
 const doc = dom.window.document;
 const list = doc.getElementById("project-list");
@@ -63,4 +63,39 @@ test("the status filter hides rows of other statuses", () => {
   status.value = "pending";
   status.dispatchEvent(new dom.window.Event("change"));
   assert.deepEqual(visibleRows(), ["brandtrace"]);
+});
+
+// Settings replaces its markup when loadSettings' fetches land. The controls
+// the user set must come back on the new markup, with the empty state and focus.
+test("a snapshot carries the controls and focus across a re-render", () => {
+  status.value = "all";
+  type("zzz");
+  filter.focus();
+  filter.setSelectionRange(1, 2);
+  const snap = snapshotProjectList(doc.body);
+  assert.deepEqual(snap, { filter: "zzz", sort: "default", status: "all", focused: true, selectionStart: 1, selectionEnd: 2 });
+
+  doc.body.innerHTML = `<input id="project-filter"><select id="project-sort"><option value="default"></option></select>
+<select id="project-status-filter"><option value="all"></option><option value="active"></option></select>
+<div class="wrap"><div id="project-list">
+  <div class="project-row" data-name="videoslop" data-slug="videoslop" data-status="active"></div>
+</div></div>`;
+  const fresh = {
+    list: doc.getElementById("project-list"),
+    filter: doc.getElementById("project-filter"),
+    sort: doc.getElementById("project-sort"),
+    status: doc.getElementById("project-status-filter"),
+  };
+  wireProjectList(fresh);
+  restoreProjectList(fresh, snap);
+
+  assert.equal(fresh.filter.value, "zzz");
+  assert.equal(doc.activeElement, fresh.filter);
+  assert.deepEqual([fresh.filter.selectionStart, fresh.filter.selectionEnd], [1, 2]);
+  assert.equal(shown(fresh.list.querySelector(".project-row")), false);
+  assert.match(doc.getElementById("project-empty").textContent, /No projects match "zzz"/);
+});
+
+test("no snapshot is taken when the controls are not on screen", () => {
+  assert.equal(snapshotProjectList(new JSDOM("<p></p>").window.document.body), null);
 });

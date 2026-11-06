@@ -154,7 +154,7 @@ func readRecords(path string) ([]Record, error) {
 		}
 		return nil, fmt.Errorf("mutqueue: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var records []Record
 	sc := bufio.NewScanner(f)

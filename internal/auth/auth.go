@@ -183,7 +183,9 @@ func (a *Authorizer) lookupStoredKey(
 
 // ValidWithSetupFallback is like ValidWithProject but also tries setup key
 // verification using the project slug when normal auth fails.
-func (a *Authorizer) ValidWithSetupFallback(ctx context.Context, provided, projectSlug string) (projectID int64, scope string, ok bool) {
+func (a *Authorizer) ValidWithSetupFallback(
+	ctx context.Context, provided, projectSlug string,
+) (projectID int64, scope string, ok bool) {
 	projectID, scope, ok, _ = a.CheckWithSetupFallback(ctx, provided, projectSlug)
 	return projectID, scope, ok
 }

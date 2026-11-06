@@ -51,6 +51,8 @@ var (
 	DropMalformed = Drop{Status: http.StatusBadRequest, Reason: "malformed_payload", Retryable: false}
 	// DropUnauthorized: missing or invalid API key.
 	DropUnauthorized = Drop{Status: http.StatusUnauthorized, Reason: "unauthorized", Retryable: false}
+	// DropForbidden: a project-bound key named another project.
+	DropForbidden = Drop{Status: http.StatusForbidden, Reason: "forbidden", Retryable: false}
 	// DropTooLarge: the body exceeds the ingest size limit.
 	DropTooLarge = Drop{Status: http.StatusRequestEntityTooLarge, Reason: "payload_too_large", Retryable: false}
 )

@@ -83,6 +83,11 @@ func TestBoundKeyIsConfinedToItsProject(t *testing.T) {
 		// The release marker is the one non-ingest route an ingest key may call.
 		{"ingest key release marker for another project", alphaIngest, http.MethodPost, "/api/v1/releases", map[string]string{"X-BugBarn-Project": "default"}, http.StatusForbidden},
 		{"ingest key release marker project_slug", alphaIngest, http.MethodPost, "/api/v1/releases?project_slug=default", nil, http.StatusForbidden},
+		{"ingest key release marker for an unknown project", alphaIngest, http.MethodPost, "/api/v1/releases", map[string]string{"X-BugBarn-Project": "brand-new"}, http.StatusForbidden},
+		// Its own project passes the key and project checks; this fixture has no
+		// spool, so the enqueue that follows answers 503.
+		{"ingest key release marker for its own project", alphaIngest, http.MethodPost, "/api/v1/releases", map[string]string{"X-BugBarn-Project": "alpha"}, http.StatusServiceUnavailable},
+		{"ingest key release marker without a header", alphaIngest, http.MethodPost, "/api/v1/releases", nil, http.StatusServiceUnavailable},
 		{"ingest key may not read another project's issue", alphaIngest, http.MethodGet, issuePath, nil, http.StatusForbidden},
 		{"own issue", homeRead, http.MethodGet, issuePath, nil, http.StatusOK},
 		{"full-scope key stays cross-project", alphaFull, http.MethodGet, issuePath, nil, http.StatusOK},

@@ -28,6 +28,8 @@ export function startLiveStream(): void {
     state.liveReconnectDelay = 3000;
     state.liveError = null;
     setLiveStatus("Connected", "ok");
+    // Show the empty state until the first event arrives.
+    renderLiveList();
   };
 
   source.onmessage = (ev: MessageEvent) => {
@@ -47,6 +49,7 @@ export function startLiveStream(): void {
     state.liveConnected = false;
     source.close();
     state.liveSource = null;
+    renderLiveList();
     setLiveStatus("Reconnecting", "warn");
 
     const delay = state.liveReconnectDelay;

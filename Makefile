@@ -178,6 +178,8 @@ ts-budget: $(PNPM)
 test-gates:
 	@sh scripts/gates_test.sh
 	@bash scripts/ghcr-prune_test.sh
+	@bash scripts/version-and-tag_test.sh
+	@bash scripts/pin-images_test.sh
 	@sh scripts/diff-coverage_test.sh
 	@bash scripts/tests/secret-scan.test.sh
 

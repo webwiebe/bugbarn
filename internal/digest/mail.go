@@ -82,7 +82,9 @@ func transientSMTPError(err error) bool {
 		return false
 	}
 	msg := err.Error()
-	for _, marker := range []string{"ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "connection reset", "broken pipe", "socket", "i/o timeout"} {
+	for _, marker := range []string{
+		"ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "connection reset", "broken pipe", "socket", "i/o timeout",
+	} {
 		if strings.Contains(msg, marker) {
 			return true
 		}
@@ -423,7 +425,8 @@ var htmlTmpl = template.Must(template.New("html").Parse(`<!DOCTYPE html>
 {{range .Projects}}
 <h3 style="color:#1a1a1a;margin-top:28px;margin-bottom:4px;border-bottom:2px solid #eee;padding-bottom:6px">{{.Project}}</h3>
 <p style="color:#555;font-size:13px;margin:4px 0 8px">
-  {{.Stats.TotalEvents}} events &nbsp;·&nbsp; {{.Stats.NewIssues}} new &nbsp;·&nbsp; {{.Stats.ResolvedIssues}} resolved &nbsp;·&nbsp; {{.Stats.Regressions}} regressions
+  {{.Stats.TotalEvents}} events &nbsp;·&nbsp; {{.Stats.NewIssues}} new &nbsp;·&nbsp;
+  {{.Stats.ResolvedIssues}} resolved &nbsp;·&nbsp; {{.Stats.Regressions}} regressions
 </p>
 {{- if .TopIssues}}
 <table style="border-collapse:collapse;width:100%;margin-bottom:8px">
@@ -434,7 +437,9 @@ var htmlTmpl = template.Must(template.New("html").Parse(`<!DOCTYPE html>
 </tr></thead>
 <tbody>
 {{range .TopIssues}}<tr style="border-top:1px solid #eee">
-  <td style="padding:6px 10px;font-size:13px">{{if .URL}}<a href="{{.URL}}" style="color:#0066cc">{{.Title}}</a>{{else}}{{.Title}}{{end}}</td>
+  <td style="padding:6px 10px;font-size:13px">
+  {{- if .URL}}<a href="{{.URL}}" style="color:#0066cc">{{.Title}}</a>{{else}}{{.Title}}{{end -}}
+  </td>
   <td style="padding:6px 10px;text-align:right;font-size:13px">{{.EventCount}}</td>
   <td style="padding:6px 10px;color:#555;font-size:13px">{{.Status}}</td>
 </tr>

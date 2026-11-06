@@ -171,6 +171,7 @@ The scheduler goroutine wakes every minute, checks if it is the configured weekd
 - **FR-404**: When neither channel is configured, the scheduler goroutine MUST NOT start. [inferred]
 - **FR-405**: The digest MUST cover the 7 days preceding the send time. [inferred]
 - **FR-406**: `top_issues` MUST contain at most 5 entries ordered by event count descending within the period. [inferred]
+- **FR-407**: `POST /api/v1/admin/digest` MUST send the digest now. An empty body sends to the configured channels; `{"to": "<address>"}` sends one email to that address only. A body that is present but does not decode MUST get `400` and send nothing. Issues: [#258](https://github.com/webwiebe/bugbarn/issues/258). Tests: `internal/api/digest_test.go::TestDigestTriggerBody`.
 
 ### Non-Functional Requirements
 

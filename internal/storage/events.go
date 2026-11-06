@@ -392,11 +392,6 @@ func flattenFacets(out *[]facetRow, prefix string, value any) {
 			return
 		}
 		*out = append(*out, facetRow{key: prefix, value: strconv.FormatInt(typed, 10)})
-	case json.Number:
-		if strings.TrimSpace(prefix) == "" {
-			return
-		}
-		*out = append(*out, facetRow{key: prefix, value: typed.String()})
 	case nil:
 		return
 	default:

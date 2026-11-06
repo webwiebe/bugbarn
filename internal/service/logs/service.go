@@ -115,7 +115,9 @@ func (s *Service) reportInsertErr(ctx context.Context, span trace.Span, err erro
 	return err
 }
 
-func (s *Service) List(ctx context.Context, projectID int64, levelMin int, query string, limit int, beforeID int64) ([]domain.LogEntry, error) {
+func (s *Service) List(
+	ctx context.Context, projectID int64, levelMin int, query string, limit int, beforeID int64,
+) ([]domain.LogEntry, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "service.logs.List")
 	defer span.End()
 	entries, err := s.repo.ListLogEntries(ctx, projectID, levelMin, query, limit, beforeID)

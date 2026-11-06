@@ -133,12 +133,31 @@ func runKeyRequest(r keyRequestRun) error {
 	_, _ = fmt.Fprintf(r.info, "Key request %s created for %q. Waiting for an admin to approve it in the dashboard (expires %s).\n",
 		created.ID, r.slug, created.ExpiresAt)
 
+	// The deadline comes from --timeout alone. Once the request expires the
+	// server answers 410 and the loop ends there, so the client's clock never
+	// has to agree with the server's expiresAt.
 	deadline := time.Now().Add(r.timeout)
+	// The poll secret lives only in this process, so a poll that fails on the
+	// way (a reset connection, a proxy 5xx) is retried until the deadline:
+	// giving up would strand the request (bugbarn#256).
+	wait := r.interval
 	for {
 		status, key, err := r.poll(created.ID, created.PollSecret)
 		if err != nil {
-			return err
+			var retry retryablePollError
+			if !errors.As(err, &retry) {
+				return err
+			}
+			backoff := r.retryBackoff(wait)
+			if time.Now().Add(backoff).After(deadline) {
+				return fmt.Errorf("gave up after a failed poll; request %s stays open until it expires: %w", created.ID, err)
+			}
+			_, _ = fmt.Fprintf(r.info, "Poll failed, retrying in %s: %v\n", backoff, err)
+			time.Sleep(backoff)
+			wait = backoff * 2
+			continue
 		}
+		wait = r.interval
 		if done, err := r.outcome(status, key); done {
 			return err
 		}
@@ -149,20 +168,45 @@ func runKeyRequest(r keyRequestRun) error {
 	}
 }
 
+// retryBackoff caps a retry wait at a minute, or at the poll interval when
+// that is longer.
+func (r keyRequestRun) retryBackoff(wait time.Duration) time.Duration {
+	limit := max(time.Minute, r.interval)
+	if wait <= 0 {
+		wait = time.Second
+	}
+	return min(wait, limit)
+}
+
+// retryablePollError marks a poll failure that a later poll can get past: a
+// transport error, a cut-off body, 429 or a 5xx from BugBarn or its proxy.
+type retryablePollError struct{ err error }
+
+func (e retryablePollError) Error() string { return e.err.Error() }
+func (e retryablePollError) Unwrap() error { return e.err }
+
 func (r keyRequestRun) poll(id, secret string) (status, key string, err error) {
 	req, err := http.NewRequest(http.MethodGet, r.base+"/api/v1/setup/"+r.slug+"/key-requests/"+id, nil)
 	if err != nil {
 		return "", "", err
 	}
+	// The secret travels only in this header; errors from Do name the URL and
+	// never the headers, so it stays out of every message.
 	req.Header.Set("X-BugBarn-Poll-Secret", secret)
 	resp, err := r.http.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("poll key request: %w", err)
+		return "", "", retryablePollError{fmt.Errorf("poll key request: %w", err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return "", "", retryablePollError{fmt.Errorf("poll key request: HTTP %d", resp.StatusCode)}
+	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
 		return "", "", fmt.Errorf("poll key request: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	if readErr != nil {
+		return "", "", retryablePollError{fmt.Errorf("poll key request: read body: %w", readErr)}
 	}
 	var out struct {
 		Status string `json:"status"`

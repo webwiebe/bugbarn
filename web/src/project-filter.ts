@@ -94,3 +94,47 @@ export function wireProjectList(controls: ProjectListControls): void {
   controls.sort?.addEventListener("change", apply);
   controls.status?.addEventListener("change", apply);
 }
+
+/** What a re-render of the Settings view must keep of the project controls. */
+export interface ProjectListSnapshot {
+  filter: string;
+  sort: string;
+  status: string;
+  focused: boolean;
+  selectionStart: number | null;
+  selectionEnd: number | null;
+}
+
+/**
+ * Reads the project controls before the Settings markup is replaced. Settings
+ * renders from cached state and again when its fetches land, and a query typed
+ * in between would otherwise be wiped. Returns null when the controls are not
+ * on screen.
+ */
+export function snapshotProjectList(root: ParentNode): ProjectListSnapshot | null {
+  const filter = root.querySelector<HTMLInputElement>("#project-filter");
+  if (!filter) return null;
+  return {
+    filter: filter.value,
+    sort: root.querySelector<HTMLSelectElement>("#project-sort")?.value ?? "default",
+    status: root.querySelector<HTMLSelectElement>("#project-status-filter")?.value ?? "all",
+    focused: filter.ownerDocument.activeElement === filter,
+    selectionStart: filter.selectionStart,
+    selectionEnd: filter.selectionEnd,
+  };
+}
+
+/** Puts a snapshot back on freshly rendered controls and applies it. */
+export function restoreProjectList(controls: ProjectListControls, snap: ProjectListSnapshot | null): void {
+  if (!snap) return;
+  const { filter, sort, status } = controls;
+  const changed = snap.filter !== "" || snap.sort !== "default" || snap.status !== "all";
+  if (filter) filter.value = snap.filter;
+  if (sort) sort.value = snap.sort;
+  if (status) status.value = snap.status;
+  if (changed) applyProjectList(controls);
+  if (snap.focused && filter) {
+    filter.focus();
+    filter.setSelectionRange(snap.selectionStart, snap.selectionEnd);
+  }
+}

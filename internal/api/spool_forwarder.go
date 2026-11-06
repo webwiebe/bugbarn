@@ -282,7 +282,7 @@ func (s *SpoolForwarder) Pending() int64 {
 }
 
 // Drain repeatedly reads new records from the spool and forwards them to the
-// writer until the context is cancelled. Records are acked by advancing a
+// writer until the context is canceled. Records are acked by advancing a
 // persisted cursor so a restart resumes where we left off.
 func (s *SpoolForwarder) Drain(ctx context.Context) {
 	const idleSleep = 250 * time.Millisecond
@@ -404,8 +404,8 @@ func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) err
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 	if resp.StatusCode >= 500 {
 		err := fmt.Errorf("writer returned %d", resp.StatusCode)

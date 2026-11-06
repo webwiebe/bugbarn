@@ -49,12 +49,21 @@ blocked TRUNCATE ticks with a WAL over 64 MiB, one TRUNCATE waits 15s (the backs
 every tick logs `wal checkpoint` with its result. Do not add a second
 checkpointer, and keep WAL mode: the readers depend on it.
 
-Reader pods mount the volume read-only, so a reader cannot rebuild a bad wal-index and
-the driver answers `SQLITE_READONLY_RECOVERY` (264). The API key lookup retries it three
-times (`retryReadonlyRecovery`, 175 ms in all), counts the outcome in
-`bugbarn.storage.readonly_recovery` and puts the WAL's size and age on a span event
-(#242). The cause is unconfirmed; a synthetic run with a separate reader process did not
-reproduce it.
+Reader pods mount the volume read-only, so a reader holds the `-shm` file read-only. When
+the wal-index header there needs recovery, only the writer can rebuild it, and until its
+next write every read on the reader fails with `SQLITE_READONLY_RECOVERY` (264).
+`OpenReadOnly` therefore opens its pool on a driver (`readonly_driver.go`) that retries
+every query and prepare on 264 three times (`retryReadonlyRecovery`, 175 ms in all),
+counts the outcome in `bugbarn.storage.readonly_recovery` and puts the WAL's size and
+age on a span event (#242, #261). A 264 that outlasts the retries becomes
+`apperr.Unavailable` (503). Do not add per-call retries; the driver covers every read.
+
+`readonly_recovery_process_test.go` reproduces the state: a reader in a child process,
+opened with `readonly_shm=1` (a file mode would not hold, since CI runs the tests as
+root), reads once; the test zeroes the header and the reader's
+next read gets 264. The reader must be a separate, long-lived process. A reader in the
+writer's process shares the writer's shm mapping, and a connection opened after the
+header was zeroed does not hit 264.
 
 ## Free space
 
@@ -73,6 +82,17 @@ shadow directory Litestream left behind.
 ready. Production's database is over 10 GB: an index build or table rewrite takes minutes,
 and the startupProbe budget (600s) is the ceiling. Measure a new migration against a
 realistic copy and state its cost in the PR.
+
+## Timestamps are text
+
+Timestamp columns are TEXT, and SQLite compares them as strings. Write every time
+parameter and value through `formatTime`: UTC with a nine-digit fraction, so string order
+is time order (#253). `time.RFC3339Nano` trims trailing zeros and sorts wrong inside one
+second; `time.RFC3339` drops the fraction and sorts wrong against stored fractions. Rows
+written before #253 keep the trimmed form and `parseTime` reads both. Against those rows
+`<` and `>` stay correct across seconds, and `=` does not match, which is why migration
+00026 rewrote `monitors.last_checkin_at` for `MarkMonitorMissed`. A new `=` match on a
+timestamp column needs the same rewrite or a match on the parsed time.
 
 ## Query plans over timings
 

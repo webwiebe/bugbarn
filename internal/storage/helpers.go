@@ -21,7 +21,7 @@ func parseTime(value string) (time.Time, error) {
 	if strings.TrimSpace(value) == "" {
 		return time.Time{}, nil
 	}
-	return time.Parse(timeLayout, value)
+	return time.Parse(parseLayout, value)
 }
 
 func formatID(prefix string, value int64) string {

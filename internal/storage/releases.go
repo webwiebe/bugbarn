@@ -11,7 +11,22 @@ import (
 
 const releaseIDPrefix = "release-"
 
+// ListReleases returns every release of the scoped project, newest first.
 func (s *ReleaseStore) ListReleases(ctx context.Context) ([]Release, error) {
+	return s.listReleases(ctx, -1)
+}
+
+// ListRecentReleases returns at most limit releases of the scoped project,
+// newest first.
+func (s *ReleaseStore) ListRecentReleases(ctx context.Context, limit int) ([]Release, error) {
+	if limit <= 0 {
+		return nil, apperr.InvalidInput("release list limit must be positive", nil)
+	}
+	return s.listReleases(ctx, limit)
+}
+
+// listReleases lists the scoped project's releases; a negative limit lists all.
+func (s *ReleaseStore) listReleases(ctx context.Context, limit int) ([]Release, error) {
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -31,8 +46,9 @@ SELECT
 	created_at
 FROM releases
 WHERE project_id = ?
-ORDER BY observed_at DESC, id DESC`,
-		projectID,
+ORDER BY observed_at DESC, id DESC
+LIMIT ?`,
+		projectID, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -85,6 +101,25 @@ WHERE project_id = ? AND id = ?`,
 	return release, nil
 }
 
+// maxReleaseNotesRunes bounds what a marker stores in notes. Deploy pipelines send
+// a short line of under 40 characters; this leaves room for a short changelog.
+const maxReleaseNotesRunes = 2000
+
+// capReleaseNotes cuts notes to maxReleaseNotesRunes on a rune boundary.
+func capReleaseNotes(notes string) string {
+	if len(notes) <= maxReleaseNotesRunes {
+		return notes
+	}
+	count := 0
+	for i := range notes {
+		if count == maxReleaseNotesRunes {
+			return notes[:i]
+		}
+		count++
+	}
+	return notes
+}
+
 func (s *ReleaseStore) CreateRelease(ctx context.Context, release Release) (Release, error) {
 	if strings.TrimSpace(release.Name) == "" {
 		return Release{}, apperr.InvalidInput("release name is required", nil)
@@ -92,6 +127,7 @@ func (s *ReleaseStore) CreateRelease(ctx context.Context, release Release) (Rele
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
 	}
+	release.Notes = capReleaseNotes(release.Notes)
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
@@ -143,6 +179,7 @@ func (s *ReleaseStore) UpdateRelease(ctx context.Context, releaseID string, rele
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
 	}
+	release.Notes = capReleaseNotes(release.Notes)
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {

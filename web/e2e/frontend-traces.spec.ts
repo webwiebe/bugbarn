@@ -6,6 +6,11 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { EMPTY_STATE } from "./global-setup";
+
+// Signed out: a signed-in page holds the live event stream open, so the network
+// never goes idle.
+test.use({ storageState: EMPTY_STATE });
 
 const RELAY_SPANS = "**/api/v1/frontend-traces/api/v1/spans";
 

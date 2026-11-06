@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
@@ -16,8 +18,14 @@ func (s *Server) serveDigestTrigger(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		To string `json:"to"`
 	}
+	// An empty body means "send to the configured channels". A body that is
+	// there but does not decode is refused, so a typo in "to" never sends the
+	// digest to the regular recipients instead.
 	if r.Body != nil {
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
 	}
 
 	cfg := *s.digestConfig
@@ -43,10 +51,10 @@ func (s *Server) serveDigestTrigger(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]any{"errors": msgs})
+		_ = json.NewEncoder(w).Encode(map[string]any{"errors": msgs})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 }

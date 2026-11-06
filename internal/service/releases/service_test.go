@@ -10,12 +10,29 @@ import (
 )
 
 type fakeRepo struct {
-	releases map[string]domain.Release
-	err      error
+	releases  map[string]domain.Release
+	err       error
+	listLimit int
 }
 
 func (f *fakeRepo) ListReleases(context.Context) ([]domain.Release, error) {
 	return nil, f.err
+}
+
+func (f *fakeRepo) ListRecentReleases(_ context.Context, limit int) ([]domain.Release, error) {
+	f.listLimit = limit
+	return nil, f.err
+}
+
+// List asks the store for the newest ListLimit releases only.
+func TestListAsksForTheNewestReleasesOnly(t *testing.T) {
+	repo := &fakeRepo{}
+	if _, err := New(repo, nil).List(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.listLimit != ListLimit {
+		t.Fatalf("List asked for %d releases, want %d", repo.listLimit, ListLimit)
+	}
 }
 
 func (f *fakeRepo) GetRelease(_ context.Context, id string) (domain.Release, error) {

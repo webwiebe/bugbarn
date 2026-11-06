@@ -92,7 +92,9 @@ func (s *GroupStore) ListGroupProjects(ctx context.Context, groupSlug string) ([
 		return nil, apperr.NotFound("group not found", err)
 	}
 
-	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at FROM projects WHERE group_id = ? ORDER BY name ASC`, groupID)
+	rows, err := s.readDB().QueryContext(ctx, `
+		SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at
+		FROM projects WHERE group_id = ? ORDER BY name ASC`, groupID)
 	if err != nil {
 		return nil, err
 	}

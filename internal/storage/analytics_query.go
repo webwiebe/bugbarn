@@ -96,7 +96,9 @@ func (s *AnalyticsStore) QueryPages(ctx context.Context, q analytics.Query) ([]a
 }
 
 // QueryTimeline returns bucketed time series. granularity: "day", "week", "month".
-func (s *AnalyticsStore) QueryTimeline(ctx context.Context, q analytics.Query, granularity string) ([]analytics.TimelineBucket, error) {
+func (s *AnalyticsStore) QueryTimeline(
+	ctx context.Context, q analytics.Query, granularity string,
+) ([]analytics.TimelineBucket, error) {
 	startStr := q.Start.UTC().Format("2006-01-02")
 	endStr := q.End.UTC().Format("2006-01-02")
 
@@ -323,7 +325,9 @@ func (s *AnalyticsStore) queryCameFrom(ctx context.Context, q analytics.Query, p
 }
 
 // QueryScrollDepth returns scroll-depth bucket counts for a pathname.
-func (s *AnalyticsStore) QueryScrollDepth(ctx context.Context, q analytics.Query, pathname string) (analytics.ScrollDepthResult, error) {
+func (s *AnalyticsStore) QueryScrollDepth(
+	ctx context.Context, q analytics.Query, pathname string,
+) (analytics.ScrollDepthResult, error) {
 	result := analytics.ScrollDepthResult{
 		Pathname: pathname,
 		Buckets:  []analytics.ScrollBucket{},

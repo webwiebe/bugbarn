@@ -30,6 +30,23 @@ type fakeStore struct {
 	projectDeletes  map[int64]int64
 	projectsListed  int
 	projectDeleteFn func(projectID int64) (int64, error)
+
+	// Release rows beyond each project's kept set, and what the release pass asked.
+	releaseExcess int64
+	releaseErr    error
+	releaseCalls  []int // keep passed to each PruneReleases call
+}
+
+func (f *fakeStore) PruneReleases(_ context.Context, keep, limit int) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.releaseCalls = append(f.releaseCalls, keep)
+	if f.releaseErr != nil {
+		return 0, f.releaseErr
+	}
+	n := min(int64(limit), f.releaseExcess)
+	f.releaseExcess -= n
+	return n, nil
 }
 
 func (f *fakeStore) ProjectsWithRetentionOverride(context.Context) (map[int64]int, error) {

@@ -111,13 +111,16 @@ steps:
         SHA="$(git rev-parse "$CI_COMMIT_TAG^{commit}")"
         sed -i.bak "s/__VERSION__/$VERSION/g" deploy/k8s/production/kustomization.yaml
         rm -f deploy/k8s/production/kustomization.yaml.bak
+        # The apply below sets these digests on every workload and the snapshot
+        # CronJob at once; no object ever holds the :local placeholder (#262).
+        bash deploy/scripts/pin-images.sh deploy/k8s/production/kustomization.yaml "$SERVICE_DIGEST" "$WEB_DIGEST"
         $SSH "$K3S_USER@$K3S_HOST" "rm -rf /tmp/bugbarn-deploy && mkdir -p /tmp/bugbarn-deploy"
         # Snapshot what production is running RIGHT NOW, before we touch it, so
         # rollback can restore these exact images instead of using `rollout
-        # undo`. Undo is wrong here: the deploy below does `apply -k` (which
-        # sets the kustomization's :local placeholder) and only then `set
-        # image`, so every deploy leaves a :local revision immediately behind
-        # the good one — undo lands on it and production cannot pull.
+        # undo`. Undo is wrong here: until #262 the deploy ran `apply -k` with
+        # the kustomization's :local placeholder and only then `set image`, so
+        # the revision history holds :local revisions, and undo can land on
+        # one that production cannot pull.
         # The file is named for this pipeline, so it exists only if THIS
         # deploy actually started; rollback keys off that.
         $SSH "$K3S_USER@$K3S_HOST" "
@@ -139,15 +142,12 @@ steps:
         $SSH "$K3S_USER@$K3S_HOST" "kubectl create secret docker-registry ghcr-secret --docker-server=ghcr.io --docker-username='webwiebe' --docker-password='$GHCR_PULL_PAT' --namespace=$NAMESPACE --dry-run=client -o yaml | kubectl apply -f -"
         $SSH "$K3S_USER@$K3S_HOST" "
           set -euo pipefail
+          if kubectl kustomize /tmp/bugbarn-deploy/deploy/k8s/production | grep -n 'image: .*:local'; then
+            echo 'ERROR: a :local image is left in the rendered manifests'
+            exit 1
+          fi
           kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/production
           kubectl -n $NAMESPACE delete deployment/bugbarn --ignore-not-found=true
-          kubectl -n $NAMESPACE set image deployment/bugbarn-writer bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
-          kubectl -n $NAMESPACE set image deployment/bugbarn-reader bugbarn=$SERVICE_IMAGE@$SERVICE_DIGEST
-          kubectl -n $NAMESPACE set image deployment/bugbarn-web bugbarn-web=$WEB_IMAGE@$WEB_DIGEST
-          # The CronJob runs the service image too. Without this it keeps the
-          # kustomization's placeholder :local tag and every run dies in
-          # ImagePullBackOff — the DR snapshot silently never happens.
-          kubectl -n $NAMESPACE set image cronjob/bugbarn-settings-snapshot snapshot=$SERVICE_IMAGE@$SERVICE_DIGEST
           # 600s, not 180s: the writer runs schema migrations at startup, and a
           # migration over a multi-gigabyte database can take minutes (the
           # event_facets index in 00011 took over three minutes on staging's

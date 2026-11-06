@@ -21,6 +21,9 @@ func wrapErr(err error, msg string) error {
 	if isUniqueViolation(err) {
 		return apperr.Conflict(msg, err)
 	}
+	if IsReadonlyRecovery(err) {
+		return apperr.Unavailable(msg, err)
+	}
 	return apperr.Internal(msg, err)
 }
 
@@ -30,6 +33,9 @@ func wrapNotFound(err error, msg string) error {
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return apperr.NotFound(msg, err)
+	}
+	if IsReadonlyRecovery(err) {
+		return apperr.Unavailable(msg, err)
 	}
 	return apperr.Internal(msg, err)
 }

@@ -142,7 +142,7 @@ func (f *WriteForwarder) forward(w http.ResponseWriter, r *http.Request, parent 
 		http.Error(w, "upstream writer unavailable", http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 	if resp.StatusCode >= 500 {
@@ -176,7 +176,7 @@ func relayResponse(w http.ResponseWriter, resp *http.Response) {
 	w.WriteHeader(resp.StatusCode)
 
 	// Stream the body without buffering.
-	io.Copy(w, resp.Body)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // classifyForwardError names why a forward failed and whether the request cannot

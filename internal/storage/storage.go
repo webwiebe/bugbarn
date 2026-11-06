@@ -33,7 +33,14 @@ const (
 	baseDriverName = "sqlite"
 	issueIDPrefix  = "issue-"
 	eventIDPrefix  = "event-"
-	timeLayout     = time.RFC3339Nano
+	// timeLayout writes every stored timestamp with a nine-digit fraction.
+	// SQLite compares these columns as text, and RFC3339Nano trims trailing
+	// zeros, so inside one second "…:55.12Z" sorted after "…:55.123Z" (#253).
+	// A fixed width makes text order equal time order.
+	timeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+	// parseLayout reads both the fixed-width form and the trimmed form that
+	// rows written before #253 still carry.
+	parseLayout = time.RFC3339Nano
 )
 
 var (
@@ -58,7 +65,12 @@ var (
 // name. Falls back to the plain driver if registration fails. recordError
 // decides which errors mark a span as failed; nil records all of them.
 func registerTraced(recordError func(error) bool) string {
-	name, err := otelsql.Register(baseDriverName,
+	return registerTracedOn(baseDriverName, recordError)
+}
+
+// registerTracedOn is registerTraced over the registered driver base.
+func registerTracedOn(base string, recordError func(error) bool) string {
+	name, err := otelsql.Register(base,
 		otelsql.WithAttributes(semconv.DBSystemSqlite),
 		otelsql.WithSpanOptions(otelsql.SpanOptions{
 			OmitConnResetSession: true,
@@ -70,7 +82,7 @@ func registerTraced(recordError func(error) bool) string {
 	)
 	if err != nil {
 		slog.Warn("otelsql driver registration failed; falling back to plain driver", "err", err)
-		return baseDriverName
+		return base
 	}
 	return name
 }
@@ -155,8 +167,13 @@ func OpenReadOnly(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	return openReadOnlyDSN(sqliteReadOnlyDSN(absPath))
+}
 
-	roDB, err := sql.Open(tracedDriver(), sqliteReadOnlyDSN(absPath))
+// openReadOnlyDSN is OpenReadOnly on a full DSN. Tests add readonly_shm=1, the
+// state a reader pod is in because its volume is mounted read-only.
+func openReadOnlyDSN(dsn string) (*Store, error) {
+	roDB, err := sql.Open(readonlyTracedDriver(), dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +183,11 @@ func OpenReadOnly(path string) (*Store, error) {
 	// Verify the database is reachable.
 	if err := roDB.Ping(); err != nil {
 		unregisterDBStats(roDB)
-		roDB.Close()
+		_ = roDB.Close()
 		return nil, err
 	}
 
-	return newStore(&core{db: nil, roDB: roDB, walPath: absPath + "-wal"}), nil
+	return newStore(&core{db: nil, roDB: roDB}), nil
 }
 
 func Open(path string) (*Store, error) {
@@ -205,22 +222,22 @@ func open(path string, autoMigrate bool) (*Store, error) {
 	roDB, err := sql.Open(tracedDriver(), sqliteReadOnlyDSN(absPath))
 	if err != nil {
 		unregisterDBStats(db)
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	roDB.SetMaxOpenConns(4)
 	registerDBStats(roDB, "read")
 
 	c := &core{
-		db: db, roDB: roDB, walPath: absPath + "-wal",
+		db: db, roDB: roDB,
 		mergeFingerprintCollisions: os.Getenv("BUGBARN_FINGERPRINT_MERGE") == "true",
 	}
 	ctx := context.Background()
 	if err := c.init(ctx); err != nil {
 		unregisterDBStats(roDB)
 		unregisterDBStats(db)
-		roDB.Close()
-		db.Close()
+		_ = roDB.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	if autoMigrate {

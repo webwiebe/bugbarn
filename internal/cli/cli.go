@@ -80,7 +80,7 @@ func RunUser(cfg config.Config, args []string) error {
 		if err != nil {
 			return err
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		if err := store.UpsertUser(context.Background(), *username, string(hash)); err != nil {
 			return fmt.Errorf("upsert user: %w", err)
 		}
@@ -119,7 +119,7 @@ func RunProject(cfg config.Config, args []string) error {
 		if err != nil {
 			return err
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		p, err := store.CreateProject(context.Background(), *name, *slug)
 		if err != nil {
 			return fmt.Errorf("create project: %w", err)
@@ -160,7 +160,7 @@ func RunAPIKey(cfg config.Config, args []string) error {
 		if err != nil {
 			return err
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		ctx := context.Background()
 		project, err := store.ProjectBySlug(ctx, *projectSlug)
 		if err != nil {

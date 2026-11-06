@@ -64,7 +64,9 @@ FROM held_events WHERE project_id = ? ORDER BY id ASC LIMIT ?`, projectID, limit
 	for rows.Next() {
 		var h HeldRecord
 		var receivedAt, createdAt string
-		if err := rows.Scan(&h.ID, &h.ProjectID, &h.Slug, &h.Kind, &h.IngestID, &receivedAt, &h.ContentType, &h.BodyBase64, &createdAt); err != nil {
+		if err := rows.Scan(
+			&h.ID, &h.ProjectID, &h.Slug, &h.Kind, &h.IngestID, &receivedAt, &h.ContentType, &h.BodyBase64, &createdAt,
+		); err != nil {
 			return nil, err
 		}
 		h.ReceivedAt, _ = parseTime(receivedAt)

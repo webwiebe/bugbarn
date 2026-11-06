@@ -78,7 +78,7 @@ func (s *AlertStore) UpdateAlertLastFired(ctx context.Context, alertID string, f
 	}
 	_, err = s.db.ExecContext(ctx, `
 UPDATE alerts SET last_fired_at = ? WHERE id = ?`,
-		firedAt.UTC().Format(time.RFC3339Nano),
+		formatTime(firedAt),
 		rowID,
 	)
 	return wrapErr(err, "update alert last fired")

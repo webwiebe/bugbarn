@@ -75,7 +75,7 @@ func (n *WebhookNotifier) Send(ctx context.Context, report Report) error {
 		))
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err := fmt.Errorf("webhook returned %d", resp.StatusCode)
