@@ -40,16 +40,11 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ct := r.Header.Get("Content-Type")
-	if idx := strings.Index(ct, ";"); idx != -1 {
-		ct = strings.TrimSpace(ct[:idx])
-	}
-
 	// Bound the request: cap total body size and the number of entries so a
 	// single caller cannot force unbounded heap growth on the shared writer.
 	body := http.MaxBytesReader(w, r.Body, s.maxLogsBodyBytes())
 
-	rawEntries, ok := s.readLogEntries(w, body, ct)
+	rawEntries, ok := s.readLogEntries(w, body, r.Header.Get("Content-Type"))
 	if !ok {
 		return
 	}
@@ -82,7 +77,7 @@ func (s *Server) serveLogsIngest(w http.ResponseWriter, r *http.Request) {
 // per content type, enforcing the entry-count cap. ok is false when it has
 // already written an error response.
 func (s *Server) readLogEntries(w http.ResponseWriter, body io.Reader, contentType string) ([]map[string]any, bool) {
-	if contentType == "application/x-ndjson" {
+	if logparse.IsNDJSON(contentType) {
 		return s.readNDJSONLogs(w, body)
 	}
 	return s.readJSONLogs(w, body)
@@ -114,16 +109,20 @@ func (s *Server) readNDJSONLogs(w http.ResponseWriter, body io.Reader) ([]map[st
 
 func (s *Server) readJSONLogs(w http.ResponseWriter, body io.Reader) ([]map[string]any, bool) {
 	var payload struct {
-		Logs []map[string]any `json:"logs"`
+		Logs json.RawMessage `json:"logs"`
 	}
 	if err := json.NewDecoder(body).Decode(&payload); err != nil {
 		return nil, s.writeLogReadError(w, err)
 	}
-	if len(payload.Logs) > maxLogEntries {
+	entries, err := logparse.LogsArray(payload.Logs)
+	if err != nil {
+		return nil, s.writeLogReadError(w, err)
+	}
+	if len(entries) > maxLogEntries {
 		http.Error(w, "too many log entries", http.StatusRequestEntityTooLarge)
 		return nil, false
 	}
-	return payload.Logs, true
+	return entries, true
 }
 
 // writeLogReadError maps a body read/decode failure to 413 (over the size cap)
@@ -135,7 +134,11 @@ func (s *Server) writeLogReadError(w http.ResponseWriter, err error) bool {
 		return false
 	}
 	s.logger.Warn("logs: invalid payload", "error", err)
-	http.Error(w, "invalid log payload", http.StatusBadRequest)
+	msg := "invalid log payload"
+	if errors.Is(err, logparse.ErrNoLogsArray) {
+		msg += ": " + err.Error()
+	}
+	http.Error(w, msg, http.StatusBadRequest)
 	return false
 }
 

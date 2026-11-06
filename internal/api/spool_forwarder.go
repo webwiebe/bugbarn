@@ -22,9 +22,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
-	"github.com/wiebe-xyz/bugbarn/internal/normalize"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -192,17 +190,9 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if kindForPath(r.URL.Path) == queue.KindEvent {
-		if err := normalize.Validate(body); err != nil {
-			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
-			return
-		}
-	}
-	if strings.HasPrefix(r.URL.Path, "/api/v1/alertmanager") {
-		if _, err := ingest.AlertmanagerEvents(body); err != nil {
-			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
-			return
-		}
+	if !bodyHasIngestShape(r.URL.Path, r.Header.Get("Content-Type"), body) {
+		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+		return
 	}
 
 	headers := make(map[string]string, len(forwardedHeaders))
@@ -445,20 +435,6 @@ func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) err
 	}
 	produceCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
 	return err
-}
-
-// kindForPath maps an ingest request path to its queue Item kind.
-func kindForPath(path string) string {
-	switch {
-	case strings.HasPrefix(path, "/api/v1/events"):
-		return queue.KindEvent
-	case strings.HasPrefix(path, "/api/v1/logs"):
-		return queue.KindLog
-	default:
-		// Telemetry paths match exactly; RequestURI may carry a query string.
-		p, _, _ := strings.Cut(path, "?")
-		return telemetryKind(p)
-	}
 }
 
 func (s *SpoolForwarder) Close() error {

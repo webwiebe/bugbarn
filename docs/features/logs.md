@@ -76,9 +76,9 @@ All other fields are collected into the `data` object on the stored entry. The r
 
 #### Response
 
-On success: `204 No Content`.
+On success: `204 No Content`, or `202 Accepted` from a reader that queues the batch for the writer.
 
-If the request body contains no parseable entries: `204 No Content` (no-op).
+A JSON body must be an object whose `logs` key holds an array. A missing `logs` key, `"logs": null` or any other value answers `400 Bad Request`, as does invalid JSON. An empty array answers `204 No Content` (no-op). In an NDJSON body, lines that do not parse are skipped.
 
 ---
 

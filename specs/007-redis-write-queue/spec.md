@@ -92,6 +92,7 @@ This reuses the existing `spool.Record` shape so the reader spool and the queue 
 ### Producer (reader side)
 - New `RedisForwarder` (modeled on `SpoolForwarder.Drain`): reads the local ingest spool, `LPUSH`es batches, advances the cursor only on success.
 - Log ingest on readers is appended to the **same spool** (as a `Kind:"log"` record) instead of HTTP-proxied, so logs get the same durable, decoupled path as events.
+- The reader checks a JSON log body's shape before it spools: a body whose `logs` key is missing, `null` or not an array answers `400` (`logparse.DecodeJSONBody`, bugbarn#263). It used to answer `202`, and the consumer stored nothing from it. NDJSON bodies are spooled as they are.
 
 ### Consumer (writer side)
 - New `RedisConsumer` (modeled on spanbarn's `RedisWorker.Run`): `Reserve` loop → dispatch by `Kind` (event → `PersistProcessedEvent` pipeline; log → `logs.Insert`).
