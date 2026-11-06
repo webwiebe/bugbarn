@@ -47,9 +47,25 @@ if [ -z "$EXISTING" ]; then
   git push "$ORIGIN_REMOTE" "$NEW"
 fi
 
-# The GitHub mirror holds the tag for the GitHub Release.
-if git ls-remote --exit-code --tags "$GITHUB_REMOTE" "refs/tags/$NEW" >/dev/null; then
+# The GitHub mirror holds the tag for the GitHub Release. Gitea's push mirror
+# (sync on commit) also pushes every new tag to GitHub, so the tag can land
+# there between the check and the push below, and the push is then rejected
+# (pipeline 875, v0.236.333). A tag on GitHub that points at HEAD counts as
+# pushed. A tag that points at another commit fails the step.
+WANT=$(git rev-parse "HEAD^{commit}")
+github_has_tag() {
+  local got
+  got=$(git ls-remote --tags "$GITHUB_REMOTE" "refs/tags/$NEW" "refs/tags/$NEW^{}" \
+    | awk '{sha=$1} $2 ~ /\^\{\}$/ {peeled=$1} END {print (peeled != "" ? peeled : sha)}')
+  [ -n "$got" ] || return 1
+  if [ "$got" != "$WANT" ]; then
+    echo "GitHub has $NEW at $got, but HEAD is $WANT" >&2
+    exit 1
+  fi
   echo "GitHub already has $NEW"
-else
-  git push "$GITHUB_REMOTE" "$NEW"
+}
+if ! github_has_tag; then
+  if ! git push "$GITHUB_REMOTE" "$NEW"; then
+    github_has_tag || { echo "pushing $NEW to GitHub failed" >&2; exit 1; }
+  fi
 fi
