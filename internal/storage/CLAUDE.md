@@ -83,6 +83,17 @@ ready. Production's database is over 10 GB: an index build or table rewrite take
 and the startupProbe budget (600s) is the ceiling. Measure a new migration against a
 realistic copy and state its cost in the PR.
 
+## Timestamps are text
+
+Timestamp columns are TEXT, and SQLite compares them as strings. Write every time
+parameter and value through `formatTime`: UTC with a nine-digit fraction, so string order
+is time order (#253). `time.RFC3339Nano` trims trailing zeros and sorts wrong inside one
+second; `time.RFC3339` drops the fraction and sorts wrong against stored fractions. Rows
+written before #253 keep the trimmed form and `parseTime` reads both. Against those rows
+`<` and `>` stay correct across seconds, and `=` does not match, which is why migration
+00026 rewrote `monitors.last_checkin_at` for `MarkMonitorMissed`. A new `=` match on a
+timestamp column needs the same rewrite or a match on the parsed time.
+
 ## Query plans over timings
 
 Several indexes exist only so a query can be answered index-only (`00011`, `00012`,

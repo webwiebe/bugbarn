@@ -41,7 +41,7 @@ func (s *EventStore) DeleteEventsBefore(ctx context.Context, cutoff time.Time, l
 		return 0, apperr.Internal("delete events before cutoff: store is read-only", nil)
 	}
 	// Order by received_at, not by id. Both are chronological — received_at is
-	// RFC3339Nano UTC text, so its lexicographic order is its time order — but
+	// fixed-width UTC text (formatTime), so its lexicographic order is its time order — but
 	// only received_at order lets migration 00012's idx_events_received_at
 	// (received_at, id) serve the filter, the ordering and the projected column
 	// at once, so the scan stops at LIMIT and never touches the table.
@@ -58,7 +58,7 @@ func (s *EventStore) DeleteEventsBefore(ctx context.Context, cutoff time.Time, l
 		DELETE FROM events WHERE id IN (
 			SELECT id FROM events WHERE received_at < ? ORDER BY received_at ASC, id ASC LIMIT ?
 		)`,
-		cutoff.UTC().Format(time.RFC3339Nano), limit,
+		formatTime(cutoff), limit,
 	)
 	if err != nil {
 		return 0, wrapErr(err, "delete events before cutoff")
@@ -77,7 +77,7 @@ func (s *EventStore) CountEventsBefore(ctx context.Context, cutoff time.Time) (i
 	var n int64
 	err := s.readDB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM events WHERE received_at < ?`,
-		cutoff.UTC().Format(time.RFC3339Nano),
+		formatTime(cutoff),
 	).Scan(&n)
 	if err != nil {
 		return 0, wrapErr(err, "count events before cutoff")
@@ -110,7 +110,7 @@ func (s *EventStore) DeleteProjectEventsBefore(ctx context.Context, projectID in
 			SELECT id FROM events WHERE project_id = ? AND received_at < ?
 			ORDER BY received_at ASC, id ASC LIMIT ?
 		)`,
-		projectID, cutoff.UTC().Format(time.RFC3339Nano), limit,
+		projectID, formatTime(cutoff), limit,
 	)
 	if err != nil {
 		return 0, wrapErr(err, "delete project events before cutoff")

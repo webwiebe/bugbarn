@@ -33,7 +33,14 @@ const (
 	baseDriverName = "sqlite"
 	issueIDPrefix  = "issue-"
 	eventIDPrefix  = "event-"
-	timeLayout     = time.RFC3339Nano
+	// timeLayout writes every stored timestamp with a nine-digit fraction.
+	// SQLite compares these columns as text, and RFC3339Nano trims trailing
+	// zeros, so inside one second "…:55.12Z" sorted after "…:55.123Z" (#253).
+	// A fixed width makes text order equal time order.
+	timeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+	// parseLayout reads both the fixed-width form and the trimmed form that
+	// rows written before #253 still carry.
+	parseLayout = time.RFC3339Nano
 )
 
 var (

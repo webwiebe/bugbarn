@@ -88,7 +88,7 @@ func insertLogChunk(ctx context.Context, tx *sql.Tx, chunk []LogEntry) error {
 		if receivedAt.IsZero() {
 			receivedAt = time.Now().UTC()
 		}
-		args = append(args, e.ProjectID, receivedAt.UTC().Format(time.RFC3339Nano), e.LevelNum, e.Level, e.Message, dataJSON)
+		args = append(args, e.ProjectID, formatTime(receivedAt), e.LevelNum, e.Level, e.Message, dataJSON)
 	}
 	if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
 		return err
