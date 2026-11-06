@@ -13,9 +13,9 @@ import (
 )
 
 // A lookup a reader could not serve (SQLITE_READONLY_RECOVERY after its
-// retries, #261) logs one WARN naming the caller, so selflog files no issue
-// and the log says which client met the 503.
-func TestBySlugUnavailableLogsWarnWithCaller(t *testing.T) {
+// retries, #261) failed a request with a 503. It logs one ERROR, which selflog
+// files, and the line names the caller.
+func TestBySlugUnavailableLogsErrorWithCaller(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	svc := New(&fakeRepo{err: apperr.Unavailable("project not found", errors.New("(264)"))}, logger)
@@ -33,7 +33,8 @@ func TestBySlugUnavailableLogsWarnWithCaller(t *testing.T) {
 		t.Fatalf("want one JSON log line, got %q: %v", buf.String(), err)
 	}
 	for key, want := range map[string]string{
-		"level":      "WARN",
+		"level":      "ERROR",
+		"msg":        "project by slug: database unavailable on this reader",
 		"slug":       "profotograaf",
 		"route":      "POST /api/v1/monitors/nightly/check-in",
 		"user_agent": "bugbarn-go/1.0",
