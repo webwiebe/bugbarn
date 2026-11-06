@@ -2,8 +2,11 @@
 
 Plain Kustomize, one directory per environment under `deploy/k8s/`. No Helm. Each
 `kustomization.yaml` maps images to `ghcr.io/webwiebe/bugbarn/{service,web}` with the
-placeholder tag `local`; the pipelines replace it with `kubectl set image` (by digest on
-staging and production). `deploy/README.md` predates the reader/writer split; trust the
+placeholder tag `local`. Testing and staging replace it after `apply -k` with
+`kubectl set image` (by digest on staging). Production pins the digests into the
+kustomization before `apply -k` (`deploy/scripts/pin-images.sh`) and refuses to apply a
+render that still holds `:local`, so the hourly snapshot CronJob never creates a run on
+the placeholder (#262). `deploy/README.md` predates the reader/writer split; trust the
 manifests and this file.
 
 ## Topology
@@ -83,9 +86,9 @@ before the next poll, doubling up to 15 minutes.
 5. `deploy-production` (`depends_on: release`): preflight checks the semver images in
    GHCR, saves the running images, deploys **production** by digest. On failure
    `rollback-on-failure` restores the saved images, and exits without doing anything
-   when no snapshot was saved. `kubectl rollout undo` would land on the `:local`
-   revision that `apply -k` leaves behind, which is why the rollback sets images
-   explicitly.
+   when no snapshot was saved. `kubectl rollout undo` can land on a `:local`
+   revision that `apply -k` left behind before #262, which is why the rollback sets
+   images explicitly.
 
 `vector` deploys the Vector agents (`deploy/vector/`, namespace `vector`) to k3s1 and
 layer7 when `deploy/vector/**` changes on main, outside the release chain; see
