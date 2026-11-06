@@ -345,6 +345,11 @@ func backstop(ctx context.Context, db *sql.DB, st *checkpointState, policy Check
 		"wal_frames", walFrames, "checkpointed", checkpointed)
 }
 
+// beforeCheckpointPragma, when set, runs on the attempt's connection just before
+// the checkpoint pragma. Tests use it to read the busy_timeout that SQLite's busy
+// handler will wait with; production leaves it nil.
+var beforeCheckpointPragma func(conn *sql.Conn)
+
 // checkpointAttempt runs one `PRAGMA main.wal_checkpoint(mode)` on the write
 // connection. A busyTimeout above zero replaces the connection's busy_timeout
 // for this attempt only: a TRUNCATE blocked by a reader snapshot waits in
@@ -377,6 +382,9 @@ func checkpointAttempt(
 		}()
 	}
 
+	if beforeCheckpointPragma != nil {
+		beforeCheckpointPragma(conn)
+	}
 	// Scoped to main on purpose, see CheckpointDB.
 	err = conn.QueryRowContext(ctx, `PRAGMA main.wal_checkpoint(`+mode+`)`).Scan(&busy, &walFrames, &checkpointed)
 	return busy, walFrames, checkpointed, err
