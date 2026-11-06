@@ -73,6 +73,46 @@ check "rerun, GitHub complete: no push" "GitHub already has v0.236.11" "$(tail -
 run next
 check "next commit: skips a taken version" "VERSION=v0.236.13" "$(head -n 1 "$WORK/next/.relver")"
 
+# 5. Pipeline 875: Gitea's push mirror put the tag on GitHub between the check
+#    and the push, so GitHub rejected the push. A pre-receive hook plays the
+#    mirror: it sets the tag to the pushed commit itself and rejects the push.
+#    The commit is pushed as a branch first so the hook's object is present.
+(
+  cd "$WORK/seed"
+  git commit -q --allow-empty -m four
+  git push -q origin HEAD:main
+  git push -q "$WORK/github.git" HEAD:refs/heads/main
+)
+cat >"$WORK/github.git/hooks/pre-receive" <<'HOOK'
+#!/usr/bin/env bash
+while read -r _ new ref; do
+  env -u GIT_QUARANTINE_PATH -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    git update-ref "$ref" "$new"
+done
+echo "cannot lock ref: reference already exists" >&2
+exit 1
+HOOK
+chmod +x "$WORK/github.git/hooks/pre-receive"
+status=0
+run race || status=$?
+rm "$WORK/github.git/hooks/pre-receive"
+check "mirror race: step passes" "0" "$status"
+check "mirror race: .relver" "VERSION=v0.236.14" "$(head -n 1 "$WORK/race/.relver")"
+check "mirror race: push was rejected" "1" "$(grep -c 'reference already exists' "$WORK/race.log")"
+check "mirror race: tag accepted" "GitHub already has v0.236.14" "$(tail -n 1 "$WORK/race.log")"
+
+# 6. GitHub holds the next version at another commit. The step fails and says so.
+(
+  cd "$WORK/seed"
+  git push -q "$WORK/github.git" HEAD~1:refs/tags/v0.236.15
+  git commit -q --allow-empty -m five
+  git push -q origin HEAD:main
+)
+status=0
+run elsewhere || status=$?
+check "tag elsewhere on GitHub: step fails" "1" "$status"
+check "tag elsewhere on GitHub: says where" "1" "$(grep -c '^GitHub has v0.236.15 at .*, but HEAD is ' "$WORK/elsewhere.log")"
+
 if [ "$fail" -ne 0 ]; then
   cat "$WORK"/*.log
   exit 1
