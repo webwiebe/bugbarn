@@ -41,10 +41,10 @@ func TestRedisSpoolForwarderPublishes(t *testing.T) {
 		want string
 		body string
 	}{
-		// Events are validated synchronously, so the body must be a valid event
-		// payload (a JSON object). Logs are forwarded as-is.
+		// Events and JSON log bodies are validated synchronously, so each body
+		// must have a valid shape: an event object, a {"logs": [...]} object.
 		{"/api/v1/events", queue.KindEvent, `{"message":"PAYLOAD-event"}`},
-		{"/api/v1/logs", queue.KindLog, "PAYLOAD-log"},
+		{"/api/v1/logs", queue.KindLog, `{"logs":[{"message":"PAYLOAD-log"}]}`},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest("POST", c.path, strings.NewReader(c.body))
@@ -119,7 +119,7 @@ func TestRedisSpoolForwarderResolvesProjectFromAPIKey(t *testing.T) {
 		return "", nil
 	})
 
-	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
+	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader(`{"logs":[{"message":"PAYLOAD-log"}]}`))
 	req.Header.Set("X-Bugbarn-Api-Key", "scoped-key")
 	rec := httptest.NewRecorder()
 	sf.Forward(rec, req)
@@ -148,7 +148,7 @@ func TestRedisSpoolForwarderHeaderBeatsAPIKey(t *testing.T) {
 	sf, q := newTestRedisForwarder(t)
 	sf.SetProjectResolver(func(context.Context, string) (string, error) { return "from-key", nil })
 
-	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
+	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader(`{"logs":[{"message":"PAYLOAD-log"}]}`))
 	req.Header.Set("X-Bugbarn-Api-Key", "scoped-key")
 	req.Header.Set("X-Bugbarn-Project", "from-header")
 	rec := httptest.NewRecorder()
@@ -176,7 +176,7 @@ func TestRedisSpoolForwarderRejectsLogsWithoutProject(t *testing.T) {
 	sf, _ := newTestRedisForwarder(t)
 	sf.SetProjectResolver(func(context.Context, string) (string, error) { return "", nil })
 
-	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader("PAYLOAD-log"))
+	req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader(`{"logs":[{"message":"PAYLOAD-log"}]}`))
 	req.Header.Set("X-Bugbarn-Api-Key", "global-key")
 	rec := httptest.NewRecorder()
 	sf.Forward(rec, req)
@@ -197,8 +197,12 @@ func TestRedisSpoolForwarderRetriesWhenTheKeyLookupFails(t *testing.T) {
 		return "", errors.New("database is locked")
 	})
 
-	for _, path := range []string{"/api/v1/events", "/api/v1/logs"} {
-		req := httptest.NewRequest("POST", path, strings.NewReader(`{"message":"boom"}`))
+	bodies := map[string]string{
+		"/api/v1/events": `{"message":"boom"}`,
+		"/api/v1/logs":   `{"logs":[{"message":"boom"}]}`,
+	}
+	for path, body := range bodies {
+		req := httptest.NewRequest("POST", path, strings.NewReader(body))
 		req.Header.Set("X-Bugbarn-Api-Key", "scoped-key")
 		rec := httptest.NewRecorder()
 		sf.Forward(rec, req)
@@ -232,5 +236,25 @@ func TestRedisSpoolForwarderEventsAllowEmptyProject(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Kind != queue.KindEvent {
 		t.Fatalf("items = %+v, want one event item", items)
+	}
+}
+
+// In queue mode a JSON log body without a "logs" array is refused at the
+// reader and never published: the consumer would drop it behind a 202 (#263).
+func TestRedisSpoolForwarderRejectsLogBodyWithoutLogsArray(t *testing.T) {
+	sf, _ := newTestRedisForwarder(t)
+
+	for _, body := range []string{`{}`, `{"logs":null}`, `{"logs":"x"}`, `PAYLOAD-log`} {
+		req := httptest.NewRequest("POST", "/api/v1/logs", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Bugbarn-Project", "svc")
+		rec := httptest.NewRecorder()
+		sf.Forward(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: Forward status = %d, want 400", body, rec.Code)
+		}
+	}
+	if pending := sf.Pending(); pending != 0 {
+		t.Errorf("Pending = %d, want 0: a refused log body must not be published", pending)
 	}
 }

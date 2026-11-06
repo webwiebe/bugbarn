@@ -50,19 +50,50 @@ func TestSpoolForwarder_RejectsMalformedEvent(t *testing.T) {
 	}
 }
 
-func TestSpoolForwarder_DoesNotValidateNonEventPaths(t *testing.T) {
+// A JSON log body without a "logs" array is refused before it is spooled: the
+// writer would store nothing from it, and the sender would never learn (#263).
+func TestSpoolForwarder_RejectsLogBodyWithoutLogsArray(t *testing.T) {
 	t.Parallel()
 
-	// Only events are validated; logs/analytics bodies are forwarded as-is so
-	// the writer (which owns their parsing) decides their fate.
-	sf := newTestSpool(t, "http://localhost:0")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/logs", strings.NewReader("not json"))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	sf.Forward(rec, req)
+	for _, body := range []string{`not json`, `{}`, `{"logs":null}`, `{"logs":"x"}`, `{"logs":{}}`, `[{"message":"bare"}]`} {
+		sf := newTestSpool(t, "http://localhost:0")
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/logs", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		sf.Forward(rec, req)
 
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("Forward status = %d, want 202", rec.Code)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: Forward status = %d, want 400", body, rec.Code)
+		}
+		if sf.Pending() != 0 {
+			t.Errorf("%s: %d pending, want 0: a refused log body must not be spooled", body, sf.Pending())
+		}
+	}
+}
+
+// Valid JSON log bodies, an empty batch included, and NDJSON bodies are
+// spooled. NDJSON lines are parsed by the writer, which skips a bad line.
+func TestSpoolForwarder_AcceptsLogBodies(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct{ contentType, body string }{
+		{"application/json", `{"logs":[{"message":"ok"}]}`},
+		{"application/json; charset=utf-8", `{"logs":[]}`},
+		{"application/x-ndjson", "{\"message\":\"ok\"}\nnot json\n"},
+	}
+	for _, c := range cases {
+		sf := newTestSpool(t, "http://localhost:0")
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/logs", strings.NewReader(c.body))
+		req.Header.Set("Content-Type", c.contentType)
+		rec := httptest.NewRecorder()
+		sf.Forward(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Errorf("%s %q: Forward status = %d, want 202", c.contentType, c.body, rec.Code)
+		}
+		if sf.Pending() == 0 {
+			t.Errorf("%s %q: nothing pending, want the body spooled", c.contentType, c.body)
+		}
 	}
 }
 

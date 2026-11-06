@@ -213,7 +213,7 @@ Ingest one or more log entries.
 }
 ```
 
-**Response:** `204 No Content` on success.
+**Response:** `204 No Content` on success, or `202 Accepted` from a reader that queues the batch for the writer. A JSON body without a `logs` array (the key missing, `null` or another type) answers `400`.
 
 A project must be determinable from either the API key or the `X-BugBarn-Project` header. Requests without a resolvable project are rejected with `400`.
 

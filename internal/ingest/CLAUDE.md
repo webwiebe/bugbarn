@@ -81,7 +81,8 @@ SDKs decide whether to retry from the status and body alone:
 - transient, retry: 429 `spool_full`, 503 `ingest_unavailable`, with `Retry-After: 1`
 
 `ingest.Handler` runs `normalize.Validate` before replying, so a 202 means the payload
-will parse. Known exceptions still answer outside the contract: route-level API-key checks
+will parse. The reader's spool forwarder does the same for events and for JSON log bodies
+(`logparse.DecodeJSONBody`: a `logs` array, #263). Known exceptions still answer outside the contract: route-level API-key checks
 (plain 401), a reader log without a project (plain 400) and `WriteForwarder`. The forwarder
 answers 503 `ingest_unavailable` only when the dial failed (the writer cannot have seen the
 request) and a plain 502 for anything after a connection existed, so an SDK retry never

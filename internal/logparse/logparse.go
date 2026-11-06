@@ -96,14 +96,8 @@ func ParseObject(obj map[string]any, projectID int64) domain.LogEntry {
 // project. Accepts NDJSON (Content-Type application/x-ndjson) or a JSON object
 // of the form {"logs": [...]}. Returns nil for an unparseable JSON body.
 func ParseBody(body []byte, contentType string, projectID int64) []domain.LogEntry {
-	ct := contentType
-	if idx := strings.Index(ct, ";"); idx != -1 {
-		ct = strings.TrimSpace(ct[:idx])
-	}
-
 	var raw []map[string]any
-	switch ct {
-	case "application/x-ndjson":
+	if IsNDJSON(contentType) {
 		scanner := bufio.NewScanner(bytes.NewReader(body))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
@@ -116,14 +110,11 @@ func ParseBody(body []byte, contentType string, projectID int64) []domain.LogEnt
 			}
 			raw = append(raw, obj)
 		}
-	default:
-		var payload struct {
-			Logs []map[string]any `json:"logs"`
-		}
-		if err := json.Unmarshal(body, &payload); err != nil {
+	} else {
+		var err error
+		if raw, err = DecodeJSONBody(body); err != nil {
 			return nil
 		}
-		raw = payload.Logs
 	}
 
 	if len(raw) == 0 {
