@@ -146,9 +146,11 @@ class Transport:
                 self._send(event)
             except Exception as err:
                 # This thread is the only sender, so anything that escapes here loses
-                # every later message with no further sign.
+                # every later message with no further sign. The class method is called
+                # directly because a subclass may override _warn_once with another
+                # signature, and a raise from this handler would end the thread too.
                 what = "check-in" if isinstance(event, CheckIn) else "event"
-                self._warn_once(what, f"send failed: {type(err).__name__}")
+                Transport._warn_once(self, what, f"send failed: {type(err).__name__}")
             finally:
                 self.queue.task_done()
 

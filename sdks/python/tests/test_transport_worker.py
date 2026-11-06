@@ -92,6 +92,32 @@ class TransportWorkerTests(unittest.TestCase):
         self.assertIn("event dropped, send failed: TypeError", stderr.getvalue())
         self.assertNotIn("JSON serializable", stderr.getvalue())
 
+    def test_worker_survives_a_subclass_with_its_own_warn_once(self) -> None:
+        ingest = _MalformedOnce()
+        ingest.first.set()
+        self.addCleanup(ingest.close)
+
+        class OwnWarnings(Transport):
+            # The shape a service wrapper uses: one argument, and a send that raises.
+            def _warn_once(self, reason: str) -> None:
+                pass
+
+            def _send(self, event) -> None:
+                if isinstance(event, _Unserializable):
+                    raise RuntimeError("wrapper send failed")
+                super()._send(event)
+
+        transport = OwnWarnings(api_key="k", endpoint=ingest.url)
+        self.addCleanup(transport.close, 0.2)
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            transport.submit(_Unserializable())
+            self.assertTrue(_wait_for(lambda: transport.queue.unfinished_tasks == 0))
+            transport.submit_check_in(CheckIn(slug="after", body={"status": "ok"}))
+            self.assertTrue(_wait_for(lambda: ingest.received))
+        self.assertTrue(transport._worker.is_alive())
+        self.assertIn("event dropped, send failed: RuntimeError", stderr.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
