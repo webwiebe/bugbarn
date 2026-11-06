@@ -260,6 +260,10 @@ steps:
         # $TMPDIR/go-build* when disk runs low, including those of running builds.
         export GOTMPDIR="$PWD/.gotmp"
         mkdir -p "$GOTMPDIR"
+        # Go trims only entries unused for five days; this cache grew to 12G in
+        # two days on the shared build host. Cap it on exit, pass or fail: one
+        # quality run touches about 215 MiB, and 2 GiB holds about an hour of runs.
+        trap 'sh scripts/trim-go-cache.sh "$GOCACHE" 2048' EXIT
         sh scripts/heal-go-modcache.sh
         # The gates' own tests run first: a gate that has stopped failing must
         # be reported before the gates it protects are trusted.
@@ -270,6 +274,7 @@ steps:
         bash scripts/pin-images_test.sh
         bash scripts/check-pages_test.sh
         bash scripts/e2e-nightly_test.sh
+        bash scripts/trim-go-cache_test.sh
         sh scripts/diff-coverage_test.sh
         sh scripts/check-file-length.sh
         sh scripts/check-typed-boundaries.sh

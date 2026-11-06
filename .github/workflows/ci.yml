@@ -314,3 +314,9 @@ jobs:
         run: |
           . "$GITHUB_WORKSPACE/scripts/use-pnpm.sh"
           pnpm dlx jscpd@latest .
+      # Go trims only entries unused for five days; this cache grew to 12G in
+      # two days on the shared build host. Same cap as the Woodpecker quality step.
+      - name: Cap the Go build cache
+        if: always()
+        shell: bash
+        run: sh scripts/trim-go-cache.sh "$GOCACHE" 2048
