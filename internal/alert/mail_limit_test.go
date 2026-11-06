@@ -65,6 +65,9 @@ func TestDelivererBoundsEmailBurst(t *testing.T) {
 	}
 
 	waitFor(t, "the overflow to be dropped", func() bool { return d.EmailDropped() == burst-concurrent-queued })
+	// A slot is taken before its send starts, so the drop count alone can arrive
+	// with a send still on its way in.
+	waitFor(t, "every slot's send to start", func() bool { return inFlight.Load() == concurrent })
 	close(release)
 	wg.Wait()
 

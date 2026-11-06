@@ -4,6 +4,11 @@
 
 INPUT=$(cat)
 CWD=$(echo "$INPUT" | jq -r '.cwd')
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+
+# Settings filter can fire on other commands: go on only for a gh pr create in
+# command position.
+echo "$COMMAND" | grep -Eq '(^|[;&|(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' || exit 0
 
 cd "$CWD" || exit 0
 

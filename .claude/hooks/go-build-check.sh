@@ -14,7 +14,7 @@ fi
 
 cd "$CWD" || exit 0
 
-OUTPUT=$(go build ./... 2>&1)
+OUTPUT=$(GOMAXPROCS=3 go build -p 2 ./... 2>&1)
 if [ $? -ne 0 ]; then
   echo "$OUTPUT" >&2
   echo "Build failed after editing ${FILE##*/}" >&2
