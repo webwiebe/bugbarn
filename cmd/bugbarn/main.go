@@ -95,6 +95,8 @@ func run() error {
 			return cli.RunAPIKey(cfg, os.Args[2:])
 		case "db":
 			return cli.RunDB(cfg, os.Args[2:])
+		case "oomwatch":
+			return runOOMWatch(logger)
 		}
 	}
 

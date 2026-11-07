@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# layer7 is the production node and reports to the production readers in-cluster.
+# secret.yaml (SOPS, key api_key) is applied by the pipeline, never through
+# Kustomize. Namespaces missing from OOMWATCH_PROJECTS report to the `cluster`
+# project; naming several projects needs a full-scope key.
+resources:
+  - ../base
+patches:
+  - target: {kind: Deployment, name: oomwatch}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: OOMWATCH_ENDPOINT, value: "http://bugbarn.bugbarn-production.svc.cluster.local:8080/api/v1/events"}
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: OOMWATCH_CLUSTER, value: layer7}
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: OOMWATCH_PROJECTS, value: "bugbarn-production=bugbarn-service,brandtrace-production=brandtrace"}

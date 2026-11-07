@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# k3s1 hosts testing and staging and reports to production over the public endpoint.
+# secret.yaml (SOPS, key api_key) is applied by the pipeline, never through
+# Kustomize. Namespaces missing from OOMWATCH_PROJECTS report to the `cluster`
+# project; naming several projects needs a full-scope key.
+resources:
+  - ../base
+patches:
+  - target: {kind: Deployment, name: oomwatch}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: OOMWATCH_ENDPOINT, value: "https://bugbarn.wiebe.xyz/api/v1/events"}
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: OOMWATCH_CLUSTER, value: k3s1}
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: OOMWATCH_PROJECTS, value: "bugbarn-testing=bugbarn-service,bugbarn-staging=bugbarn-service"}
