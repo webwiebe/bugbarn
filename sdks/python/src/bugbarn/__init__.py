@@ -1,7 +1,7 @@
 """BugBarn Python SDK."""
 
 from .breadcrumbs import add_breadcrumb, clear_breadcrumbs
-from .client import capture_exception, check_in, flush, init, shutdown
+from .client import capture_exception, check_in, dropped_count, flush, init, shutdown
 from .integrations import BugBarnASGIMiddleware, BugBarnHandler, install_asyncio_handler
 from .user import clear_user, set_user
 
@@ -13,6 +13,7 @@ __all__ = [
     "check_in",
     "clear_breadcrumbs",
     "clear_user",
+    "dropped_count",
     "flush",
     "init",
     "install_asyncio_handler",

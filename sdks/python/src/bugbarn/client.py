@@ -17,7 +17,7 @@ from .breadcrumbs import Breadcrumb, get_breadcrumbs
 from .user import UserContext, get_user
 
 SDK_NAME = "bugbarn.python"
-SDK_VERSION = "1.4.4"
+SDK_VERSION = "1.4.5"
 DEFAULT_ENDPOINT = "/api/v1/events"
 CHECK_IN_STATUSES = ("ok", "error")
 
@@ -105,14 +105,30 @@ class Transport:
         self.queue: "queue.Queue[Envelope | CheckIn]" = queue.Queue(maxsize=maxsize)
         self._closed = threading.Event()
         self._warned: set[str] = set()
+        self._dropped = 0
+        self._dropped_lock = threading.Lock()
         self._worker = threading.Thread(target=self._run, name="bugbarn-transport", daemon=True)
         self._worker.start()
+
+    @property
+    def dropped(self) -> int:
+        """Messages refused because the queue was full, since this transport started."""
+        with self._dropped_lock:
+            return self._dropped
+
+    def _count_drop(self) -> None:
+        with self._dropped_lock:
+            self._dropped += 1
 
     def submit(self, event: Envelope) -> bool:
         try:
             self.queue.put_nowait(event)
             return True
         except queue.Full:
+            self._count_drop()
+            # The class method is called directly because a subclass may override
+            # _warn_once with another signature, and a raise here would reach the caller.
+            Transport._warn_once(self, "event", "queue full")
             return False
 
     def submit_check_in(self, check_in: CheckIn) -> bool:
@@ -120,6 +136,8 @@ class Transport:
             self.queue.put_nowait(check_in)
             return True
         except queue.Full:
+            # check_in() adds the warning, which names the monitor.
+            self._count_drop()
             return False
 
     def flush(self, timeout: float = 2.0) -> bool:
@@ -359,6 +377,11 @@ def flush(timeout: float = 2.0) -> bool:
     if _transport is None:
         return True
     return _transport.flush(timeout=timeout)
+
+
+def dropped_count() -> int:
+    """How many messages the SDK refused because its queue was full. 0 before init."""
+    return 0 if _transport is None else int(getattr(_transport, "dropped", 0))
 
 
 def shutdown(timeout: float = 2.0) -> bool:
