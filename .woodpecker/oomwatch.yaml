@@ -1,0 +1,87 @@
+# OOMKilled watcher (deploy/oomwatch, `bugbarn oomwatch`, issue #266): renders the
+# manifests on a PR and on main. The deploy is oomwatch-deploy.yaml.
+# NB: local backend = one shell per `commands` entry, and Woodpecker pre-
+# substitutes braced variables; so each step is ONE block and all vars use $VAR
+# (no braces). Avoid brace-vars even in comments, Woodpecker parses them.
+when:
+  - event: pull_request
+    path:
+      include: ['deploy/oomwatch/**', '.woodpecker/oomwatch*.yaml', 'internal/oomwatch/**']
+  - event: push
+    branch: main
+    path:
+      include: ['deploy/oomwatch/**', '.woodpecker/oomwatch*.yaml', 'internal/oomwatch/**']
+
+labels:
+  type: build
+
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    failure: ignore
+
+steps:
+  - name: clone-fallback
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+    commands:
+      - |
+        set -eu
+        if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+          exit 0
+        fi
+        echo "default clone left no checkout; cloning with the read token"
+        URL=https://git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git
+        git remote remove origin 2>/dev/null || true
+        git remote add origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        if [ "$CI_PIPELINE_EVENT" = pull_request ]; then
+          git fetch --no-tags origin "+$CI_COMMIT_REF"
+        else
+          git fetch --tags origin "+$CI_COMMIT_SHA"
+        fi
+        git checkout -qf "$CI_COMMIT_SHA"
+        git remote set-url origin "$URL"
+        git log --oneline -1
+
+steps:
+  - name: clone-fallback
+    image: bash
+    environment:
+      GITEA_READ_TOKEN:
+        from_secret: gitea_read_token
+    commands:
+      - |
+        set -eu
+        if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+          exit 0
+        fi
+        echo "default clone left no checkout; cloning with the read token"
+        URL=https://git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git
+        git remote remove origin 2>/dev/null || true
+        git remote add origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
+        if [ "$CI_PIPELINE_EVENT" = pull_request ]; then
+          git fetch --no-tags origin "+$CI_COMMIT_REF"
+        else
+          git fetch --tags origin "+$CI_COMMIT_SHA"
+        fi
+        git checkout -qf "$CI_COMMIT_SHA"
+        git remote set-url origin "$URL"
+        git log --oneline -1
+
+  - name: check
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        for overlay in k3s1 layer7; do
+          out="$(kubectl kustomize "deploy/oomwatch/k8s/$overlay")"
+          printf '%s\n' "$out" | grep -q 'OOMWATCH_ENDPOINT' || { echo "ERROR: $overlay renders no OOMWATCH_ENDPOINT"; exit 1; }
+          printf '%s\n' "$out" | grep -q 'kind: ClusterRole$' || { echo "ERROR: $overlay renders no ClusterRole"; exit 1; }
+          # Read-only RBAC: pods, get and list, nothing else.
+          if printf '%s\n' "$out" | grep -E '^ +- (create|update|patch|delete|deletecollection|watch)$'; then
+            echo "ERROR: $overlay grants a write verb"; exit 1
+          fi
+          echo "$overlay renders"
+        done
