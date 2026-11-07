@@ -76,7 +76,7 @@ func (r *reporter) report(ctx context.Context, k kill) error {
 	if err != nil {
 		return fmt.Errorf("send event: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 == 2 {
 		return nil
 	}
