@@ -4,7 +4,7 @@ Reports containers killed with reason `OOMKilled` to BugBarn. One Deployment per
 
 - `k8s/base`: namespace, read-only RBAC (pods get/list), Deployment.
 - `k8s/k3s1`, `k8s/layer7`: overlays with the endpoint, cluster name and namespace to project map.
-- `k8s/<overlay>/secret.yaml`: SOPS-encrypted secret `oomwatch-secrets` with key `api_key`, a full-scope ingest key (needed to name a project other than the key's own).
+- `k8s/<overlay>/secret.yaml`: SOPS-encrypted secret `oomwatch-secrets` with key `api_key`, an ingest key bound to the `cluster` project (`bb key-request cluster`).
 - Deploy: `.woodpecker/oomwatch-deploy.yaml` on a version tag after `release`. Checks: `.woodpecker/oomwatch.yaml`.
 - Spec: `specs/008-oomwatch/spec.md`.
 
