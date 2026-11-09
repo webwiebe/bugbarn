@@ -16,6 +16,9 @@
 # actual corruption event.
 set -eu
 
+# A half-extracted toolchain breaks every go command below; remove it first.
+sh "$(dirname "$0")/heal-go-toolchain.sh"
+
 # A near-full runner disk is the root cause of this corruption class: module
 # extraction gets truncated mid-write and the damage persists. Reclaim the
 # regenerable Go build cache before touching modules, and fail loudly rather

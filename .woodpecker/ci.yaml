@@ -275,6 +275,7 @@ steps:
         bash scripts/check-pages_test.sh
         bash scripts/e2e-nightly_test.sh
         bash scripts/trim-go-cache_test.sh
+        sh scripts/heal-go-toolchain_test.sh
         sh scripts/diff-coverage_test.sh
         sh scripts/check-file-length.sh
         sh scripts/check-typed-boundaries.sh
