@@ -52,7 +52,7 @@ func TestRetryReadonlyRecoveryLeavesOtherErrorsAlone(t *testing.T) {
 	}
 }
 
-// A reader whose wal-index cannot be initialised on a read-only mount fails with
+// A reader whose wal-index cannot be initialized on a read-only mount fails with
 // SQLITE_READONLY_CANTINIT (1288), the same transient state as 264. It was
 // filed as bugbarn#268 (BS2-161) while only 264 was retried.
 func TestRetryReadonlyRecoveryRetriesCantInit(t *testing.T) {

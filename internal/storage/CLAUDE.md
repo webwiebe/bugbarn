@@ -56,7 +56,7 @@ next write every read on the reader fails with `SQLITE_READONLY_RECOVERY` (264).
 every query and prepare on 264 three times (`retryReadonlyRecovery`, 175 ms in all),
 counts the outcome in `bugbarn.storage.readonly_recovery` and puts the WAL's size and
 age on a span event (#242, #261). SQLITE_READONLY_CANTINIT (1288), a reader that cannot
-initialise the wal-index, is the same state and takes the same path (#268). A 264 or
+initialize the wal-index, is the same state and takes the same path (#268). A 264 or
 1288 that outlasts the retries becomes `apperr.Unavailable` (503). Do not add per-call retries; the driver covers every read.
 
 `readonly_recovery_process_test.go` reproduces the state: a reader in a child process,

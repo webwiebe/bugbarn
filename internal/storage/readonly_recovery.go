@@ -34,7 +34,7 @@ var readonlyRecoveryCounter, _ = tracing.Meter().Int64Counter(
 
 // IsReadonlyRecovery reports whether err is SQLITE_READONLY_RECOVERY (264) or
 // SQLITE_READONLY_CANTINIT (1288): a read-only connection saw a wal-index that
-// needs recovery or initialisation and cannot do either. Only the writer can,
+// needs recovery or initialization and cannot do either. Only the writer can,
 // so both clear on the writer's next write (#242, #268).
 func IsReadonlyRecovery(err error) bool {
 	var sqliteErr *sqlite.Error
