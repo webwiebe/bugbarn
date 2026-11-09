@@ -175,7 +175,8 @@ func (q *RedisQueue) Publish(ctx context.Context, items []Item) error {
 		if err := q.client.LPush(ctx, WriteQueueKey, data).Err(); err != nil {
 			err = fmt.Errorf("queue: lpush: %w", err)
 			span.SetStatus(codes.Error, err.Error())
-			slog.ErrorContext(ctx, "queue: publish lpush failed", "queue", WriteQueueKey, "error", err)
+			// No log here: the spool keeps the record and the caller retries it, and
+			// the caller logs the failure once (bugbarn#255, #269).
 			publishCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error")))
 			return err
 		}
