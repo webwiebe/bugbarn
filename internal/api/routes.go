@@ -78,15 +78,7 @@ func (s *Server) serveAlertmanagerIngestEndpoint(w http.ResponseWriter, r *http.
 	if !s.requireIngestKey(w, r) {
 		return true
 	}
-	if s.ingestSpool != nil {
-		s.ingestSpool.Forward(w, r)
-		return true
-	}
-	if s.writeForwarder != nil {
-		s.writeForwarder.Forward(w, r)
-		return true
-	}
-	s.ingestHandler.ServeAlertmanagerHTTP(w, r)
+	s.deliverWrite(w, r, s.ingestHandler.ServeAlertmanagerHTTP)
 	return true
 }
 
@@ -106,15 +98,7 @@ func (s *Server) serveEventsIngestEndpoint(w http.ResponseWriter, r *http.Reques
 		if !s.requireIngestKey(w, r) {
 			return true
 		}
-		if s.ingestSpool != nil {
-			s.ingestSpool.Forward(w, r)
-			return true
-		}
-		if s.writeForwarder != nil {
-			s.writeForwarder.Forward(w, r)
-			return true
-		}
-		s.ingestHandler.ServeHTTP(w, r)
+		s.deliverWrite(w, r, s.ingestHandler.ServeHTTP)
 		return true
 	}
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -144,14 +128,12 @@ func (s *Server) handleLogsIngestPost(w http.ResponseWriter, r *http.Request) {
 	if !s.requireIngestKey(w, r) {
 		return
 	}
-	if s.ingestSpool != nil {
-		s.ingestSpool.Forward(w, r)
-		return
-	}
-	if s.writeForwarder != nil {
-		s.writeForwarder.Forward(w, r)
-		return
-	}
+	s.deliverWrite(w, r, s.ingestLogsLocally)
+}
+
+// ingestLogsLocally persists a log batch in this process: the writer, or the
+// monolith. Readers never get here, deliverWrite sends their batches on.
+func (s *Server) ingestLogsLocally(w http.ResponseWriter, r *http.Request) {
 	// Resolve project from API key / header.
 	var logProjectID int64
 	if s.ingestHandler != nil {
@@ -188,19 +170,32 @@ func (s *Server) serveAnalyticsCollectEndpoint(w http.ResponseWriter, r *http.Re
 		return true
 	}
 	if r.Method == http.MethodPost {
-		if s.ingestSpool != nil {
-			s.ingestSpool.Forward(w, r)
-			return true
-		}
-		if s.writeForwarder != nil {
-			s.writeForwarder.Forward(w, r)
-			return true
-		}
-		s.collectPageView(w, r)
+		s.deliverWrite(w, r, s.collectPageView)
 		return true
 	}
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	return true
+}
+
+// deliverWrite sends an ingest write where this process keeps its writes. A
+// reader with a spool forwarder appends to the spool, a reader with a writer
+// forwarder relays it, and the writer or the monolith runs local.
+func (s *Server) deliverWrite(w http.ResponseWriter, r *http.Request, local http.HandlerFunc) {
+	if s.ingestSpool != nil {
+		s.ingestSpool.Forward(w, r)
+		return
+	}
+	s.forwardWrite(w, r, local)
+}
+
+// forwardWrite relays a write to the writer when this process is a reader, and
+// runs local otherwise. Session writes use it directly because they have no spool.
+func (s *Server) forwardWrite(w http.ResponseWriter, r *http.Request, local http.HandlerFunc) {
+	if s.writeForwarder != nil {
+		s.writeForwarder.Forward(w, r)
+		return
+	}
+	local(w, r)
 }
 
 // servePublicEndpoint handles the endpoints that require no authentication but
@@ -231,18 +226,10 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request) boo
 		s.serveRuntimeConfig(w, r)
 		return true
 	case r.URL.Path == "/api/v1/login" && r.Method == http.MethodPost:
-		if s.writeForwarder != nil {
-			s.writeForwarder.Forward(w, r)
-			return true
-		}
-		s.login(w, r)
+		s.forwardWrite(w, r, s.login)
 		return true
 	case r.URL.Path == "/api/v1/logout" && r.Method == http.MethodPost:
-		if s.writeForwarder != nil {
-			s.writeForwarder.Forward(w, r)
-			return true
-		}
-		s.logout(w, r)
+		s.forwardWrite(w, r, s.logout)
 		return true
 	case r.URL.Path == "/api/v1/me" && r.Method == http.MethodGet:
 		s.me(w, r)
@@ -259,11 +246,7 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request) boo
 	case r.URL.Path == "/api/v1/oidc/backchannel-logout" && r.Method == http.MethodPost:
 		// Public (authenticated by the logout token's signature), no CSRF.
 		// Session rows live behind the writer, so readers forward the POST.
-		if s.writeForwarder != nil {
-			s.writeForwarder.Forward(w, r)
-			return true
-		}
-		s.oidcBackchannelLogout(w, r)
+		s.forwardWrite(w, r, s.oidcBackchannelLogout)
 		return true
 	}
 
