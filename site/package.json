@@ -5,7 +5,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "lint": "astro check"
+    "lint": "astro check",
+    "test": "node --test tests/nav-links.test.mjs"
   },
   "dependencies": {
     "astro": "^4.16.0",
