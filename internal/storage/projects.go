@@ -41,15 +41,10 @@ func (s *ProjectStore) ListProjects(ctx context.Context) ([]Project, error) {
 
 	var projects []Project
 	for rows.Next() {
-		var p Project
-		var createdAt string
-		var retention sql.NullInt64
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter,
-			&p.GroupID, &createdAt, &retention, &p.SamplingMode, &p.FunnelBarnURL); err != nil {
+		p, err := scanProject(rows)
+		if err != nil {
 			return nil, err
 		}
-		p.CreatedAt, _ = parseTime(createdAt)
-		p.RetentionDays = nullIntToPtr(retention)
 		projects = append(projects, p)
 	}
 	return projects, rows.Err()
