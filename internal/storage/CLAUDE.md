@@ -77,6 +77,15 @@ skips it when live data exceeds `BUGBARN_COMPACT_MAX_LIVE_BYTES` (default 1 GiB)
 VACUUM holds the write connection. The same switch deletes the `.bugbarn.db-litestream`
 shadow directory Litestream left behind.
 
+## Project-owned tables
+
+`projectTables` (`project_tables.go`) names every table with a `project_id` column, once, in
+delete order (children first) with a merge mode: move, move the rows the target lacks, or
+drop with the source. `DeleteProject` and `MergeProjects` both walk it, and
+`TestProjectTablesCoverEverySchemaTable` fails when a migration adds a table the list lacks.
+A new table with `project_id` gets an entry in the same PR. `api_keys.project_id` has no
+ON DELETE action, so a key left behind blocks the delete of its project (#270).
+
 ## Migrations
 
 `migrations/NNNNN_name.sql`, goose format, applied on writer start before the pod is

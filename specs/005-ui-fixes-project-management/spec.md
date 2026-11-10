@@ -53,7 +53,7 @@ As a user with multiple projects representing the same application (e.g. `funnel
 **Decision**: Aliases + groups. No client-side config changes needed when renaming or merging.
 
 - **Aliases**: When a project is renamed or merged, the old slug becomes an alias. SDKs sending to the old slug are transparently routed to the target project. Stored in a `project_aliases` table.
-- **Merge**: Moves all issues, events, analytics, and alerts from source project to target. Source slug becomes an alias. Source project is deleted.
+- **Merge**: Moves the source project's rows to the target: issues, events, facets, analytics pageviews, alerts, releases, source maps, API keys, logs, held events and aliases. Rows that would collide with the target's own (daily analytics, monitors) stay behind, and the target keeps its own settings; key requests and the remaining source rows go with the source. `projectTables` in `internal/storage/project_tables.go` is the one list that merge and delete both read (#270). Source slug becomes an alias. Source project is deleted.
 - **Groups**: A parent entity (`project_groups`) that provides combined views across member projects. Example: a "bugbarn" group containing `bugbarn-service`, `bugbarn-web`, `bugbarn-site` — view all errors at a glance.
 
 **Acceptance Scenarios**:
@@ -87,7 +87,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 - **FR-504**: An admin MUST be able to delete a project with its related data through `DELETE /api/v1/projects/:slug`. Issues: none found. Tests: `internal/storage/projects_test.go::TestDeleteProjectWithRelatedData`.
 - **FR-505**: A pending project MUST be rejectable. Rejecting is `DELETE /api/v1/projects/:slug`; there is no `/reject` route (#228). Issues: [#228](https://github.com/webwiebe/bugbarn/issues/228). Tests: `internal/storage/project_reject_test.go::TestDeletePendingProjectRejectsIt`.
 - **FR-506**: Renaming a project MUST keep the old slug as an alias that routes events to the renamed project. Issues: none found. Tests: `internal/storage/projects_test.go::TestRenameProjectCreatesAlias`, `::TestEnsureProjectResolvesAlias`.
-- **FR-507**: Merging a project MUST move its data to the target, turn the source slug into an alias and delete the source. Issues: none found. Tests: `internal/storage/projects_test.go::TestMergeProjectsMovesDataAndCreatesAlias`.
+- **FR-507**: Merging a project MUST move its data to the target, turn the source slug into an alias and delete the source. Issues: none found. Tests: `internal/storage/projects_test.go::TestMergeProjectsMovesDataAndCreatesAlias`, `internal/storage/project_merge_test.go::TestMergeProjectsMovesAPIKeysAndReleases`, `internal/storage/project_tables_test.go`.
 - **FR-508**: Project groups MUST exist as a parent entity with member projects. Issues: none found. Tests: `internal/storage/projects_test.go::TestGroupCRUD`.
 - **FR-509**: Selecting a group in the project dropdown MUST aggregate issues, analytics and alerts across its members. [inferred]
 - **FR-510**: The issue detail page MUST stay readable below 600px: the fingerprint truncates, JSON blocks scroll horizontally and action buttons wrap. [inferred]
