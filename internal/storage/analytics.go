@@ -42,18 +42,11 @@ func (s *AnalyticsStore) InsertPageView(ctx context.Context, pv analytics.PageVi
 	return err
 }
 
-// RollupDailyAnalytics aggregates raw pageviews for the given UTC date into
-// analytics_daily. Uses INSERT OR REPLACE so it is safe to call multiple times.
-func (s *AnalyticsStore) RollupDailyAnalytics(ctx context.Context, projectID int64, date time.Time) error {
-	dateStr := date.UTC().Format("2006-01-02")
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Per-pathname totals (dim_key='', dim_value='')
-	if _, err := tx.ExecContext(ctx, `
+// dailyRollups are the statements that fold one day of pageviews into
+// analytics_daily, run in this order inside one transaction. Each takes
+// (project_id, date, project_id, date).
+var dailyRollups = []struct{ label, sql string }{
+	{"rollup per-pathname", `
 		INSERT OR REPLACE INTO analytics_daily
 			(project_id, date, pathname, dim_key, dim_value, pageviews, sessions)
 		SELECT
@@ -67,14 +60,8 @@ func (s *AnalyticsStore) RollupDailyAnalytics(ctx context.Context, projectID int
 		FROM analytics_pageviews
 		WHERE project_id = ?
 		  AND strftime('%Y-%m-%d', ts, 'unixepoch') = ?
-		GROUP BY pathname`,
-		projectID, dateStr, projectID, dateStr,
-	); err != nil {
-		return fmt.Errorf("rollup per-pathname: %w", err)
-	}
-
-	// All-pages total row (pathname='')
-	if _, err := tx.ExecContext(ctx, `
+		GROUP BY pathname`},
+	{"rollup total", `
 		INSERT OR REPLACE INTO analytics_daily
 			(project_id, date, pathname, dim_key, dim_value, pageviews, sessions)
 		SELECT
@@ -88,14 +75,8 @@ func (s *AnalyticsStore) RollupDailyAnalytics(ctx context.Context, projectID int
 		FROM analytics_pageviews
 		WHERE project_id = ?
 		  AND strftime('%Y-%m-%d', ts, 'unixepoch') = ?
-		HAVING COUNT(*) > 0`,
-		projectID, dateStr, projectID, dateStr,
-	); err != nil {
-		return fmt.Errorf("rollup total: %w", err)
-	}
-
-	// Per-referrer_host breakdown (dim_key='referrer_host')
-	if _, err := tx.ExecContext(ctx, `
+		HAVING COUNT(*) > 0`},
+	{"rollup referrers", `
 		INSERT OR REPLACE INTO analytics_daily
 			(project_id, date, pathname, dim_key, dim_value, pageviews, sessions)
 		SELECT
@@ -109,10 +90,23 @@ func (s *AnalyticsStore) RollupDailyAnalytics(ctx context.Context, projectID int
 		FROM analytics_pageviews
 		WHERE project_id = ?
 		  AND strftime('%Y-%m-%d', ts, 'unixepoch') = ?
-		GROUP BY referrer_host`,
-		projectID, dateStr, projectID, dateStr,
-	); err != nil {
-		return fmt.Errorf("rollup referrers: %w", err)
+		GROUP BY referrer_host`},
+}
+
+// RollupDailyAnalytics aggregates raw pageviews for the given UTC date into
+// analytics_daily. Uses INSERT OR REPLACE so it is safe to call multiple times.
+func (s *AnalyticsStore) RollupDailyAnalytics(ctx context.Context, projectID int64, date time.Time) error {
+	dateStr := date.UTC().Format("2006-01-02")
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, r := range dailyRollups {
+		if _, err := tx.ExecContext(ctx, r.sql, projectID, dateStr, projectID, dateStr); err != nil {
+			return fmt.Errorf("%s: %w", r.label, err)
+		}
 	}
 
 	return tx.Commit()
