@@ -305,6 +305,26 @@ WHERE i.id = ?`
 	return issue, nil
 }
 
+// parseIssueTimes fills the issue's time fields from their stored text. First
+// and last seen are required; the resolved, reopened and regressed times are
+// empty on an issue that never had them, so a parse failure leaves them zero.
+func parseIssueTimes(issue *Issue, firstSeen, lastSeen, resolvedAt, reopenedAt, lastRegressedAt string) error {
+	parsedFirstSeen, err := parseTime(firstSeen)
+	if err != nil {
+		return err
+	}
+	parsedLastSeen, err := parseTime(lastSeen)
+	if err != nil {
+		return err
+	}
+	issue.FirstSeen = parsedFirstSeen
+	issue.LastSeen = parsedLastSeen
+	issue.ResolvedAt, _ = parseTime(resolvedAt)
+	issue.ReopenedAt, _ = parseTime(reopenedAt)
+	issue.LastRegressedAt, _ = parseTime(lastRegressedAt)
+	return nil
+}
+
 func scanIssue(scanner interface {
 	Scan(dest ...any) error
 }) (Issue, error) {
@@ -353,19 +373,9 @@ func scanIssue(scanner interface {
 	if err := json.Unmarshal(representativeRaw, &issue.RepresentativeEvent); err != nil {
 		return Issue{}, err
 	}
-	parsedFirstSeen, err := parseTime(firstSeen)
-	if err != nil {
+	if err := parseIssueTimes(&issue, firstSeen, lastSeen, resolvedAt, reopenedAt, lastRegressedAt); err != nil {
 		return Issue{}, err
 	}
-	parsedLastSeen, err := parseTime(lastSeen)
-	if err != nil {
-		return Issue{}, err
-	}
-	issue.FirstSeen = parsedFirstSeen
-	issue.LastSeen = parsedLastSeen
-	issue.ResolvedAt, _ = parseTime(resolvedAt)
-	issue.ReopenedAt, _ = parseTime(reopenedAt)
-	issue.LastRegressedAt, _ = parseTime(lastRegressedAt)
 	issue.IssueNumber = issueNumber
 	issue.ID = displayIssueID(issuePrefix, issueNumber, id)
 	return issue, nil
