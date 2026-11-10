@@ -13,58 +13,39 @@ import (
 
 const alertIDPrefix = "alert-"
 
+// alertSelectAll selects every alert column with its project slug. Callers
+// append the WHERE and ORDER BY clauses.
+const alertSelectAll = `
+SELECT
+	a.id,
+	a.name,
+	a.enabled,
+	a.severity,
+	a.rule_json,
+	a.webhook_url,
+	a.email_to,
+	a.condition,
+	a.param,
+	a.threshold,
+	a.cooldown_minutes,
+	a.last_fired_at,
+	a.created_at,
+	a.updated_at,
+	COALESCE(p.slug, '') AS project_slug
+FROM alerts a
+LEFT JOIN projects p ON p.id = a.project_id`
+
 func (s *AlertStore) ListAlerts(ctx context.Context) ([]Alert, error) {
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
 	}
 
-	var query string
+	query := alertSelectAll + "\nORDER BY a.id DESC"
 	var args []any
 	if projectID != 0 {
-		query = `
-SELECT
-	a.id,
-	a.name,
-	a.enabled,
-	a.severity,
-	a.rule_json,
-	a.webhook_url,
-	a.email_to,
-	a.condition,
-	a.param,
-	a.threshold,
-	a.cooldown_minutes,
-	a.last_fired_at,
-	a.created_at,
-	a.updated_at,
-	COALESCE(p.slug, '') AS project_slug
-FROM alerts a
-LEFT JOIN projects p ON p.id = a.project_id
-WHERE a.project_id = ?
-ORDER BY a.id DESC`
+		query = alertSelectAll + "\nWHERE a.project_id = ?\nORDER BY a.id DESC"
 		args = []any{projectID}
-	} else {
-		query = `
-SELECT
-	a.id,
-	a.name,
-	a.enabled,
-	a.severity,
-	a.rule_json,
-	a.webhook_url,
-	a.email_to,
-	a.condition,
-	a.param,
-	a.threshold,
-	a.cooldown_minutes,
-	a.last_fired_at,
-	a.created_at,
-	a.updated_at,
-	COALESCE(p.slug, '') AS project_slug
-FROM alerts a
-LEFT JOIN projects p ON p.id = a.project_id
-ORDER BY a.id DESC`
 	}
 
 	rows, err := s.readDB().QueryContext(ctx, query, args...)
