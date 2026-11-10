@@ -58,6 +58,39 @@ func (s *core) init(ctx context.Context) error {
 	return tx.Commit()
 }
 
+// numberProjectIssues numbers the project's unnumbered issues 1..n in id order
+// and stores the prefix and the counter n on the project.
+func numberProjectIssues(ctx context.Context, tx *sql.Tx, projectID int64, prefix string) error {
+	issueRows, err := tx.QueryContext(ctx,
+		`SELECT id FROM issues WHERE project_id = ? AND issue_number = 0 ORDER BY id ASC`, projectID)
+	if err != nil {
+		return err
+	}
+	var issueIDs []int64
+	for issueRows.Next() {
+		var id int64
+		if err := issueRows.Scan(&id); err != nil {
+			issueRows.Close()
+			return err
+		}
+		issueIDs = append(issueIDs, id)
+	}
+	issueRows.Close()
+
+	for i, id := range issueIDs {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE issues SET issue_number = ? WHERE id = ?`, i+1, id); err != nil {
+			return err
+		}
+	}
+
+	counter := len(issueIDs)
+	_, err = tx.ExecContext(ctx,
+		`UPDATE projects SET issue_prefix = ?, issue_counter = ? WHERE id = ?`,
+		prefix, counter, projectID)
+	return err
+}
+
 // migrateIssuePrefixes assigns issue_prefix to projects that don't have one yet,
 // and assigns sequential issue_number to issues that have issue_number=0.
 func migrateIssuePrefixes(ctx context.Context, tx *sql.Tx) error {
@@ -108,33 +141,7 @@ func migrateIssuePrefixes(ctx context.Context, tx *sql.Tx) error {
 		}
 		usedPrefixes[prefix] = true
 
-		issueRows, err := tx.QueryContext(ctx,
-			`SELECT id FROM issues WHERE project_id = ? AND issue_number = 0 ORDER BY id ASC`, p.id)
-		if err != nil {
-			return err
-		}
-		var issueIDs []int64
-		for issueRows.Next() {
-			var id int64
-			if err := issueRows.Scan(&id); err != nil {
-				issueRows.Close()
-				return err
-			}
-			issueIDs = append(issueIDs, id)
-		}
-		issueRows.Close()
-
-		for i, id := range issueIDs {
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE issues SET issue_number = ? WHERE id = ?`, i+1, id); err != nil {
-				return err
-			}
-		}
-
-		counter := len(issueIDs)
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE projects SET issue_prefix = ?, issue_counter = ? WHERE id = ?`,
-			prefix, counter, p.id); err != nil {
+		if err := numberProjectIssues(ctx, tx, p.id, prefix); err != nil {
 			return err
 		}
 	}
