@@ -145,3 +145,10 @@ stalled. Notifier failures log at WARN for the same reason.
 
 One recent event hides a large backlog from the staleness check. Judge a backlog by
 queue depth.
+
+## One receive path
+
+`ServeHTTP` and `ServeAlertmanagerHTTP` share `readAuthorizedBody` (wired handler, POST,
+API key, size limit). Each refusal there records its outcome on `bugbarn.ingest.received`
+and the span; the entry points record what happens after the read. A new ingest entry point
+calls it instead of copying the checks (#270).

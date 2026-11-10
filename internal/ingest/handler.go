@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	funnelbarn "github.com/webwiebe/funnelbarn/sdks/go"
 
@@ -216,23 +217,31 @@ func (h *Handler) authorize(r *http.Request) (projectID int64, scope string, den
 	return projectID, scope, nil
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx, span := tracing.Tracer().Start(r.Context(), "ingest.Receive")
-	defer span.End()
-	r = r.WithContext(ctx)
+// authorizedBody is a request body that passed the checks both ingest entry
+// points share, with the project and scope its API key carries.
+type authorizedBody struct {
+	body      []byte
+	projectID int64
+	scope     string
+}
 
+// readAuthorizedBody runs the protocol ServeHTTP and ServeAlertmanagerHTTP
+// share: the handler is wired, the method is POST, the API key is good and the
+// body fits the size limit. Each refusal records its outcome on the received
+// counter and the span and writes the response, and ok is false. The caller
+// records the outcome of everything after the read.
+func (h *Handler) readAuthorizedBody(w http.ResponseWriter, r *http.Request, span trace.Span) (req authorizedBody, ok bool) {
+	ctx := r.Context()
 	if h == nil || h.auth == nil || h.spool == nil {
 		recordIngestReceived(ctx, ingestresp.DropUnavailable.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
-		return
+		return authorizedBody{}, false
 	}
 
-	switch r.Method {
-	case http.MethodPost:
-	default:
+	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+		return authorizedBody{}, false
 	}
 
 	projectID, scope, deny := h.authorize(r)
@@ -240,7 +249,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		span.SetStatus(codes.Error, deny.Reason)
 		recordIngestReceived(ctx, deny.Reason)
 		ingestresp.WriteDropped(w, *deny)
-		return
+		return authorizedBody{}, false
 	}
 
 	defer func() { _ = r.Body.Close() }()
@@ -251,13 +260,35 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &maxBytesErr) {
 			recordIngestReceived(ctx, ingestresp.DropTooLarge.Reason)
 			ingestresp.WriteDropped(w, ingestresp.DropTooLarge)
-			return
+			return authorizedBody{}, false
 		}
 
 		recordIngestReceived(ctx, ingestresp.DropMalformed.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+		return authorizedBody{}, false
+	}
+	return authorizedBody{body: body, projectID: projectID, scope: scope}, true
+}
+
+// spoolDrop maps a failed spool append to its response: a full spool is
+// retryable backpressure, anything else is the ingest being unavailable.
+func spoolDrop(err error) ingestresp.Drop {
+	if errors.Is(err, spool.ErrFull) {
+		return ingestresp.DropSpoolFull
+	}
+	return ingestresp.DropUnavailable
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.Tracer().Start(r.Context(), "ingest.Receive")
+	defer span.End()
+	r = r.WithContext(ctx)
+
+	req, ok := h.readAuthorizedBody(w, r, span)
+	if !ok {
 		return
 	}
+	body, projectID, scope := req.body, req.projectID, req.scope
 
 	// Validate synchronously so a malformed event is dropped here with a clear
 	// 400 instead of being durably queued and then silently discarded by the
@@ -290,13 +321,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := h.spool.Append(record); err != nil {
 		spoolSpan.SetStatus(codes.Error, err.Error())
 		spoolSpan.End()
-		if errors.Is(err, spool.ErrFull) {
-			recordIngestReceived(ctx, ingestresp.DropSpoolFull.Reason)
-			ingestresp.WriteDropped(w, ingestresp.DropSpoolFull)
-			return
-		}
-		recordIngestReceived(ctx, ingestresp.DropUnavailable.Reason)
-		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+		drop := spoolDrop(err)
+		recordIngestReceived(ctx, drop.Reason)
+		ingestresp.WriteDropped(w, drop)
 		return
 	}
 	spoolSpan.End()
@@ -309,55 +336,42 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // ServeAlertmanagerHTTP accepts an Alertmanager webhook envelope and appends
 // one native event record per alert in a single durable spool write.
 func (h *Handler) ServeAlertmanagerHTTP(w http.ResponseWriter, r *http.Request) {
-	if h == nil || h.auth == nil || h.spool == nil {
-		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+	ctx, span := tracing.Tracer().Start(r.Context(), "ingest.ReceiveAlertmanager")
+	defer span.End()
+	r = r.WithContext(ctx)
+
+	req, ok := h.readAuthorizedBody(w, r, span)
+	if !ok {
 		return
 	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	projectID, scope, deny := h.authorize(r)
-	if deny != nil {
-		ingestresp.WriteDropped(w, *deny)
-		return
-	}
-	defer func() { _ = r.Body.Close() }()
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes))
+
+	payloads, err := AlertmanagerEvents(req.body)
 	if err != nil {
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
-			ingestresp.WriteDropped(w, ingestresp.DropTooLarge)
-			return
-		}
-		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
-		return
-	}
-	payloads, err := AlertmanagerEvents(body)
-	if err != nil {
+		span.SetStatus(codes.Error, "malformed payload")
+		recordIngestReceived(ctx, ingestresp.DropMalformed.Reason)
 		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
 		return
 	}
 	now := h.now().UTC()
+	slug := r.Header.Get("x-bugbarn-project")
 	records := make([]spool.Record, 0, len(payloads))
 	for _, payload := range payloads {
 		records = append(records, spool.Record{
 			IngestID: h.idFn(), ReceivedAt: now, ContentType: "application/json",
 			RemoteAddr: r.RemoteAddr, ContentLength: int64(len(payload)),
 			BodyBase64:  base64.StdEncoding.EncodeToString(payload),
-			ProjectSlug: r.Header.Get("x-bugbarn-project"),
+			ProjectSlug: slug,
 		})
 	}
 	if err := h.spool.AppendBatch(records); err != nil {
-		if errors.Is(err, spool.ErrFull) {
-			ingestresp.WriteDropped(w, ingestresp.DropSpoolFull)
-			return
-		}
-		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+		span.SetStatus(codes.Error, err.Error())
+		drop := spoolDrop(err)
+		recordIngestReceived(ctx, drop.Reason)
+		ingestresp.WriteDropped(w, drop)
 		return
 	}
-	h.trackEventIngested(projectID, scope, r.Header.Get("x-bugbarn-project"))
+	recordIngestReceived(ctx, "accepted")
+	h.trackEventIngested(req.projectID, req.scope, slug)
 	ingestresp.WriteAccepted(w, "")
 }
 
