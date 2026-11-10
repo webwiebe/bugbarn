@@ -21,8 +21,14 @@ func TestDeliverWriteOrder(t *testing.T) {
 	run := func(t *testing.T, withSpool, withWriter bool) result {
 		t.Helper()
 		var writerHits atomic.Int32
-		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			writerHits.Add(1)
+		// Other tests in the package send to closed servers (deadWriterURL), and a
+		// closed server's port can be handed to this one. Count only requests that
+		// carry this test's marker, so a stray request never reads as a writer hit.
+		const marker = "X-Deliver-Write-Test"
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get(marker) != "" {
+				writerHits.Add(1)
+			}
 			w.WriteHeader(http.StatusAccepted)
 		}))
 		t.Cleanup(upstream.Close)
@@ -40,6 +46,7 @@ func TestDeliverWriteOrder(t *testing.T) {
 		local := false
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader("not json"))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(marker, "1")
 		rec := httptest.NewRecorder()
 		server.deliverWrite(rec, req, func(w http.ResponseWriter, _ *http.Request) {
 			local = true
