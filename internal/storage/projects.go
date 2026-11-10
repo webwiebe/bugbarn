@@ -157,28 +157,11 @@ func (s *ProjectStore) DeleteProject(_ context.Context, slug string) error {
 		return apperr.Internal("lookup project", err)
 	}
 
-	// Delete child rows in batches outside the final transaction to keep
-	// each write small. Order matters: delete leaf tables first to respect
-	// foreign key constraints (issue_facets and events both reference issues).
-	childTables := []string{
-		"issue_facets",
-		"events",
-		"issues",
-		"analytics_pageviews",
-		"analytics_daily",
-		"releases",
-		"alerts",
-		"settings",
-		"source_maps",
-		"api_keys",
-		"log_entries",
-		"project_aliases",
-		"held_events",
-	}
-	for _, table := range childTables {
-		if err := deleteInBatches(ctx, s.db, table, projectID); err != nil {
-			return apperr.Internal(fmt.Sprintf("delete %s", table), err)
-		}
+	// Delete child rows in batches outside the final transaction to keep each
+	// write small. projectTables lists them children first, because events and
+	// issue_facets reference issues.
+	if err := deleteProjectRows(ctx, s.db, projectID); err != nil {
+		return err
 	}
 
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM projects WHERE id=?`, projectID); err != nil {
@@ -441,31 +424,11 @@ func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug
 		return apperr.NotFound("target project not found", err)
 	}
 
-	// Move issues (events reference issue_id, so they follow automatically via FK).
-	if _, err := tx.ExecContext(ctx, `UPDATE issues SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
-		return apperr.Internal("merge: move issues", err)
-	}
-
-	// Move events that directly reference project_id.
-	if _, err := tx.ExecContext(ctx, `UPDATE events SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
-		return apperr.Internal("merge: move events", err)
-	}
-
-	// Move issue facets. The issues moved above keep their ids, so no row can
-	// collide with one the target project already has.
-	if _, err := tx.ExecContext(ctx, `UPDATE issue_facets SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
-		return apperr.Internal("merge: move issue_facets", err)
-	}
-
-	// Move analytics pageviews.
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE analytics_pageviews SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
-		return apperr.Internal("merge: move analytics", err)
-	}
-
-	// Move alerts.
-	if _, err := tx.ExecContext(ctx, `UPDATE alerts SET project_id = ? WHERE project_id = ?`, targetID, sourceID); err != nil {
-		return apperr.Internal("merge: move alerts", err)
+	// Move or drop each project-owned table as projectTables says. The issues
+	// moved keep their ids, so facet and regression rows cannot collide with
+	// rows the target project already has.
+	if err := moveProjectRows(ctx, tx, sourceID, targetID); err != nil {
+		return err
 	}
 
 	// Create alias from source slug → target project.
