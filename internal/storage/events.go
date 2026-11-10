@@ -333,6 +333,30 @@ func (s *core) insertFacets(ctx context.Context, projectID int64, issueID int64,
 	return tx.Commit()
 }
 
+// facetScalar renders a leaf value as facet text. Blank strings and blank
+// Stringers, and nil, have no facet; every other scalar is rendered.
+func facetScalar(value any) (string, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return "", false
+	case string:
+		return typed, strings.TrimSpace(typed) != ""
+	case fmt.Stringer:
+		text := typed.String()
+		return text, strings.TrimSpace(text) != ""
+	case bool:
+		return strconv.FormatBool(typed), true
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64), true
+	case int:
+		return strconv.Itoa(typed), true
+	case int64:
+		return strconv.FormatInt(typed, 10), true
+	default:
+		return fmt.Sprint(typed), true
+	}
+}
+
 func flattenFacets(out *[]facetRow, prefix string, value any) {
 	switch typed := value.(type) {
 	case map[string]any:
@@ -348,44 +372,12 @@ func flattenFacets(out *[]facetRow, prefix string, value any) {
 			next := fmt.Sprintf("%s[%d]", prefix, idx)
 			flattenFacets(out, next, nested)
 		}
-	case string:
-		if strings.TrimSpace(typed) == "" || strings.TrimSpace(prefix) == "" {
-			return
-		}
-		*out = append(*out, facetRow{key: prefix, value: typed})
-	case fmt.Stringer:
-		value := typed.String()
-		if strings.TrimSpace(value) == "" || strings.TrimSpace(prefix) == "" {
-			return
-		}
-		*out = append(*out, facetRow{key: prefix, value: value})
-	case bool:
-		if strings.TrimSpace(prefix) == "" {
-			return
-		}
-		*out = append(*out, facetRow{key: prefix, value: strconv.FormatBool(typed)})
-	case float64:
-		if strings.TrimSpace(prefix) == "" {
-			return
-		}
-		*out = append(*out, facetRow{key: prefix, value: strconv.FormatFloat(typed, 'f', -1, 64)})
-	case int:
-		if strings.TrimSpace(prefix) == "" {
-			return
-		}
-		*out = append(*out, facetRow{key: prefix, value: strconv.Itoa(typed)})
-	case int64:
-		if strings.TrimSpace(prefix) == "" {
-			return
-		}
-		*out = append(*out, facetRow{key: prefix, value: strconv.FormatInt(typed, 10)})
-	case nil:
-		return
 	default:
-		if strings.TrimSpace(prefix) == "" {
+		text, ok := facetScalar(value)
+		if !ok || strings.TrimSpace(prefix) == "" {
 			return
 		}
-		*out = append(*out, facetRow{key: prefix, value: fmt.Sprint(typed)})
+		*out = append(*out, facetRow{key: prefix, value: text})
 	}
 }
 
