@@ -117,12 +117,9 @@ func trimLogRetention(ctx context.Context, tx *sql.Tx, projectID int64) error {
 	return nil
 }
 
-// ListLogEntries returns up to limit entries for a project (or all projects when projectID=0), newest first.
-// Optional filters: levelMin (numeric pino level, 0 = no filter), q (substring match on message),
-// beforeID (cursor, 0 = no cursor).
-func (s *LogStore) ListLogEntries(
-	ctx context.Context, projectID int64, levelMin int, q string, limit int, beforeID int64,
-) ([]LogEntry, error) {
+// logEntryWhere builds the WHERE clause and bound arguments for the log
+// filters. Each filter applies only when set.
+func logEntryWhere(projectID int64, levelMin int, q string, beforeID int64) (string, []any) {
 	var args []any
 	var conditions []string
 
@@ -143,10 +140,42 @@ func (s *LogStore) ListLogEntries(
 		args = append(args, beforeID)
 	}
 
-	whereClause := ""
-	if len(conditions) > 0 {
-		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	if len(conditions) == 0 {
+		return "", args
 	}
+	return "WHERE " + strings.Join(conditions, " AND "), args
+}
+
+// scanLogEntry reads one log row. A received_at that does not parse leaves the
+// time zero, and data_json that does not decode leaves Data nil.
+func scanLogEntry(rows *sql.Rows) (LogEntry, error) {
+	var e LogEntry
+	var receivedAt string
+	var dataJSON string
+	if err := rows.Scan(&e.ID, &e.ProjectID, &receivedAt, &e.LevelNum, &e.Level, &e.Message, &dataJSON, &e.ProjectSlug); err != nil {
+		return LogEntry{}, wrapErr(err, "scan log entry")
+	}
+	if t, err := time.Parse(time.RFC3339Nano, receivedAt); err == nil {
+		e.ReceivedAt = t
+	} else if t, err := time.Parse(time.RFC3339, receivedAt); err == nil {
+		e.ReceivedAt = t
+	}
+	if dataJSON != "" && dataJSON != "{}" {
+		var data map[string]any
+		if err := json.Unmarshal([]byte(dataJSON), &data); err == nil {
+			e.Data = data
+		}
+	}
+	return e, nil
+}
+
+// ListLogEntries returns up to limit entries for a project (or all projects when projectID=0), newest first.
+// Optional filters: levelMin (numeric pino level, 0 = no filter), q (substring match on message),
+// beforeID (cursor, 0 = no cursor).
+func (s *LogStore) ListLogEntries(
+	ctx context.Context, projectID int64, levelMin int, q string, limit int, beforeID int64,
+) ([]LogEntry, error) {
+	whereClause, args := logEntryWhere(projectID, levelMin, q, beforeID)
 
 	query := fmt.Sprintf(`
 		SELECT le.id, le.project_id, le.received_at, le.level_num, le.level, le.message, le.data_json, COALESCE(p.slug, '') AS project_slug
@@ -166,22 +195,9 @@ func (s *LogStore) ListLogEntries(
 
 	var entries []LogEntry
 	for rows.Next() {
-		var e LogEntry
-		var receivedAt string
-		var dataJSON string
-		if err := rows.Scan(&e.ID, &e.ProjectID, &receivedAt, &e.LevelNum, &e.Level, &e.Message, &dataJSON, &e.ProjectSlug); err != nil {
-			return nil, wrapErr(err, "scan log entry")
-		}
-		if t, err := time.Parse(time.RFC3339Nano, receivedAt); err == nil {
-			e.ReceivedAt = t
-		} else if t, err := time.Parse(time.RFC3339, receivedAt); err == nil {
-			e.ReceivedAt = t
-		}
-		if dataJSON != "" && dataJSON != "{}" {
-			var data map[string]any
-			if err := json.Unmarshal([]byte(dataJSON), &data); err == nil {
-				e.Data = data
-			}
+		e, err := scanLogEntry(rows)
+		if err != nil {
+			return nil, err
 		}
 		entries = append(entries, e)
 	}
