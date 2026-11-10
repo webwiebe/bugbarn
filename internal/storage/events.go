@@ -101,21 +101,9 @@ ORDER BY e.id DESC LIMIT ?`,
 	return events, hasMore, nil
 }
 
-func (s *EventStore) GetEvent(ctx context.Context, eventID string) (Event, error) {
-	ctx, span := tracing.Tracer().Start(ctx, "storage.GetEvent")
-	defer span.End()
-	span.SetAttributes(attribute.String("event_id", eventID))
-	rowID, err := parseID(eventIDPrefix, eventID)
-	if err != nil {
-		return Event{}, err
-	}
-
-	projectID, ok := domain.ProjectIDFromContext(ctx)
-	if !ok {
-		projectID = s.defaultProjectID
-	}
-
-	const sel = `
+// eventSelect selects an event with its issue number and project prefix.
+// Callers append the WHERE clause.
+const eventSelect = `
 SELECT
 	e.id,
 	e.issue_id,
@@ -134,12 +122,26 @@ FROM events e
 JOIN issues i ON i.id = e.issue_id
 JOIN projects p ON p.id = i.project_id`
 
+func (s *EventStore) GetEvent(ctx context.Context, eventID string) (Event, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "storage.GetEvent")
+	defer span.End()
+	span.SetAttributes(attribute.String("event_id", eventID))
+	rowID, err := parseID(eventIDPrefix, eventID)
+	if err != nil {
+		return Event{}, err
+	}
+
+	projectID, ok := domain.ProjectIDFromContext(ctx)
+	if !ok {
+		projectID = s.defaultProjectID
+	}
+
 	var row *sql.Row
 	if projectID != 0 {
-		row = s.readDB().QueryRowContext(ctx, sel+`
+		row = s.readDB().QueryRowContext(ctx, eventSelect+`
 WHERE e.project_id = ? AND e.id = ?`, projectID, rowID)
 	} else {
-		row = s.readDB().QueryRowContext(ctx, sel+`
+		row = s.readDB().QueryRowContext(ctx, eventSelect+`
 WHERE e.id = ?`, rowID)
 	}
 
@@ -188,32 +190,14 @@ func (s *EventStore) ListRecentEvents(ctx context.Context, limit int, since time
 		rows *sql.Rows
 		err  error
 	)
-	const recentSel = `
-SELECT
-	e.id,
-	e.issue_id,
-	e.fingerprint,
-	e.fingerprint_material,
-	e.fingerprint_explanation_json,
-	e.received_at,
-	e.observed_at,
-	e.severity,
-	e.message,
-	e.regressed,
-	e.event_json,
-	i.issue_number,
-	COALESCE(p.issue_prefix, '')
-FROM events e
-JOIN issues i ON i.id = e.issue_id
-JOIN projects p ON p.id = i.project_id`
 	sinceStr := formatTime(since.UTC())
 	if projectID != 0 {
-		rows, err = s.readDB().QueryContext(ctx, recentSel+`
+		rows, err = s.readDB().QueryContext(ctx, eventSelect+`
 WHERE e.project_id = ? AND e.received_at >= ?
 ORDER BY e.received_at DESC, e.id DESC
 LIMIT ?`, projectID, sinceStr, limit)
 	} else {
-		rows, err = s.readDB().QueryContext(ctx, recentSel+`
+		rows, err = s.readDB().QueryContext(ctx, eventSelect+`
 WHERE e.received_at >= ?
 ORDER BY e.received_at DESC, e.id DESC
 LIMIT ?`, sinceStr, limit)
