@@ -163,11 +163,9 @@ steps:
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
         pnpm install --frozen-lockfile
         pnpm run lint
-        # site is the one package with no test script: it is an Astro content
-        # site with no runtime logic, and `pnpm run lint` (astro check) plus the
-        # build are its whole check surface. Stated here rather than hidden
-        # behind --if-present.
         pnpm run build
+        # Checks that every landing nav href resolves on the landing host (#273).
+        pnpm run test
 
   - name: node-sdk-ts
     image: bash

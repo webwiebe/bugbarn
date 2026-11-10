@@ -1,9 +1,9 @@
 ---
-const base = import.meta.env.BASE_URL;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 ---
 <nav style="border-bottom: 1px solid #21262d; background-color: #0f1117;">
   <div class="max-w-5xl mx-auto px-4 sm:px-6 sm:h-14 flex flex-wrap sm:flex-nowrap items-center justify-between">
-    <a href={base} class="font-mono text-lg font-semibold tracking-tight inline-flex items-center min-h-[44px]" style="color: #d4a054;">BugBarn</a>
+    <a href={`${base}/`} class="font-mono text-lg font-semibold tracking-tight inline-flex items-center min-h-[44px]" style="color: #d4a054;">BugBarn</a>
     <div class="order-3 sm:order-2 sm:ml-auto w-full sm:w-auto flex flex-wrap items-center gap-x-1 sm:gap-x-6 text-sm whitespace-nowrap" style="color: #8b949e;">
       <a href="#features" class="inline-flex items-center min-h-[44px] px-2 sm:px-0 hover:text-white transition-colors">Features</a>
       <a href="#install" class="inline-flex items-center min-h-[44px] px-2 sm:px-0 hover:text-white transition-colors">Install</a>
