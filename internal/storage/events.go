@@ -221,6 +221,23 @@ LIMIT ?`, sinceStr, limit)
 	return events, nil
 }
 
+// insertEventSQL stores one event row; the arguments follow the column order.
+const insertEventSQL = `
+INSERT INTO events (
+	project_id,
+	issue_id,
+	fingerprint,
+	fingerprint_material,
+	fingerprint_explanation_json,
+	received_at,
+	observed_at,
+	severity,
+	message,
+	regressed,
+	event_json,
+	sample_weight
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
 func (s *core) insertEvent(
 	ctx context.Context, projectID int64, issueID int64, issueDisplayID string,
 	regressed bool, sampleWeight int64, processed worker.ProcessedEvent,
@@ -238,21 +255,7 @@ func (s *core) insertEvent(
 	}
 	defer tx.Rollback()
 
-	res, err := tx.ExecContext(ctx, `
-INSERT INTO events (
-	project_id,
-	issue_id,
-	fingerprint,
-	fingerprint_material,
-	fingerprint_explanation_json,
-	received_at,
-	observed_at,
-	severity,
-	message,
-	regressed,
-	event_json,
-	sample_weight
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := tx.ExecContext(ctx, insertEventSQL,
 		projectID,
 		issueID,
 		processed.Fingerprint,
