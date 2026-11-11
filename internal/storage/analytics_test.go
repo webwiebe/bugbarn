@@ -319,3 +319,57 @@ func TestQuerySegments(t *testing.T) {
 		t.Errorf("unexpected first bucket: %+v", buckets[0])
 	}
 }
+
+// QueryPages and QueryReferrers share one top-N read over analytics_daily. Both
+// order by pageviews descending, honour the limit, and leave the other kind of
+// row (totals, other dimensions) out.
+func TestQueryPagesAndReferrersTopN(t *testing.T) {
+	s := mustOpenStore(t)
+	ctx := context.Background()
+	pid := s.DefaultProjectID()
+
+	rows := []struct {
+		pathname, dimKey, dimValue string
+		pv, sess                   int
+	}{
+		{"", "", "", 60, 20},                           // daily total: neither list
+		{"/a", "", "", 10, 4},                          // page
+		{"/b", "", "", 30, 9},                          // page, the busiest
+		{"/c", "", "", 20, 6},                          // page
+		{"", "referrer_host", "news.example", 5, 2},    // referrer
+		{"", "referrer_host", "search.example", 25, 8}, // referrer, the busiest
+		{"", "utm_source", "mail", 99, 50},             // other dimension: neither list
+	}
+	for _, r := range rows {
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT INTO analytics_daily (project_id, date, pathname, dim_key, dim_value, pageviews, sessions)
+			VALUES (?, '2026-11-10', ?, ?, ?, ?, ?)`,
+			pid, r.pathname, r.dimKey, r.dimValue, r.pv, r.sess); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	day := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	q := analytics.Query{ProjectID: pid, Start: day, End: day, Limit: 2}
+
+	pages, err := s.QueryPages(ctx, q)
+	if err != nil {
+		t.Fatalf("QueryPages: %v", err)
+	}
+	if len(pages) != 2 || pages[0].Pathname != "/b" || pages[0].Pageviews != 30 || pages[1].Pathname != "/c" {
+		t.Errorf("pages = %+v, want /b then /c", pages)
+	}
+
+	refs, err := s.QueryReferrers(ctx, q)
+	if err != nil {
+		t.Fatalf("QueryReferrers: %v", err)
+	}
+	if len(refs) != 2 || refs[0].Host != "search.example" || refs[0].Sessions != 8 || refs[1].Host != "news.example" {
+		t.Errorf("referrers = %+v, want search.example then news.example", refs)
+	}
+
+	empty := analytics.Query{ProjectID: pid, Start: day.AddDate(0, 0, -30), End: day.AddDate(0, 0, -29)}
+	if got, err := s.QueryPages(ctx, empty); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("empty range pages = %#v, %v; want empty non-nil slice", got, err)
+	}
+}

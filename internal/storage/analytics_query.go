@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -61,38 +62,63 @@ func (s *AnalyticsStore) QueryOverview(ctx context.Context, q analytics.Query) (
 	return res, nil
 }
 
-// QueryPages returns per-pathname stats ordered by pageviews DESC.
-func (s *AnalyticsStore) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.PageStat, error) {
-	startStr := q.Start.UTC().Format("2006-01-02")
-	endStr := q.End.UTC().Format("2006-01-02")
-	limit := queryLimit(q)
-
-	rows, err := s.readDB().QueryContext(ctx, `
-		SELECT pathname, SUM(pageviews) AS pv, SUM(sessions) AS sess
-		FROM analytics_daily
-		WHERE project_id = ?
-		  AND date BETWEEN ? AND ?
-		  AND pathname != ''
-		  AND dim_key = ''
-		GROUP BY pathname
-		ORDER BY pv DESC
-		LIMIT ?`,
-		q.ProjectID, startStr, endStr, limit,
-	)
+// queryRows runs one read query and scans every row with scan. An empty result is an
+// empty non-nil slice, which the API encodes as [] rather than null.
+func queryRows[T any](
+	ctx context.Context, db *sql.DB, query string, args []any, scan func(*sql.Rows) (T, error),
+) ([]T, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, wrapErr(err, "query analytics")
 	}
 	defer rows.Close()
 
-	out := []analytics.PageStat{}
+	out := []T{}
 	for rows.Next() {
-		var p analytics.PageStat
-		if err := rows.Scan(&p.Pathname, &p.Pageviews, &p.Sessions); err != nil {
+		v, err := scan(rows)
+		if err != nil {
 			return nil, wrapErr(err, "query analytics")
 		}
-		out = append(out, p)
+		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// dailyTop describes a top-N read over analytics_daily: the grouped column
+// (selected first, then pageviews and sessions), a constant filter, and the
+// aggregate to order by, descending.
+type dailyTop struct {
+	column, filter, order string
+}
+
+// queryDailyTop returns the top rows of analytics_daily for the query's project
+// and date range, grouped by t.column.
+func queryDailyTop[T any](
+	ctx context.Context, db *sql.DB, q analytics.Query, t dailyTop, scan func(*sql.Rows) (T, error),
+) ([]T, error) {
+	query := fmt.Sprintf(`
+		SELECT %[1]s, SUM(pageviews), SUM(sessions)
+		FROM analytics_daily
+		WHERE project_id = ?
+		  AND date BETWEEN ? AND ?
+		  AND %[2]s
+		GROUP BY %[1]s
+		ORDER BY %[3]s DESC
+		LIMIT ?`, t.column, t.filter, t.order)
+	return queryRows(ctx, db, query, []any{
+		q.ProjectID, q.Start.UTC().Format("2006-01-02"), q.End.UTC().Format("2006-01-02"), queryLimit(q),
+	}, scan)
+}
+
+// QueryPages returns per-pathname stats ordered by pageviews DESC.
+func (s *AnalyticsStore) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.PageStat, error) {
+	return queryDailyTop(ctx, s.readDB(), q, dailyTop{
+		column: "pathname", filter: "pathname != '' AND dim_key = ''", order: "SUM(pageviews)",
+	}, func(rows *sql.Rows) (analytics.PageStat, error) {
+		var p analytics.PageStat
+		err := rows.Scan(&p.Pathname, &p.Pageviews, &p.Sessions)
+		return p, err
+	})
 }
 
 // QueryTimeline returns bucketed time series. granularity: "day", "week", "month".
@@ -142,35 +168,13 @@ func (s *AnalyticsStore) QueryTimeline(
 
 // QueryReferrers returns top referring hostnames.
 func (s *AnalyticsStore) QueryReferrers(ctx context.Context, q analytics.Query) ([]analytics.ReferrerStat, error) {
-	startStr := q.Start.UTC().Format("2006-01-02")
-	endStr := q.End.UTC().Format("2006-01-02")
-	limit := queryLimit(q)
-
-	rows, err := s.readDB().QueryContext(ctx, `
-		SELECT dim_value, SUM(pageviews), SUM(sessions)
-		FROM analytics_daily
-		WHERE project_id = ?
-		  AND date BETWEEN ? AND ?
-		  AND dim_key = 'referrer_host'
-		GROUP BY dim_value
-		ORDER BY SUM(pageviews) DESC
-		LIMIT ?`,
-		q.ProjectID, startStr, endStr, limit,
-	)
-	if err != nil {
-		return nil, wrapErr(err, "query analytics")
-	}
-	defer rows.Close()
-
-	out := []analytics.ReferrerStat{}
-	for rows.Next() {
+	return queryDailyTop(ctx, s.readDB(), q, dailyTop{
+		column: "dim_value", filter: "dim_key = 'referrer_host'", order: "SUM(pageviews)",
+	}, func(rows *sql.Rows) (analytics.ReferrerStat, error) {
 		var r analytics.ReferrerStat
-		if err := rows.Scan(&r.Host, &r.Pageviews, &r.Sessions); err != nil {
-			return nil, wrapErr(err, "query analytics")
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&r.Host, &r.Pageviews, &r.Sessions)
+		return r, err
+	})
 }
 
 // QuerySegments returns a breakdown by a named props key using raw pageviews.
