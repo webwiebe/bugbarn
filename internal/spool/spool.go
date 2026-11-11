@@ -233,6 +233,26 @@ type RecordAtOffset struct {
 	EndOffset int64
 }
 
+// seekToOffset positions file at offset. An offset past the end of the file
+// (the spool was truncated or replaced) restarts from the beginning. It returns
+// the offset the file is positioned at.
+func seekToOffset(file *os.File, offset int64) (int64, error) {
+	if offset <= 0 {
+		return offset, nil
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if offset > info.Size() {
+		return 0, nil
+	}
+	if _, err := file.Seek(offset, 0); err != nil {
+		return 0, err
+	}
+	return offset, nil
+}
+
 // ReadRecordsFrom reads records from path starting at the given byte offset.
 // It returns each record paired with the file offset immediately after it so
 // callers can advance the cursor record-by-record.
@@ -246,19 +266,9 @@ func ReadRecordsFrom(path string, offset int64) ([]RecordAtOffset, error) {
 	}
 	defer func() { _ = file.Close() }()
 
-	if offset > 0 {
-		info, err := file.Stat()
-		if err != nil {
-			return nil, err
-		}
-		if offset > info.Size() {
-			offset = 0
-		}
-		if offset > 0 {
-			if _, err := file.Seek(offset, 0); err != nil {
-				return nil, err
-			}
-		}
+	offset, err = seekToOffset(file, offset)
+	if err != nil {
+		return nil, err
 	}
 
 	var records []RecordAtOffset
