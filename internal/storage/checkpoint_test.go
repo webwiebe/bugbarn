@@ -213,23 +213,33 @@ func TestCheckpointGivesUpWhenPersistentlyBusy(t *testing.T) {
 		}
 	}
 
+	// Shorten the write connection's busy wait (it is the pool's only connection)
+	// so one blocked attempt costs 50ms instead of the 10s default. The test then
+	// asserts on what the contract is, that the loop stops because its context
+	// expired, and not on wall time, which a loaded CI host stretches.
+	if _, err := store.db.Exec(`PRAGMA busy_timeout = 50`); err != nil {
+		t.Fatalf("set busy_timeout: %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	start := time.Now()
-	frames := store.checkpoint(ctx, 50*time.Millisecond, quietLogger())
-	elapsed := time.Since(start)
+	done := make(chan int, 1)
+	go func() { done <- store.checkpoint(ctx, 50*time.Millisecond, quietLogger()) }()
+
+	var frames int
+	select {
+	case frames = <-done:
+	case <-time.After(5 * time.Minute):
+		// Without a deadline the loop retries forever while the reader holds its
+		// snapshot; fail instead of hanging until the package timeout.
+		t.Fatal("checkpoint did not return under persistent busy")
+	}
 
 	if frames == 0 {
 		t.Skip("checkpoint truncated despite a held read snapshot; busy path not reproduced here")
 	}
-	// Ceiling allows ONE full attempt, not a precise duration. A blocked
-	// attempt sits in SQLite's busy handler for up to busy_timeout(10s) and is
-	// not interruptible by the Go context, so the deadline takes effect at the
-	// next retry decision rather than mid-pragma. What matters is that the call
-	// returns at all: without a deadline it retries forever while the reader
-	// holds its snapshot, and this test would hang instead of failing.
-	if elapsed > 20*time.Second {
-		t.Errorf("checkpoint ran %v under persistent busy, want it to give up after ~one attempt", elapsed)
+	if ctx.Err() == nil {
+		t.Error("checkpoint returned under persistent busy before its context expired")
 	}
 }
 
