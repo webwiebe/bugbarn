@@ -1889,23 +1889,169 @@ button:disabled {
   padding: 14px 12px 8px;
 }
 
-.log-timeline-bars {
+.log-hist-bars {
   display: grid;
-  grid-template-columns: repeat(40, minmax(2px, 1fr));
   align-items: end;
   gap: 2px;
-  height: 64px;
+  height: 72px;
 }
 
-.log-timeline-bar {
-  display: block;
+.log-hist-bar {
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  min-width: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.log-hist-bar:hover,
+.log-hist-bar:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.log-hist-stack {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   min-height: 2px;
   border-radius: 2px 2px 0 0;
+  overflow: hidden;
   background: #252830;
 }
 
-.log-timeline-bar.active {
-  background: #4a9eff;
+.log-hist-seg { background: var(--muted); }
+.log-hist-stack .log-hist-seg { flex-basis: 0; }
+.log-hist-trace { background: var(--muted); }
+.log-hist-debug { background: #6ab0f5; }
+.log-hist-info { background: #7ecb7e; }
+.log-hist-warn { background: #f5c842; }
+.log-hist-error { background: #f56c6c; }
+.log-hist-fatal { background: #c040fb; }
+
+.log-hist-legends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.log-hist-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.log-hist-legend .log-hist-seg {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.log-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.log-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 8px;
+}
+
+.log-chip {
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.log-facets {
+  margin: 0 16px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.log-facet-keys,
+.log-facet-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.log-facet-values {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.log-facet-title {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.log-facet-key,
+.log-facet-value {
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.log-facet-key.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.log-facet-count {
+  color: var(--muted);
+  margin-left: 3px;
+}
+
+.log-pill[role="button"] {
+  cursor: pointer;
+}
+
+.log-pill[role="button"]:hover,
+.log-pill[role="button"]:focus-visible {
+  border-color: var(--accent);
+}
+
+.log-trace {
+  margin: 4px 0;
+}
+
+.log-trace a {
+  color: var(--accent);
+}
+
+#log-range {
+  padding: 0 10px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
 }
 
 .log-timeline-axis {

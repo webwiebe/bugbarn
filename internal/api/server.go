@@ -58,6 +58,7 @@ type Server struct {
 	funnelBarnEndpoint  string
 	funnelBarnAPIKey    string
 	frontendTraces      *frontendTracesProxy
+	spanBarnUIURL       string
 	selfAPIKey          string
 	selfProject         string
 	workerStatus        *worker.Status

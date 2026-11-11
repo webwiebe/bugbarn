@@ -198,6 +198,30 @@ export interface ApiLogEntry {
   project_slug?: string
 }
 
+export interface ApiLogHistogramBucket {
+  start: string
+  counts: Record<string, number>
+}
+
+export interface ApiLogHistogram {
+  from: string
+  to: string
+  bucket_seconds: number
+  buckets: ApiLogHistogramBucket[]
+  truncated: boolean
+}
+
+export interface ApiLogFacetItem {
+  value: string
+  count: number
+}
+
+export interface ApiLogFacets {
+  key?: string
+  items: ApiLogFacetItem[]
+  truncated: boolean
+}
+
 export interface ApiSettings extends RawRecord {
   username?: string;
   Username?: string;

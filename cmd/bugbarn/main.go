@@ -307,6 +307,7 @@ func run() error {
 	apiServer.SetMonitorReporter(monitorReporter)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
 	apiServer.SetFrontendTraces(cfg.FrontendTracesURL, cfg.FrontendTracesKey, "bugbarn-web")
+	apiServer.SetSpanBarnUIURL(cfg.SpanBarnUIURL)
 	if selfReporting {
 		apiServer.SetSelfReportingConfig(cfg.SelfAPIKey, cfg.SelfProject)
 	}

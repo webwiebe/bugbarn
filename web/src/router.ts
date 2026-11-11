@@ -48,7 +48,7 @@ const telemetryViews: Partial<Record<Route, ViewHandlers>> = {
 };
 
 export function route(): void {
-  const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  const parts = location.hash.replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean);
   const [kind, id] = parts;
   state.selectedIssueId = null;
   state.selectedEventId = null;

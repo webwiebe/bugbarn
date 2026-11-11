@@ -8,6 +8,7 @@ export interface SpanBarnRuntime {
   enabled: boolean;
   endpoint?: string;
   service?: string;
+  ui_url?: string;
 }
 
 const RELAY_KEY_PLACEHOLDER = "relay";

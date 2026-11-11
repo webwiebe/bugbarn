@@ -141,6 +141,7 @@ BugBarn can report its own unhandled errors to a BugBarn instance (including its
 |---|---|---|---|
 | `BUGBARN_SELF_ENDPOINT` | — | No | URL of the BugBarn instance to report own errors to (e.g., `https://bugbarn.example.com`). |
 | `BUGBARN_SELF_API_KEY` | — | No | API key for the self-reporting instance. Both `BUGBARN_SELF_ENDPOINT` and `BUGBARN_SELF_API_KEY` must be set to enable self-reporting. |
+| `BUGBARN_SPANBARN_UI_URL` | — | No | Public SpanBarn address (e.g., `https://spanbarn.example.com`). The Logs view links a log entry's `trace_id` to `<url>/traces/<id>`. Unset shows the id as plain text. |
 
 ---
 

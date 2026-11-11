@@ -45,6 +45,12 @@ func (s *Server) SetFrontendTraces(baseURL, apiKey, service string) {
 	}
 }
 
+// SetSpanBarnUIURL sets the public SpanBarn address the Logs view links a
+// trace id to (<url>/traces/<id>). Empty leaves the id as plain text.
+func (s *Server) SetSpanBarnUIURL(u string) {
+	s.spanBarnUIURL = strings.TrimRight(strings.TrimSpace(u), "/")
+}
+
 // serveFrontendTraces handles POST /api/v1/frontend-traces/api/v1/spans for an
 // already-authenticated caller. It returns true when it wrote a response.
 //

@@ -39,6 +39,8 @@ type spanBarnConfig struct {
 	Enabled  bool   `json:"enabled"`
 	Endpoint string `json:"endpoint,omitempty"`
 	Service  string `json:"service,omitempty"`
+	// UIURL is the public SpanBarn address trace ids in the Logs view link to.
+	UIURL string `json:"ui_url,omitempty"`
 }
 
 type runtimeConfigBody struct {
@@ -93,5 +95,6 @@ func (s *Server) buildRuntimeConfig() runtimeConfigBody {
 			PostLogoutRedirectURI: s.oidc.PostLogoutRedirectURI(),
 		}
 	}
+	cfg.SpanBarn.UIURL = s.spanBarnUIURL
 	return cfg
 }

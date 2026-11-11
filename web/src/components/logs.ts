@@ -1,66 +1,43 @@
 import { escapeAttr, escapeHtml, formatTime } from "../format.js";
+import type { LogFilters } from "../log-filters.js";
 import type { ApiLogEntry } from "../types.js";
-import { toTimestampMs } from "./shared.js";
+import { renderAttrChips, renderLogFacets, renderLogHistogram, renderRangeSelect, type LogExplorerPanels } from "./log-explorer.js";
 
+function attrText(v: unknown): string {
+  return typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? "");
+}
+
+// A pill is a button-like span: clicking it adds the attribute as a filter.
 function renderLogData(data: Record<string, unknown>): string {
   const keys = Object.keys(data).slice(0, 6);
   return keys
     .map((k) => {
-      const v = data[k] ?? "";
-      const raw = typeof v === "object" && v !== null ? JSON.stringify(v) : String(v);
+      const raw = attrText(data[k]);
       const val = raw.length > 40 ? `${raw.slice(0, 37)}…` : raw;
-      return `<span class="log-pill">${escapeHtml(k)}: <strong>${escapeHtml(val)}</strong></span>`;
+      return `<span class="log-pill" role="button" tabindex="0" title="Filter on ${escapeAttr(k)}" data-attr-k="${escapeAttr(k)}" data-attr-v="${escapeAttr(raw)}">${escapeHtml(k)}: <strong>${escapeHtml(val)}</strong></span>`;
     })
     .join("");
 }
 
-const logTimelineBucketCount = 40;
-
-function renderLogTimeline(logs: ApiLogEntry[]): string {
-  if (!logs.length) return "";
-
-  const timestamps = logs
-    .map((l) => toTimestampMs(l.received_at))
-    .filter((ts) => ts > 0)
-    .sort((a, b) => a - b);
-
-  if (!timestamps.length) return "";
-
-  const minTs = timestamps[0];
-  const maxTs = timestamps[timestamps.length - 1];
-  const span = Math.max(maxTs - minTs, 60 * 1000);
-  const bucketSize = span / logTimelineBucketCount;
-  const buckets = Array.from({ length: logTimelineBucketCount }, () => 0);
-
-  for (const ts of timestamps) {
-    const bucket = Math.min(logTimelineBucketCount - 1, Math.max(0, Math.floor((ts - minTs) / bucketSize)));
-    buckets[bucket] += 1;
-  }
-  const maxBucket = Math.max(...buckets, 1);
-
-  return `
-    <div class="log-timeline">
-      <div class="log-timeline-bars">
-        ${buckets
-          .map((count) => {
-            const height = count ? Math.max(8, Math.round((count / maxBucket) * 100)) : 2;
-            return `<span class="log-timeline-bar${count ? " active" : ""}" style="height:${escapeAttr(String(height))}%" title="${escapeAttr(`${count} logs`)}"></span>`;
-          })
-          .join("")}
-      </div>
-      <div class="log-timeline-axis">
-        <span>${escapeHtml(formatTime(minTs) || "Start")}</span>
-        <span>${escapeHtml(formatTime(maxTs) || "Now")}</span>
-      </div>
-    </div>
-  `;
+function traceIdOf(data: Record<string, unknown> | undefined): string {
+  const id = data?.["trace_id"] ?? data?.["traceId"];
+  return typeof id === "string" ? id : "";
 }
 
-export function renderLogRow(entry: ApiLogEntry): string {
+function renderTraceLink(traceId: string, traceBase: string): string {
+  if (!traceId) return "";
+  if (!/^https?:\/\//.test(traceBase)) {
+    return `<div class="log-trace">trace_id: <code>${escapeHtml(traceId)}</code></div>`;
+  }
+  const href = `${traceBase}/traces/${encodeURIComponent(traceId)}`;
+  return `<div class="log-trace">trace_id: <a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(traceId)}</a></div>`;
+}
+
+export function renderLogRow(entry: ApiLogEntry, traceBase = ""): string {
   const hasData = entry.data && Object.keys(entry.data).length > 0;
   const dataPills = hasData ? `<div class="log-pills">${renderLogData(entry.data as Record<string, unknown>)}</div>` : "";
   const dataExpanded = hasData
-    ? `<div class="log-data-expanded"><pre>${escapeHtml(JSON.stringify(entry.data, null, 2))}</pre></div>`
+    ? `<div class="log-data-expanded">${renderTraceLink(traceIdOf(entry.data), traceBase)}<pre>${escapeHtml(JSON.stringify(entry.data, null, 2))}</pre></div>`
     : "";
   const projectBadge = entry.project_slug ? `<span class="log-project-badge">${escapeHtml(entry.project_slug)}</span>` : "";
   const levelNum = entry.level_num ?? 0;
@@ -80,7 +57,12 @@ export function renderLogRow(entry: ApiLogEntry): string {
   `;
 }
 
-export function renderLogsViewMarkup(logs: ApiLogEntry[], level: string, search: string): string {
+export function renderLogsViewMarkup(
+  logs: ApiLogEntry[],
+  filters: LogFilters,
+  panels: LogExplorerPanels,
+  traceBase: string,
+): string {
   const count = logs.length;
   const levelOptions = [
     { value: "", label: "All levels" },
@@ -93,25 +75,26 @@ export function renderLogsViewMarkup(logs: ApiLogEntry[], level: string, search:
   ];
 
   const listContent = count
-    ? logs.map(renderLogRow).join("")
-    : `<div class="empty">No log entries yet. Connect a project to start streaming logs.</div>`;
-
-  const timeline = renderLogTimeline(logs);
+    ? logs.map((entry) => renderLogRow(entry, traceBase)).join("")
+    : `<div class="empty">No log entries match these filters.</div>`;
 
   return `
     <div class="view-head">
-      <h2>Log stream</h2>
+      <h2>Log explorer</h2>
       <span class="chip">${escapeHtml(String(count))}</span>
     </div>
-    ${timeline}
+    ${renderLogHistogram(panels.histogram)}
     <div class="log-toolbar">
+      ${renderRangeSelect(filters)}
       <select id="log-level-filter" aria-label="Filter by level">
-        ${levelOptions.map((opt) => `<option value="${escapeAttr(opt.value)}"${opt.value === level ? " selected" : ""}>${escapeHtml(opt.label)}</option>`).join("")}
+        ${levelOptions.map((opt) => `<option value="${escapeAttr(opt.value)}"${opt.value === filters.level ? " selected" : ""}>${escapeHtml(opt.label)}</option>`).join("")}
       </select>
-      <input id="log-search" type="search" placeholder="Filter by message…" value="${escapeAttr(search)}" />
+      <input id="log-search" type="search" placeholder="Filter by message…" value="${escapeAttr(filters.q)}" />
       <button id="log-clear" type="button">Clear</button>
       <span class="log-live-indicator" id="log-live-dot"></span>
     </div>
+    ${renderAttrChips(filters)}
+    ${renderLogFacets(filters, panels)}
     <div id="log-list" class="log-list">
       ${listContent}
     </div>

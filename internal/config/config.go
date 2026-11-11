@@ -73,6 +73,7 @@ type Config struct {
 	FunnelBarnEndpoint  string // BUGBARN_FUNNELBARN_ENDPOINT
 	FunnelBarnAPIKey    string // BUGBARN_FUNNELBARN_API_KEY
 	FrontendTracesURL   string // BUGBARN_FRONTEND_TRACES_URL: SpanBarn base URL the browser spans are relayed to
+	SpanBarnUIURL       string // BUGBARN_SPANBARN_UI_URL: public SpanBarn URL the log explorer links trace ids to (empty: no link)
 	FrontendTracesKey   string // BUGBARN_FRONTEND_TRACES_API_KEY: project-scoped SpanBarn key, held server-side
 	AutoApproveProjects bool   // BUGBARN_AUTO_APPROVE_PROJECTS
 	Mode                string // BUGBARN_MODE: "", "writer", or "reader"
@@ -165,6 +166,7 @@ func Load() Config {
 		FunnelBarnEndpoint:  os.Getenv("BUGBARN_FUNNELBARN_ENDPOINT"),
 		FunnelBarnAPIKey:    os.Getenv("BUGBARN_FUNNELBARN_API_KEY"),
 		FrontendTracesURL:   os.Getenv("BUGBARN_FRONTEND_TRACES_URL"),
+		SpanBarnUIURL:       os.Getenv("BUGBARN_SPANBARN_UI_URL"),
 		FrontendTracesKey:   os.Getenv("BUGBARN_FRONTEND_TRACES_API_KEY"),
 		AutoApproveProjects: strings.EqualFold(os.Getenv("BUGBARN_AUTO_APPROVE_PROJECTS"), "true"),
 		Mode:                os.Getenv("BUGBARN_MODE"),

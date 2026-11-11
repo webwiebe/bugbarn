@@ -176,6 +176,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	apiServer.SetRetentionDays(cfg.EventRetentionDays)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
 	apiServer.SetFrontendTraces(cfg.FrontendTracesURL, cfg.FrontendTracesKey, "bugbarn-web")
+	apiServer.SetSpanBarnUIURL(cfg.SpanBarnUIURL)
 	if oidcClient != nil {
 		apiServer.SetOIDCClient(oidcClient)
 	}
