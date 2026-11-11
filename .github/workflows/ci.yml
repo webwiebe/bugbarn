@@ -298,6 +298,9 @@ jobs:
             git fetch --no-tags origin "$BASE:refs/remotes/origin/$BASE"
           fi
           sh scripts/check-go-lint.sh
+      - name: Go vulnerability scan
+        shell: bash
+        run: sh scripts/check-govulncheck.sh
       - name: Go coverage ratchet
         shell: bash
         run: sh scripts/check-coverage.sh

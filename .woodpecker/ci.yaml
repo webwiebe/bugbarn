@@ -274,6 +274,7 @@ steps:
         bash scripts/e2e-nightly_test.sh
         bash scripts/trim-go-cache_test.sh
         sh scripts/heal-go-toolchain_test.sh
+        sh scripts/check-govulncheck_test.sh
         sh scripts/diff-coverage_test.sh
         sh scripts/check-file-length.sh
         sh scripts/check-typed-boundaries.sh
@@ -291,6 +292,8 @@ steps:
         # old step ran only the diff-scoped half, unconditionally, so on a push
         # to main it compared main to itself and passed without reading a line.
         sh scripts/check-go-lint.sh
+        # Blocking vulnerability scan (#274), pinned govulncheck, live advisory db.
+        sh scripts/check-govulncheck.sh
         sh scripts/check-coverage.sh
         # Changed-line coverage, report only until 2026-10-24 (then add
         # --enforce). 80% of the coverable Go lines a PR adds must be executed;

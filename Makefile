@@ -14,7 +14,7 @@ COREPACK_BIN := $(CURDIR)/.tools/corepack-bin
 export PATH := $(COREPACK_BIN):$(PATH)
 PNPM := $(COREPACK_BIN)/pnpm
 
-.PHONY: help setup test lint build dev docker-build spec-check \
+.PHONY: help setup test lint build dev docker-build spec-check vulncheck \
 	lint-go check-file-length check-typed-boundaries coverage dup quality test-gates ts-budget secret-scan \
 	woodpecker-secrets-edit woodpecker-secrets-sync
 
@@ -170,6 +170,10 @@ lint-go:
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	sh scripts/check-go-lint.sh
 
+# govulncheck over the root module at the pinned version (#274).
+vulncheck:
+	@sh scripts/check-govulncheck.sh
+
 # TypeScript size/complexity soak. Needs web/node_modules (make setup).
 ts-budget: $(PNPM)
 	@sh scripts/check-ts-budget.sh
@@ -207,7 +211,7 @@ $(PNPM):
 # Umbrella gate used by CI: every code-quality check in one target. The gate
 # scripts' own tests run first, so a gate that has stopped failing is reported
 # before the gates it protects are trusted.
-quality: test-gates check-file-length check-typed-boundaries lint-go coverage ts-budget dup
+quality: test-gates check-file-length check-typed-boundaries lint-go vulncheck coverage ts-budget dup
 
 build: $(PNPM)
 	@set -eu; \
