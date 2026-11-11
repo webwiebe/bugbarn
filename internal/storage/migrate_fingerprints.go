@@ -20,6 +20,41 @@ type fingerprintUpdate struct {
 	newExplanation []string
 }
 
+// fingerprintIssueRow is one issue as the fingerprint migration reads it.
+type fingerprintIssueRow struct {
+	id          int64
+	projectID   int64
+	fingerprint string
+	material    string
+	eventJSON   []byte
+}
+
+// recomputeFingerprint returns the update for an issue whose stored
+// fingerprint differs from the one the current algorithm derives from its
+// representative event. It reports false for supplied fingerprints, events
+// that do not decode, and issues already up to date.
+func recomputeFingerprint(r fingerprintIssueRow) (fingerprintUpdate, bool) {
+	if !isComputedFingerprint(r.fingerprint, r.material) {
+		return fingerprintUpdate{}, false
+	}
+	var evt event.Event
+	if err := json.Unmarshal(r.eventJSON, &evt); err != nil {
+		return fingerprintUpdate{}, false
+	}
+	fp := fingerprint.Fingerprint(evt)
+	if fp == r.fingerprint {
+		return fingerprintUpdate{}, false
+	}
+	snap := fingerprint.SnapshotFor(evt)
+	return fingerprintUpdate{
+		id:             r.id,
+		projectID:      r.projectID,
+		newFingerprint: fp,
+		newMaterial:    snap.Material,
+		newExplanation: snap.Explanation,
+	}, true
+}
+
 func (s *core) migrateFingerprints(ctx context.Context) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, project_id, fingerprint, fingerprint_material, representative_event_json
@@ -29,17 +64,9 @@ func (s *core) migrateFingerprints(ctx context.Context) error {
 		return err
 	}
 
-	type issueRow struct {
-		id          int64
-		projectID   int64
-		fingerprint string
-		material    string
-		eventJSON   []byte
-	}
-
-	var issues []issueRow
+	var issues []fingerprintIssueRow
 	for rows.Next() {
-		var r issueRow
+		var r fingerprintIssueRow
 		if err := rows.Scan(&r.id, &r.projectID, &r.fingerprint, &r.material, &r.eventJSON); err != nil {
 			rows.Close()
 			return err
@@ -53,25 +80,9 @@ func (s *core) migrateFingerprints(ctx context.Context) error {
 
 	var updates []fingerprintUpdate
 	for _, r := range issues {
-		if !isComputedFingerprint(r.fingerprint, r.material) {
-			continue
+		if u, ok := recomputeFingerprint(r); ok {
+			updates = append(updates, u)
 		}
-		var evt event.Event
-		if err := json.Unmarshal(r.eventJSON, &evt); err != nil {
-			continue
-		}
-		snap := fingerprint.SnapshotFor(evt)
-		fp := fingerprint.Fingerprint(evt)
-		if fp == r.fingerprint {
-			continue
-		}
-		updates = append(updates, fingerprintUpdate{
-			id:             r.id,
-			projectID:      r.projectID,
-			newFingerprint: fp,
-			newMaterial:    snap.Material,
-			newExplanation: snap.Explanation,
-		})
 	}
 
 	if len(updates) == 0 {
