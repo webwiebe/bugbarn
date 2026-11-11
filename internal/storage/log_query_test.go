@@ -275,3 +275,32 @@ func logPlanOf(t *testing.T, store *Store, query string, args ...any) string {
 	}
 	return strings.Join(lines, " | ")
 }
+
+// ProjectID 0 is the all-projects view of the Logs page: the filters apply to
+// every project's rows and each entry names its project.
+func TestQueryLogEntriesAllProjects(t *testing.T) {
+	t.Parallel()
+	store := openTestStore(t)
+	pid := seedExplorer(t, store)
+	ctx := context.Background()
+
+	got, err := store.QueryLogEntries(ctx, LogQuery{Attrs: []LogAttrFilter{{"service", "worker"}}}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messages(got) != "job failed,request failed" {
+		t.Fatalf("all projects, service=worker: got %q", messages(got))
+	}
+	for _, e := range got {
+		if e.ProjectID != pid {
+			t.Errorf("entry %q has project %d, want %d", e.Message, e.ProjectID, pid)
+		}
+	}
+	h, err := store.LogHistogram(ctx, LogQuery{From: explorerBase, To: explorerBase.Add(2 * time.Hour)}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Buckets) != 2 || h.Buckets[0].Counts["error"] != 2 {
+		t.Fatalf("all projects histogram: got %+v", h.Buckets)
+	}
+}

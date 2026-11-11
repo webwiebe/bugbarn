@@ -24,6 +24,15 @@ type Repository interface {
 	LogAttributeValues(ctx context.Context, q storage.LogQuery, key string) (storage.LogFacets, error)
 }
 
+// Query, AttrFilter, Histogram and Facets are the explorer's request and answer
+// shapes. The API names them through this package, not through storage.
+type (
+	Query      = storage.LogQuery
+	AttrFilter = storage.LogAttrFilter
+	Histogram  = storage.LogHistogram
+	Facets     = storage.LogFacets
+)
+
 type Service struct {
 	repo   Repository
 	logger *slog.Logger

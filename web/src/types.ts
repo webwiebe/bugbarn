@@ -198,7 +198,7 @@ export interface ApiLogEntry {
   project_slug?: string
 }
 
-export interface ApiLogHistogramBucket {
+interface ApiLogHistogramBucket {
   start: string
   counts: Record<string, number>
 }
@@ -211,7 +211,7 @@ export interface ApiLogHistogram {
   truncated: boolean
 }
 
-export interface ApiLogFacetItem {
+interface ApiLogFacetItem {
   value: string
   count: number
 }

@@ -211,22 +211,27 @@ func (s *LogStore) LogHistogram(ctx context.Context, q LogQuery, bucket time.Dur
 	for i := range out.Buckets {
 		out.Buckets[i] = LogHistogramBucket{Start: q.From.UTC().Add(time.Duration(i) * bucket), Counts: map[string]int{}}
 	}
+	if err := fillHistogramBuckets(rows, out.Buckets); err != nil {
+		return LogHistogram{}, err
+	}
+	out.Truncated, err = s.windowTruncated(ctx, minID, q.From)
+	return out, err
+}
+
+// fillHistogramBuckets adds the (bucket index, level, count) rows to buckets.
+func fillHistogramBuckets(rows *sql.Rows, buckets []LogHistogramBucket) error {
 	for rows.Next() {
 		var idx int64
 		var level string
 		var count int
 		if err := rows.Scan(&idx, &level, &count); err != nil {
-			return LogHistogram{}, wrapErr(err, "log histogram")
+			return wrapErr(err, "log histogram")
 		}
-		if idx >= 0 && int(idx) < n {
-			out.Buckets[idx].Counts[level] += count
+		if idx >= 0 && int(idx) < len(buckets) {
+			buckets[idx].Counts[level] += count
 		}
 	}
-	if err := rows.Err(); err != nil {
-		return LogHistogram{}, wrapErr(err, "log histogram")
-	}
-	out.Truncated, err = s.windowTruncated(ctx, minID, q.From)
-	return out, err
+	return wrapErr(rows.Err(), "log histogram")
 }
 
 // windowTruncated reports whether the scan window starts after from, so rows

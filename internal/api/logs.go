@@ -14,7 +14,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/logparse"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 )
 
 // Bounds for the log-ingest endpoint. maxLogsBodyBytes falls back to this when
@@ -147,10 +147,10 @@ func (s *Server) writeLogReadError(w http.ResponseWriter, err error) bool {
 // logQueryFromRequest reads the explorer filters from the query string: level,
 // q, from, to (RFC 3339), before, and attr=key=value (repeatable, ANDed). The
 // project comes from the request context, as for every other read.
-func logQueryFromRequest(r *http.Request) (storage.LogQuery, error) {
+func logQueryFromRequest(r *http.Request) (logsvc.Query, error) {
 	projectID, _ := domain.ProjectIDFromContext(r.Context())
 	query := r.URL.Query()
-	q := storage.LogQuery{ProjectID: projectID, Q: query.Get("q")}
+	q := logsvc.Query{ProjectID: projectID, Q: query.Get("q")}
 
 	if v := query.Get("level"); v != "" {
 		q.LevelMin = logparse.LevelMinFromName(v)
@@ -174,7 +174,7 @@ func logQueryFromRequest(r *http.Request) (storage.LogQuery, error) {
 		if !ok || key == "" {
 			return q, apperr.InvalidInput("attr must be key=value", nil)
 		}
-		q.Attrs = append(q.Attrs, storage.LogAttrFilter{Key: key, Value: value})
+		q.Attrs = append(q.Attrs, logsvc.AttrFilter{Key: key, Value: value})
 	}
 	return q, nil
 }

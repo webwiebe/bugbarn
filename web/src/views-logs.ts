@@ -5,7 +5,7 @@ import type { LogExplorerPanels } from "./components/log-explorer.js";
 import {
   liveCompatible, logFiltersHash, logQueryParams, parseLogFilters, withAttr, withoutAttr,
   type LogFilters,
-} from "./log-filters.js";
+} from "./components/log-filters.js";
 import { fetchSpanBarnRuntime } from "./spanbarn.js";
 import type { ApiLogEntry, ApiLogFacets, ApiLogHistogram } from "./types.js";
 import { apiUrl, elements, setActiveView, state } from "./core.js";

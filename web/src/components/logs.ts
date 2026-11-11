@@ -1,5 +1,5 @@
 import { escapeAttr, escapeHtml, formatTime } from "../format.js";
-import type { LogFilters } from "../log-filters.js";
+import type { LogFilters } from "./log-filters.js";
 import type { ApiLogEntry } from "../types.js";
 import { renderAttrChips, renderLogFacets, renderLogHistogram, renderRangeSelect, type LogExplorerPanels } from "./log-explorer.js";
 

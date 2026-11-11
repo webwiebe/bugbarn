@@ -1,7 +1,7 @@
 // Markup of the Logs explorer: range select, attribute chips, the volume chart
 // by level and the facet panel. Behaviour lives in views-logs.ts.
 import { escapeAttr, escapeHtml, formatTime } from "../format.js";
-import { logRanges, splitAttr, type LogFilters } from "../log-filters.js";
+import { logRanges, splitAttr, type LogFilters } from "./log-filters.js";
 import type { ApiLogFacets, ApiLogHistogram } from "../types.js";
 
 export interface LogExplorerPanels {

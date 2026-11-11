@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import {
   defaultLogFilters, liveCompatible, logFiltersHash, logQueryParams, logWindow, parseLogFilters, splitAttr,
   withAttr, withoutAttr,
-} from "../src/log-filters.ts";
+} from "../src/components/log-filters.ts";
 
 test("the plain hash gives the defaults and the defaults give the plain hash", () => {
   assert.deepEqual(parseLogFilters("#/logs"), defaultLogFilters());
