@@ -321,7 +321,7 @@ func TestQuerySegments(t *testing.T) {
 }
 
 // QueryPages and QueryReferrers share one top-N read over analytics_daily. Both
-// order by pageviews descending, honour the limit, and leave the other kind of
+// order by pageviews descending, apply the limit, and leave the other kind of
 // row (totals, other dimensions) out.
 func TestQueryPagesAndReferrersTopN(t *testing.T) {
 	s := mustOpenStore(t)
