@@ -49,40 +49,8 @@ func cmdLogin(args []string) error {
 		cfg.Telemetry = &f
 	}
 
-	if *apiKey != "" {
-		cfg.Auth = AuthConfig{Type: "apikey", APIKey: *apiKey}
-		// Verify the key works.
-		client := &Client{
-			base:   cfg.URL,
-			http:   &http.Client{Timeout: 10 * time.Second},
-			config: cfg,
-		}
-		if _, err := client.get("/api/v1/issues?status=open"); err != nil {
-			return fmt.Errorf("authentication failed: %w", err)
-		}
-	} else if *username != "" {
-		if *password == "" {
-			fmt.Fprint(os.Stderr, "Password: ")
-			pw, err := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Fprintln(os.Stderr)
-			if err != nil {
-				return fmt.Errorf("read password: %w", err)
-			}
-			*password = string(pw)
-		}
-		session, csrf, err := loginWithPassword(context.Background(), *urlFlag, *username, *password)
-		if err != nil {
-			return err
-		}
-		cfg.Auth = AuthConfig{
-			Type:         "session",
-			Username:     *username,
-			Password:     *password,
-			SessionToken: session,
-			CSRFToken:    csrf,
-		}
-	} else {
-		return fmt.Errorf("provide --api-key or --username to authenticate")
+	if err := authenticate(&cfg, *apiKey, *username, *password); err != nil {
+		return err
 	}
 
 	if err := saveConfig(cfg); err != nil {
@@ -90,6 +58,49 @@ func cmdLogin(args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "Logged in to %s\n", cfg.URL)
 	writeOut(map[string]any{"ok": true, "url": cfg.URL, "auth_type": cfg.Auth.Type})
+	return nil
+}
+
+// authenticate fills cfg.Auth from an API key, which it verifies against the
+// server, or from a username and password, prompting for the password when it
+// is empty.
+func authenticate(cfg *Config, apiKey, username, password string) error {
+	switch {
+	case apiKey != "":
+		cfg.Auth = AuthConfig{Type: "apikey", APIKey: apiKey}
+		// Verify the key works.
+		client := &Client{
+			base:   cfg.URL,
+			http:   &http.Client{Timeout: 10 * time.Second},
+			config: *cfg,
+		}
+		if _, err := client.get("/api/v1/issues?status=open"); err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+	case username != "":
+		if password == "" {
+			fmt.Fprint(os.Stderr, "Password: ")
+			pw, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				return fmt.Errorf("read password: %w", err)
+			}
+			password = string(pw)
+		}
+		session, csrf, err := loginWithPassword(context.Background(), cfg.URL, username, password)
+		if err != nil {
+			return err
+		}
+		cfg.Auth = AuthConfig{
+			Type:         "session",
+			Username:     username,
+			Password:     password,
+			SessionToken: session,
+			CSRFToken:    csrf,
+		}
+	default:
+		return fmt.Errorf("provide --api-key or --username to authenticate")
+	}
 	return nil
 }
 
