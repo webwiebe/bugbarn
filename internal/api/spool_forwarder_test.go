@@ -173,3 +173,91 @@ func TestSpoolForwarder_DrainOnce_RespectsContextDeadline(t *testing.T) {
 		t.Fatal("expected error when context deadline exceeded, got nil")
 	}
 }
+
+// Drain forwards what the spool holds, advances the persisted cursor over the
+// records the writer took, and returns when its context ends.
+func TestSpoolForwarder_Drain_ForwardsAdvancesCursorAndStops(t *testing.T) {
+	t.Parallel()
+
+	var received atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received.Add(1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer upstream.Close()
+
+	sf := newTestSpool(t, upstream.URL)
+	spoolRecord(t, sf)
+	spoolRecord(t, sf)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { sf.Drain(ctx); close(done) }()
+
+	deadline := time.Now().Add(30 * time.Second)
+	for sf.Pending() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("spool still has %d pending after 30s", sf.Pending())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("Drain did not return after its context was canceled")
+	}
+
+	if got := received.Load(); got != 2 {
+		t.Errorf("forwarded %d requests, want 2", got)
+	}
+	// The cursor sits at the end of the spool, so a restart replays nothing.
+	offset, err := readCursor(sf.dir)
+	if err != nil {
+		t.Fatalf("readCursor: %v", err)
+	}
+	if records, _, err := readRecords(sf.path, offset); err != nil || len(records) != 0 {
+		t.Errorf("after drain: %d records past the cursor, err %v; want none", len(records), err)
+	}
+}
+
+// A writer that refuses a record keeps it in the spool: the cursor stays put and
+// the record stays pending for the next pass.
+func TestSpoolForwarder_Drain_KeepsRecordsTheWriterRefuses(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer upstream.Close()
+
+	sf := newTestSpool(t, upstream.URL)
+	spoolRecord(t, sf)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { sf.Drain(ctx); close(done) }()
+
+	deadline := time.Now().Add(30 * time.Second)
+	for attempts.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("writer was never asked to take the record")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if sf.Pending() != 1 {
+		t.Errorf("pending = %d, want 1 (the refused record)", sf.Pending())
+	}
+	offset, err := readCursor(sf.dir)
+	if err != nil {
+		t.Fatalf("readCursor: %v", err)
+	}
+	if records, _, err := readRecords(sf.path, offset); err != nil || len(records) != 1 {
+		t.Errorf("records past the cursor = %d, err %v; want 1", len(records), err)
+	}
+}

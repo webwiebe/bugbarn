@@ -172,22 +172,10 @@ func NewRedisSpoolForwarder(dir string, q *queue.RedisQueue, maxBodyBytes int64,
 // the writer. This keeps the accepted/dropped distinction honest even on reader
 // pods, which return 202 before the writer ever sees the event.
 func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
-	var body []byte
-	if r.Body != nil {
-		var err error
-		if s.maxBodyByte > 0 {
-			body, err = io.ReadAll(io.LimitReader(r.Body, s.maxBodyByte+1))
-			if err == nil && int64(len(body)) > s.maxBodyByte {
-				ingestresp.WriteDropped(w, ingestresp.DropTooLarge)
-				return
-			}
-		} else {
-			body, err = io.ReadAll(r.Body)
-		}
-		if err != nil {
-			ingestresp.WriteDropped(w, ingestresp.DropMalformed)
-			return
-		}
+	body, drop, ok := s.readBody(r)
+	if !ok {
+		ingestresp.WriteDropped(w, drop)
+		return
 	}
 
 	if !bodyHasIngestShape(r.URL.Path, r.Header.Get("Content-Type"), body) {
@@ -195,27 +183,9 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	headers := make(map[string]string, len(forwardedHeaders))
-	for _, h := range forwardedHeaders {
-		if v := r.Header.Get(h); v != "" {
-			headers[h] = v
-		}
-	}
-
-	// A project-scoped API key identifies its project on its own, so resolve it
-	// here and stamp the slug onto the record: only the header survives into
-	// queue.Item, and the consumer drops any item with an empty slug. The
-	// header, when present, wins — it is the caller's explicit override.
-	if headers[projectHeader] == "" && s.resolveSlug != nil {
-		slug, err := s.resolveSlug(r.Context(), headers[apiKeyHeader])
-		if err != nil {
-			s.logger.Warn("spool forward: project lookup failed, asking the client to retry", "error", err)
-			ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
-			return
-		}
-		if slug != "" {
-			headers[projectHeader] = slug
-		}
+	headers := forwardedHeaderValues(r)
+	if !s.stampProjectSlug(w, r, headers) {
+		return
 	}
 
 	// Logs need a project to land in. Reject now rather than accept with a 202
@@ -248,6 +218,59 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	ingestresp.WriteAccepted(w, "")
 }
 
+// readBody reads the request body within the size limit. When it cannot, it
+// returns the drop reason to answer with and ok false.
+func (s *SpoolForwarder) readBody(r *http.Request) (body []byte, drop ingestresp.Drop, ok bool) {
+	if r.Body == nil {
+		return nil, ingestresp.Drop{}, true
+	}
+	var err error
+	if s.maxBodyByte > 0 {
+		body, err = io.ReadAll(io.LimitReader(r.Body, s.maxBodyByte+1))
+		if err == nil && int64(len(body)) > s.maxBodyByte {
+			return nil, ingestresp.DropTooLarge, false
+		}
+	} else {
+		body, err = io.ReadAll(r.Body)
+	}
+	if err != nil {
+		return nil, ingestresp.DropMalformed, false
+	}
+	return body, ingestresp.Drop{}, true
+}
+
+// forwardedHeaderValues copies the headers the writer needs from the request.
+func forwardedHeaderValues(r *http.Request) map[string]string {
+	headers := make(map[string]string, len(forwardedHeaders))
+	for _, h := range forwardedHeaders {
+		if v := r.Header.Get(h); v != "" {
+			headers[h] = v
+		}
+	}
+	return headers
+}
+
+// stampProjectSlug resolves a project-scoped API key to its project and stamps
+// the slug onto the headers: only the header survives into queue.Item, and the
+// consumer drops any item with an empty slug. The header, when present, wins, as
+// the caller's explicit override. It answers the request and returns false when
+// the lookup fails, so the client retries.
+func (s *SpoolForwarder) stampProjectSlug(w http.ResponseWriter, r *http.Request, headers map[string]string) bool {
+	if headers[projectHeader] != "" || s.resolveSlug == nil {
+		return true
+	}
+	slug, err := s.resolveSlug(r.Context(), headers[apiKeyHeader])
+	if err != nil {
+		s.logger.Warn("spool forward: project lookup failed, asking the client to retry", "error", err)
+		ingestresp.WriteDropped(w, ingestresp.DropUnavailable)
+		return false
+	}
+	if slug != "" {
+		headers[projectHeader] = slug
+	}
+	return true
+}
+
 func (s *SpoolForwarder) append(rec spooledRequest) error {
 	payload, err := json.Marshal(rec)
 	if err != nil {
@@ -275,58 +298,69 @@ func (s *SpoolForwarder) Pending() int64 {
 // writer until the context is canceled. Records are acked by advancing a
 // persisted cursor so a restart resumes where we left off.
 func (s *SpoolForwarder) Drain(ctx context.Context) {
-	const idleSleep = 250 * time.Millisecond
-	const errBackoff = 2 * time.Second
+	for ctx.Err() == nil {
+		s.drainStep(ctx)
+	}
+}
 
-	for {
-		if ctx.Err() != nil {
-			return
+const (
+	drainIdleSleep  = 250 * time.Millisecond
+	drainErrBackoff = 2 * time.Second
+)
+
+// drainStep reads the records after the cursor once and forwards them in order,
+// advancing the cursor over the ones the writer took. It sleeps when there is
+// nothing to do or something failed, so the caller can loop on it.
+func (s *SpoolForwarder) drainStep(ctx context.Context) {
+	offset, err := readCursor(s.dir)
+	if err != nil {
+		s.logger.Error("spool drain read cursor", "error", err)
+		sleepCtx(ctx, drainErrBackoff)
+		return
+	}
+
+	records, newOffset, err := readRecords(s.path, offset)
+	if err != nil {
+		s.logger.Error("spool drain read records", "error", err)
+		sleepCtx(ctx, drainErrBackoff)
+		return
+	}
+
+	if len(records) == 0 {
+		// Spool is empty up to its current end. Rotate when oversized so we
+		// don't keep replaying the same file indefinitely.
+		if err := s.maybeRotateLocked(newOffset); err != nil {
+			s.logger.Error("spool rotate", "error", err)
 		}
+		sleepCtx(ctx, drainIdleSleep)
+		return
+	}
 
-		offset, err := readCursor(s.dir)
-		if err != nil {
-			s.logger.Error("spool drain read cursor", "error", err)
-			sleepCtx(ctx, errBackoff)
-			continue
-		}
-
-		records, newOffset, err := readRecords(s.path, offset)
-		if err != nil {
-			s.logger.Error("spool drain read records", "error", err)
-			sleepCtx(ctx, errBackoff)
-			continue
-		}
-
-		if len(records) == 0 {
-			// Spool is empty up to its current end. Rotate when oversized so we
-			// don't keep replaying the same file indefinitely.
-			if err := s.maybeRotateLocked(newOffset); err != nil {
-				s.logger.Error("spool rotate", "error", err)
-			}
-			sleepCtx(ctx, idleSleep)
-			continue
-		}
-
-		ackedTo := offset
-		for _, r := range records {
-			if err := s.forwardOne(ctx, r.req); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				s.logger.Warn("spool drain forward failed", "error", err, "path", r.req.Path)
-				sleepCtx(ctx, errBackoff)
-				break
-			}
-			ackedTo = r.endOffset
-			s.pending.Add(-1)
-		}
-
-		if ackedTo > offset {
-			if err := writeCursor(s.dir, ackedTo); err != nil {
-				s.logger.Error("spool drain write cursor", "error", err)
-			}
+	ackedTo := s.forwardRecords(ctx, records, offset)
+	if ackedTo > offset {
+		if err := writeCursor(s.dir, ackedTo); err != nil {
+			s.logger.Error("spool drain write cursor", "error", err)
 		}
 	}
+}
+
+// forwardRecords forwards records in order and returns the offset after the last
+// one the writer took. It stops at the first failure, after a backoff, or when
+// the context ends.
+func (s *SpoolForwarder) forwardRecords(ctx context.Context, records []spooledRequestAt, from int64) int64 {
+	ackedTo := from
+	for _, r := range records {
+		if err := s.forwardOne(ctx, r.req); err != nil {
+			if ctx.Err() == nil {
+				s.logger.Warn("spool drain forward failed", "error", err, "path", r.req.Path)
+				sleepCtx(ctx, drainErrBackoff)
+			}
+			return ackedTo
+		}
+		ackedTo = r.endOffset
+		s.pending.Add(-1)
+	}
+	return ackedTo
 }
 
 // DrainOnce drains everything currently in the spool and returns. Used at
