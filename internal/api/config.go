@@ -4,6 +4,51 @@ import (
 	"net/http"
 )
 
+type funnelBarnConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Endpoint string `json:"endpoint,omitempty"`
+	APIKey   string `json:"apiKey,omitempty"`
+}
+
+type bugbarnSelfConfig struct {
+	Enabled bool   `json:"enabled"`
+	APIKey  string `json:"apiKey,omitempty"`
+	Project string `json:"project,omitempty"`
+}
+
+type oidcConfigOut struct {
+	Enabled          bool   `json:"enabled"`
+	LoginURL         string `json:"loginURL,omitempty"`
+	SwitchAccountURL string `json:"switchAccountURL,omitempty"`
+	EndSessionURL    string `json:"endSessionURL,omitempty"`
+}
+
+// iambarnConfig carries the non-secret values the hosted IAMBarn web
+// components need to render the signed-in user's menu and profile editor.
+// The SPA loads {serverURL}/widget/iambarn-widget.iife.js and mounts the
+// <iambarn-user-menu>/<iambarn-profile> elements with these attributes.
+type iambarnConfig struct {
+	ServerURL             string `json:"serverURL,omitempty"`
+	ClientID              string `json:"clientID,omitempty"`
+	PostLogoutRedirectURI string `json:"postLogoutRedirectURI,omitempty"`
+}
+
+// spanBarnConfig tells the SPA whether to start the SpanBarn browser SDK and
+// where to send spans. The key stays on the server (see frontend_traces.go).
+type spanBarnConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Endpoint string `json:"endpoint,omitempty"`
+	Service  string `json:"service,omitempty"`
+}
+
+type runtimeConfigBody struct {
+	SpanBarn   spanBarnConfig    `json:"spanbarn"`
+	FunnelBarn funnelBarnConfig  `json:"funnelbarn"`
+	BugBarn    bugbarnSelfConfig `json:"bugbarn"`
+	OIDC       oidcConfigOut     `json:"oidc"`
+	IAMBarn    iambarnConfig     `json:"iambarn"`
+}
+
 // serveRuntimeConfig returns public (non-secret) configuration that the web
 // frontend needs at startup. This endpoint requires no authentication so the
 // frontend can fetch it before the user logs in.
@@ -11,52 +56,13 @@ import (
 // FunnelBarn analytics tracking is opt-in: the funnelbarn block is only
 // enabled when BUGBARN_FUNNELBARN_ENDPOINT is set in the server's environment.
 func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
-	type funnelBarnConfig struct {
-		Enabled  bool   `json:"enabled"`
-		Endpoint string `json:"endpoint,omitempty"`
-		APIKey   string `json:"apiKey,omitempty"`
-	}
+	writeJSON(w, s.buildRuntimeConfig())
+}
 
-	type bugbarnSelfConfig struct {
-		Enabled bool   `json:"enabled"`
-		APIKey  string `json:"apiKey,omitempty"`
-		Project string `json:"project,omitempty"`
-	}
-
-	type oidcConfigOut struct {
-		Enabled          bool   `json:"enabled"`
-		LoginURL         string `json:"loginURL,omitempty"`
-		SwitchAccountURL string `json:"switchAccountURL,omitempty"`
-		EndSessionURL    string `json:"endSessionURL,omitempty"`
-	}
-
-	// iambarnConfig carries the non-secret values the hosted IAMBarn web
-	// components need to render the signed-in user's menu and profile editor.
-	// The SPA loads {serverURL}/widget/iambarn-widget.iife.js and mounts the
-	// <iambarn-user-menu>/<iambarn-profile> elements with these attributes.
-	type iambarnConfig struct {
-		ServerURL             string `json:"serverURL,omitempty"`
-		ClientID              string `json:"clientID,omitempty"`
-		PostLogoutRedirectURI string `json:"postLogoutRedirectURI,omitempty"`
-	}
-
-	// spanBarnConfig tells the SPA whether to start the SpanBarn browser SDK and
-	// where to send spans. The key stays on the server (see frontend_traces.go).
-	type spanBarnConfig struct {
-		Enabled  bool   `json:"enabled"`
-		Endpoint string `json:"endpoint,omitempty"`
-		Service  string `json:"service,omitempty"`
-	}
-
-	type runtimeConfig struct {
-		SpanBarn   spanBarnConfig    `json:"spanbarn"`
-		FunnelBarn funnelBarnConfig  `json:"funnelbarn"`
-		BugBarn    bugbarnSelfConfig `json:"bugbarn"`
-		OIDC       oidcConfigOut     `json:"oidc"`
-		IAMBarn    iambarnConfig     `json:"iambarn"`
-	}
-
-	cfg := runtimeConfig{}
+// buildRuntimeConfig assembles the public configuration from what the server
+// has switched on.
+func (s *Server) buildRuntimeConfig() runtimeConfigBody {
+	cfg := runtimeConfigBody{}
 	if s.frontendTraces != nil {
 		cfg.SpanBarn = spanBarnConfig{Enabled: true, Endpoint: frontendTracesBase, Service: s.frontendTraces.service}
 	}
@@ -87,6 +93,5 @@ func (s *Server) serveRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 			PostLogoutRedirectURI: s.oidc.PostLogoutRedirectURI(),
 		}
 	}
-
-	writeJSON(w, cfg)
+	return cfg
 }
