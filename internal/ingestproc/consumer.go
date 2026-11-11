@@ -396,13 +396,19 @@ func (c *Consumer) persistLog(ctx context.Context, item queue.Item) string {
 	if len(entries) == 0 {
 		return "empty"
 	}
+	return c.insertLogs(ctx, item.ProjectSlug, entries)
+}
+
+// insertLogs inserts the entries, retrying a transient failure with a growing
+// backoff, and returns the outcome label persistLog reports.
+func (c *Consumer) insertLogs(ctx context.Context, slug string, entries []domain.LogEntry) string {
 	for attempt := 1; attempt <= consumerMaxRetries; attempt++ {
 		err := c.logs.Insert(ctx, entries)
 		if err == nil {
 			return "success"
 		}
 		if !isTransientPersistError(err) {
-			c.logger.Error("drop logs after insert error", "project", item.ProjectSlug, "count", len(entries), "error", err)
+			c.logger.Error("drop logs after insert error", "project", slug, "count", len(entries), "error", err)
 			return "insert_error"
 		}
 		if ctx.Err() != nil {
@@ -415,6 +421,6 @@ func (c *Consumer) persistLog(ctx context.Context, item queue.Item) string {
 		case <-time.After(backoff):
 		}
 	}
-	c.logger.Error("drop logs after exhausting retries", "project", item.ProjectSlug, "count", len(entries))
+	c.logger.Error("drop logs after exhausting retries", "project", slug, "count", len(entries))
 	return "retry_exhausted"
 }
