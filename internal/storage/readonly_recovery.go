@@ -35,14 +35,23 @@ var readonlyRecoveryCounter, _ = tracing.Meter().Int64Counter(
 // IsReadonlyRecovery reports whether err is SQLITE_READONLY_RECOVERY (264) or
 // SQLITE_READONLY_CANTINIT (1288): a read-only connection saw a wal-index that
 // needs recovery or initialization and cannot do either. Only the writer can,
-// so both clear on the writer's next write (#242, #268).
+// so both clear on the writer's next write (#242, #268). SQLITE_PROTOCOL (15,
+// "locking protocol") is the same family: a reader failed to take a wal-index lock
+// while the writer was rewriting the index, and a later attempt succeeds (#275).
 func IsReadonlyRecovery(err error) bool {
 	var sqliteErr *sqlite.Error
 	if errors.As(err, &sqliteErr) {
 		c := sqliteErr.Code()
-		return c == sqlite3.SQLITE_READONLY_RECOVERY || c == sqlite3.SQLITE_READONLY_CANTINIT
+		return c == sqlite3.SQLITE_READONLY_RECOVERY ||
+			c == sqlite3.SQLITE_READONLY_CANTINIT ||
+			c == sqlite3.SQLITE_PROTOCOL
 	}
-	return err != nil && (strings.Contains(err.Error(), "(264)") || strings.Contains(err.Error(), "(1288)"))
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "(264)") || strings.Contains(msg, "(1288)") ||
+		strings.Contains(msg, "locking protocol (15)")
 }
 
 // retryReadonlyRecovery runs fn and, while it fails with SQLITE_READONLY_RECOVERY,

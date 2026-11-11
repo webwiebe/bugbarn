@@ -79,3 +79,31 @@ func TestWrapErrMapsCantInitToUnavailable(t *testing.T) {
 		t.Fatalf("err = %v, want Unavailable", err)
 	}
 }
+
+// A reader that cannot take a wal-index lock while the writer rewrites the index
+// fails with SQLITE_PROTOCOL (15, "locking protocol"). It cleared on retry in
+// production and answered 503 on the telemetry ingest path (#275).
+func TestRetryReadonlyRecoveryRetriesLockingProtocol(t *testing.T) {
+	protocol := errors.New("locking protocol (15)")
+	calls := 0
+	err := retryReadonlyRecovery(context.Background(), "", func() error {
+		calls++
+		if calls == 1 {
+			return protocol
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil after one retry", err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2", calls)
+	}
+}
+
+func TestWrapErrMapsLockingProtocolToUnavailable(t *testing.T) {
+	err := wrapNotFound(errors.New("locking protocol (15)"), "api key lookup")
+	if !errors.Is(err, apperr.ErrUnavailable) {
+		t.Fatalf("err = %v, want Unavailable", err)
+	}
+}
