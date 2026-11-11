@@ -119,6 +119,8 @@ Returns stored log entries, newest first.
 | `q` | Substring match on the `message` field (case-insensitive). |
 | `limit` | Maximum entries to return. Default: `200`. Maximum: `500`. |
 | `before` | Cursor: return only entries with `id < before`. Use `next_cursor` from a previous response for pagination. |
+| `from`, `to` | RFC 3339 time bounds on `received_at` (`from` inclusive, `to` exclusive). |
+| `attr` | `key=value` filter on a top-level attribute; repeat for more, all must match. |
 
 **Response**
 
@@ -179,6 +181,10 @@ A comment (`:\n\n`) is sent every **15 seconds** to keep the connection alive th
 2. New log entries ingested for the project are sent to the client immediately.
 3. If the client is too slow to consume entries and the 64-entry buffer fills, **new entries are dropped** for that subscriber (non-blocking send). No error is signalled; the client simply misses those entries.
 4. When the client disconnects, the channel is unregistered and closed.
+
+### `GET /api/v1/logs/histogram` and `GET /api/v1/logs/facets`
+
+The log explorer in the web UI (Logs view) reads these. Both take the filters of `GET /api/v1/logs` (`level`, `q`, `attr`, `from`, `to`; the range defaults to the last 24 hours). `histogram` returns counts per bucket and level (`bucket_seconds` optional, at most 200 buckets). `facets` returns the attribute keys in the window, or with `key=<name>` the top 10 values of that attribute. Both scan at most the newest 200000 log rows and set `truncated` when older rows in the range were left out. The Logs view keeps its filters in the URL, so a filtered view can be shared.
 
 ---
 

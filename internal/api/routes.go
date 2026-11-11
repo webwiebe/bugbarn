@@ -343,6 +343,10 @@ func (s *Server) dispatchLogEventRoutes(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case r.URL.Path == "/api/v1/logs":
 		s.serveLogs(w, r)
+	case r.URL.Path == "/api/v1/logs/histogram":
+		s.serveLogsHistogram(w, r)
+	case r.URL.Path == "/api/v1/logs/facets":
+		s.serveLogsFacets(w, r)
 	case r.URL.Path == "/api/v1/logs/stream":
 		s.serveLogsStream(w, r)
 	case r.URL.Path == "/api/v1/events/stream":

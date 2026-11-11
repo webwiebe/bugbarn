@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -117,35 +116,6 @@ func trimLogRetention(ctx context.Context, tx *sql.Tx, projectID int64) error {
 	return nil
 }
 
-// logEntryWhere builds the WHERE clause and bound arguments for the log
-// filters. Each filter applies only when set.
-func logEntryWhere(projectID int64, levelMin int, q string, beforeID int64) (string, []any) {
-	var args []any
-	var conditions []string
-
-	if projectID != 0 {
-		conditions = append(conditions, "le.project_id = ?")
-		args = append(args, projectID)
-	}
-	if levelMin > 0 {
-		conditions = append(conditions, "le.level_num >= ?")
-		args = append(args, levelMin)
-	}
-	if q != "" {
-		conditions = append(conditions, "le.message LIKE ?")
-		args = append(args, fmt.Sprintf("%%%s%%", q))
-	}
-	if beforeID > 0 {
-		conditions = append(conditions, "le.id < ?")
-		args = append(args, beforeID)
-	}
-
-	if len(conditions) == 0 {
-		return "", args
-	}
-	return "WHERE " + strings.Join(conditions, " AND "), args
-}
-
 // scanLogEntry reads one log row. A received_at that does not parse leaves the
 // time zero, and data_json that does not decode leaves Data nil.
 func scanLogEntry(rows *sql.Rows) (LogEntry, error) {
@@ -175,34 +145,5 @@ func scanLogEntry(rows *sql.Rows) (LogEntry, error) {
 func (s *LogStore) ListLogEntries(
 	ctx context.Context, projectID int64, levelMin int, q string, limit int, beforeID int64,
 ) ([]LogEntry, error) {
-	whereClause, args := logEntryWhere(projectID, levelMin, q, beforeID)
-
-	query := fmt.Sprintf(`
-		SELECT le.id, le.project_id, le.received_at, le.level_num, le.level, le.message, le.data_json, COALESCE(p.slug, '') AS project_slug
-		FROM log_entries le
-		LEFT JOIN projects p ON p.id = le.project_id
-		%s
-		ORDER BY le.id DESC
-		LIMIT ?
-	`, whereClause)
-	args = append(args, limit)
-
-	rows, err := s.readDB().QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, wrapErr(err, "list log entries")
-	}
-	defer rows.Close()
-
-	var entries []LogEntry
-	for rows.Next() {
-		e, err := scanLogEntry(rows)
-		if err != nil {
-			return nil, err
-		}
-		entries = append(entries, e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, wrapErr(err, "list log entries")
-	}
-	return entries, nil
+	return s.QueryLogEntries(ctx, LogQuery{ProjectID: projectID, LevelMin: levelMin, Q: q, BeforeID: beforeID}, limit)
 }

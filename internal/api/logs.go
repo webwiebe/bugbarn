@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/logparse"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // Bounds for the log-ingest endpoint. maxLogsBodyBytes falls back to this when
@@ -142,9 +144,42 @@ func (s *Server) writeLogReadError(w http.ResponseWriter, err error) bool {
 	return false
 }
 
-func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
+// logQueryFromRequest reads the explorer filters from the query string: level,
+// q, from, to (RFC 3339), before, and attr=key=value (repeatable, ANDed). The
+// project comes from the request context, as for every other read.
+func logQueryFromRequest(r *http.Request) (storage.LogQuery, error) {
 	projectID, _ := domain.ProjectIDFromContext(r.Context())
+	query := r.URL.Query()
+	q := storage.LogQuery{ProjectID: projectID, Q: query.Get("q")}
 
+	if v := query.Get("level"); v != "" {
+		q.LevelMin = logparse.LevelMinFromName(v)
+	}
+	if v := query.Get("before"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			q.BeforeID = n
+		}
+	}
+	for name, dst := range map[string]*time.Time{"from": &q.From, "to": &q.To} {
+		if v := query.Get(name); v != "" {
+			t, err := time.Parse(time.RFC3339Nano, v)
+			if err != nil {
+				return q, apperr.InvalidInput(name+" must be an RFC 3339 time", err)
+			}
+			*dst = t
+		}
+	}
+	for _, raw := range query["attr"] {
+		key, value, ok := strings.Cut(raw, "=")
+		if !ok || key == "" {
+			return q, apperr.InvalidInput("attr must be key=value", nil)
+		}
+		q.Attrs = append(q.Attrs, storage.LogAttrFilter{Key: key, Value: value})
+	}
+	return q, nil
+}
+
+func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 	limit := 200
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -155,21 +190,12 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	levelMin := 0
-	if v := r.URL.Query().Get("level"); v != "" {
-		levelMin = logparse.LevelMinFromName(v)
+	q, err := logQueryFromRequest(r)
+	if err != nil {
+		writeServiceError(w, err)
+		return
 	}
-
-	q := r.URL.Query().Get("q")
-
-	var beforeID int64
-	if v := r.URL.Query().Get("before"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			beforeID = n
-		}
-	}
-
-	entries, err := s.logs.List(r.Context(), projectID, levelMin, q, limit, beforeID)
+	entries, err := s.logs.Query(r.Context(), q, limit)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -184,6 +210,98 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 		"logs":        entries,
 		"next_cursor": nextCursor,
 	})
+}
+
+// logBucketSteps are the bucket widths the histogram picks from, so a chart
+// stays at or under logMaxBuckets bars with round edges.
+var logBucketSteps = []time.Duration{
+	10 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute, 15 * time.Minute,
+	30 * time.Minute, time.Hour, 2 * time.Hour, 6 * time.Hour, 24 * time.Hour,
+}
+
+const (
+	logTargetBuckets = 60
+	logMaxBuckets    = 200
+	logDefaultRange  = 24 * time.Hour
+)
+
+// pickLogBucket returns the smallest step that keeps the range under the
+// target bar count, or the requested width when it stays under the hard cap.
+func pickLogBucket(span time.Duration, requested time.Duration) (time.Duration, error) {
+	if requested > 0 {
+		if requested < time.Second || span/requested > logMaxBuckets {
+			return 0, apperr.InvalidInput("bucket must give at most 200 buckets over the range", nil)
+		}
+		return requested, nil
+	}
+	for _, step := range logBucketSteps {
+		if span/step <= logTargetBuckets {
+			return step, nil
+		}
+	}
+	return logBucketSteps[len(logBucketSteps)-1], nil
+}
+
+// serveLogsHistogram answers GET /api/v1/logs/histogram: entry counts per time
+// bucket and level over from..to (default: the last 24 hours) for the filters.
+func (s *Server) serveLogsHistogram(w http.ResponseWriter, r *http.Request) {
+	q, err := logQueryFromRequest(r)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if q.To.IsZero() {
+		q.To = time.Now().UTC().Truncate(time.Second).Add(time.Second)
+	}
+	if q.From.IsZero() {
+		q.From = q.To.Add(-logDefaultRange)
+	}
+	var requested time.Duration
+	if v := r.URL.Query().Get("bucket_seconds"); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 1 {
+			writeServiceError(w, apperr.InvalidInput("bucket_seconds must be a positive integer", perr))
+			return
+		}
+		requested = time.Duration(n) * time.Second
+	}
+	if !q.To.After(q.From) {
+		writeServiceError(w, apperr.InvalidInput("from must be before to", nil))
+		return
+	}
+	bucket, err := pickLogBucket(q.To.Sub(q.From), requested)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	h, err := s.logs.Histogram(r.Context(), q, bucket)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, h)
+}
+
+// serveLogsFacets answers GET /api/v1/logs/facets: the attribute keys of the
+// matching entries, or with key=<name> the top 10 values of that key.
+func (s *Server) serveLogsFacets(w http.ResponseWriter, r *http.Request) {
+	q, err := logQueryFromRequest(r)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if q.To.IsZero() {
+		q.To = time.Now().UTC().Truncate(time.Second).Add(time.Second)
+	}
+	if q.From.IsZero() {
+		q.From = q.To.Add(-logDefaultRange)
+	}
+	f, err := s.logs.Facets(r.Context(), q, r.URL.Query().Get("key"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, f)
 }
 
 func (s *Server) serveLogsStream(w http.ResponseWriter, r *http.Request) {

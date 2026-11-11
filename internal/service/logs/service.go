@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -17,6 +18,10 @@ import (
 type Repository interface {
 	InsertLogEntries(context.Context, []domain.LogEntry) error
 	ListLogEntries(ctx context.Context, projectID int64, levelMin int, query string, limit int, beforeID int64) ([]domain.LogEntry, error)
+	QueryLogEntries(ctx context.Context, q storage.LogQuery, limit int) ([]domain.LogEntry, error)
+	LogHistogram(ctx context.Context, q storage.LogQuery, bucket time.Duration) (storage.LogHistogram, error)
+	LogAttributeKeys(ctx context.Context, q storage.LogQuery) (storage.LogFacets, error)
+	LogAttributeValues(ctx context.Context, q storage.LogQuery, key string) (storage.LogFacets, error)
 }
 
 type Service struct {
@@ -133,4 +138,67 @@ func (s *Service) List(
 	}
 	span.SetAttributes(attribute.Int("count", len(entries)))
 	return entries, nil
+}
+
+// Query lists entries matching the explorer filters, newest first.
+func (s *Service) Query(ctx context.Context, q storage.LogQuery, limit int) ([]domain.LogEntry, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.logs.Query",
+		trace.WithAttributes(attribute.Int("attr_filters", len(q.Attrs))))
+	defer span.End()
+	entries, err := s.repo.QueryLogEntries(ctx, q, limit)
+	if err != nil {
+		return nil, s.readErr(ctx, span, "query log entries", q.ProjectID, err)
+	}
+	span.SetAttributes(attribute.Int("count", len(entries)))
+	return entries, nil
+}
+
+// Histogram counts entries per time bucket and level for the explorer filters.
+func (s *Service) Histogram(ctx context.Context, q storage.LogQuery, bucket time.Duration) (storage.LogHistogram, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.logs.Histogram",
+		trace.WithAttributes(attribute.Int("attr_filters", len(q.Attrs)), attribute.Int64("bucket_seconds", int64(bucket/time.Second))))
+	defer span.End()
+	h, err := s.repo.LogHistogram(ctx, q, bucket)
+	if err != nil {
+		return storage.LogHistogram{}, s.readErr(ctx, span, "log histogram", q.ProjectID, err)
+	}
+	return h, nil
+}
+
+// Facets lists the attribute keys of the matching entries, or, when key is set,
+// the top values of that key.
+func (s *Service) Facets(ctx context.Context, q storage.LogQuery, key string) (storage.LogFacets, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.logs.Facets",
+		trace.WithAttributes(attribute.Int("attr_filters", len(q.Attrs)), attribute.Bool("values", key != "")))
+	defer span.End()
+	var (
+		f   storage.LogFacets
+		err error
+	)
+	if key == "" {
+		f, err = s.repo.LogAttributeKeys(ctx, q)
+	} else {
+		f, err = s.repo.LogAttributeValues(ctx, q, key)
+	}
+	if err != nil {
+		return storage.LogFacets{}, s.readErr(ctx, span, "log facets", q.ProjectID, err)
+	}
+	return f, nil
+}
+
+// readErr reports a failed explorer read. Cancellations and bad input are the
+// caller's, so only an internal failure logs at error level.
+func (s *Service) readErr(ctx context.Context, span trace.Span, what string, projectID int64, err error) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		s.logger.InfoContext(ctx, what+" canceled", "project_id", projectID)
+	case errors.Is(err, apperr.ErrInvalidInput):
+		// A rejected filter is a client mistake.
+	case errors.Is(err, apperr.ErrUnavailable):
+		s.logger.WarnContext(ctx, what+" unavailable", "project_id", projectID, "error", err)
+	default:
+		tracing.SetError(span, err)
+		s.logger.ErrorContext(ctx, what, "project_id", projectID, "error", err)
+	}
+	return err
 }

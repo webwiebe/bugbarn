@@ -64,6 +64,8 @@ var routesCoveredElsewhere = map[string]string{
 	"/api/v1/facets":                  "prefix of the facets routes above",
 	"/api/v1/analytics/":              "prefix of the analytics routes above",
 	"/api/v1/logs/stream":             "SSE stream of the request's project",
+	"/api/v1/logs/histogram":          "TestLogExplorerEndpoints; same logQueryFromRequest project scope as /api/v1/logs",
+	"/api/v1/logs/facets":             "TestLogExplorerEndpoints; same logQueryFromRequest project scope as /api/v1/logs",
 	"/api/v1/events/stream":           "SSE stream of the request's project",
 	"/api/v1/events/timeline":         "aggregate counts of the request's project",
 	"/api/v1/live/events":             "events of the request's project",

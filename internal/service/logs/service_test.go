@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 type fakeRepo struct {
@@ -35,6 +37,34 @@ func (f *fakeRepo) ListLogEntries(_ context.Context, _ int64, _ int, _ string, _
 		return nil, f.err
 	}
 	return f.entries, nil
+}
+
+func (f *fakeRepo) QueryLogEntries(_ context.Context, _ storage.LogQuery, _ int) ([]domain.LogEntry, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.entries, nil
+}
+
+func (f *fakeRepo) LogHistogram(_ context.Context, _ storage.LogQuery, _ time.Duration) (storage.LogHistogram, error) {
+	if f.err != nil {
+		return storage.LogHistogram{}, f.err
+	}
+	return storage.LogHistogram{BucketSeconds: 60}, nil
+}
+
+func (f *fakeRepo) LogAttributeKeys(_ context.Context, _ storage.LogQuery) (storage.LogFacets, error) {
+	if f.err != nil {
+		return storage.LogFacets{}, f.err
+	}
+	return storage.LogFacets{}, nil
+}
+
+func (f *fakeRepo) LogAttributeValues(_ context.Context, _ storage.LogQuery, _ string) (storage.LogFacets, error) {
+	if f.err != nil {
+		return storage.LogFacets{}, f.err
+	}
+	return storage.LogFacets{}, nil
 }
 
 func TestInsert_Happy(t *testing.T) {
@@ -179,5 +209,37 @@ func TestList_Happy(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Errorf("entries: got %d, want 2", len(got))
+	}
+}
+
+func TestExplorerReads_PassThroughAndFail(t *testing.T) {
+	t.Parallel()
+
+	ok := New(&fakeRepo{entries: []domain.LogEntry{{Message: "a"}}}, nil)
+	got, err := ok.Query(context.Background(), storage.LogQuery{ProjectID: 1}, 10)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Query: got %v, %v", got, err)
+	}
+	h, err := ok.Histogram(context.Background(), storage.LogQuery{ProjectID: 1}, time.Minute)
+	if err != nil || h.BucketSeconds != 60 {
+		t.Fatalf("Histogram: got %+v, %v", h, err)
+	}
+	if _, err := ok.Facets(context.Background(), storage.LogQuery{ProjectID: 1}, ""); err != nil {
+		t.Fatalf("Facets keys: %v", err)
+	}
+	if _, err := ok.Facets(context.Background(), storage.LogQuery{ProjectID: 1}, "user"); err != nil {
+		t.Fatalf("Facets values: %v", err)
+	}
+
+	boom := errors.New("boom")
+	bad := New(&fakeRepo{err: boom}, nil)
+	if _, err := bad.Query(context.Background(), storage.LogQuery{}, 10); err == nil {
+		t.Error("Query: want error")
+	}
+	if _, err := bad.Histogram(context.Background(), storage.LogQuery{}, time.Minute); err == nil {
+		t.Error("Histogram: want error")
+	}
+	if _, err := bad.Facets(context.Background(), storage.LogQuery{}, ""); err == nil {
+		t.Error("Facets: want error")
 	}
 }

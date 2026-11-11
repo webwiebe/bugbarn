@@ -795,6 +795,9 @@ Query stored log entries.
 | `q` | — | Full-text search query against log messages. |
 | `limit` | 200 | Maximum entries to return (capped at 500). |
 | `before` | — | Return entries with ID less than this value (pagination cursor). |
+| `from` | — | Only entries received at or after this RFC 3339 time. |
+| `to` | — | Only entries received before this RFC 3339 time. |
+| `attr` | — | Attribute filter `key=value`, repeatable; all filters must match (AND). `key` is a top-level attribute of the entry. |
 
 **Response:**
 ```json
@@ -805,6 +808,36 @@ Query stored log entries.
 ```
 
 Pass `next_cursor` as `before` in the next request to page backwards through older entries.
+
+---
+
+#### GET /api/v1/logs/histogram
+
+Entry counts per time bucket and level over `from`..`to` (default: the last 24 hours), for the same filters as `GET /api/v1/logs` (`level`, `q`, `attr`).
+
+| Parameter | Default | Description |
+|---|---|---|
+| `bucket_seconds` | derived from the range | Bucket width. At most 200 buckets over the range, else `400`. |
+
+**Response:**
+```json
+{"from": "...", "to": "...", "bucket_seconds": 300,
+ "buckets": [{"start": "...", "counts": {"info": 12, "error": 1}}],
+ "truncated": false}
+```
+
+`truncated` is true when the scan window (the newest 200000 log rows) starts after `from`, so older rows in the range are not counted.
+
+---
+
+#### GET /api/v1/logs/facets
+
+Without `key`: the attribute keys present in the matching entries, most common first (up to 50). With `key`: the top 10 values of that attribute with their counts. Takes the same filters and time range as the histogram.
+
+**Response:**
+```json
+{"key": "user", "items": [{"value": "u1", "count": 40}], "truncated": false}
+```
 
 ---
 
