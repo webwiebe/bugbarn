@@ -228,6 +228,52 @@ func isoWeekNumber(t time.Time) int {
 	return (dayOfYear + jan1DOW) / 7
 }
 
+// pageViewProjectID resolves the project a page view belongs to from the
+// X-BugBarn-Project header or the project query parameter, falling back to the
+// default project.
+func (s *Server) pageViewProjectID(r *http.Request) int64 {
+	slug := r.Header.Get("X-BugBarn-Project")
+	if slug == "" {
+		slug = r.URL.Query().Get("project")
+	}
+	if slug != "" {
+		if proj, err := s.projects.Ensure(r.Context(), slug); err == nil && proj.ID != 0 {
+			return proj.ID
+		}
+	}
+	return s.projects.DefaultProjectID()
+}
+
+// splitReferrer returns the host and path of a referrer URL, or empty strings
+// when it is blank or does not parse.
+func splitReferrer(referrer string) (host, path string) {
+	if referrer == "" {
+		return "", ""
+	}
+	u, err := url.Parse(referrer)
+	if err != nil {
+		return "", ""
+	}
+	return u.Host, u.Path
+}
+
+// capPageViewProps keeps at most 10 props and cuts each value to 200 bytes.
+func capPageViewProps(in map[string]string) map[string]string {
+	props := make(map[string]string, len(in))
+	count := 0
+	for k, v := range in {
+		if count >= 10 {
+			break
+		}
+		if len(v) > 200 {
+			v = v[:200]
+		}
+		props[k] = v
+		count++
+	}
+	return props
+}
+
 func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
 	if err != nil {
@@ -259,41 +305,9 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-
-	var projectID int64
-	slug := r.Header.Get("X-BugBarn-Project")
-	if slug == "" {
-		slug = r.URL.Query().Get("project")
-	}
-	if slug != "" {
-		if proj, err := s.projects.Ensure(ctx, slug); err == nil {
-			projectID = proj.ID
-		}
-	}
-	if projectID == 0 {
-		projectID = s.projects.DefaultProjectID()
-	}
-
-	var referrerHost, referrerPath string
-	if payload.Referrer != "" {
-		if u, err := url.Parse(payload.Referrer); err == nil {
-			referrerHost = u.Host
-			referrerPath = u.Path
-		}
-	}
-
-	props := make(map[string]string, len(payload.Props))
-	count := 0
-	for k, v := range payload.Props {
-		if count >= 10 {
-			break
-		}
-		if len(v) > 200 {
-			v = v[:200]
-		}
-		props[k] = v
-		count++
-	}
+	projectID := s.pageViewProjectID(r)
+	referrerHost, referrerPath := splitReferrer(payload.Referrer)
+	props := capPageViewProps(payload.Props)
 
 	pv := analytics.PageView{
 		ProjectID:        projectID,
