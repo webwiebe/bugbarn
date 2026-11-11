@@ -17,6 +17,33 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
+const issueEventCols = `e.id, e.issue_id, e.fingerprint, e.fingerprint_material, e.fingerprint_explanation_json,
+       e.received_at, e.observed_at, e.severity, e.message, e.regressed, e.event_json,
+       i.issue_number, COALESCE(p.issue_prefix, '')`
+
+const issueEventJoin = ` FROM events e
+JOIN issues i ON i.id = e.issue_id
+JOIN projects p ON p.id = i.project_id`
+
+// issueEventsWhere builds the WHERE clause and arguments of ListIssueEvents:
+// the issue, the project when one is set, and events older than beforeID when
+// it is positive.
+func issueEventsWhere(projectID, issueRowID, beforeID int64) (string, []any) {
+	var conds []string
+	var args []any
+	if projectID != 0 {
+		conds = append(conds, "e.project_id = ?")
+		args = append(args, projectID)
+	}
+	conds = append(conds, "e.issue_id = ?")
+	args = append(args, issueRowID)
+	if beforeID > 0 {
+		conds = append(conds, "e.id < ?")
+		args = append(args, beforeID)
+	}
+	return "\nWHERE " + strings.Join(conds, " AND "), args
+}
+
 func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]Event, bool, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListIssueEvents")
 	defer span.End()
@@ -38,39 +65,9 @@ func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit 
 	// Fetch one extra row to know whether there are more pages.
 	fetch := limit + 1
 
-	const eventCols = `e.id, e.issue_id, e.fingerprint, e.fingerprint_material, e.fingerprint_explanation_json,
-       e.received_at, e.observed_at, e.severity, e.message, e.regressed, e.event_json,
-       i.issue_number, COALESCE(p.issue_prefix, '')`
-	const eventJoin = ` FROM events e
-JOIN issues i ON i.id = e.issue_id
-JOIN projects p ON p.id = i.project_id`
-
-	var rows *sql.Rows
-	if projectID != 0 {
-		if beforeID > 0 {
-			rows, err = s.readDB().QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
-WHERE e.project_id = ? AND e.issue_id = ? AND e.id < ?
-ORDER BY e.id DESC LIMIT ?`,
-				projectID, rowID, beforeID, fetch)
-		} else {
-			rows, err = s.readDB().QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
-WHERE e.project_id = ? AND e.issue_id = ?
-ORDER BY e.id DESC LIMIT ?`,
-				projectID, rowID, fetch)
-		}
-	} else {
-		if beforeID > 0 {
-			rows, err = s.readDB().QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
-WHERE e.issue_id = ? AND e.id < ?
-ORDER BY e.id DESC LIMIT ?`,
-				rowID, beforeID, fetch)
-		} else {
-			rows, err = s.readDB().QueryContext(ctx, `SELECT `+eventCols+eventJoin+`
-WHERE e.issue_id = ?
-ORDER BY e.id DESC LIMIT ?`,
-				rowID, fetch)
-		}
-	}
+	where, args := issueEventsWhere(projectID, rowID, beforeID)
+	rows, err := s.readDB().QueryContext(ctx, `SELECT `+issueEventCols+issueEventJoin+where+`
+ORDER BY e.id DESC LIMIT ?`, append(args, fetch)...)
 	if err != nil {
 		return nil, false, err
 	}
