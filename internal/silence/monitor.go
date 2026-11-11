@@ -2,6 +2,11 @@
 // reporting. A broken reporter and a healthy product look the same from the
 // error list alone, so the rule is narrow: several distinct issues were active
 // in the lookback window and none has been seen for the silence period.
+//
+// rules.go holds the revised rules from bugbarn#252: a log rule and an event
+// rule judged separately, with the key signal as evidence only. They run in dry
+// run, logging what would fire; filing an issue per silent project is a later
+// step after a week of those lines.
 package silence
 
 import (
