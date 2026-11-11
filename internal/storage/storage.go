@@ -307,16 +307,11 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 	}
 	span.SetAttributes(attribute.Int64("project_id", projectID))
 
-	_, upsertSpan := tracing.Tracer().Start(ctx, "storage.UpsertIssue")
-	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
+	issue, issueID, regressed, err := s.upsertIssueTraced(ctx, projectID, processed)
 	if err != nil {
-		upsertSpan.SetStatus(codes.Error, err.Error())
-		upsertSpan.End()
 		span.SetStatus(codes.Error, err.Error())
 		return Issue{}, Event{}, false, false, err
 	}
-	upsertSpan.SetAttributes(attribute.String("issue_id", issue.ID), attribute.Bool("regressed", regressed))
-	upsertSpan.End()
 
 	// The upsert works entirely from the numeric project id, so the returned
 	// issue carries no project slug. Populate it here so every consumer of the
@@ -325,12 +320,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 	issue.ProjectSlug = s.projectSlugByID(ctx, projectID)
 
 	if regressed {
-		if _, rerr := s.db.ExecContext(ctx,
-			`INSERT INTO regression_events (project_id, issue_id, regressed_at) VALUES (?, ?, ?)`,
-			projectID, issueID, formatTime(issue.LastRegressedAt),
-		); rerr != nil {
-			slog.WarnContext(ctx, "storage: failed to record regression_event", "error", rerr)
-		}
+		s.recordRegression(ctx, projectID, issueID, issue.LastRegressedAt)
 	}
 
 	isNew := issue.EventCount == 1 && !regressed
@@ -371,6 +361,30 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 
 	span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
 	return issue, eventRow, isNew, regressed, nil
+}
+
+// upsertIssueTraced runs upsertIssue under its own span.
+func (s *core) upsertIssueTraced(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
+	_, span := tracing.Tracer().Start(ctx, "storage.UpsertIssue")
+	defer span.End()
+	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return Issue{}, 0, false, err
+	}
+	span.SetAttributes(attribute.String("issue_id", issue.ID), attribute.Bool("regressed", regressed))
+	return issue, issueID, regressed, nil
+}
+
+// recordRegression writes the regression_events row. It is best-effort: a
+// failure is logged and does not fail the persist.
+func (s *core) recordRegression(ctx context.Context, projectID, issueID int64, at time.Time) {
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO regression_events (project_id, issue_id, regressed_at) VALUES (?, ?, ?)`,
+		projectID, issueID, formatTime(at),
+	); err != nil {
+		slog.WarnContext(ctx, "storage: failed to record regression_event", "error", err)
+	}
 }
 
 // persistFacetsFor writes both facet projections for an issue: the flattened
