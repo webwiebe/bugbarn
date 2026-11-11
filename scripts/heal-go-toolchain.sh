@@ -1,7 +1,7 @@
 #!/bin/sh
 # Removes a half-extracted Go toolchain from GOMODCACHE.
 #
-# go.mod pins `toolchain go1.27.3`, and the runners' Go is older, so every
+# go.mod pins `toolchain go1.27.4`, and the runners' Go is older, so every
 # `go` call switches to the toolchain extracted under
 # $GOMODCACHE/golang.org/toolchain@v0.0.1-go<ver>.<os>-<arch>. A disk-full or
 # a janitor sweep can leave that directory with bin/, lib/, pkg/ and src/ but
