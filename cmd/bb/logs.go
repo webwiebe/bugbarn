@@ -104,23 +104,11 @@ func streamLogs(client *Client, level, project string, noColor bool) error {
 	)
 	defer span.End()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.base+path, nil)
+	req, err := newStreamRequest(ctx, client, path)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-
-	if client.project != "" {
-		req.Header.Set("X-BugBarn-Project", client.project)
-	}
-	switch client.config.Auth.Type {
-	case "apikey":
-		req.Header.Set("X-BugBarn-API-Key", client.config.Auth.APIKey)
-	case "session":
-		req.AddCookie(&http.Cookie{Name: "bugbarn_session", Value: client.config.Auth.SessionToken})
-	}
-
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	resp, err := client.http.Do(req)
 	if err != nil {
@@ -156,29 +144,50 @@ func streamLogs(client *Client, level, project string, noColor bool) error {
 			return nil
 		}
 
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
+		printStreamLine(scanner.Text(), levelMin, project, noColor)
+	}
+}
 
-		raw := line[6:]
-		var entry logEntry
-		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
-			continue
-		}
+// newStreamRequest builds the authenticated, trace-propagating GET for the log stream.
+func newStreamRequest(ctx context.Context, client *Client, path string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if client.project != "" {
+		req.Header.Set("X-BugBarn-Project", client.project)
+	}
+	switch client.config.Auth.Type {
+	case "apikey":
+		req.Header.Set("X-BugBarn-API-Key", client.config.Auth.APIKey)
+	case "session":
+		req.AddCookie(&http.Cookie{Name: "bugbarn_session", Value: client.config.Auth.SessionToken})
+	}
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	return req, nil
+}
 
-		if levelMin > 0 && entry.LevelNum < levelMin {
-			continue
-		}
-		if project != "" && entry.ProjectSlug != project {
-			continue
-		}
-
-		if noColor {
-			fmt.Println(raw)
-		} else {
-			printLogEntry(entry, "")
-		}
+// printStreamLine prints one SSE line when it is a data line that passes the
+// level and project filters; every other line is skipped.
+func printStreamLine(line string, levelMin int, project string, noColor bool) {
+	raw, ok := strings.CutPrefix(line, "data: ")
+	if !ok {
+		return
+	}
+	var entry logEntry
+	if err := json.Unmarshal([]byte(raw), &entry); err != nil {
+		return
+	}
+	if levelMin > 0 && entry.LevelNum < levelMin {
+		return
+	}
+	if project != "" && entry.ProjectSlug != project {
+		return
+	}
+	if noColor {
+		fmt.Println(raw)
+	} else {
+		printLogEntry(entry, "")
 	}
 }
 

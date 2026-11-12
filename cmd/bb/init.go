@@ -256,6 +256,39 @@ func (m initModel) View() string {
 	return b.String()
 }
 
+// saveInitChoice writes the chosen group or project to the local config and
+// reports it: a line on stderr for the person, JSON on stdout for scripts. kind is
+// "group" or "project".
+func saveInitChoice(kind, slug string) error {
+	lc := LocalConfig{Project: slug}
+	if kind == "group" {
+		lc = LocalConfig{Group: slug}
+	}
+	if err := saveLocalConfig(lc); err != nil {
+		return fmt.Errorf("write %s: %w", localConfigFile, err)
+	}
+	fmt.Fprintf(os.Stderr, "%s set to %q — saved to %s\n", strings.ToUpper(kind[:1])+kind[1:], slug, localConfigFile)
+	writeOut(map[string]any{"ok": true, kind: slug, "file": localConfigFile})
+	return nil
+}
+
+// pickInteractively runs the picker and returns the kind ("group" or "project")
+// and slug the person chose; slug is empty when they quit without choosing.
+func pickInteractively(client *Client) (kind, slug string, err error) {
+	result, err := tea.NewProgram(newInitModel(client)).Run()
+	if err != nil {
+		return "", "", err
+	}
+	final := result.(initModel)
+	if final.err != nil {
+		return "", "", final.err
+	}
+	if final.chosenIsGroup {
+		return "group", final.chosen, nil
+	}
+	return "project", final.chosen, nil
+}
+
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	projectFlag := fs.String("project", "", "project slug (skip interactive picker)")
@@ -278,12 +311,7 @@ func cmdInit(args []string) error {
 		if err := validateGroup(client, *groupFlag); err != nil {
 			return err
 		}
-		if err := saveLocalConfig(LocalConfig{Group: *groupFlag}); err != nil {
-			return fmt.Errorf("write %s: %w", localConfigFile, err)
-		}
-		fmt.Fprintf(os.Stderr, "Group set to %q — saved to %s\n", *groupFlag, localConfigFile)
-		writeOut(map[string]any{"ok": true, "group": *groupFlag, "file": localConfigFile})
-		return nil
+		return saveInitChoice("group", *groupFlag)
 	}
 
 	// Non-interactive: --project flag
@@ -291,45 +319,12 @@ func cmdInit(args []string) error {
 		if err := validateProject(client, *projectFlag); err != nil {
 			return err
 		}
-		if err := saveLocalConfig(LocalConfig{Project: *projectFlag}); err != nil {
-			return fmt.Errorf("write %s: %w", localConfigFile, err)
-		}
-		fmt.Fprintf(os.Stderr, "Project set to %q — saved to %s\n", *projectFlag, localConfigFile)
-		writeOut(map[string]any{"ok": true, "project": *projectFlag, "file": localConfigFile})
-		return nil
+		return saveInitChoice("project", *projectFlag)
 	}
 
-	// Interactive picker
-	m := newInitModel(client)
-	p := tea.NewProgram(m)
-	result, err := p.Run()
-	if err != nil {
+	kind, slug, err := pickInteractively(client)
+	if err != nil || slug == "" {
 		return err
 	}
-
-	final := result.(initModel)
-	if final.err != nil {
-		return final.err
-	}
-	if final.chosen == "" {
-		return nil
-	}
-
-	var lc LocalConfig
-	var kind, slug string
-	if final.chosenIsGroup {
-		lc = LocalConfig{Group: final.chosen}
-		kind, slug = "Group", final.chosen
-	} else {
-		lc = LocalConfig{Project: final.chosen}
-		kind, slug = "Project", final.chosen
-	}
-
-	if err := saveLocalConfig(lc); err != nil {
-		return fmt.Errorf("write %s: %w", localConfigFile, err)
-	}
-
-	fmt.Fprintf(os.Stderr, "%s set to %q — saved to %s\n", kind, slug, localConfigFile)
-	writeOut(map[string]any{"ok": true, strings.ToLower(kind): slug, "file": localConfigFile})
-	return nil
+	return saveInitChoice(kind, slug)
 }

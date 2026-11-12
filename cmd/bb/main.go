@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,10 +12,53 @@ var (
 	BuildTime = "unknown"
 )
 
+// commands maps each subcommand to its entry point; each takes the arguments
+// after the subcommand name.
+var commands = map[string]func(args []string) error{
+	"init":        cmdInit,
+	"login":       cmdLogin,
+	"issues":      cmdIssues,
+	"tui":         cmdTUI,
+	"logs":        cmdLogs,
+	"issue":       cmdIssue,
+	"events":      cmdEvents,
+	"vibe":        cmdVibe,
+	"resolve":     cmdResolve,
+	"reopen":      cmdReopen,
+	"mute":        cmdMute,
+	"unmute":      cmdUnmute,
+	"projects":    cmdProjects,
+	"monitors":    cmdMonitors,
+	"groups":      cmdGroups,
+	"apikeys":     cmdAPIKeys,
+	"key-request": cmdKeyRequest,
+}
+
 func main() {
-	if len(os.Args) < 2 {
+	os.Exit(runCommand(os.Args))
+}
+
+// runCommand executes the command named by args[1] and returns the process exit code.
+func runCommand(args []string) int {
+	if len(args) < 2 {
 		printUsage()
-		os.Exit(1)
+		return 1
+	}
+
+	switch args[1] {
+	case "version", "--version", "-v":
+		fmt.Printf("bb %s (built %s)\n", Version, BuildTime)
+		return 0
+	case "help", "--help", "-h":
+		printUsage()
+		return 0
+	}
+
+	command, ok := commands[args[1]]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", args[1])
+		printUsage()
+		return 1
 	}
 
 	// Init telemetry early (no-ops if config missing or opted out).
@@ -23,62 +67,13 @@ func main() {
 		defer shutdownTelemetry()
 	}
 
-	var err error
-	switch os.Args[1] {
-	case "init":
-		err = cmdInit(os.Args[2:])
-	case "login":
-		err = cmdLogin(os.Args[2:])
-	case "issues":
-		err = cmdIssues(os.Args[2:])
-	case "tui":
-		err = cmdTUI(os.Args[2:])
-	case "logs":
-		err = cmdLogs(os.Args[2:])
-	case "issue":
-		err = cmdIssue(os.Args[2:])
-	case "events":
-		err = cmdEvents(os.Args[2:])
-	case "vibe":
-		err = cmdVibe(os.Args[2:])
-	case "resolve":
-		err = cmdResolve(os.Args[2:])
-	case "reopen":
-		err = cmdReopen(os.Args[2:])
-	case "mute":
-		err = cmdMute(os.Args[2:])
-	case "unmute":
-		err = cmdUnmute(os.Args[2:])
-	case "projects":
-		err = cmdProjects(os.Args[2:])
-	case "monitors":
-		err = cmdMonitors(os.Args[2:])
-	case "groups":
-		err = cmdGroups(os.Args[2:])
-	case "apikeys":
-		err = cmdAPIKeys(os.Args[2:])
-	case "key-request":
-		err = cmdKeyRequest(os.Args[2:])
-	case "version", "--version", "-v":
-		fmt.Printf("bb %s (built %s)\n", Version, BuildTime)
-		return
-	case "help", "--help", "-h":
-		printUsage()
-		return
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", os.Args[1])
-		printUsage()
-		os.Exit(1)
+	err := command(args[2:])
+	if err == nil || errors.Is(err, flag.ErrHelp) {
+		return 0
 	}
-
-	if err != nil {
-		if err == flag.ErrHelp {
-			return
-		}
-		reportError(err)
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
+	reportError(err)
+	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	return 1
 }
 
 func printUsage() {

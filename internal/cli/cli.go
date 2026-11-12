@@ -142,55 +142,59 @@ func RunAPIKey(cfg config.Config, args []string) error {
 	}
 	switch args[0] {
 	case "create":
-		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
-		projectSlug := fs.String("project", "default", "project slug")
-		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", storage.APIKeyScopeFull, "key scope: full, ingest, or read")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		*name = strings.TrimSpace(*name)
-		if *name == "" {
-			return fmt.Errorf("--name is required")
-		}
-		if *scope != storage.APIKeyScopeFull && *scope != storage.APIKeyScopeIngest && *scope != storage.APIKeyScopeRead {
-			return fmt.Errorf("--scope must be %q, %q, or %q", storage.APIKeyScopeFull, storage.APIKeyScopeIngest, storage.APIKeyScopeRead)
-		}
-		store, err := storage.Open(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = store.Close() }()
-		ctx := context.Background()
-		project, err := store.ProjectBySlug(ctx, *projectSlug)
-		if err != nil {
-			// Auto-create the project if it doesn't exist yet.
-			project, err = store.CreateProject(ctx, *projectSlug, *projectSlug)
-			if err != nil {
-				return fmt.Errorf("create project %q: %w", *projectSlug, err)
-			}
-			fmt.Printf("Project %q created automatically.\n", *projectSlug)
-		}
-		// Generate a 32-byte random key.
-		var raw [32]byte
-		if _, err := rand.Read(raw[:]); err != nil {
-			return fmt.Errorf("generate key: %w", err)
-		}
-		plaintext := hex.EncodeToString(raw[:])
-		sum := sha256.Sum256([]byte(plaintext))
-		keySHA256 := hex.EncodeToString(sum[:])
-
-		key, err := store.CreateAPIKey(ctx, *name, project.ID, keySHA256, *scope)
-		if err != nil {
-			return fmt.Errorf("create api key: %w", err)
-		}
-		trackCLIEvent(cfg, "api_key_created", map[string]any{"scope": key.Scope, "project_slug": project.Slug})
-		fmt.Printf("API key created (id=%d, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
-		fmt.Printf("Key (shown once, store securely): %s\n", plaintext)
-		return nil
+		return createAPIKey(cfg, args[1:])
 	default:
 		return fmt.Errorf("unknown apikey subcommand %q", args[0])
 	}
+}
+
+func createAPIKey(cfg config.Config, args []string) error {
+	fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
+	projectSlug := fs.String("project", "default", "project slug")
+	name := fs.String("name", "", "key name/label")
+	scope := fs.String("scope", storage.APIKeyScopeFull, "key scope: full, ingest, or read")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	*name = strings.TrimSpace(*name)
+	if *name == "" {
+		return fmt.Errorf("--name is required")
+	}
+	if *scope != storage.APIKeyScopeFull && *scope != storage.APIKeyScopeIngest && *scope != storage.APIKeyScopeRead {
+		return fmt.Errorf("--scope must be %q, %q, or %q", storage.APIKeyScopeFull, storage.APIKeyScopeIngest, storage.APIKeyScopeRead)
+	}
+	store, err := storage.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+	ctx := context.Background()
+	project, err := store.ProjectBySlug(ctx, *projectSlug)
+	if err != nil {
+		// Auto-create the project if it doesn't exist yet.
+		project, err = store.CreateProject(ctx, *projectSlug, *projectSlug)
+		if err != nil {
+			return fmt.Errorf("create project %q: %w", *projectSlug, err)
+		}
+		fmt.Printf("Project %q created automatically.\n", *projectSlug)
+	}
+	// Generate a 32-byte random key.
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Errorf("generate key: %w", err)
+	}
+	plaintext := hex.EncodeToString(raw[:])
+	sum := sha256.Sum256([]byte(plaintext))
+	keySHA256 := hex.EncodeToString(sum[:])
+
+	key, err := store.CreateAPIKey(ctx, *name, project.ID, keySHA256, *scope)
+	if err != nil {
+		return fmt.Errorf("create api key: %w", err)
+	}
+	trackCLIEvent(cfg, "api_key_created", map[string]any{"scope": key.Scope, "project_slug": project.Slug})
+	fmt.Printf("API key created (id=%d, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
+	fmt.Printf("Key (shown once, store securely): %s\n", plaintext)
+	return nil
 }
 
 // toSlug converts a display name to a URL-safe slug.
