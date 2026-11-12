@@ -1,0 +1,89 @@
+{
+  "attribute-overrides-resource": {
+    "explanation": [
+      "exception.type=e",
+      "context.environment=prod"
+    ],
+    "fingerprint": "79f144e146188d87d8bce862efe28330fc88627853b19e6dceea1987368f47e2",
+    "material": "{\"exceptionType\":\"e\",\"context\":{\"environment\":\"prod\"}}"
+  },
+  "empty": {
+    "explanation": [],
+    "fingerprint": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "material": "{}"
+  },
+  "full": {
+    "explanation": [
+      "exception.type=typeerror",
+      "exception.message=cannot read \u003cid\u003e at https://shop.example.com/\u003cpath\u003e",
+      "stacktrace=app/billing:charge:c:/src/billing/:num/charge.go",
+      "stacktrace=run:/srv/app/worker.js",
+      "context.environment=prod",
+      "context.http.method=get",
+      "context.http.route=/users/:id",
+      "context.http.status_code=\u003cnum\u003e",
+      "context.service.name=api"
+    ],
+    "fingerprint": "3086a5523800a9e3c7e4b686df7ada1c68b1f765bb65c0eb6ea57c80871f1a8a",
+    "material": "{\"exceptionType\":\"typeerror\",\"message\":\"cannot read \\u003cid\\u003e at https://shop.example.com/\\u003cpath\\u003e\",\"stacktrace\":[\"app/billing:charge:c:/src/billing/:num/charge.go\",\"run:/srv/app/worker.js\"],\"context\":{\"environment\":\"prod\",\"http.method\":\"get\",\"http.route\":\"/users/:id\",\"http.status_code\":\"\\u003cnum\\u003e\",\"service.name\":\"api\"}}"
+  },
+  "message-fallback": {
+    "explanation": [
+      "exception.message=timeout after \u003cnum\u003e seconds on \u003cip\u003e"
+    ],
+    "fingerprint": "ac03657e5f42e95ee61c3428a03781908acbdf829cf03f24ea64c24de64bed1a",
+    "material": "{\"message\":\"timeout after \\u003cnum\\u003e seconds on \\u003cip\\u003e\"}"
+  },
+  "path-valued-service": {
+    "explanation": [
+      "exception.type=e",
+      "context.service.name=\u003cpath\u003e",
+      "context.service.namespace=https://h.example/\u003cpath\u003e"
+    ],
+    "fingerprint": "1d5c4e7191fd46a0eb4db47653ee1b2162bfa8c15fa9affc549bca4e1805bef7",
+    "material": "{\"exceptionType\":\"e\",\"context\":{\"service.name\":\"\\u003cpath\\u003e\",\"service.namespace\":\"https://h.example/\\u003cpath\\u003e\"}}"
+  },
+  "raw-ignored-with-stack": {
+    "explanation": [
+      "stacktrace=app/billing:charge:c:/src/billing/:num/charge.go"
+    ],
+    "fingerprint": "a5afd68f53c3af5afd69b88b9e3083382d710a98c4df8831095c1be6de013308",
+    "material": "{\"stacktrace\":[\"app/billing:charge:c:/src/billing/:num/charge.go\"]}"
+  },
+  "raw-name-message": {
+    "explanation": [
+      "exception.type=unhandledrejection",
+      "exception.message=boom \u003cnum\u003e"
+    ],
+    "fingerprint": "f2ac1ba4377360f449b4bf68762c1c5d3d6223e4b80fae3ce4baaf4c472be5e2",
+    "material": "{\"exceptionType\":\"unhandledrejection\",\"message\":\"boom \\u003cnum\\u003e\"}"
+  },
+  "raw-name-only": {
+    "explanation": [
+      "exception.type=securityerror"
+    ],
+    "fingerprint": "be019c31bfa313501bcca04b890b8a8f2e1a29c471de71ca86e7b1eb96b0d47d",
+    "material": "{\"exceptionType\":\"securityerror\"}"
+  },
+  "raw-source-only": {
+    "explanation": [
+      "exception.type=error",
+      "exception.message=https://x.example/\u003cpath\u003e"
+    ],
+    "fingerprint": "13cb392e53f522d48fe9fce92ae3413caea1bbc43f5a1c79e31fe33fa5795f17",
+    "material": "{\"exceptionType\":\"error\",\"message\":\"https://x.example/\\u003cpath\\u003e\"}"
+  },
+  "scalars": {
+    "explanation": [
+      "exception.type=e",
+      "context.environment=true",
+      "context.list[\u003cnum\u003e].status_code=\u003cnum\u003e",
+      "context.route=/a/b",
+      "context.service.name=svc",
+      "context.service.namespace=ns",
+      "context.status_code=\u003cnum\u003e"
+    ],
+    "fingerprint": "c2d6920ffae4911a802d27dfc6a50d2114adba029fed06d94d4fb790cc5856aa",
+    "material": "{\"exceptionType\":\"e\",\"context\":{\"environment\":\"true\",\"list[\\u003cnum\\u003e].status_code\":\"\\u003cnum\\u003e\",\"route\":\"/a/b\",\"service.name\":\"svc\",\"service.namespace\":\"ns\",\"status_code\":\"\\u003cnum\\u003e\"}}"
+  }
+}

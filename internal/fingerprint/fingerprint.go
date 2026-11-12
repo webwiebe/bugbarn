@@ -80,43 +80,20 @@ func Explanation(evt event.Event) []string {
 }
 
 func SnapshotFor(evt event.Event) Snapshot {
-	normalizedExceptionType := normalize(evt.Exception.Type)
-	normalizedMessage := normalizeMessage(evt.Exception.Message)
-	if normalizedMessage == "" {
-		normalizedMessage = normalizeMessage(evt.Message)
-	}
-
-	// When exception is empty but rawScrubbed has data, use it as fallback
-	// for fingerprinting. This handles browser errors like promise rejections
-	// and cross-origin errors that arrive with exception: {}.
-	if normalizedExceptionType == "" && normalizedMessage == "" && len(evt.Exception.Stacktrace) == 0 {
-		if raw := rawScrubbedFallback(evt.RawScrubbed); raw.name != "" || raw.message != "" {
-			normalizedExceptionType = normalize(raw.name)
-			normalizedMessage = normalizeMessage(raw.message)
-			if normalizedMessage == "" {
-				normalizedMessage = normalizeMessage(raw.source)
-			}
-		}
-	}
+	exceptionType, message := headline(evt)
 
 	frameParts := make([]string, 0, len(evt.Exception.Stacktrace))
 	explanation := make([]string, 0, 8+len(evt.Exception.Stacktrace))
 
-	if normalizedExceptionType != "" {
-		explanation = append(explanation, "exception.type="+normalizedExceptionType)
+	if exceptionType != "" {
+		explanation = append(explanation, "exception.type="+exceptionType)
 	}
-	if normalizedMessage != "" {
-		explanation = append(explanation, "exception.message="+normalizedMessage)
+	if message != "" {
+		explanation = append(explanation, "exception.message="+message)
 	}
 
 	for _, frame := range evt.Exception.Stacktrace {
-		parts := []string{
-			normalize(frame.Module),
-			normalize(frame.Function),
-			normalizePath(frame.File),
-		}
-		frameValue := strings.Join(trimEmpty(parts), ":")
-		if frameValue != "" {
+		if frameValue := frameKey(frame); frameValue != "" {
 			frameParts = append(frameParts, frameValue)
 			explanation = append(explanation, "stacktrace="+frameValue)
 		}
@@ -128,8 +105,8 @@ func SnapshotFor(evt event.Event) Snapshot {
 	}
 
 	payload := material{
-		ExceptionType: normalizedExceptionType,
-		Message:       normalizedMessage,
+		ExceptionType: exceptionType,
+		Message:       message,
 		Stacktrace:    frameParts,
 		Context:       context,
 	}
@@ -139,6 +116,40 @@ func SnapshotFor(evt event.Event) Snapshot {
 		Material:    string(materialJSON),
 		Explanation: explanation,
 	}
+}
+
+// headline returns the normalised exception type and message. The message falls
+// back to the event message. When the exception is empty but rawScrubbed has
+// data, that is the fallback instead: it covers browser errors such as promise
+// rejections and cross-origin errors that arrive with exception: {}.
+func headline(evt event.Event) (exceptionType, message string) {
+	exceptionType = normalize(evt.Exception.Type)
+	message = normalizeMessage(evt.Exception.Message)
+	if message == "" {
+		message = normalizeMessage(evt.Message)
+	}
+	if exceptionType != "" || message != "" || len(evt.Exception.Stacktrace) != 0 {
+		return exceptionType, message
+	}
+	raw := rawScrubbedFallback(evt.RawScrubbed)
+	if raw.name == "" && raw.message == "" {
+		return exceptionType, message
+	}
+	exceptionType = normalize(raw.name)
+	message = normalizeMessage(raw.message)
+	if message == "" {
+		message = normalizeMessage(raw.source)
+	}
+	return exceptionType, message
+}
+
+// frameKey is one stack frame as "module:function:file", empty parts dropped.
+func frameKey(frame event.StackFrame) string {
+	return strings.Join(trimEmpty([]string{
+		normalize(frame.Module),
+		normalize(frame.Function),
+		normalizePath(frame.File),
+	}), ":")
 }
 
 func stableContext(evt event.Event) map[string]string {
@@ -188,31 +199,31 @@ func flattenScalarFieldsInto(out map[string]string, prefix string, value any) {
 			next := prefix + "[" + strconv.Itoa(idx) + "]"
 			flattenScalarFieldsInto(out, next, nested)
 		}
-	case string:
-		if strings.TrimSpace(prefix) != "" {
-			out[prefix] = typed
-		}
-	case bool:
-		if strings.TrimSpace(prefix) != "" {
-			out[prefix] = strconv.FormatBool(typed)
-		}
-	case float64:
-		if strings.TrimSpace(prefix) != "" {
-			out[prefix] = strconv.FormatFloat(typed, 'f', -1, 64)
-		}
-	case int:
-		if strings.TrimSpace(prefix) != "" {
-			out[prefix] = strconv.Itoa(typed)
-		}
-	case int64:
-		if strings.TrimSpace(prefix) != "" {
-			out[prefix] = strconv.FormatInt(typed, 10)
-		}
-	case json.Number:
-		if strings.TrimSpace(prefix) != "" {
-			out[prefix] = typed.String()
+	default:
+		if text, ok := scalarText(value); ok && strings.TrimSpace(prefix) != "" {
+			out[prefix] = text
 		}
 	}
+}
+
+// scalarText renders the scalar kinds the fingerprint reads; any other type is
+// not a scalar and is skipped.
+func scalarText(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, true
+	case bool:
+		return strconv.FormatBool(typed), true
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64), true
+	case int:
+		return strconv.Itoa(typed), true
+	case int64:
+		return strconv.FormatInt(typed, 10), true
+	case json.Number:
+		return typed.String(), true
+	}
+	return "", false
 }
 
 func mergeFields(dst, src map[string]string) {
