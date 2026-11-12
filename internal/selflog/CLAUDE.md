@@ -22,6 +22,13 @@ Captured messages go to the BugBarn instance at `BUGBARN_SELF_ENDPOINT`, which i
 itself. They show up as issues in project `bugbarn-service`
 (`bb issues --project bugbarn-service`).
 
+Records below ERROR do not pass through `Handler`. `LogShipper` (`logship.go`) sends a chosen line to
+`POST /api/v1/logs` of the same endpoint with the same key, so it shows in
+`bb logs --project bugbarn-service` and works on readers, which cannot write the store. It never blocks
+(4 sends in flight, then it drops) and logs nothing on failure, because an ERROR record would file an
+issue. Use it only for lines worth keeping across rollouts; today that is the foreign project header
+reading (#248).
+
 ## Rules
 
 - An error path that does not go through `slog` at ERROR is invisible. `log.Printf`,

@@ -98,6 +98,11 @@ Use `ingestresp` for any new ingest response.
 `CheckAPIKey` counts requests where a bound, non-full-scope key names another project in
 `X-BugBarn-Project` (`bugbarn.ingest.foreign_project_header`, plus one info log per
 key-project/header-project pair). Wired in both entrypoints through `SetProjectSlugResolver`.
+The first sighting of each pair is also shipped to the self-report project's log store through
+`SetForeignHeaderShipper` (`selflog.LogShipper`, `cmd/bugbarn/selfship.go`), tagged with `pod` and
+`component`, so `bb logs --project bugbarn-service --query "another project"` counts hits over days and
+across rollouts. It needs `BUGBARN_SELF_ENDPOINT` and `BUGBARN_SELF_API_KEY`, and drops the line when
+the shipper is busy or the send fails.
 `requireIngestKey` (`internal/api/keycheck.go`) refuses those requests with 403 `forbidden`
 on events, logs, Alertmanager and check-ins, the way `internal/api/keybind.go` refuses them on
 the authenticated routes, release markers included. A slug no project has is refused too: a
