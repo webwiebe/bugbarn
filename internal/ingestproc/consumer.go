@@ -27,6 +27,12 @@ const (
 	consumerMaxRetries = 5
 	// consumerErrBackoff is the pause after a Redis Consume error before retry.
 	consumerErrBackoff = time.Second
+	// consumerErrorAfter is how many failed queue calls in a row make an outage.
+	// A lone failure loses nothing, since Run replays the processing list, so it
+	// logs at WARN; BugBarn reports its own ERROR logs as bugs (#276). The
+	// failure that reaches this count logs at ERROR, once per outage: Redis has
+	// stayed unreachable and ingest is stalled.
+	consumerErrorAfter = 3
 	// requeueTimeout bounds the shutdown requeue LPUSH and the ack LREM. Short:
 	// the process is already stopping, and an entry that misses it is replayed
 	// on the next start.
@@ -46,6 +52,9 @@ type Consumer struct {
 	telemetry TelemetryIngester
 	// processingKey is the Redis list holding this writer's unacked entries.
 	processingKey string
+	// failures counts queue calls that failed in a row. Only Run's goroutine
+	// touches it.
+	failures int
 }
 
 // NewConsumer builds a queue consumer. logs may be nil (log items are then
@@ -129,19 +138,27 @@ func (c *Consumer) consumeOne(ctx context.Context) bool {
 		c.consumeFailed(ctx, err)
 		return false
 	}
+	c.failures = 0
 	if d != nil && c.processBatch(ctx, d.Items) {
 		c.ack(ctx, d)
 	}
 	return true
 }
 
-// consumeFailed logs a failed queue call once and backs off. A failure caused
-// by shutdown is not logged.
+// consumeFailed logs a failed queue call and backs off. A failure caused by
+// shutdown is not logged. The first failures of an outage log at WARN, because
+// the entry stays in the processing list and replays; the failure that makes
+// the outage (consumerErrorAfter in a row) logs once at ERROR.
 func (c *Consumer) consumeFailed(ctx context.Context, err error) {
 	if ctx.Err() != nil {
 		return
 	}
-	c.logger.Error("consume failed", "error", err)
+	c.failures++
+	if c.failures == consumerErrorAfter {
+		c.logger.Error("consume failed repeatedly; the write queue is unreachable", "failures", c.failures, "error", err)
+	} else {
+		c.logger.Warn("consume failed; retrying", "failures", c.failures, "error", err)
+	}
 	select {
 	case <-ctx.Done():
 	case <-time.After(consumerErrBackoff):

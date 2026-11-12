@@ -56,7 +56,10 @@ Two consumers persist events, and both go through `worker.ProcessRecord`
   a failed read, it moves the processing list back to the write queue. Delivery is
   at-least-once: a writer killed after its commit and before the ack stores that entry
   again on the next start (bugbarn#257). On shutdown the unfinished tail is pushed back
-  and the entry acked; if that push fails, the whole entry replays. Honours pending projects: with
+  and the entry acked; if that push fails, the whole entry replays. A failed queue call
+  logs at WARN, because the entry replays and nothing is lost, and the third failure in a
+  row logs one ERROR for the outage (`consumerErrorAfter`); a good read resets the count
+  (bugbarn#276, after one lossless BLMOVE timeout filed BS2-163). Honours pending projects: with
   `BUGBARN_AUTO_APPROVE_PROJECTS` off, events for an unapproved project are stored via
   `HoldEvent` and replayed by `ingestproc.Replayer` on approval.
 
