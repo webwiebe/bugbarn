@@ -106,13 +106,16 @@ func splitStateCookie(value string) (state, verifier string) {
 	return state, verifier
 }
 
-// oidcCallback handles the redirect back from iambarn. On success it issues a
-// local session cookie that authenticates the browser for the SPA.
-func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
-	if s.oidc == nil {
-		http.Error(w, "oidc not configured", http.StatusNotFound)
-		return
+// clearOIDCFlowCookies expires the short-lived state, nonce and return cookies.
+func clearOIDCFlowCookies(w http.ResponseWriter, secure bool, names ...string) {
+	for _, name := range names {
+		http.SetCookie(w, oidcShortLivedCookie(name, "", secure))
 	}
+}
+
+// oidcCallbackState returns the PKCE verifier when the state cookie matches the
+// state in the redirect, and false once it has written the 400.
+func (s *Server) oidcCallbackState(w http.ResponseWriter, r *http.Request) (string, bool) {
 	stateCookie, err := r.Cookie(oidcStateCookie)
 	var cookieState, verifier string
 	if err == nil {
@@ -121,28 +124,61 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil || cookieState == "" || cookieState != r.URL.Query().Get("state") {
 		s.logger.Warn("oidc: state mismatch")
 		http.Error(w, "oidc state mismatch", http.StatusBadRequest)
+		return "", false
+	}
+	return verifier, true
+}
+
+// oidcCallbackError answers an error redirect from the IdP. A prompt=none silent
+// re-auth that found no live IAMBarn session comes back with an error and no
+// code. For the interaction-required family it escalates to an interactive login
+// (preserving return_to) so the reconnect completes; any other error returns the
+// user to the app root with a marker.
+func (s *Server) oidcCallbackError(w http.ResponseWriter, r *http.Request, oidcErr string) {
+	secure := s.secureCookie(r)
+	clearOIDCFlowCookies(w, secure, oidcStateCookie, oidcNonceCookie)
+	switch oidcErr {
+	case "login_required", "interaction_required", "consent_required", "account_selection_required":
+		q := url.Values{}
+		if rt := s.readReturnTo(r); rt != "/" {
+			q.Set("return_to", rt)
+		}
+		clearOIDCFlowCookies(w, secure, oidcReturnCookie)
+		http.Redirect(w, r, "/api/v1/oidc/login?"+q.Encode(), http.StatusFound)
+	default:
+		clearOIDCFlowCookies(w, secure, oidcReturnCookie)
+		http.Redirect(w, r, "/app/?oidc_error="+url.QueryEscape(oidcErr), http.StatusFound)
+	}
+}
+
+// oidcCallbackDenied answers a valid login that the allow list refuses. It clears
+// the short-lived cookies first so the SPA's "Switch account" button starts a
+// clean flow.
+func (s *Server) oidcCallbackDenied(w http.ResponseWriter, r *http.Request, claims auth.Claims) {
+	s.logger.Warn("oidc: access denied",
+		"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
+	clearOIDCFlowCookies(w, s.secureCookie(r), oidcStateCookie, oidcNonceCookie, oidcReturnCookie)
+	q := url.Values{}
+	q.Set("oidc_error", "access_denied")
+	if id := claims.PreferredName(); id != "" {
+		q.Set("identity", id)
+	}
+	http.Redirect(w, r, "/app/?"+q.Encode(), http.StatusFound)
+}
+
+// oidcCallback handles the redirect back from iambarn. On success it issues a
+// local session cookie that authenticates the browser for the SPA.
+func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
+	if s.oidc == nil {
+		http.Error(w, "oidc not configured", http.StatusNotFound)
 		return
 	}
-	// A prompt=none silent re-auth that found no live IAMBarn session comes back
-	// with an error and no code. For the interaction-required family, escalate to
-	// an interactive login (preserving return_to) so the reconnect completes; any
-	// other error returns the user to the app root with a marker.
+	verifier, ok := s.oidcCallbackState(w, r)
+	if !ok {
+		return
+	}
 	if oidcErr := r.URL.Query().Get("error"); oidcErr != "" {
-		secure := s.secureCookie(r)
-		http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
-		http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
-		switch oidcErr {
-		case "login_required", "interaction_required", "consent_required", "account_selection_required":
-			q := url.Values{}
-			if rt := s.readReturnTo(r); rt != "/" {
-				q.Set("return_to", rt)
-			}
-			http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
-			http.Redirect(w, r, "/api/v1/oidc/login?"+q.Encode(), http.StatusFound)
-		default:
-			http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
-			http.Redirect(w, r, "/app/?oidc_error="+url.QueryEscape(oidcErr), http.StatusFound)
-		}
+		s.oidcCallbackError(w, r, oidcErr)
 		return
 	}
 	nonceCookie, err := r.Cookie(oidcNonceCookie)
@@ -161,28 +197,21 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "oidc exchange failed", http.StatusUnauthorized)
 		return
 	}
-	claims := result.Claims
-	if !s.oidc.Allowed(claims) {
-		s.logger.Warn("oidc: access denied",
-			"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
-		// Clear the short-lived state/nonce cookies before redirecting so the
-		// SPA's "Switch account" button starts a clean flow.
-		secure := s.secureCookie(r)
-		http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
-		http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
-		http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
-		q := url.Values{}
-		q.Set("oidc_error", "access_denied")
-		if id := claims.PreferredName(); id != "" {
-			q.Set("identity", id)
-		}
-		http.Redirect(w, r, "/app/?"+q.Encode(), http.StatusFound)
+	if !s.oidc.Allowed(result.Claims) {
+		s.oidcCallbackDenied(w, r, result.Claims)
 		return
 	}
 	if s.sessions == nil {
 		http.Error(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	s.oidcCallbackSession(w, r, result)
+}
+
+// oidcCallbackSession stores the login server-side, sets the session cookies and
+// returns the browser to where it started the flow.
+func (s *Server) oidcCallbackSession(w http.ResponseWriter, r *http.Request, result auth.ExchangeResult) {
+	claims := result.Claims
 	username := claims.PreferredName()
 	if username == "" {
 		username = "oidc-user"
@@ -219,17 +248,14 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		Expires: expires,
 		Secure:  secure,
 		// Strict matches the session/CSRF cookies. The short-lived OIDC
-		// state/nonce cookies below intentionally stay Lax because they must
+		// state/nonce cookies intentionally stay Lax because they must
 		// survive the cross-site top-level redirect back from the IdP.
 		SameSite: http.SameSiteStrictMode,
 	})
 	// Return the browser where it started the flow (e.g. #/account for a widget
 	// reconnect), defaulting to the app root.
 	returnTo := s.readReturnTo(r)
-	// Clear the short-lived state/nonce/return cookies.
-	http.SetCookie(w, oidcShortLivedCookie(oidcStateCookie, "", secure))
-	http.SetCookie(w, oidcShortLivedCookie(oidcNonceCookie, "", secure))
-	http.SetCookie(w, oidcShortLivedCookie(oidcReturnCookie, "", secure))
+	clearOIDCFlowCookies(w, secure, oidcStateCookie, oidcNonceCookie, oidcReturnCookie)
 	http.Redirect(w, r, returnTo, http.StatusFound)
 }
 
