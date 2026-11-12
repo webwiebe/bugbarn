@@ -68,7 +68,7 @@ File length, complexity, duplication and coverage are gated in CI against
 committed baselines. A new violation MUST be fixed, not baselined.
 
 Sources:
-- `make quality` (file length, lint, soak, coverage, duplication), run by the `quality` step in `.woodpecker/ci.yaml`
+- `make quality` (file length, lint at zero findings, coverage, duplication), run by the `quality` step in `.woodpecker/ci.yaml`
 - `scripts/` gate tests run by `make test-gates`
 
 ### VII. BugBarn reports its own failures

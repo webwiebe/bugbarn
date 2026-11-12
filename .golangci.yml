@@ -28,11 +28,10 @@ linters:
     - lll          # line length
     - dupl         # Go duplication (jscpd owns the other languages)
     # architectural import boundaries. Zero-tolerance: scripts/check-go-lint.sh
-    # fails on any depguard finding, outside the shared count ratchet, so a new
-    # boundary violation cannot hide behind an unrelated fix.
+    # fails on any depguard finding, with its own message and reason.
     - depguard
-    # dead code. Zero findings in both modules; any new one raises the count
-    # past scripts/golangci-baseline.txt and fails scripts/check-go-lint.sh.
+    # dead code. Zero findings in both modules; any new one fails
+    # scripts/check-go-lint.sh.
     - unused
   settings:
     gocyclo:

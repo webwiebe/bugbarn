@@ -163,7 +163,7 @@ lint: $(PNPM)
 	@sh scripts/check-file-length.sh
 
 # golangci-lint for every Go module (root + SDK). Same script CI runs: a
-# full-tree count ratcheted against scripts/golangci-baseline.txt, plus a
+# full-tree run that fails on any finding, plus a
 # diff-scoped run when a pull-request base exists.
 lint-go:
 	@set -eu; \

@@ -142,6 +142,6 @@ Config lives at `~/.config/bugbarn/cli.json`. Authenticated against https://bugb
 - `go build ./...` — build
 - `go test ./...` — run all tests
 - `make spec-check` — validate OpenAPI specs
-- `make quality` — the CI quality gates (file length, lint, soak, coverage, duplication)
+- `make quality` — the CI quality gates (file length, lint at zero findings, coverage, duplication)
 - `make secret-scan` — gitleaks over the git history (`scripts/secret-scan.sh`, config in `.gitleaks.toml`, known hits as fingerprints in `.gitleaksignore`, which may only shrink; report-only until 2026-10-31)
 - `bb issues` — check for open bugs (dogfood check)

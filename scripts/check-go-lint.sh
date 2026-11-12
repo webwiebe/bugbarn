@@ -3,9 +3,9 @@
 #
 # Two legs, and the split is the whole point of this script:
 #
-#   1. FULL-TREE RATCHET — runs on every event, including a push to `main`.
-#      Counts every finding in both modules and ratchets the total against
-#      scripts/golangci-baseline.txt.
+#   1. FULL-TREE GATE — runs on every event, including a push to `main`.
+#      Counts every finding in both modules and fails on any: the tree is
+#      clean, and the count may not rise above zero.
 #
 #   2. DIFF-SCOPED RUN — pull requests only, where a merge base that is not
 #      HEAD actually exists. Names the specific findings a branch introduced.
@@ -17,12 +17,11 @@
 # that vacuous run. Leg 2 now refuses to run when it would be vacuous, and
 # leg 1 does the real work on `main`.
 #
-# The full-tree count is a SOAK, not yet an enforced clean tree: the baseline is
-# today's count and may only fall. Enforce-at target is 0.
+# The full-tree count was a ratchet from a baseline file until it reached zero
+# (#259). There is no baseline file now: a finding is a failure, and a new
+# exception needs a //nolint with a reason on the line itself.
 set -eu
 
-BASELINE_FILE="scripts/golangci-baseline.txt"
-ENFORCE_AT=0
 REPORT_DIR=".tools/lint-reports"
 
 sh scripts/ensure-golangci.sh
@@ -57,14 +56,25 @@ run_full() {
 	python3 scripts/count-findings.py golangci "$_report" >"$REPORTS/$_name.count"
 }
 
-echo "--- golangci-lint, full tree (soak) ---"
+echo "--- golangci-lint, full tree ---"
 run_full . root
 run_full sdks/go sdks-go
 root_count=$(cat "$REPORTS/root.count")
 sdk_count=$(cat "$REPORTS/sdks-go.count")
 total=$((root_count + sdk_count))
 echo "golangci-lint findings: root=$root_count sdks/go=$sdk_count total=$total"
-sh scripts/ratchet.sh "go-lint" "$BASELINE_FILE" "$total" "$ENFORCE_AT"
+case "$total" in
+'' | *[!0-9]*)
+	echo "FAIL (go-lint): measured count '$total' is not a number; the collector did not run"
+	exit 1
+	;;
+esac
+if [ "$total" -ne 0 ]; then
+	echo "FAIL (go-lint): $total findings; the tree is clean and allows none."
+	echo "  The findings are in $REPORT_DIR/root.json and $REPORT_DIR/sdks-go.json."
+	exit 1
+fi
+echo "go-lint: OK (0 findings)"
 
 # Import boundaries (depguard) are enforced at zero, not ratcheted with the
 # rest: they encode the error and logging rules in CLAUDE.md, and selflog only
