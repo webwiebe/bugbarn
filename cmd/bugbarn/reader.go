@@ -18,10 +18,10 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/config"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
+	"github.com/wiebe-xyz/bugbarn/internal/keytouch"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
-	"github.com/wiebe-xyz/bugbarn/internal/keytouch"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -151,6 +151,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 
 	handler := ingest.NewHandler(apiAuthorizer, nil, cfg.MaxBodyBytes)
 	handler.SetProjectSlugResolver(projectSlugResolver(store))
+	shipForeignHeaderLines(handler, cfg, "reader")
 
 	logHub := logstream.NewHub()
 	apiServer := api.NewServerWithAuth(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, logger)

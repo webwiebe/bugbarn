@@ -21,6 +21,15 @@ var foreignProjectHeaderCounter, _ = tracing.Meter().Int64Counter(
 	metric.WithUnit("{request}"),
 )
 
+const foreignHeaderMessage = "bound api key named another project"
+
+// SetForeignHeaderShipper sends the first sighting of each key-project and
+// header-project pair to fn as well as to the log, so it outlives the pod
+// (#248). fn must not block; nil turns it off.
+func (h *Handler) SetForeignHeaderShipper(fn func(msg string, attrs map[string]any)) {
+	h.foreignShip = fn
+}
+
 // maxForeignPairs bounds the set of logged (key project, header project) pairs,
 // because the header value is client-controlled.
 const maxForeignPairs = 1000
@@ -65,6 +74,10 @@ func (h *Handler) observeProjectHeader(ctx context.Context, projectID int64, sco
 	if o.firstOfPair(ownSlug + "->" + headerSlug) {
 		h.logger.InfoContext(ctx, "bound api key named another project",
 			"key_project", ownSlug, "header_project", headerSlug, "scope", scope)
+		if h.foreignShip != nil {
+			h.foreignShip(foreignHeaderMessage, map[string]any{
+				"key_project": ownSlug, "header_project": headerSlug, "scope": scope})
+		}
 	}
 }
 

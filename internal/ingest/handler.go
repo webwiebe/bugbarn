@@ -61,6 +61,8 @@ type Handler struct {
 
 	// foreign measures bound keys that name another project (#235); nil disables it.
 	foreign *foreignProjectObserver
+	// foreignShip also sends the first sighting of each pair to the log store.
+	foreignShip func(msg string, attrs map[string]any)
 }
 
 // funnelbarnEventThrottle bounds how often the "event_ingested" product event
