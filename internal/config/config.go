@@ -64,8 +64,12 @@ type Config struct {
 	// grew the production database past 3M rows.
 	EventRetentionDays int
 	// SilenceRules is BUGBARN_SILENCE_RULES: "dry-run" (default) logs what the
-	// revised silence rules would fire and files nothing; "off" disables them.
+	// revised silence rules would fire and files nothing; "file" also files one
+	// issue per silent project and rule; "off" disables them.
 	SilenceRules string
+	// SilenceProject is BUGBARN_SILENCE_PROJECT: the slug of the project that
+	// silence issues are filed into in file mode. Default "infra".
+	SilenceProject string
 	// EventSampleAfter is BUGBARN_EVENT_SAMPLE_AFTER — how many events an issue
 	// stores before it starts being sampled. Past it the write path keeps one
 	// event in K, K climbing a decade at a time, and records K on the row so
@@ -157,6 +161,7 @@ func Load() Config {
 		// does not have to depend on the retention package.
 		EventRetentionDays: envIntPositive("BUGBARN_EVENT_RETENTION_DAYS", 30),
 		SilenceRules:       os.Getenv("BUGBARN_SILENCE_RULES"),
+		SilenceProject:     getenv("BUGBARN_SILENCE_PROJECT", "infra"),
 		// Sampling is on by default: a deployment that configures nothing is
 		// still protected from a runaway fingerprint. envIntZeroOK, not
 		// envIntPositive, because 0 is a meaningful value here (sampling off)

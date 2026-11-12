@@ -944,6 +944,30 @@ Set the FunnelBarn page the project's "By surface" rows link to. BugBarn only re
 
 ---
 
+#### GET /api/v1/projects/:slug/silence-watch
+
+Read whether the silence rules watch the project. The response is `{"silence_watch": ""}` for a watched project and `{"silence_watch": "off"}` for one that is opted out. `404` for an unknown project.
+
+---
+
+#### PUT /api/v1/projects/:slug/silence-watch
+
+Opt a project out of the silence rules, or back in. Use `off` for a project that was shut down on purpose or that only exists for tests; the rules then skip it and file nothing. An empty value watches it again.
+
+**Request body:**
+```json
+{"silence_watch": "off"}
+```
+
+**Response:**
+```json
+{"ok": true, "silence_watch": "off"}
+```
+
+`400` for any value other than `""` and `off`, `404` for an unknown project.
+
+---
+
 #### POST /api/v1/projects
 
 Create a project.

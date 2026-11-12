@@ -5,15 +5,33 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
 
 // The silence reads, kept as constants so the plan test runs the same text.
 const (
 	newestLogSQL   = `SELECT received_at FROM log_entries WHERE project_id = ? ORDER BY id DESC LIMIT 1`
 	recentLogsSQL  = `SELECT received_at FROM log_entries WHERE project_id = ? ORDER BY id DESC LIMIT ?`
-	newestEventSQL = `SELECT received_at FROM events WHERE project_id = ? ORDER BY received_at DESC, id DESC LIMIT 1`
-	eventTimesSQL  = `SELECT received_at FROM events WHERE project_id = ? AND received_at >= ? ORDER BY received_at DESC, id DESC LIMIT ?`
+	newestEventSQL = `SELECT received_at FROM events INDEXED BY idx_events_project_received_issue
+		WHERE project_id = ? AND issue_id NOT IN (` + selfFiledIssuesSQL + `)
+		ORDER BY received_at DESC, id DESC LIMIT 1`
+	eventTimesSQL = `SELECT received_at FROM events INDEXED BY idx_events_project_received_issue
+		WHERE project_id = ? AND received_at >= ? AND issue_id NOT IN (` + selfFiledIssuesSQL + `)
+		ORDER BY received_at DESC, id DESC LIMIT ?`
+	// selfFiledIssuesSQL selects the issues BugBarn files into a project itself
+	// (monitor misses, detection hits, silence findings). They are not activity
+	// of the project's app, so no silence rule counts their events. The range
+	// tests on fingerprint use the UNIQUE(project_id, fingerprint) index.
+	selfFiledIssuesSQL = `SELECT id FROM issues WHERE project_id = ? AND (
+		(fingerprint >= 'monitor:' AND fingerprint < 'monitor;') OR
+		(fingerprint >= 'detect:' AND fingerprint < 'detect;') OR
+		(fingerprint >= 'silence:' AND fingerprint < 'silence;'))`
 )
+
+// SilenceWatchOff is the silence_watch value that opts a project out of the
+// silence rules. Empty means watched.
+const SilenceWatchOff = "off"
 
 // SilenceProject names an active project the silence rules judge.
 type SilenceProject struct {
@@ -23,7 +41,8 @@ type SilenceProject struct {
 
 // ActiveSilenceProjects lists the active projects.
 func (s *ProjectStore) ActiveSilenceProjects(ctx context.Context) ([]SilenceProject, error) {
-	rows, err := s.readDB().QueryContext(ctx, `SELECT id, slug FROM projects WHERE status = 'active' ORDER BY id`)
+	rows, err := s.readDB().QueryContext(ctx,
+		`SELECT id, slug FROM projects WHERE status = 'active' AND silence_watch != 'off' ORDER BY id`)
 	if err != nil {
 		return nil, wrapErr(err, "list silence projects")
 	}
@@ -55,7 +74,7 @@ func (s *ProjectStore) RecentLogTimes(ctx context.Context, projectID int64, limi
 // NewestEventAt returns when the project's newest stored event arrived. One
 // index lookup through idx_events_project_received_at.
 func (s *ProjectStore) NewestEventAt(ctx context.Context, projectID int64) (time.Time, bool, error) {
-	return s.newestTime(ctx, "newest event", newestEventSQL, projectID)
+	return s.newestTime(ctx, "newest event", newestEventSQL, projectID, projectID)
 }
 
 // EventTimesSince returns the arrival times of up to limit stored events at or
@@ -63,7 +82,7 @@ func (s *ProjectStore) NewestEventAt(ctx context.Context, projectID int64) (time
 // alone. Adaptive sampling thins busy issues, so gaps read from here can run
 // long; the event rule's floors account for that.
 func (s *ProjectStore) EventTimesSince(ctx context.Context, projectID int64, since time.Time, limit int) ([]time.Time, error) {
-	return s.timeList(ctx, "event times", eventTimesSQL, projectID, formatTime(since), limit)
+	return s.timeList(ctx, "event times", eventTimesSQL, projectID, formatTime(since), projectID, limit)
 }
 
 // NewestKeyUse returns the newest last_used_at across the project's keys that
@@ -111,4 +130,30 @@ func (s *ProjectStore) timeList(ctx context.Context, what, query string, args ..
 		out = append(out, at)
 	}
 	return out, wrapErr(rows.Err(), what)
+}
+
+// UpdateProjectSilenceWatch sets whether the silence rules judge a project. The
+// value is empty (watched) or SilenceWatchOff.
+func (s *ProjectStore) UpdateProjectSilenceWatch(ctx context.Context, slug, value string) error {
+	if value != "" && value != SilenceWatchOff {
+		return apperr.InvalidInput("silence_watch must be empty or \"off\"", nil)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET silence_watch = ? WHERE slug = ?`, value, slug)
+	if err != nil {
+		return wrapErr(err, "update project silence watch")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return apperr.NotFound("project not found", nil)
+	}
+	return nil
+}
+
+// ProjectSilenceWatch returns a project's silence_watch value.
+func (s *ProjectStore) ProjectSilenceWatch(ctx context.Context, slug string) (string, error) {
+	var v string
+	err := s.readDB().QueryRowContext(ctx, `SELECT silence_watch FROM projects WHERE slug = ?`, slug).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", apperr.NotFound("project not found", nil)
+	}
+	return v, wrapErr(err, "read project silence watch")
 }

@@ -28,7 +28,7 @@ func planOf(t *testing.T, store *Store, query string, args ...any) string {
 }
 
 // The silence signal reads stay on their indexes: the event reads are answered
-// from idx_events_project_received_at alone, the log read walks
+// from idx_events_project_received_issue alone, the log read walks
 // idx_log_entries_project_id, and nothing scans a whole table.
 func TestSilenceSignalQueryPlans(t *testing.T) {
 	t.Parallel()
@@ -43,9 +43,9 @@ func TestSilenceSignalQueryPlans(t *testing.T) {
 		args              []any
 	}{
 		{"newest event", newestEventSQL,
-			"COVERING INDEX idx_events_project_received_at", []any{1}},
+			"COVERING INDEX idx_events_project_received_issue", []any{1, 1}},
 		{"event times", eventTimesSQL,
-			"COVERING INDEX idx_events_project_received_at", []any{1, "2026-01-01", 10}},
+			"COVERING INDEX idx_events_project_received_issue", []any{1, "2026-01-01", 1, 10}},
 		{"newest log row", newestLogSQL,
 			"idx_log_entries_project_id", []any{1}},
 	}

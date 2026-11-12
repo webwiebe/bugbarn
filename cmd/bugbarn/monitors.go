@@ -14,12 +14,11 @@ import (
 
 var errMonitorEventRejected = errors.New("monitor event was not persisted")
 
-// startMonitors starts the check-in miss detector and returns the reporter the
-// API uses for error and recovery check-ins. Writer-only: both persist through
-// the same pipeline as SDK events, so each incident becomes an issue in the
-// monitor's own project.
-func startMonitors(ctx context.Context, store *storage.Store, proc *ingestproc.Processor, wg *sync.WaitGroup, log *slog.Logger) *monitorwatch.Reporter {
-	persist := func(ctx context.Context, rec spool.Record) error {
+// internalPersist persists an event BugBarn files itself (a monitor incident, a
+// silent project) through the same pipeline as SDK events. A nil error means the
+// event is in its project or held for an unapproved one.
+func internalPersist(proc *ingestproc.Processor) func(ctx context.Context, rec spool.Record) error {
+	return func(ctx context.Context, rec spool.Record) error {
 		res := proc.PersistRecord(ctx, rec)
 		switch res.Outcome {
 		case ingestproc.OutcomeSuccess, ingestproc.OutcomeHeld:
@@ -30,7 +29,14 @@ func startMonitors(ctx context.Context, store *storage.Store, proc *ingestproc.P
 		}
 		return errMonitorEventRejected
 	}
-	reporter := monitorwatch.NewReporter(store, persist, log)
+}
+
+// startMonitors starts the check-in miss detector and returns the reporter the
+// API uses for error and recovery check-ins. Writer-only: both persist through
+// the same pipeline as SDK events, so each incident becomes an issue in the
+// monitor's own project.
+func startMonitors(ctx context.Context, store *storage.Store, proc *ingestproc.Processor, wg *sync.WaitGroup, log *slog.Logger) *monitorwatch.Reporter {
+	reporter := monitorwatch.NewReporter(store, internalPersist(proc), log)
 	monitorwatch.NewDetector(monitorwatch.DefaultConfig(), store, reporter, log).Start(ctx, wg)
 	return reporter
 }

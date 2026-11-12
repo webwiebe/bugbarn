@@ -21,6 +21,20 @@ type fakeRepo struct {
 	limitsSampling  string
 
 	funnelSlug, funnelURL string
+
+	silenceSlug, silenceValue string
+}
+
+func (f *fakeRepo) UpdateProjectSilenceWatch(_ context.Context, slug, value string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.silenceSlug, f.silenceValue = slug, value
+	return nil
+}
+
+func (f *fakeRepo) ProjectSilenceWatch(context.Context, string) (string, error) {
+	return f.silenceValue, f.err
 }
 
 func (f *fakeRepo) UpdateProjectLimits(_ context.Context, slug string, retentionDays *int, sampling string) error {
