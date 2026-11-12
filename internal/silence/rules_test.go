@@ -268,7 +268,7 @@ func TestModeOffEvaluatesNothing(t *testing.T) {
 	if got := rules.Check(context.Background(), now); len(got) != 0 {
 		t.Fatalf("off mode returned %+v", got)
 	}
-	if ParseMode("") != ModeDryRun || ParseMode("dry-run") != ModeDryRun || ParseMode("file") != ModeOff {
-		t.Fatal("ParseMode: empty and dry-run are dry run, anything else is off")
+	if ParseMode("") != ModeDryRun || ParseMode("dry-run") != ModeDryRun || ParseMode("file") != ModeFile || ParseMode("bogus") != ModeOff {
+		t.Fatal("ParseMode: empty and dry-run are dry run, file is file, anything else is off")
 	}
 }

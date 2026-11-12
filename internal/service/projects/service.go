@@ -42,6 +42,10 @@ type Repository interface {
 	// FunnelBarn link shown next to the By surface table.
 	UpdateProjectFunnelBarnURL(ctx context.Context, slug, url string) error
 
+	// Silence rules opt-out (bugbarn#252): empty = watched, "off" = skipped.
+	UpdateProjectSilenceWatch(ctx context.Context, slug, value string) error
+	ProjectSilenceWatch(ctx context.Context, slug string) (string, error)
+
 	// Group operations
 	CreateGroup(ctx context.Context, name, slug string) (domain.ProjectGroup, error)
 	ListGroups(context.Context) ([]domain.ProjectGroup, error)

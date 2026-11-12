@@ -384,16 +384,29 @@ func (s *Server) dispatchProjectItemRoutes(w http.ResponseWriter, r *http.Reques
 		s.approveProject(w, r)
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/merge"):
 		s.mergeProject(w, r)
-	// Before the bare-PUT case below, which would otherwise swallow it: that one
+	// Before the bare-PUT case below, which would otherwise swallow them: that one
 	// matches any path under /api/v1/projects/ and treats the whole tail as a slug.
-	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/limits"):
-		s.updateProjectLimits(w, r)
-	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/funnelbarn"):
-		s.updateProjectFunnelBarnURL(w, r)
+	case s.dispatchProjectSettingRoutes(w, r):
 	case r.Method == http.MethodPut:
 		s.renameProject(w, r)
 	case r.Method == http.MethodDelete:
 		s.deleteProject(w, r)
+	default:
+		return false
+	}
+	return true
+}
+
+// dispatchProjectSettingRoutes serves the per-project setting endpoints that
+// hang off /api/v1/projects/:slug/.
+func (s *Server) dispatchProjectSettingRoutes(w http.ResponseWriter, r *http.Request) bool {
+	switch {
+	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/limits"):
+		s.updateProjectLimits(w, r)
+	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/funnelbarn"):
+		s.updateProjectFunnelBarnURL(w, r)
+	case isSilenceWatchRoute(r):
+		s.projectSilenceWatch(w, r)
 	default:
 		return false
 	}

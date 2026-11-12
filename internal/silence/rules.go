@@ -15,22 +15,28 @@ const (
 	RuleEvents = "events"
 )
 
-// Mode says what the rules do with a finding. Dry run is the only mode that
-// exists: it logs at info level and files and mails nothing. Filing is a later
-// step, after a week of dry-run lines (bugbarn#252).
+// Mode says what the rules do with a finding. Dry run logs one info line per
+// finding and files and mails nothing. File also files one issue per silent
+// project and rule, and resolves it when the stream resumes. Dry run is the
+// default; the flip to file waits for about a week of dry-run lines and a
+// threshold rescore from them (bugbarn#252).
 type Mode string
 
 const (
 	ModeOff    Mode = "off"
 	ModeDryRun Mode = "dry-run"
+	ModeFile   Mode = "file"
 )
 
 // ParseMode reads BUGBARN_SILENCE_RULES. Empty means dry run; anything else
-// that is not "dry-run" turns the rules off, so a typo never starts something.
+// that is not "dry-run" or "file" turns the rules off, so a typo never starts
+// something.
 func ParseMode(value string) Mode {
 	switch value {
 	case "", string(ModeDryRun):
 		return ModeDryRun
+	case string(ModeFile):
+		return ModeFile
 	default:
 		return ModeOff
 	}
@@ -116,13 +122,58 @@ type Finding struct {
 	KeyLastUsed time.Time
 }
 
-// Rules evaluates the revised silence rules hourly. In dry run it logs what
-// would fire per project and does nothing else.
-type Rules struct {
-	cfg RulesConfig
-	src SignalSource
-	log *slog.Logger
+// Filer files and resolves the issue of one silent project and rule. It is
+// called only in file mode.
+type Filer interface {
+	// Fire records that the rule fires for the project. An issue that is
+	// already open stays as it is.
+	Fire(ctx context.Context, f Finding) error
+	// Resume records that the project's stream is reporting again and resolves
+	// the open issue, if any.
+	Resume(ctx context.Context, slug, rule string) error
 }
+
+// Shipper writes the "would fire" line somewhere a person can read it, in
+// every mode but off.
+type Shipper interface {
+	Ship(ctx context.Context, f Finding, mode Mode)
+}
+
+// Rules evaluates the revised silence rules hourly. In dry run it logs what
+// would fire per project and does nothing else; in file mode it also files
+// and resolves issues through its Filer.
+type Rules struct {
+	cfg     RulesConfig
+	src     SignalSource
+	log     *slog.Logger
+	filer   Filer
+	shipper Shipper
+}
+
+// WithFiler sets who files and resolves issues in file mode.
+func (r *Rules) WithFiler(f Filer) *Rules {
+	r.filer = f
+	return r
+}
+
+// WithShipper sets where the "would fire" line goes besides the process log.
+func (r *Rules) WithShipper(s Shipper) *Rules {
+	r.shipper = s
+	return r
+}
+
+// verdict is what one rule says about one project.
+type verdict int
+
+const (
+	// verdictQuiet means the rule neither fires nor sees the stream resume: the
+	// stream is silent for too short or too long a time to judge, or the
+	// history is too thin. An open issue stays open.
+	verdictQuiet verdict = iota
+	verdictFires
+	// verdictResumed means the stream reported within the rule's minimum gap.
+	verdictResumed
+)
 
 // NewRules builds the rules.
 func NewRules(cfg RulesConfig, src SignalSource, log *slog.Logger) *Rules {
@@ -154,25 +205,51 @@ func (r *Rules) Check(ctx context.Context, now time.Time) []Finding {
 
 func (r *Rules) checkProject(ctx context.Context, now time.Time, p Project) []Finding {
 	var out []Finding
-	if f, ok := r.logRule(ctx, now, p); ok {
-		out = append(out, f)
-	}
-	if f, ok := r.eventRule(ctx, now, p); ok {
-		out = append(out, f)
-	}
-	for i := range out {
-		if used, ok, err := r.src.NewestKeyUse(ctx, p.ID); err == nil && ok {
-			out[i].KeyLastUsed = used
+	for _, rule := range []func(context.Context, time.Time, Project) (Finding, verdict){r.logRule, r.eventRule} {
+		f, v := rule(ctx, now, p)
+		switch v {
+		case verdictFires:
+			out = append(out, r.report(ctx, p, f))
+		case verdictResumed:
+			r.resume(ctx, p, f.Rule)
+		case verdictQuiet:
 		}
-		r.log.Info("silence rule would fire",
-			"project", out[i].Slug, "rule", out[i].Rule,
-			"gap", out[i].Gap.Round(time.Minute).String(),
-			"longest_gap", out[i].LongestGap.Round(time.Minute).String(),
-			"volume", out[i].Volume,
-			"key_last_used", formatKeyUse(out[i].KeyLastUsed),
-			"mode", string(r.cfg.Mode))
 	}
 	return out
+}
+
+// report logs, ships and (in file mode) files one finding and returns it with
+// the key evidence added.
+func (r *Rules) report(ctx context.Context, p Project, f Finding) Finding {
+	if used, ok, err := r.src.NewestKeyUse(ctx, p.ID); err == nil && ok {
+		f.KeyLastUsed = used
+	}
+	r.log.Info("silence rule would fire",
+		"project", f.Slug, "rule", f.Rule,
+		"gap", f.Gap.Round(time.Minute).String(),
+		"longest_gap", f.LongestGap.Round(time.Minute).String(),
+		"volume", f.Volume,
+		"key_last_used", formatKeyUse(f.KeyLastUsed),
+		"mode", string(r.cfg.Mode))
+	if r.shipper != nil {
+		r.shipper.Ship(ctx, f, r.cfg.Mode)
+	}
+	if r.cfg.Mode == ModeFile && r.filer != nil {
+		if err := r.filer.Fire(ctx, f); err != nil {
+			r.log.Warn("silence rules: file issue", "project", f.Slug, "rule", f.Rule, "error", err)
+		}
+	}
+	return f
+}
+
+// resume resolves the open issue of a project whose stream reports again.
+func (r *Rules) resume(ctx context.Context, p Project, rule string) {
+	if r.cfg.Mode != ModeFile || r.filer == nil {
+		return
+	}
+	if err := r.filer.Resume(ctx, p.Slug, rule); err != nil {
+		r.log.Warn("silence rules: resolve issue", "project", p.Slug, "rule", rule, "error", err)
+	}
 }
 
 func formatKeyUse(t time.Time) string {
@@ -182,50 +259,62 @@ func formatKeyUse(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func (r *Rules) logRule(ctx context.Context, now time.Time, p Project) (Finding, bool) {
+func (r *Rules) logRule(ctx context.Context, now time.Time, p Project) (Finding, verdict) {
 	newest, ok, err := r.src.NewestLogAt(ctx, p.ID)
 	if err != nil {
 		r.log.Warn("silence rules: newest log row", "project", p.Slug, "error", err)
-		return Finding{}, false
+		return Finding{}, verdictQuiet
 	}
 	if !ok {
-		return Finding{}, false
+		return Finding{}, verdictQuiet
 	}
 	gap := now.Sub(newest)
-	if gap <= r.cfg.LogMinGap || gap > r.cfg.MaxGap {
-		return Finding{}, false
+	if gap <= r.cfg.LogMinGap {
+		return Finding{Slug: p.Slug, Rule: RuleLogs}, verdictResumed
+	}
+	if gap > r.cfg.MaxGap {
+		return Finding{}, verdictQuiet
 	}
 	times, err := r.src.RecentLogTimes(ctx, p.ID, r.cfg.LogReadLimit)
 	if err != nil {
 		r.log.Warn("silence rules: recent log times", "project", p.Slug, "error", err)
-		return Finding{}, false
+		return Finding{}, verdictQuiet
 	}
 	f, fires := EvaluateLogs(r.cfg, gap, times)
 	f.Slug = p.Slug
-	return f, fires
+	if fires {
+		return f, verdictFires
+	}
+	return f, verdictQuiet
 }
 
-func (r *Rules) eventRule(ctx context.Context, now time.Time, p Project) (Finding, bool) {
+func (r *Rules) eventRule(ctx context.Context, now time.Time, p Project) (Finding, verdict) {
 	newest, ok, err := r.src.NewestEventAt(ctx, p.ID)
 	if err != nil {
 		r.log.Warn("silence rules: newest event", "project", p.Slug, "error", err)
-		return Finding{}, false
+		return Finding{}, verdictQuiet
 	}
 	if !ok {
-		return Finding{}, false
+		return Finding{}, verdictQuiet
 	}
 	gap := now.Sub(newest)
-	if gap < r.cfg.EventMinGap || gap > r.cfg.MaxGap {
-		return Finding{}, false
+	if gap < r.cfg.EventMinGap {
+		return Finding{Slug: p.Slug, Rule: RuleEvents}, verdictResumed
+	}
+	if gap > r.cfg.MaxGap {
+		return Finding{}, verdictQuiet
 	}
 	times, err := r.src.EventTimesSince(ctx, p.ID, now.Add(-r.cfg.EventHistory), r.cfg.EventReadLimit)
 	if err != nil {
 		r.log.Warn("silence rules: event times", "project", p.Slug, "error", err)
-		return Finding{}, false
+		return Finding{}, verdictQuiet
 	}
 	f, fires := EvaluateEvents(r.cfg, gap, times)
 	f.Slug = p.Slug
-	return f, fires
+	if fires {
+		return f, verdictFires
+	}
+	return f, verdictQuiet
 }
 
 // EvaluateLogs applies the log rule to a project whose newest log row is gap

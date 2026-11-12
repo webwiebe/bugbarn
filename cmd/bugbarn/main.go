@@ -212,14 +212,6 @@ func run() error {
 			logger.With("component", "silence-monitor")).Start(ctx, &bgWg)
 	}
 
-	// Revised silence rules (bugbarn#252 step 2). Dry run only: one info line
-	// per rule that would fire, nothing filed or mailed. Filing is a later
-	// step, after a week of these lines.
-	silenceRules := silence.DefaultRulesConfig()
-	silenceRules.Mode = silence.ParseMode(cfg.SilenceRules)
-	silence.NewRules(silenceRules, silence.StoreSource{ProjectStore: store.Domains().Projects},
-		logger.With("component", "silence-rules")).Start(ctx, &bgWg)
-
 	// Infrastructure telemetry files (security logs, host metrics). Writer-only
 	// for the same reason as retention: readers open them read-only.
 	telemetryIngester, closeTelemetry := openTelemetry(ctx, cfg.Telemetry, &bgWg, logger)
@@ -248,6 +240,8 @@ func run() error {
 	// Check-in monitors: the miss detector, and the reporter the API calls for
 	// error and recovery check-ins.
 	monitorReporter := startMonitors(ctx, store, eventProc, &bgWg, logger)
+	// Revised silence rules (bugbarn#252). Dry run by default.
+	startSilenceRules(ctx, cfg, store, eventProc, &bgWg, logger)
 	// Cloudflare firewall events. Writer-only like retention; started after
 	// the detection engine is wired so it observes the first page.
 	startCloudflarePoller(ctx, cfg.Cloudflare, telemetryIngester, &bgWg, logger)
