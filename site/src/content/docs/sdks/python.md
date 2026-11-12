@@ -9,11 +9,28 @@ The Python SDK (`bugbarn-python`) is a lightweight client with no external depen
 
 ## Installation
 
-```bash
-pip install bugbarn-python
+The package is not on PyPI. The PyPI project `bugbarn-python` holds an old 1.0.0
+release that predates the fixes in the current SDK, so install from source and pin
+a commit.
+
+Pin a commit of the repository in `pyproject.toml` (this is how github-tamagotchi
+installs it):
+
+```toml
+dependencies = [
+    "bugbarn-python @ git+https://github.com/webwiebe/bugbarn.git@<commit-sha>#subdirectory=sdks/python",
+]
 ```
 
-Requires Python 3.9+.
+Or copy `sdks/python` into your repository (for example under `backend/vendor/bugbarn-src`)
+and install it from the path:
+
+```bash
+pip install ./backend/vendor/bugbarn-src
+```
+
+A vendored copy does not update itself; copy `sdks/python` again to pick up a new
+release. Requires Python 3.9+.
 
 ## Initialisation
 

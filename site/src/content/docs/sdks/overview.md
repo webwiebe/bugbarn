@@ -13,7 +13,7 @@ BugBarn provides official SDKs for four languages. Each SDK captures errors with
 |---|---|---|---|
 | **[Go](/bugbarn/docs/sdks/go)** | `github.com/wiebe-xyz/bugbarn-go` | Go | 1.22+ |
 | **[TypeScript](/bugbarn/docs/sdks/typescript)** | `@bugbarn/typescript` | TypeScript / JavaScript | Node 22+ / any modern browser |
-| **[Python](/bugbarn/docs/sdks/python)** | `bugbarn-python` | Python | 3.9+ |
+| **[Python](/bugbarn/docs/sdks/python)** | source install (not on PyPI) | Python | 3.9+ |
 | **[PHP](/bugbarn/docs/sdks/php)** | `bugbarn/bugbarn-php` | PHP | 8.1+ |
 
 All SDKs share the same ingest protocol. You can also send events using plain [HTTP requests](/bugbarn/docs/sdks/http) from any language.
