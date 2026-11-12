@@ -76,8 +76,7 @@ func TestRunMapsCommandErrorsToExitCodes(t *testing.T) {
 }
 
 func TestEveryDocumentedCommandIsWired(t *testing.T) {
-	var usage string
-	usage = quiet(t, printUsage)
+	usage := quiet(t, printUsage)
 	for name := range commands {
 		if !strings.Contains(usage, "\n  "+name+" ") {
 			t.Errorf("command %q is wired but missing from the usage text", name)
