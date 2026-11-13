@@ -116,6 +116,16 @@ type tuning struct {
 	maxPause    time.Duration
 	budget      time.Duration
 	maxPerSweep int64
+	// now is the clock the batch loop reads for its budget; nil means
+	// time.Now. Tests inject one so the budget does not depend on wall time.
+	now func() time.Time
+}
+
+func (t tuning) clock() time.Time {
+	if t.now != nil {
+		return t.now()
+	}
+	return time.Now()
 }
 
 func defaultTuning() tuning {
@@ -247,16 +257,16 @@ func drainBatches(
 	ctx context.Context, del deleteBatch, cutoff time.Time, tun tuning, log *slog.Logger, m *workerMetrics,
 ) sweepResult {
 	res := sweepResult{stop: "row_budget"}
-	deadline := time.Now().Add(tun.budget)
+	deadline := tun.clock().Add(tun.budget)
 
 	for res.deleted < tun.maxPerSweep {
 		if ctx.Err() != nil {
 			res.aborted = true
 			return res
 		}
-		batchStart := time.Now()
+		batchStart := tun.clock()
 		n, err := del(ctx, tun.batchSize)
-		batchDur := time.Since(batchStart)
+		batchDur := tun.clock().Sub(batchStart)
 		res.deleteTime += batchDur
 		if err != nil {
 			if !shuttingDown(err) {
@@ -275,7 +285,7 @@ func drainBatches(
 			res.drained, res.stop = true, "drained"
 			return res
 		}
-		if tun.budget > 0 && !time.Now().Before(deadline) {
+		if tun.budget > 0 && !tun.clock().Before(deadline) {
 			res.stop = "time_budget"
 			return res
 		}

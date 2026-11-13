@@ -14,13 +14,13 @@ import (
 type fakeStore struct {
 	mu sync.Mutex
 
-	remaining   int64 // rows still older than the cutoff
-	limits      []int // limit passed to each DeleteEventsBefore call
-	cutoffs     []time.Time
-	deleteErr   error
-	countErr    error
-	countCalls  int
-	deleteDelay time.Duration // simulates a batch that holds the writer
+	remaining  int64 // rows still older than the cutoff
+	limits     []int // limit passed to each DeleteEventsBefore call
+	cutoffs    []time.Time
+	deleteErr  error
+	countErr   error
+	countCalls int
+	onDelete   func() // runs inside each delete batch, e.g. to advance a fake clock
 
 	// Per-project retention overrides and what the per-project pass asked of them.
 	overrides       map[int64]int
@@ -94,8 +94,8 @@ func (f *fakeStore) DeleteEventsBefore(_ context.Context, cutoff time.Time, limi
 	defer f.mu.Unlock()
 	f.limits = append(f.limits, limit)
 	f.cutoffs = append(f.cutoffs, cutoff)
-	if f.deleteDelay > 0 {
-		time.Sleep(f.deleteDelay)
+	if f.onDelete != nil {
+		f.onDelete()
 	}
 	if f.deleteErr != nil {
 		return 0, f.deleteErr
@@ -275,21 +275,23 @@ func TestPauseIsProportionalToBatchCost(t *testing.T) {
 // production showed we did not: batches ran tens of seconds, so a full row
 // budget would sweep for hours and overrun the hourly interval.
 func TestSweepStopsOnWallClockBudget(t *testing.T) {
-	store := &fakeStore{remaining: maxDeletesPerSweep, deleteDelay: 20 * time.Millisecond}
+	// A fake clock that each batch advances by 20ms: the budget is spent after
+	// exactly three batches, whatever the host is doing.
+	clock := time.Unix(1_700_000_000, 0)
+	store := &fakeStore{remaining: maxDeletesPerSweep, onDelete: func() { clock = clock.Add(20 * time.Millisecond) }}
 	tun := fastTuning()
 	tun.budget = 60 * time.Millisecond
+	tun.now = func() time.Time { return clock }
 
-	start := time.Now()
 	sweep(context.Background(), store, Config{RetentionDays: 30}, tun, quietLogger(), nil)
-	elapsed := time.Since(start)
 
-	if store.remaining == 0 {
-		t.Fatal("the whole backlog drained; the wall-clock budget did nothing")
+	// The budget is only checked between batches, so the batch that spends it
+	// still completes: 20ms, 40ms, then 60ms reaches the deadline.
+	if got := store.batches(); got != 3 {
+		t.Errorf("ran %d batches, want 3 (60ms budget, 20ms per batch)", got)
 	}
-	// Generous ceiling: the budget is only checked between batches, so one
-	// in-flight batch always overruns it.
-	if elapsed > time.Second {
-		t.Errorf("sweep ran %v with a %v budget — the clock is not bounding it", elapsed, tun.budget)
+	if want := int64(maxDeletesPerSweep - 3*batchSize); store.remaining != want {
+		t.Errorf("remaining %d, want %d: the clock did not bound the sweep", store.remaining, want)
 	}
 }
 
