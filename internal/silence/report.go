@@ -192,3 +192,31 @@ func (s *LogShipper) Ship(ctx context.Context, f Finding, mode Mode) {
 		s.log.Warn("silence rules: ship line: insert", "project", s.project, "error", err)
 	}
 }
+
+// ShipSweep stores one info-level entry with the sweep's counts: how many
+// projects were checked and how many rules would fire. It carries no project
+// name. Without it, an hour in which nothing fires leaves no trace in `bb logs`
+// and cannot be told from a monitor that does not run.
+func (s *LogShipper) ShipSweep(ctx context.Context, mode Mode, projects, wouldFire int) {
+	if s.project == "" {
+		return
+	}
+	p, err := s.projects.ProjectBySlug(ctx, s.project)
+	if err != nil {
+		s.log.Warn("silence rules: ship sweep: project", "project", s.project, "error", err)
+		return
+	}
+	entry := storage.LogEntry{
+		ProjectID:  p.ID,
+		ReceivedAt: s.now().UTC(),
+		LevelNum:   30,
+		Level:      "info",
+		Message:    "silence rules swept",
+		Data: map[string]any{
+			"mode": string(mode), "projects": projects, "would_fire": wouldFire, "component": "silence-rules",
+		},
+	}
+	if err := s.logs.InsertLogEntries(ctx, []storage.LogEntry{entry}); err != nil {
+		s.log.Warn("silence rules: ship sweep: insert", "project", s.project, "error", err)
+	}
+}

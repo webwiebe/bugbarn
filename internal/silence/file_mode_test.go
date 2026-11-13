@@ -369,3 +369,51 @@ func TestParseModeFile(t *testing.T) {
 		}
 	}
 }
+
+type sweepShipper struct {
+	recordingShipper
+	sweeps [][3]int
+}
+
+func (s *sweepShipper) ShipSweep(_ context.Context, _ Mode, projects, wouldFire int) {
+	s.sweeps = append(s.sweeps, [3]int{projects, wouldFire})
+}
+
+// A sweep that fires nothing still reaches the shipper, with the counts.
+func TestEverySweepIsShippedWithItsCounts(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.project("quiet-but-young")
+	shipper := &sweepShipper{}
+	f.rules(ModeDryRun, &recordingFiler{}, shipper).Check(context.Background(), now)
+	if len(shipper.sweeps) != 1 || shipper.sweeps[0][0] < 1 || shipper.sweeps[0][1] != 0 {
+		t.Fatalf("sweeps = %v, want one sweep of at least 1 project with 0 firing", shipper.sweeps)
+	}
+	if len(shipper.shipped) != 0 {
+		t.Fatalf("shipped %d would-fire lines for a project with no history", len(shipper.shipped))
+	}
+}
+
+func TestLogShipperWritesTheSweepCountsWithoutAProjectName(t *testing.T) {
+	t.Parallel()
+	logs := &fakeLogs{}
+	s := NewLogShipper(logs, &fakeIssues{target: storage.Project{ID: 5, Slug: "bugbarn-service"}}, "bugbarn-service",
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.now = func() time.Time { return now }
+	s.ShipSweep(context.Background(), ModeDryRun, 55, 2)
+	if len(logs.entries) != 1 {
+		t.Fatalf("stored %d entries, want 1", len(logs.entries))
+	}
+	e := logs.entries[0]
+	if e.ProjectID != 5 || e.Message != "silence rules swept" || e.Data["projects"] != 55 || e.Data["would_fire"] != 2 {
+		t.Errorf("entry = %+v", e)
+	}
+	if _, ok := e.Data["project"]; ok {
+		t.Errorf("sweep line names a project: %+v", e.Data)
+	}
+	NewLogShipper(logs, &fakeIssues{}, "", slog.New(slog.NewTextHandler(io.Discard, nil))).
+		ShipSweep(context.Background(), ModeDryRun, 1, 1)
+	if len(logs.entries) != 1 {
+		t.Errorf("a shipper without a self project stored a line")
+	}
+}

@@ -139,6 +139,13 @@ type Shipper interface {
 	Ship(ctx context.Context, f Finding, mode Mode)
 }
 
+// SweepShipper is the optional second half of a Shipper: it also writes one
+// line per sweep with the counts, so a sweep that fired nothing still shows in
+// the same place that the "would fire" lines do.
+type SweepShipper interface {
+	ShipSweep(ctx context.Context, mode Mode, projects, wouldFire int)
+}
+
 // Rules evaluates the revised silence rules hourly. In dry run it logs what
 // would fire per project and does nothing else; in file mode it also files
 // and resolves issues through its Filer.
@@ -200,6 +207,9 @@ func (r *Rules) Check(ctx context.Context, now time.Time) []Finding {
 		found = append(found, r.checkProject(ctx, now, p)...)
 	}
 	r.log.Info("silence rules swept", "mode", string(r.cfg.Mode), "projects", len(projects), "would_fire", len(found))
+	if ss, ok := r.shipper.(SweepShipper); ok {
+		ss.ShipSweep(ctx, r.cfg.Mode, len(projects), len(found))
+	}
 	return found
 }
 
