@@ -20,7 +20,11 @@ kind: CronJob
 metadata:
   name: bugbarn-settings-snapshot
 spec:
-  schedule: "0 * * * *"
+  # Minute 7, off the top of the hour. At 09:00 CET on 2026-11-13 this job started
+  # with the SpanBarn snapshot and two brandtrace jobs while layer7-prod stalled
+  # for about three minutes (#279); the snapshot ran 3m41s instead of 30s. SpanBarn's
+  # snapshot moves to :37 in its own repo.
+  schedule: "7 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

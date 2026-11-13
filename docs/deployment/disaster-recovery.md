@@ -56,7 +56,7 @@ BugBarn files as an issue in its own `bugbarn-service` project.
 s3://barn-backups/bugbarn/settings-snapshots/production/<TIMESTAMP>.db
 ```
 
-Hourly, newest 14 retained. The CronJob is `bugbarn-settings-snapshot`
+Hourly at minute 7, newest 14 retained. The CronJob is `bugbarn-settings-snapshot`
 (production only — testing and staging are disposable).
 
 ## Restoring
