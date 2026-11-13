@@ -160,8 +160,6 @@ func Load() Config {
 		// Mirrors retention.DefaultRetentionDays; kept as a literal so config
 		// does not have to depend on the retention package.
 		EventRetentionDays: envIntPositive("BUGBARN_EVENT_RETENTION_DAYS", 30),
-		SilenceRules:       os.Getenv("BUGBARN_SILENCE_RULES"),
-		SilenceProject:     getenv("BUGBARN_SILENCE_PROJECT", "infra"),
 		// Sampling is on by default: a deployment that configures nothing is
 		// still protected from a runaway fingerprint. envIntZeroOK, not
 		// envIntPositive, because 0 is a meaningful value here (sampling off)
@@ -192,6 +190,7 @@ func Load() Config {
 	cfg.Telemetry = parseTelemetryConfig(cfg.DBPath)
 	cfg.Cloudflare = parseCloudflareConfig()
 	cfg.Compact = parseCompactConfig()
+	cfg.SilenceRules, cfg.SilenceProject = os.Getenv("BUGBARN_SILENCE_RULES"), getenv("BUGBARN_SILENCE_PROJECT", "infra")
 
 	// Global admin alert recipient. Every new issue and regression across all
 	// projects is emailed here. Falls back to the weekly-digest recipient so a
