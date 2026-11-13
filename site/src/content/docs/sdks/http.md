@@ -170,7 +170,9 @@ curl -X POST https://bugbarn.example.com/api/v1/logs \
 
 Set `X-BugBarn-Project` to the slug of the project you want to receive the event. If the project does not exist it is created automatically. If the header is omitted the event lands in the `default` project.
 
-A single API key can route to any number of projects by varying this header.
+A key without a project binding, and a key with the `full` scope, can route events to any number of projects by varying this header.
+
+A key bound to a project with an `ingest` or `read` scope reaches only that project, on the ingest routes (events, logs, Alertmanager webhooks and check-ins) as on the read and admin routes (issues, logs, releases, monitors and the rest of `/api/v1`). A request that names another project in `X-BugBarn-Project` or `project_slug` is answered `403` (`forbidden`, a permanent refusal: do not retry), and the header does not create a project for such a key, so a slug that no project has is refused too. An issue of another project is answered `404`. Setup keys resolve to the project they name and keep working. Keys with the `full` scope, user sessions and the shared static key are not confined.
 
 ## Response codes
 
