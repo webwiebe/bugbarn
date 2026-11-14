@@ -1,6 +1,8 @@
 package api
 
 import (
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,10 +39,10 @@ func TestDeliverWriteOrder(t *testing.T) {
 		t.Cleanup(func() { _ = store.Close() })
 		server := NewServer(nil, store, nil)
 		if withSpool {
-			server.SetIngestSpool(newTestSpool(t, "http://localhost:0"))
+			server.SetIngestSpool(newSpool(t))
 		}
 		if withWriter {
-			server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+			server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 		}
 
 		local := false
@@ -77,4 +79,14 @@ func TestDeliverWriteOrder(t *testing.T) {
 			t.Fatalf("got %+v, want the local handler to answer 418", got)
 		}
 	})
+}
+
+func newSpool(t *testing.T) *writeforward.Spool {
+	t.Helper()
+	sp, err := writeforward.NewSpool(t.TempDir(), "http://localhost:0", 1<<20, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sp.Close() })
+	return sp
 }

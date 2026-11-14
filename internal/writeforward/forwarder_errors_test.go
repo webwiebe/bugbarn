@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"bytes"
@@ -35,7 +35,7 @@ func TestForwardRefusedDialAnswers503WithRetryAfter(t *testing.T) {
 	ln.Close() // nothing listens here any more
 
 	logs := captureDefaultLog(t)
-	fwd := NewWriteForwarder("http://" + addr)
+	fwd := NewProxy("http://" + addr)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitors/w/check-ins", strings.NewReader(`{"status":"ok"}`))
 	rec := httptest.NewRecorder()
 	fwd.Forward(rec, req)
@@ -68,7 +68,7 @@ func TestForwardResetAfterTheRequestWasSentStays502(t *testing.T) {
 	defer upstream.Close()
 
 	logs := captureDefaultLog(t)
-	fwd := NewWriteForwarder(upstream.URL)
+	fwd := NewProxy(upstream.URL)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"message":"x"}`))
 	rec := httptest.NewRecorder()
 	fwd.Forward(rec, req)

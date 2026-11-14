@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"log/slog"
 	"net"
 	"net/http"
@@ -79,8 +80,8 @@ type Server struct {
 	telemetryIngester  TelemetryIngester
 	telemetryProject   string
 	telemetryView      *telemetryview.Service
-	writeForwarder     *WriteForwarder
-	ingestSpool        *SpoolForwarder
+	writeForwarder     *writeforward.Proxy
+	ingestSpool        *writeforward.Spool
 	mutQueue           *mutqueue.Queue
 	dbPath             string
 
@@ -228,7 +229,7 @@ func (s *Server) SetRetentionDays(days int) {
 
 // SetWriteForwarder configures the server to forward non-GET requests to
 // an upstream writer instance. Used in reader mode (CQRS split).
-func (s *Server) SetWriteForwarder(f *WriteForwarder) {
+func (s *Server) SetWriteForwarder(f *writeforward.Proxy) {
 	s.writeForwarder = f
 }
 
@@ -252,7 +253,7 @@ func (s *Server) SetMonitorReporter(r monitorsvc.Reporter) {
 // endpoints (events, logs, analytics). When set, those endpoints append to
 // the on-disk spool and return 202 instead of forwarding synchronously, so
 // writer downtime during deploys does not surface as 502s to SDKs.
-func (s *Server) SetIngestSpool(sp *SpoolForwarder) {
+func (s *Server) SetIngestSpool(sp *writeforward.Spool) {
 	s.ingestSpool = sp
 }
 

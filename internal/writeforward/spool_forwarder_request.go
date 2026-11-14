@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"io"
@@ -9,7 +9,7 @@ import (
 
 // readBody reads the request body within the size limit. When it cannot, it
 // returns the drop reason to answer with and ok false.
-func (s *SpoolForwarder) readBody(r *http.Request) (body []byte, drop ingestresp.Drop, ok bool) {
+func (s *Spool) readBody(r *http.Request) (body []byte, drop ingestresp.Drop, ok bool) {
 	if r.Body == nil {
 		return nil, ingestresp.Drop{}, true
 	}
@@ -44,7 +44,7 @@ func forwardedHeaderValues(r *http.Request) map[string]string {
 // consumer drops any item with an empty slug. The header, when present, wins, as
 // the caller's explicit override. It answers the request and returns false when
 // the lookup fails, so the client retries.
-func (s *SpoolForwarder) stampProjectSlug(w http.ResponseWriter, r *http.Request, headers map[string]string) bool {
+func (s *Spool) stampProjectSlug(w http.ResponseWriter, r *http.Request, headers map[string]string) bool {
 	if headers[projectHeader] != "" || s.resolveSlug == nil {
 		return true
 	}

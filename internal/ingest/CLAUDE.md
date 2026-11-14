@@ -13,7 +13,7 @@ and `cmd/bugbarn/reader.go` (reader).
   digest, analytics rollup, WAL checkpoint.
 - `"reader"` opens the store read-only and never writes SQLite. `BUGBARN_WRITER_URL` is
   required. Every non-GET request it cannot answer from the read store (issue mutations,
-  releases, login/logout, session writes) is proxied to the writer by `api.WriteForwarder`.
+  releases, login/logout, session writes) is proxied to the writer by `writeforward.Proxy`.
 
 Production runs one writer and several readers on the same PVC; see `deploy/CLAUDE.md`.
 
@@ -24,8 +24,8 @@ happens next is fixed at startup:
 
 | `BUGBARN_SPOOL_DIR` set? | `BUGBARN_REDIS_QUEUE_URL` set? | Path |
 |---|---|---|
-| no | any | Synchronous proxy to the writer (`WriteForwarder`, 30s). A writer outage returns a plain 502. |
-| yes | no | Append to the reader's `forward.ndjson`, reply 202, drain by POSTing to `BUGBARN_WRITER_URL` (`api.SpoolForwarder`). |
+| no | any | Synchronous proxy to the writer (`writeforward.Proxy`, 30s). A writer outage returns a plain 502. |
+| yes | no | Append to the reader's `forward.ndjson`, reply 202, drain by POSTing to `BUGBARN_WRITER_URL` (`writeforward.Spool`). |
 | yes | yes | Same append and 202, drain by `LPUSH` to the Redis list `bugbarn:write-queue` (`queue.Publish`). |
 
 The reader only gets a spool when `BUGBARN_SPOOL_DIR` is set explicitly in the
@@ -99,7 +99,7 @@ SDKs decide whether to retry from the status and body alone:
 `ingest.Handler` runs `normalize.Validate` before replying, so a 202 means the payload
 will parse. The reader's spool forwarder does the same for events and for JSON log bodies
 (`logparse.DecodeJSONBody`: a `logs` array, #263). Known exceptions still answer outside the contract: route-level API-key checks
-(plain 401), a reader log without a project (plain 400) and `WriteForwarder`. The forwarder
+(plain 401), a reader log without a project (plain 400) and `writeforward.Proxy`. The proxy
 answers 503 `ingest_unavailable` only when the dial failed (the writer cannot have seen the
 request) and a plain 502 for anything after a connection existed, so an SDK retry never
 duplicates an event. Each failure is logged at warn and tagged on the span with

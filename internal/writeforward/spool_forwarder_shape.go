@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"strings"
@@ -41,6 +41,24 @@ func kindForPath(path string) string {
 	default:
 		// Telemetry paths match exactly; RequestURI may carry a query string.
 		p, _, _ := strings.Cut(path, "?")
-		return telemetryKind(p)
+		return TelemetryKind(p)
 	}
+}
+
+// Telemetry ingest paths. internal/api registers its routes on these.
+const (
+	TelemetrySecurityPath = "/api/v1/telemetry/security"
+	TelemetryMetricsPath  = "/api/v1/telemetry/metrics"
+)
+
+// TelemetryKind maps a telemetry ingest path to its queue kind, or "" for any
+// other path.
+func TelemetryKind(path string) string {
+	switch path {
+	case TelemetrySecurityPath:
+		return queue.KindSecurity
+	case TelemetryMetricsPath:
+		return queue.KindMetrics
+	}
+	return ""
 }

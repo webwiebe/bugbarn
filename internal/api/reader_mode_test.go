@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -68,7 +69,7 @@ func newReaderHarness(t *testing.T) *readerHarness {
 	reader := NewServerWithAuth(nil, readerStore, userAuth, auth.NewSessionManager(secret, 12*time.Hour), nil, nil)
 	reader.SetOIDCClient(auth.NewOIDCClient(oidcCfg))
 	reader.SetSessionStore(sessionstore.NewRemote(readerStore, writerHTTP.URL, secret))
-	reader.SetWriteForwarder(NewWriteForwarder(writerHTTP.URL))
+	reader.SetWriteForwarder(writeforward.NewProxy(writerHTTP.URL))
 
 	return &readerHarness{writerStore: writerStore, writerHTTP: writerHTTP, reader: reader, idp: idp}
 }

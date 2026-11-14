@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 
 // publishAlertmanager expands a webhook envelope only when a reader drains it
 // into Redis. HTTP forwarding preserves the envelope for the writer to expand.
-func (s *SpoolForwarder) publishAlertmanager(ctx context.Context, rec spooledRequest) error {
+func (s *Spool) publishAlertmanager(ctx context.Context, rec spooledRequest) error {
 	body, err := base64.StdEncoding.DecodeString(rec.BodyBase64)
 	if err != nil {
 		return nil // corrupt local spool record; dropping avoids blocking all ingest

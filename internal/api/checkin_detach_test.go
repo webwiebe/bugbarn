@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -97,7 +98,7 @@ func TestForwardDetachedFinishesAfterTheClientHangsUp(t *testing.T) {
 		}
 	}))
 	t.Cleanup(writer.Close)
-	fwd := NewWriteForwarder(writer.URL)
+	fwd := writeforward.NewProxy(writer.URL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitors/job/check-ins",
@@ -122,7 +123,7 @@ func TestForwardDetachedGivesUpAtItsOwnDeadline(t *testing.T) {
 	}))
 	t.Cleanup(writer.Close)
 	t.Cleanup(func() { close(release) })
-	fwd := NewWriteForwarder(writer.URL)
+	fwd := writeforward.NewProxy(writer.URL)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitors/job/check-ins", strings.NewReader(`{}`))
 	rr := httptest.NewRecorder()

@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"context"
@@ -30,9 +30,9 @@ func TestRedisSpoolForwarderPublishes(t *testing.T) {
 	}
 	defer q.Close()
 
-	sf, err := NewRedisSpoolForwarder(t.TempDir(), q, 1<<20, slog.Default())
+	sf, err := NewRedisSpool(t.TempDir(), q, 1<<20, slog.Default())
 	if err != nil {
-		t.Fatalf("NewRedisSpoolForwarder: %v", err)
+		t.Fatalf("NewRedisSpool: %v", err)
 	}
 	defer sf.Close()
 
@@ -86,7 +86,7 @@ func TestRedisSpoolForwarderPublishes(t *testing.T) {
 
 // newTestRedisForwarder builds a Redis-backed forwarder over a throwaway
 // miniredis, returning both so tests can assert on what was published.
-func newTestRedisForwarder(t *testing.T) (*SpoolForwarder, *queue.RedisQueue) {
+func newTestRedisForwarder(t *testing.T) (*Spool, *queue.RedisQueue) {
 	t.Helper()
 	mr, err := miniredis.Run()
 	if err != nil {
@@ -98,9 +98,9 @@ func newTestRedisForwarder(t *testing.T) (*SpoolForwarder, *queue.RedisQueue) {
 		t.Fatalf("queue: %v", err)
 	}
 	t.Cleanup(func() { q.Close() })
-	sf, err := NewRedisSpoolForwarder(t.TempDir(), q, 1<<20, slog.Default())
+	sf, err := NewRedisSpool(t.TempDir(), q, 1<<20, slog.Default())
 	if err != nil {
-		t.Fatalf("NewRedisSpoolForwarder: %v", err)
+		t.Fatalf("NewRedisSpool: %v", err)
 	}
 	t.Cleanup(func() { sf.Close() })
 	return sf, q

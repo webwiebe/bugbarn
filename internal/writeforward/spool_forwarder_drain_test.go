@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 )
 
-func spoolAt(t *testing.T, sf *SpoolForwarder, rec spooledRequest) {
+func spoolAt(t *testing.T, sf *Spool, rec spooledRequest) {
 	t.Helper()
 	if rec.ReceivedAt.IsZero() {
 		rec.ReceivedAt = time.Now().UTC()
@@ -27,7 +27,7 @@ func spoolAt(t *testing.T, sf *SpoolForwarder, rec spooledRequest) {
 	}
 }
 
-func cancelled() context.Context {
+func canceled() context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	return ctx
@@ -83,7 +83,7 @@ func TestAlertmanagerPublishFailureKeepsTheRecordForRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer q.Close()
-	sf, err := NewRedisSpoolForwarder(t.TempDir(), q, 1<<20, slog.Default())
+	sf, err := NewRedisSpool(t.TempDir(), q, 1<<20, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestDrainStepKeepsTheCursorWhenTheWriterFails(t *testing.T) {
 	sf := newTestSpool(t, writer.URL)
 	spoolRecord(t, sf)
 
-	// A cancelled context skips the retry backoff; the 503 still fails the record.
+	// A canceled context skips the retry backoff; the 503 still fails the record.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	sf.drainStep(ctx)
@@ -173,7 +173,7 @@ func TestDrainStepSurvivesACorruptCursor(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sf.dir, spoolCursorFileName), []byte("{broken"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	sf.drainStep(cancelled())
+	sf.drainStep(canceled())
 	if _, err := readCursor(sf.dir); err == nil {
 		t.Fatal("a corrupt cursor was read without error")
 	}
@@ -193,7 +193,7 @@ func TestDrainStepRotatesAnOversizedDrainedSpool(t *testing.T) {
 	sf.drainStep(context.Background())
 	// The spool is drained and oversized: the next pass finds nothing to
 	// forward and starts a fresh file with a reset cursor.
-	sf.drainStep(cancelled())
+	sf.drainStep(canceled())
 
 	if info, err := os.Stat(sf.path); err != nil || info.Size() != 0 {
 		t.Fatalf("spool file after rotation: %v, %v", info, err)
@@ -209,7 +209,7 @@ func TestDrainStepRotatesAnOversizedDrainedSpool(t *testing.T) {
 
 func TestDrainStopsWhenItsContextEnds(t *testing.T) {
 	sf := newTestSpool(t, "http://127.0.0.1:1")
-	sf.Drain(cancelled())
+	sf.Drain(canceled())
 }
 
 func TestForwardOneDropsACorruptRecord(t *testing.T) {
@@ -263,21 +263,21 @@ func TestCursorHelpers(t *testing.T) {
 	}
 }
 
-func TestNewSpoolForwardersValidateTheirArguments(t *testing.T) {
-	if _, err := NewSpoolForwarder("", "http://w", 1, slog.Default()); err == nil {
+func TestNewSpoolsValidateTheirArguments(t *testing.T) {
+	if _, err := NewSpool("", "http://w", 1, slog.Default()); err == nil {
 		t.Error("an empty dir was accepted")
 	}
-	if _, err := NewSpoolForwarder(t.TempDir(), "", 1, slog.Default()); err == nil {
+	if _, err := NewSpool(t.TempDir(), "", 1, slog.Default()); err == nil {
 		t.Error("an empty writer url was accepted")
 	}
-	if _, err := NewRedisSpoolForwarder("", nil, 1, slog.Default()); err == nil {
+	if _, err := NewRedisSpool("", nil, 1, slog.Default()); err == nil {
 		t.Error("an empty dir was accepted for the redis forwarder")
 	}
 	blocker := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewSpoolForwarder(filepath.Join(blocker, "sub"), "http://w", 1, slog.Default()); err == nil {
+	if _, err := NewSpool(filepath.Join(blocker, "sub"), "http://w", 1, slog.Default()); err == nil {
 		t.Error("a spool dir under a file was accepted")
 	}
 }

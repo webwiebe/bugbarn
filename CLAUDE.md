@@ -30,6 +30,7 @@ internal/
     ingestproc/       Writer-side persistence pipeline for the Redis consumer, held-event replay
     ingestresp/       Ingest response contract (accepted / retryable / permanent drop)
     ingesthealth/     Ingest stall monitor, health endpoint status, out-of-band alerts
+    writeforward/     Reader-to-writer transport: HTTP proxy, on-disk forward spool, Redis enqueue
     queue/            Redis write queue between readers and the writer
     spool/            On-disk NDJSON event queue with cursor and dead letter
     worker/           ProcessRecord (decode, normalize, fingerprint), symbolication, worker status

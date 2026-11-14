@@ -432,3 +432,19 @@ func decodeNameAndSlug(w http.ResponseWriter, r *http.Request, badBodyMsg string
 	}
 	return name, slug, true
 }
+
+func slugify(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	var result strings.Builder
+	prevDash := true // avoid leading dash
+	for _, ch := range s {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
+			result.WriteRune(ch)
+			prevDash = false
+		} else if !prevDash {
+			result.WriteRune('-')
+			prevDash = true
+		}
+	}
+	return strings.TrimRight(result.String(), "-")
+}
