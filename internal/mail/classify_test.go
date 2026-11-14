@@ -1,4 +1,4 @@
-package digest
+package mail
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-func TestClassifyMailError(t *testing.T) {
+func TestClassifyError(t *testing.T) {
 	cases := []struct {
 		name      string
 		err       error
@@ -32,22 +32,22 @@ func TestClassifyMailError(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			class, code := classifyMailError(tc.err)
+			class, code := classifyError(tc.err)
 			if class != tc.wantClass || code != tc.wantCode {
-				t.Fatalf("classifyMailError = %q, %d; want %q, %d", class, code, tc.wantClass, tc.wantCode)
+				t.Fatalf("classifyError = %q, %d; want %q, %d", class, code, tc.wantClass, tc.wantCode)
 			}
 		})
 	}
 }
 
-func TestMailErrorTextCarriesNoRelayOutput(t *testing.T) {
-	err := &MailError{Class: "permanent_rejection", Code: 550}
+func TestErrorTextCarriesNoRelayOutput(t *testing.T) {
+	err := &Error{Class: "permanent_rejection", Code: 550}
 	if got := err.Error(); got != "send email failed: permanent_rejection (smtp 550)" {
 		t.Fatalf("Error() = %q", got)
 	}
-	canceledErr := &MailError{Class: "other", cause: context.Canceled}
+	canceledErr := &Error{Class: "other", cause: context.Canceled}
 	if !errors.Is(canceledErr, context.Canceled) {
-		t.Fatal("MailError hides context.Canceled from errors.Is")
+		t.Fatal("Error hides context.Canceled from errors.Is")
 	}
 }
 

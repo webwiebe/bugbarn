@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -113,7 +113,7 @@ func (s *fakeSMTPServer) handle(conn net.Conn) {
 }
 
 // TestEvaluator_AdminEmailFiresOverSMTP runs the real production path
-// (Bus -> HandleEvent -> notifyAdmin -> Deliverer.Fire -> digest.DeliverEmail
+// (Bus -> HandleEvent -> notifyAdmin -> Deliverer.Fire -> mail.Send
 // -> net/smtp) against a live in-process SMTP server, and asserts that a new
 // issue and a regression each deliver a real email to the admin address.
 func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
@@ -123,7 +123,7 @@ func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
 	defer srv.close()
 	host, port := srv.addr()
 
-	mailCfg := digest.MailConfig{
+	mailCfg := mail.Config{
 		Enabled: true,
 		Host:    host,
 		Port:    port,

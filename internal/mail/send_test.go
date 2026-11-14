@@ -1,4 +1,4 @@
-package digest
+package mail
 
 import (
 	"context"
@@ -46,8 +46,8 @@ func stallingSMTP(t *testing.T) (host string, port int) {
 	return addr.IP.String(), addr.Port
 }
 
-func mailCfg(host string, port int) MailConfig {
-	return MailConfig{Enabled: true, Host: host, Port: port, From: "bb@example.com", To: "ops@example.com"}
+func mailCfg(host string, port int) Config {
+	return Config{Enabled: true, Host: host, Port: port, From: "bb@example.com", To: "ops@example.com"}
 }
 
 // A stalled server must not outlive the caller's deadline.
@@ -59,7 +59,7 @@ func TestDeliverEmailHonorsContextDeadline(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	err := DeliverEmail(ctx, mailCfg(host, port), "ops@example.com", "subj", "plain", "<p>html</p>")
+	err := Send(ctx, mailCfg(host, port), "ops@example.com", "subj", "plain", "<p>html</p>")
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -84,7 +84,7 @@ func TestDeliverEmailBoundedWithoutDeadline(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- DeliverEmail(context.Background(), mailCfg(host, port), "ops@example.com", "s", "p", "h")
+		done <- Send(context.Background(), mailCfg(host, port), "ops@example.com", "s", "p", "h")
 	}()
 
 	// Worst case is 3 shrunk attempts plus the 1s+3s backoff between them.
@@ -97,7 +97,7 @@ func TestDeliverEmailBoundedWithoutDeadline(t *testing.T) {
 			t.Fatal("want an error from a stalled server, got nil")
 		}
 	case <-time.After(30 * time.Second):
-		t.Fatal("DeliverEmail never returned — an attempt is unbounded")
+		t.Fatal("Send never returned — an attempt is unbounded")
 	}
 }
 
@@ -110,7 +110,7 @@ func TestDeliverEmailCancelledContextDoesNotDial(t *testing.T) {
 	cancel()
 
 	start := time.Now()
-	err := DeliverEmail(ctx, mailCfg("192.0.2.1", 1), "ops@example.com", "s", "p", "h")
+	err := Send(ctx, mailCfg("192.0.2.1", 1), "ops@example.com", "s", "p", "h")
 	if err == nil {
 		t.Fatal("want an error for a canceled context")
 	}
@@ -140,7 +140,7 @@ func TestDeliverEmailRetryBackoffIsInterruptible(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	err = DeliverEmail(ctx, mailCfg(addr.IP.String(), addr.Port), "ops@example.com", "s", "p", "h")
+	err = Send(ctx, mailCfg(addr.IP.String(), addr.Port), "ops@example.com", "s", "p", "h")
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -176,7 +176,7 @@ func TestDeliverEmailBuildsMultipart(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := DeliverEmail(ctx, mailCfg(host, port), "ops@example.com",
+	if err := Send(ctx, mailCfg(host, port), "ops@example.com",
 		"weekly digest", "PLAINBODY", "<p>HTMLBODY</p>"); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestDeliverEmailSetsFromNameAndReplyTo(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := DeliverEmail(ctx, cfg, "ops@example.com", "subj", "plain", "<p>html</p>"); err != nil {
+	if err := Send(ctx, cfg, "ops@example.com", "subj", "plain", "<p>html</p>"); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 

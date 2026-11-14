@@ -1,7 +1,6 @@
-package digest
+package mail
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -9,11 +8,9 @@ import (
 	"log/slog"
 	"mime"
 	"net"
-	"net/mail"
 	"net/smtp"
 	"net/textproto"
 	"strings"
-	"text/template"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -35,46 +32,6 @@ func init() {
 	)
 }
 
-// MailConfig holds SMTP settings. All fields are optional: when Enabled is
-// false (or Host/To are empty) the mailer is a no-op. Env vars follow the
-// same naming convention as rapid-root: SMTP_HOST, SMTP_PORT, SMTP_USER,
-// SMTP_PASS, SMTP_FROM, SMTP_FROM_NAME, SMTP_REPLY_TO — with
-// BUGBARN_DIGEST_ENABLED and BUGBARN_DIGEST_TO as the BugBarn-specific opt-in
-// controls.
-//
-// From is the mailbox we send as, and is what goes on the SMTP envelope; the
-// account BugBarn authenticates with is send-only, so FromName gives the
-// message a human label and ReplyTo points replies at a mailbox somebody
-// actually reads.
-type MailConfig struct {
-	Enabled  bool
-	Host     string
-	Port     int
-	User     string
-	Pass     string
-	From     string
-	FromName string
-	ReplyTo  string
-	To       string
-}
-
-// active reports whether SMTP delivery is configured and enabled.
-func (m MailConfig) active() bool {
-	return m.Enabled && m.Host != "" && m.To != ""
-}
-
-// formatAddress renders an address header value. Without a display name it
-// stays the bare address, which is exactly what every deployment sent before
-// FromName existed; with one it becomes `"Name" <addr>`, RFC 2047-encoded when
-// the name is not plain ASCII. The envelope sender is always the bare address,
-// so this only ever affects what the recipient sees.
-func formatAddress(name, addr string) string {
-	if name == "" {
-		return addr
-	}
-	return (&mail.Address{Name: name, Address: addr}).String()
-}
-
 // transientSMTPError returns true for network-level errors that are safe to
 // retry. Auth failures and permanent rejections return false so we fail fast.
 func transientSMTPError(err error) bool {
@@ -92,17 +49,17 @@ func transientSMTPError(err error) bool {
 	return false
 }
 
-// DeliverEmail sends the message with up to 3 attempts, retrying only on
+// Send sends the message with up to 3 attempts, retrying only on
 // transient failures (mirrors rapid-root email.ts retryEmailSend).
-func DeliverEmail(ctx context.Context, mc MailConfig, to, subject, plain, html string) error {
+func Send(ctx context.Context, mc Config, to, subject, plain, html string) error {
 	mc.To = to
-	return deliverEmail(ctx, mc, subject, plain, html)
+	return deliver(ctx, mc, subject, plain, html)
 }
 
 // buildMessage renders the RFC 5322 message. from is the bare sending address,
 // already resolved from From/User; it appears here wrapped in the display name
 // while the caller hands the bare form to the SMTP envelope.
-func buildMessage(mc MailConfig, from, subject, plain, html string) []byte {
+func buildMessage(mc Config, from, subject, plain, html string) []byte {
 	boundary := "==BugBarnDigest=="
 	var msg strings.Builder
 	msg.WriteString("From: " + formatAddress(mc.FromName, from) + "\r\n")
@@ -126,31 +83,13 @@ func buildMessage(mc MailConfig, from, subject, plain, html string) []byte {
 	return []byte(msg.String())
 }
 
-// MailError is what callers of deliverEmail get back on failure. It carries the
-// error class and SMTP reply code and nothing the relay said, because callers
-// log it and the relay's text can quote recipient addresses or account names.
-type MailError struct {
-	Class string
-	Code  int
-	cause error
-}
-
-func (e *MailError) Unwrap() error { return e.cause }
-
-func (e *MailError) Error() string {
-	if e.Code != 0 {
-		return fmt.Sprintf("send email failed: %s (smtp %d)", e.Class, e.Code)
-	}
-	return "send email failed: " + e.Class
-}
-
-func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html string) error {
+func deliver(ctx context.Context, mc Config, subject, plain, html string) error {
 	err := attemptDelivery(ctx, mc, subject, plain, html)
 	if err == nil {
 		return nil
 	}
-	class, code := classifyMailError(err)
-	me := &MailError{Class: class, Code: code}
+	class, code := classifyError(err)
+	me := &Error{Class: class, Code: code}
 	// Keep context cancellation visible to errors.Is; the sentinels carry no text.
 	switch {
 	case errors.Is(err, context.Canceled):
@@ -161,7 +100,7 @@ func deliverEmail(ctx context.Context, mc MailConfig, subject, plain, html strin
 	return me
 }
 
-func attemptDelivery(ctx context.Context, mc MailConfig, subject, plain, html string) error {
+func attemptDelivery(ctx context.Context, mc Config, subject, plain, html string) error {
 	from := mc.From
 	if from == "" {
 		from = mc.User
@@ -302,9 +241,9 @@ func writeMessage(client *smtp.Client, from string, to []string, msg []byte) err
 	return client.Quit()
 }
 
-// classifyMailError maps a send error to a low-cardinality class and, for SMTP
+// classifyError maps a send error to a low-cardinality class and, for SMTP
 // replies, the numeric code. It never returns the error text.
-func classifyMailError(err error) (class string, code int) {
+func classifyError(err error) (class string, code int) {
 	var tpErr *textproto.Error
 	if errors.As(err, &tpErr) {
 		switch {
@@ -332,13 +271,13 @@ func classifyMailError(err error) (class string, code int) {
 }
 
 func errorClass(err error) string {
-	class, _ := classifyMailError(err)
+	class, _ := classifyError(err)
 	return class
 }
 
 // sendMailTraced wraps a single SMTP send attempt in a span, recording the
 // mail host and attempt number and marking the span as failed on error. The
-// existing slog-based retry logging in deliverEmail is unchanged; this adds
+// existing slog-based retry logging in deliver is unchanged; this adds
 // span-level visibility alongside it.
 func sendMailTraced(ctx context.Context, host string, attempt int, send func() error) error {
 	_, span := tracing.Tracer().Start(ctx, "digest.EmailSend")
@@ -350,7 +289,7 @@ func sendMailTraced(ctx context.Context, host string, attempt int, send func() e
 	if err := send(); err != nil {
 		// Record the class and reply code only. The relay's text can quote the
 		// recipient address or the account name, and spans outlive the mail.
-		class, code := classifyMailError(err)
+		class, code := classifyError(err)
 		span.SetAttributes(attribute.String("error.class", class))
 		if code != 0 {
 			span.SetAttributes(attribute.Int("smtp.code", code))
@@ -368,128 +307,4 @@ func sendMailTraced(ctx context.Context, host string, attempt int, send func() e
 		attribute.Int("attempt", attempt),
 	))
 	return nil
-}
-
-// mailData is the template data bag for both plain and HTML renders.
-type mailData struct {
-	Start, End     string
-	TotalEvents    int
-	NewIssues      int
-	ResolvedIssues int
-	Regressions    int
-	Projects       []ProjectSection
-	PublicURL      string
-}
-
-var plainTmpl = template.Must(template.New("plain").Parse(`BugBarn weekly digest ({{.Start}} – {{.End}} UTC)
-
-All projects: {{.TotalEvents}} events   {{.NewIssues}} new issues   {{.ResolvedIssues}} resolved   {{.Regressions}} regressions
-{{range .Projects}}
-── {{.Project}} ──
-  {{.Stats.TotalEvents}} events   {{.Stats.NewIssues}} new   {{.Stats.ResolvedIssues}} resolved   {{.Stats.Regressions}} regressions
-{{- if .TopIssues}}
-
-  Top issues:
-{{range .TopIssues}}  · {{.Title}}  ({{.EventCount}} events, {{.Status}}){{if .URL}} — {{.URL}}{{end}}
-{{end}}{{- end}}{{end}}{{- if .PublicURL}}
-View all issues: {{.PublicURL}}
-{{- end}}`))
-
-var htmlTmpl = template.Must(template.New("html").Parse(`<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:24px">
-<h2 style="color:#1a1a1a">BugBarn weekly digest</h2>
-<p style="color:#555;margin-top:0">{{.Start}} – {{.End}} UTC</p>
-
-<table style="border-collapse:collapse;width:100%;margin:16px 0">
-<tr>
-<td style="padding:12px 16px;background:#f5f5f5;text-align:center">
-  <div style="font-size:24px;font-weight:bold">{{.TotalEvents}}</div>
-  <div style="color:#555;font-size:12px">events</div>
-</td>
-<td style="padding:12px 16px;background:#fff3cd;text-align:center">
-  <div style="font-size:24px;font-weight:bold">{{.NewIssues}}</div>
-  <div style="color:#555;font-size:12px">new issues</div>
-</td>
-<td style="padding:12px 16px;background:#d4edda;text-align:center">
-  <div style="font-size:24px;font-weight:bold">{{.ResolvedIssues}}</div>
-  <div style="color:#555;font-size:12px">resolved</div>
-</td>
-<td style="padding:12px 16px;background:#f8d7da;text-align:center">
-  <div style="font-size:24px;font-weight:bold">{{.Regressions}}</div>
-  <div style="color:#555;font-size:12px">regressions</div>
-</td>
-</tr>
-</table>
-
-{{range .Projects}}
-<h3 style="color:#1a1a1a;margin-top:28px;margin-bottom:4px;border-bottom:2px solid #eee;padding-bottom:6px">{{.Project}}</h3>
-<p style="color:#555;font-size:13px;margin:4px 0 8px">
-  {{.Stats.TotalEvents}} events &nbsp;·&nbsp; {{.Stats.NewIssues}} new &nbsp;·&nbsp;
-  {{.Stats.ResolvedIssues}} resolved &nbsp;·&nbsp; {{.Stats.Regressions}} regressions
-</p>
-{{- if .TopIssues}}
-<table style="border-collapse:collapse;width:100%;margin-bottom:8px">
-<thead><tr style="background:#f5f5f5">
-  <th style="padding:6px 10px;text-align:left;font-size:12px;color:#555">Issue</th>
-  <th style="padding:6px 10px;text-align:right;font-size:12px;color:#555">Events</th>
-  <th style="padding:6px 10px;text-align:left;font-size:12px;color:#555">Status</th>
-</tr></thead>
-<tbody>
-{{range .TopIssues}}<tr style="border-top:1px solid #eee">
-  <td style="padding:6px 10px;font-size:13px">
-  {{- if .URL}}<a href="{{.URL}}" style="color:#0066cc">{{.Title}}</a>{{else}}{{.Title}}{{end -}}
-  </td>
-  <td style="padding:6px 10px;text-align:right;font-size:13px">{{.EventCount}}</td>
-  <td style="padding:6px 10px;color:#555;font-size:13px">{{.Status}}</td>
-</tr>
-{{end}}</tbody>
-</table>
-{{- end}}
-{{end}}
-{{- if .PublicURL}}
-<p style="margin-top:24px"><a href="{{.PublicURL}}" style="color:#0066cc">View all issues →</a></p>
-{{- end}}
-</body>
-</html>`))
-
-// EmailNotifier delivers the digest via SMTP.
-type EmailNotifier struct {
-	Cfg MailConfig
-}
-
-func (n *EmailNotifier) Name() string { return "email" }
-
-func (n *EmailNotifier) Send(ctx context.Context, report Report) error {
-	if !n.Cfg.active() {
-		return nil
-	}
-
-	since, _ := time.Parse(time.RFC3339, report.PeriodStart)
-	end, _ := time.Parse(time.RFC3339, report.PeriodEnd)
-
-	d := mailData{
-		Start:     since.Format("Jan 2"),
-		End:       end.Format("Jan 2 2006"),
-		Projects:  report.Projects,
-		PublicURL: report.PublicURL,
-	}
-	for _, sec := range report.Projects {
-		d.TotalEvents += sec.Stats.TotalEvents
-		d.NewIssues += sec.Stats.NewIssues
-		d.ResolvedIssues += sec.Stats.ResolvedIssues
-		d.Regressions += sec.Stats.Regressions
-	}
-
-	subject := fmt.Sprintf("BugBarn weekly digest: %s - %s", since.Format("Jan 2"), end.Format("Jan 2, 2006"))
-
-	var plain, html bytes.Buffer
-	if err := plainTmpl.Execute(&plain, d); err != nil {
-		return fmt.Errorf("render plain: %w", err)
-	}
-	if err := htmlTmpl.Execute(&html, d); err != nil {
-		return fmt.Errorf("render html: %w", err)
-	}
-
-	return deliverEmail(ctx, n.Cfg, subject, plain.String(), html.String())
 }

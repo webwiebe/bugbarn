@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 )
 
 func emailRule() Rule {
@@ -33,12 +33,12 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 func TestDelivererBoundsEmailBurst(t *testing.T) {
 	const burst, concurrent, queued = 20, 2, 3
 
-	d := NewDeliverer(digest.MailConfig{Enabled: true, Host: "mail.example.com"})
+	d := NewDeliverer(mail.Config{Enabled: true, Host: "mail.example.com"})
 	d.setMailLimits(concurrent, queued)
 
 	release := make(chan struct{})
 	var inFlight, maxInFlight, sent atomic.Int64
-	d.sendEmail = func(ctx context.Context, _ digest.MailConfig, _, _, _, _ string) error {
+	d.sendEmail = func(ctx context.Context, _ mail.Config, _, _, _, _ string) error {
 		n := inFlight.Add(1)
 		for {
 			m := maxInFlight.Load()
@@ -87,12 +87,12 @@ func TestDelivererBoundsEmailBurst(t *testing.T) {
 
 // A send that waits for a slot past its deadline is lost too, so it is counted.
 func TestDelivererCountsEmailThatTimesOutWaiting(t *testing.T) {
-	d := NewDeliverer(digest.MailConfig{Enabled: true, Host: "mail.example.com"})
+	d := NewDeliverer(mail.Config{Enabled: true, Host: "mail.example.com"})
 	d.setMailLimits(1, 1)
 
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
-	d.sendEmail = func(context.Context, digest.MailConfig, string, string, string, string) error {
+	d.sendEmail = func(context.Context, mail.Config, string, string, string, string) error {
 		started <- struct{}{}
 		<-release
 		return nil

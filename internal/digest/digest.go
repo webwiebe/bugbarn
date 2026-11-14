@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 )
 
 // Budgets bounding a digest run. Gathering is per-project rather than one
@@ -29,7 +30,7 @@ type Config struct {
 	Day        int // 0=Sunday … 6=Saturday
 	Hour       int // 0–23
 	WebhookURL string
-	Mail       MailConfig
+	Mail       mail.Config
 	PublicURL  string
 	// GatherBudget bounds the data-gathering phase. Zero means DefaultGatherBudget.
 	GatherBudget time.Duration
@@ -38,7 +39,7 @@ type Config struct {
 }
 
 func (c Config) Enabled() bool {
-	return c.WebhookURL != "" || c.Mail.active()
+	return c.WebhookURL != "" || c.Mail.Active()
 }
 
 func (c Config) gatherBudget() time.Duration {

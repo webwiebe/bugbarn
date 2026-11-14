@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 )
 
 // Notifier delivers an ingest-health alert over a channel that does not touch
@@ -97,21 +97,21 @@ func (n *WebhookNotifier) Notify(ctx context.Context, env string, snap Snapshot)
 	return nil
 }
 
-// EmailNotifier sends the alert over SMTP, reusing the digest mailer. SMTP is a
+// EmailNotifier sends the alert over SMTP, reusing the mail package. SMTP is a
 // separate process on a separate host, so it survives the pipeline being wedged.
 type EmailNotifier struct {
-	mail digest.MailConfig
+	mail mail.Config
 	to   string
 }
 
 // NewEmailNotifier builds a notifier mailing to. It yields nil when SMTP is not
 // configured or no recipient is set, so callers can wire it unconditionally.
-func NewEmailNotifier(mail digest.MailConfig, to string) *EmailNotifier {
+func NewEmailNotifier(cfg mail.Config, to string) *EmailNotifier {
 	to = strings.TrimSpace(to)
-	if to == "" || !mail.Enabled || mail.Host == "" {
+	if to == "" || !cfg.Enabled || cfg.Host == "" {
 		return nil
 	}
-	return &EmailNotifier{mail: mail, to: to}
+	return &EmailNotifier{mail: cfg, to: to}
 }
 
 // Name identifies the channel in logs.
@@ -123,7 +123,7 @@ func (n *EmailNotifier) Notify(ctx context.Context, env string, snap Snapshot) e
 	if env != "" {
 		subject = fmt.Sprintf("BugBarn [%s]: ingest pipeline unhealthy", env)
 	}
-	return digest.DeliverEmail(ctx, n.mail, n.to, subject, plainBody(env, snap), htmlBody(env, snap))
+	return mail.Send(ctx, n.mail, n.to, subject, plainBody(env, snap), htmlBody(env, snap))
 }
 
 // alertLines are the facts an operator needs to confirm and triage a stall,
