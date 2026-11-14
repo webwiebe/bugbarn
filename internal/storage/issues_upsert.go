@@ -17,18 +17,18 @@ import (
 func (s *core) upsertIssue(ctx context.Context, projectID int64, processed event.ProcessedEvent) (Issue, int64, bool, error) {
 	in, err := prepareUpsertInputs(processed)
 	if err != nil {
-		return Issue{}, 0, false, err
+		return Issue{}, 0, false, wrapErr(err, "upsertIssue")
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Issue{}, 0, false, err
+		return Issue{}, 0, false, wrapErr(err, "upsertIssue")
 	}
 	defer tx.Rollback()
 
 	row, existing, err := findExistingIssue(ctx, tx, projectID, in.fingerprintValue)
 	if err != nil {
-		return Issue{}, 0, false, err
+		return Issue{}, 0, false, wrapErr(err, "upsertIssue")
 	}
 
 	if existing {
@@ -107,7 +107,7 @@ func prepareUpsertInputs(processed event.ProcessedEvent) (upsertInputs, error) {
 	seenAt := issueSeenAt(evt)
 	representative, err := marshalEvent(evt)
 	if err != nil {
-		return upsertInputs{}, err
+		return upsertInputs{}, wrapErr(err, "prepareUpsertInputs")
 	}
 
 	return upsertInputs{
@@ -197,7 +197,7 @@ WHERE project_id = ? AND fingerprint = ?`,
 	case errors.Is(err, sql.ErrNoRows):
 		return row, false, nil
 	default:
-		return row, false, err
+		return row, false, wrapErr(err, "findExistingIssue")
 	}
 }
 
@@ -260,18 +260,18 @@ type existingIssueParams struct {
 func (s *core) updateExistingIssue(ctx context.Context, tx *sql.Tx, p existingIssueParams) (Issue, int64, bool, error) {
 	issue, err := hydrateExistingIssue(p)
 	if err != nil {
-		return Issue{}, 0, false, err
+		return Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
 	}
 
 	issue.MuteMode = p.muteMode
 	regressed := applyRegressionTransition(&issue, p.muteMode, p.seenAt)
 
 	if err := updateIssueRow(ctx, tx, issue, regressed, p.id, p.projectID); err != nil {
-		return Issue{}, 0, false, err
+		return Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return Issue{}, 0, false, err
+		return Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
 	}
 	issue.Fingerprint = p.fingerprintValue
 	issue.RepresentativeEvent = p.evt
@@ -293,11 +293,11 @@ func hydrateExistingIssue(p existingIssueParams) (Issue, error) {
 	issue := p.issue
 	parsedFirstSeen, err := parseTime(p.firstSeen)
 	if err != nil {
-		return Issue{}, err
+		return Issue{}, wrapErr(err, "hydrateExistingIssue")
 	}
 	parsedLastSeen, err := parseTime(p.lastSeen)
 	if err != nil {
-		return Issue{}, err
+		return Issue{}, wrapErr(err, "hydrateExistingIssue")
 	}
 	issue.IssueNumber = p.existingIssueNumber
 	issue.FirstSeen = parsedFirstSeen
@@ -310,10 +310,10 @@ func hydrateExistingIssue(p existingIssueParams) (Issue, error) {
 	issue.ReopenedAt, _ = parseTime(p.reopenedAt)
 	issue.LastRegressedAt, _ = parseTime(p.lastRegressedAt)
 	if err := unmarshalStringSlice(p.storedExplanation, &issue.FingerprintExplanation); err != nil {
-		return Issue{}, err
+		return Issue{}, wrapErr(err, "hydrateExistingIssue")
 	}
 	if err := json.Unmarshal(p.storedRepresentative, &issue.RepresentativeEvent); err != nil {
-		return Issue{}, err
+		return Issue{}, wrapErr(err, "hydrateExistingIssue")
 	}
 	if issue.FingerprintMaterial == "" {
 		issue.FingerprintMaterial = p.material
@@ -355,7 +355,7 @@ SET `+strings.Join(assignments, ", ")+`
 WHERE id = ? AND project_id = ?`,
 		args...,
 	); err != nil {
-		return err
+		return wrapErr(err, "updateIssueRow")
 	}
 	return nil
 }

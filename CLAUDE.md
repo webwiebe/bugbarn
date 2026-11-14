@@ -56,6 +56,7 @@ internal/
     silence/          Writer-only rules that alert when a project that reported errors goes quiet
     monitorwatch/     Writer-only detector that turns missed or failed monitor check-ins into issues
     cronexpr/         5-field cron parsing and next-run times for monitor schedules
+    tick/             Runs a function on an interval until the context ends (shared by the writer-side loops)
   Infrastructure telemetry (Vector agents, deploy/vector)
     telemetry/        Writer-side ingester: normalize, observe (detections), store
     telemetrydb/      Size-capped security.db and metrics.db next to the main DB

@@ -14,7 +14,7 @@ import (
 func (s *ProjectStore) CreateProject(ctx context.Context, name, slug string) (Project, error) {
 	prefix, err := s.uniqueIssuePrefix(ctx, slug)
 	if err != nil {
-		return Project{}, err
+		return Project{}, wrapErr(err, "CreateProject")
 	}
 	now := formatTime(time.Now().UTC())
 	res, err := s.db.ExecContext(ctx, `
@@ -26,7 +26,7 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return Project{}, err
+		return Project{}, wrapErr(err, "CreateProject")
 	}
 	return Project{ID: id, Name: name, Slug: slug, Status: "active", IssuePrefix: prefix, CreatedAt: time.Now().UTC()}, nil
 }
@@ -118,7 +118,7 @@ func (s *ProjectStore) EnsureProjectPending(ctx context.Context, slug string) (P
 func (s *ProjectStore) CreateProjectPending(ctx context.Context, slug string) (Project, error) {
 	prefix, err := s.uniqueIssuePrefix(ctx, slug)
 	if err != nil {
-		return Project{}, err
+		return Project{}, wrapErr(err, "CreateProjectPending")
 	}
 	now := formatTime(time.Now().UTC())
 	res, err := s.db.ExecContext(ctx, `
@@ -126,11 +126,11 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 		slug, slug, prefix, now,
 	)
 	if err != nil {
-		return Project{}, err
+		return Project{}, wrapErr(err, "CreateProjectPending")
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return Project{}, err
+		return Project{}, wrapErr(err, "CreateProjectPending")
 	}
 	return Project{ID: id, Name: slug, Slug: slug, Status: "pending", IssuePrefix: prefix, CreatedAt: time.Now().UTC()}, nil
 }
@@ -156,7 +156,7 @@ func (s *ProjectStore) DeleteProject(_ context.Context, slug string) error {
 	// write small. projectTables lists them children first, because events and
 	// issue_facets reference issues.
 	if err := deleteProjectRows(ctx, s.db, projectID); err != nil {
-		return err
+		return wrapErr(err, "DeleteProject")
 	}
 
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM projects WHERE id=?`, projectID); err != nil {
@@ -183,7 +183,7 @@ func deleteInBatches(ctx context.Context, db *sql.DB, table string, projectID in
 			fmt.Sprintf(`DELETE FROM %s WHERE (%s) IN (SELECT %s FROM %s WHERE project_id = ? LIMIT ?)`, table, key, key, table),
 			projectID, batchSize)
 		if err != nil {
-			return err
+			return wrapErr(err, "deleteInBatches")
 		}
 		n, _ := res.RowsAffected()
 		if n < batchSize {
@@ -215,7 +215,7 @@ func (s *ProjectStore) uniqueIssuePrefix(ctx context.Context, slug string) (stri
 		err := s.readDB().QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM projects WHERE issue_prefix = ?`, prefix).Scan(&count)
 		if err != nil {
-			return "", err
+			return "", wrapErr(err, "uniqueIssuePrefix")
 		}
 		if count == 0 {
 			return prefix, nil
@@ -229,7 +229,7 @@ func (s *ProjectStore) uniqueIssuePrefix(ctx context.Context, slug string) (stri
 func (s *core) IssueRowIDByDisplayID(ctx context.Context, displayID string) (int64, error) {
 	prefix, number, err := parseIssueID(displayID)
 	if err != nil {
-		return 0, err
+		return 0, wrapErr(err, "IssueRowIDByDisplayID")
 	}
 	if prefix == "" {
 		// Legacy format: number is the row ID.
@@ -423,7 +423,7 @@ func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug
 	// moved keep their ids, so facet and regression rows cannot collide with
 	// rows the target project already has.
 	if err := moveProjectRows(ctx, tx, sourceID, targetID); err != nil {
-		return err
+		return wrapErr(err, "MergeProjects")
 	}
 
 	// Create alias from source slug → target project.
