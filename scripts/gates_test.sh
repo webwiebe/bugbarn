@@ -239,6 +239,13 @@ else
 	printf 'module gatenested\n\ngo 1.21\n' >"$CV/nested/go.mod"
 	writepkg "$CV/nested" nested 4 3
 	expect 1 "coverage: a nested module package below the minimum fails" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
+
+	# A module in the in-checkout module cache is skipped.
+	rm -rf "$CV/nested"
+	mkdir -p "$CV/.cache/go-mod/example.com/dep@v1.0.0"
+	printf 'module example.com/dep\n\ngo 1.21\n' >"$CV/.cache/go-mod/example.com/dep@v1.0.0/go.mod"
+	writepkg "$CV/.cache/go-mod/example.com/dep@v1.0.0" dep 4 0
+	expect 0 "coverage: a module under .cache/go-mod is not measured" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
 fi
 
 # Runner scope: no workflow step may reach into another runner's directory. The

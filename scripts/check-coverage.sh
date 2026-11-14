@@ -93,7 +93,10 @@ fi
 ROOT=$(pwd)
 PKG_PROFILES="$PROFILE"
 n=0
-for gomod in $(find . -name go.mod -not -path './go.mod' -not -path '*/node_modules/*'); do
+# Skip module caches: the Makefile keeps GOMODCACHE in .cache/go-mod inside
+# the checkout, and walking into it would test third-party modules.
+for gomod in $(find . -name go.mod -not -path './go.mod' -not -path '*/node_modules/*' \
+	-not -path './.cache/*' -not -path '*/pkg/mod/*'); do
 	n=$((n + 1))
 	out="coverage/module-$n.out"
 	(cd "$(dirname "$gomod")" && go test -covermode=atomic -coverprofile="$ROOT/$out" ./...)
