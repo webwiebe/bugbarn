@@ -3,22 +3,9 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+from support import RecordingTransport
+
 from bugbarn.client import capture_exception, init, shutdown
-
-
-class RecordingTransport:
-    def __init__(self):
-        self.events = []
-
-    def submit(self, event):
-        self.events.append(event)
-        return True
-
-    def flush(self, timeout: float = 2.0) -> bool:
-        return True
-
-    def close(self, timeout: float = 2.0) -> bool:
-        return True
 
 
 def fake_otel(trace_id: int, valid: bool):

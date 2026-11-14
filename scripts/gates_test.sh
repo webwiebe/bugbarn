@@ -315,6 +315,36 @@ expect 1 "claude-layout: a package with a row only outside the block fails" -- s
 ) >/dev/null 2>&1
 expect 1 "claude-layout: a missing layout section fails" -- sh "$REPO/scripts/check-claude-layout.sh" "$CL"
 
+# --------------------------------------------------- check-sdk-coverage.sh
+SDKCOV="$REPO/scripts/check-sdk-coverage.sh"
+SB="$WORK/sdkbaseline"
+mkdir -p "$SB"
+printf '# file | line %% | branch %% | funcs %% | uncovered lines\n# all files           |  91.50 |    90.09 |   94.03 |\n' >"$WORK/node-report.txt"
+printf 'src/a.py   10   1  90.0%%\nTOTAL   369  14  91.5%%\n' >"$WORK/py-report.txt"
+printf ' Summary:\n  Classes: 60.00%% (3/5)\n  Lines:   91.50%% (128/152)\n\nBugBarn\\Client\n  Methods:  92.31%% (12/13)   Lines:  75.00%% ( 63/ 84)\n' >"$WORK/php-report.txt"
+printf '# all files           |  79.90 |    90.09 |   94.03 |\n' >"$WORK/node-low.txt"
+sdkcov() { BASELINE_DIR="$SB" sh "$SDKCOV" "$@"; }
+
+echo 90.5 >"$SB/sdk-coverage-baseline-x.txt"
+expect 0 "sdk-coverage: node total inside the band passes" -- sdkcov x node "$WORK/node-report.txt"
+expect 0 "sdk-coverage: python total inside the band passes" -- sdkcov x python "$WORK/py-report.txt"
+expect 0 "sdk-coverage: php summary line is read, not a per-class line" -- sdkcov x php "$WORK/php-report.txt"
+echo 92.0 >"$SB/sdk-coverage-baseline-x.txt"
+expect 1 "sdk-coverage: a drop below the baseline fails" -- sdkcov x node "$WORK/node-report.txt"
+echo 80.0 >"$SB/sdk-coverage-baseline-x.txt"
+expect 1 "sdk-coverage: a beatable baseline fails as stale" -- sdkcov x node "$WORK/node-report.txt"
+echo 70.0 >"$SB/sdk-coverage-baseline-x.txt"
+expect 1 "sdk-coverage: a total under 80 fails whatever the baseline" -- sdkcov x node "$WORK/node-low.txt"
+expect 1 "sdk-coverage: a missing baseline fails" -- sdkcov y node "$WORK/node-report.txt"
+expect 1 "sdk-coverage: a missing report fails" -- sdkcov x node "$WORK/absent.txt"
+printf 'no totals here\n' >"$WORK/empty-report.txt"
+expect 1 "sdk-coverage: a report without a total fails" -- sdkcov x python "$WORK/empty-report.txt"
+expect 1 "sdk-coverage: an unknown format fails" -- sdkcov x lcov "$WORK/node-report.txt"
+for sdk in typescript python php; do
+	expect 0 "sdk-coverage: committed $sdk baseline is at least the 80 minimum" -- \
+		awk 'BEGIN { exit !('"$(tr -d ' \t\n' <"$REPO/scripts/sdk-coverage-baseline-$sdk.txt")"' >= 80) }'
+done
+
 echo
 echo "gates_test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

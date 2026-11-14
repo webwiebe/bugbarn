@@ -90,3 +90,6 @@ docker-compose.override.yml
 .tools/
 .gotmp/
 /cmd/bb/bb
+
+# Python coverage data
+.coverage

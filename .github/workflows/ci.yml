@@ -148,7 +148,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run lint
           if [ "${{ matrix.tests }}" = "yes" ]; then
-            pnpm run test
+            if [ "${{ matrix.dir }}" = "sdks/typescript" ]; then
+              # Same tests as `pnpm run test`, with line coverage over dist/esm.
+              report="$(mktemp)"
+              pnpm run coverage | tee "$report"
+              sh "$GITHUB_WORKSPACE/scripts/check-sdk-coverage.sh" typescript node "$report"
+            else
+              pnpm run test
+            fi
           fi
           pnpm run build
       - name: Frontend duplication (web only)
@@ -189,13 +196,13 @@ jobs:
           # Pinned: an unpinned install means a new ruff release changes
           # what CI enforces with no commit on our side, and it silently
           # diverged from the Woodpecker pipeline, which already pins 0.16.0.
-          python -m pip install build pytest 'ruff==0.16.0'
+          python -m pip install build pytest 'pytest-cov==6.2.1' 'ruff==0.16.0'
           if [ -f pyproject.toml ]; then
             python -m pip install -e .
           fi
-          if find . \( -name 'test_*.py' -o -name '*_test.py' -o -path '*/tests/*.py' \) -print -quit | grep -q .; then
-            PYTHONPATH=src python -m pytest
-          fi
+          report="$(mktemp)"
+          PYTHONPATH=src python -m pytest --cov --cov-report=term | tee "$report"
+          sh "$GITHUB_WORKSPACE/scripts/check-sdk-coverage.sh" python python "$report"
           if find . -name '*.py' -print -quit | grep -q .; then
             python -m ruff check .
           fi
@@ -228,8 +235,11 @@ jobs:
           set -euo pipefail
           command -v docker >/dev/null 2>&1 || { echo "FAIL: docker is required to run the PHP SDK tests"; exit 1; }
           # Read-only mount, vendor/ in the container: see .woodpecker/ci.yaml.
-          docker run --rm -v "$(pwd):/src:ro" composer:2.8 \
-            sh -c 'set -eu; cp -R /src/. /app; cd /app; composer install --no-interaction --prefer-dist --no-progress; ./vendor/bin/phpunit'
+          # scripts/ci-test.sh builds the pcov coverage driver and runs phpunit
+          # with a text coverage report; the gate reads its total.
+          report="$(mktemp)"
+          docker run --rm -v "$(pwd):/src:ro" composer:2.8 sh /src/scripts/ci-test.sh | tee "$report"
+          sh "$GITHUB_WORKSPACE/scripts/check-sdk-coverage.sh" php php "$report"
 
   # Code-quality gates. Runs on the runner (not in Docker) so golangci-lint can
   # use full git history for diff-mode and the coverage profile can escape the

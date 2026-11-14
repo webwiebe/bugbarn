@@ -2,23 +2,10 @@ from __future__ import annotations
 
 import unittest
 
+from support import RecordingTransport
+
 from bugbarn.client import init, shutdown
 from bugbarn.user import clear_user, get_user, set_user
-
-
-class RecordingTransport:
-    def __init__(self):
-        self.events = []
-
-    def submit(self, event):
-        self.events.append(event)
-        return True
-
-    def flush(self, timeout: float = 2.0) -> bool:
-        return True
-
-    def close(self, timeout: float = 2.0) -> bool:
-        return True
 
 
 class UserTests(unittest.TestCase):

@@ -9,6 +9,8 @@ import unittest
 from contextlib import redirect_stderr
 from unittest import mock
 
+from support import RecordingTransport
+
 import bugbarn
 from bugbarn import client
 from bugbarn.client import Transport, init, shutdown
@@ -17,23 +19,6 @@ from bugbarn.integrations import (
     BugBarnHandler,
     install_asyncio_handler,
 )
-
-
-class RecordingTransport:
-    def __init__(self):
-        self.events = []
-        self.flushed = 0
-
-    def submit(self, event):
-        self.events.append(event)
-        return True
-
-    def flush(self, timeout: float = 2.0) -> bool:
-        self.flushed += 1
-        return True
-
-    def close(self, timeout: float = 2.0) -> bool:
-        return True
 
 
 class LoggingHandlerTests(unittest.TestCase):

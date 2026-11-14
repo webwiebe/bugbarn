@@ -6,6 +6,8 @@ import sys
 import unittest
 from unittest import mock
 
+from support import RecordingTransport as SharedRecordingTransport
+
 from bugbarn import client
 from bugbarn.client import (
     CheckIn,
@@ -19,20 +21,11 @@ from bugbarn.client import (
 )
 
 
-class RecordingTransport:
+class RecordingTransport(SharedRecordingTransport):
     def __init__(self):
-        self.events = []
+        super().__init__()
         self.check_ins = []
         self.closed = False
-        self.flush_timeout = None
-
-    def submit(self, event):
-        self.events.append(event)
-        return True
-
-    def flush(self, timeout: float = 2.0) -> bool:
-        self.flush_timeout = timeout
-        return True
 
     def submit_check_in(self, item):
         self.check_ins.append(item)

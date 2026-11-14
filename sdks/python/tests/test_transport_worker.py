@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import io
-import threading
-import time
 import unittest
 from contextlib import redirect_stderr
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from support import StubIngest, wait_for
 
 from bugbarn.client import CheckIn, Transport
 
@@ -17,46 +16,18 @@ class _Unserializable:
         return {"value": object()}
 
 
-class _MalformedOnce:
+class _MalformedOnce(StubIngest):
     """Ingest whose first answer is no HTTP at all, which http.client raises as an
     HTTPException, then accepts every other request."""
 
-    def __init__(self) -> None:
-        self.received: list[str] = []
-        self.first = threading.Event()
-        owner = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def do_POST(self) -> None:
-                length = int(self.headers.get("content-length", 0))
-                self.rfile.read(length)
-                if not owner.first.is_set():
-                    owner.first.set()
-                    self.wfile.write(b"not http\r\n\r\n")
-                    return
-                owner.received.append(self.path)
-                self.send_response(202)
-                self.end_headers()
-
-            def log_message(self, *args: object) -> None:
-                pass
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.url = f"http://127.0.0.1:{self.server.server_port}"
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-
-    def close(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-
-
-def _wait_for(condition, seconds: float = 8.0) -> bool:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if condition():
-            return True
-        time.sleep(0.05)
-    return False
+    def respond(self, handler) -> None:
+        if not self.first.is_set():
+            self.first.set()
+            handler.wfile.write(b"not http\r\n\r\n")
+            return
+        self.received.append(handler.path)
+        handler.send_response(202)
+        handler.end_headers()
 
 
 class TransportWorkerTests(unittest.TestCase):
@@ -70,7 +41,7 @@ class TransportWorkerTests(unittest.TestCase):
             transport.submit_check_in(CheckIn(slug="first", body={"status": "ok"}))
             self.assertTrue(ingest.first.wait(timeout=8))
             transport.submit_check_in(CheckIn(slug="second", body={"status": "ok"}))
-            self.assertTrue(_wait_for(lambda: ingest.received))
+            self.assertTrue(wait_for(lambda: ingest.received))
         self.assertTrue(transport._worker.is_alive())
         self.assertIn("/second/", ingest.received[0])
         self.assertIn("check-in dropped, send failed: BadStatusLine", stderr.getvalue())
@@ -85,9 +56,9 @@ class TransportWorkerTests(unittest.TestCase):
         stderr = io.StringIO()
         with redirect_stderr(stderr):
             transport.submit(_Unserializable())
-            self.assertTrue(_wait_for(lambda: transport.queue.unfinished_tasks == 0))
+            self.assertTrue(wait_for(lambda: transport.queue.unfinished_tasks == 0))
             transport.submit_check_in(CheckIn(slug="after", body={"status": "ok"}))
-            self.assertTrue(_wait_for(lambda: ingest.received))
+            self.assertTrue(wait_for(lambda: ingest.received))
         self.assertTrue(transport._worker.is_alive())
         self.assertIn("event dropped, send failed: TypeError", stderr.getvalue())
         self.assertNotIn("JSON serializable", stderr.getvalue())
@@ -112,9 +83,9 @@ class TransportWorkerTests(unittest.TestCase):
         stderr = io.StringIO()
         with redirect_stderr(stderr):
             transport.submit(_Unserializable())
-            self.assertTrue(_wait_for(lambda: transport.queue.unfinished_tasks == 0))
+            self.assertTrue(wait_for(lambda: transport.queue.unfinished_tasks == 0))
             transport.submit_check_in(CheckIn(slug="after", body={"status": "ok"}))
-            self.assertTrue(_wait_for(lambda: ingest.received))
+            self.assertTrue(wait_for(lambda: ingest.received))
         self.assertTrue(transport._worker.is_alive())
         self.assertIn("event dropped, send failed: RuntimeError", stderr.getvalue())
 
