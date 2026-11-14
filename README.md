@@ -60,7 +60,7 @@ curl -X POST http://localhost:8080/api/v1/events \
   --data @specs/001-personal-error-tracker/fixtures/example-event.json
 ```
 
-Process the local spool once and print a summary:
+Process the pending local spool once (from the worker's cursor) and print a summary:
 
 ```bash
 BUGBARN_SPOOL_DIR=.data/spool go run ./cmd/bugbarn worker-once

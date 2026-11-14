@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"errors"
 	"log/slog"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
@@ -29,21 +28,13 @@ func buildOIDCClient(cfg config.Config, logger *slog.Logger) *auth.OIDCClient {
 	return auth.NewOIDCClient(oc)
 }
 
-// ensureProductionAPIKeyAuth refuses to boot a production instance whose API
-// authorizer ended up with no mechanism at all — auth.Authorizer fails OPEN
-// per request when disabled (ValidWithProject returns success), so the guard
-// belongs at startup where a misconfiguration is loud instead of silently
-// exposing every keyed endpoint.
-func ensureProductionAPIKeyAuth(cfg config.Config, authorizer *auth.Authorizer) error {
-	if !cfg.IsProduction() || authorizer.Enabled() {
-		return nil
-	}
-	return errors.New("refusing to start: BUGBARN_ENVIRONMENT=production requires an API-key mechanism " +
-		"(set BUGBARN_API_KEY or BUGBARN_API_KEY_SHA256, or wire the database key store)")
-}
-
 // newAPIAuthorizer builds the ingest authorizer. touch records a key's last
 // use: the store itself where it can write, the reader's batcher where it cannot.
+//
+// The result always has the database key store, so it is always Enabled and
+// never fails open: auth.Authorizer accepts every key when it has no mechanism
+// at all, and a startup guard against that once sat in run and runReader but
+// could never fire. TestNewAPIAuthorizerIsAlwaysEnabled holds the invariant.
 func newAPIAuthorizer(cfg config.Config, store *storage.Store, touch auth.DBKeyTouch) (*auth.Authorizer, error) {
 	var base *auth.Authorizer
 	var err error

@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/config"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -78,16 +77,29 @@ func TestRunWiresTheWriterAndReturnsTheListenerError(t *testing.T) {
 	}
 }
 
-func TestEnsureProductionAPIKeyAuth(t *testing.T) {
-	prod := config.Config{Environment: "production"}
-	if err := ensureProductionAPIKeyAuth(prod, auth.New("")); err == nil || !strings.Contains(err.Error(), "refusing to start") {
-		t.Errorf("production without a key = %v, want the guard", err)
+// Without any configured key the authorizer still has the database key store,
+// so it rejects unknown keys instead of accepting everything.
+func TestNewAPIAuthorizerIsAlwaysEnabled(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
 	}
-	if err := ensureProductionAPIKeyAuth(prod, auth.New("k")); err != nil {
-		t.Errorf("production with a key = %v", err)
-	}
-	if err := ensureProductionAPIKeyAuth(config.Config{Environment: "testing"}, auth.New("")); err != nil {
-		t.Errorf("testing without a key = %v", err)
+	defer store.Close()
+
+	for name, cfg := range map[string]config.Config{
+		"no keys, production": {Environment: "production"},
+		"static key":          {APIKey: "k"},
+	} {
+		a, err := newAPIAuthorizer(cfg, store, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !a.Enabled() {
+			t.Errorf("%s: authorizer is disabled and would accept every key", name)
+		}
+		if _, _, ok := a.ValidWithProject(context.Background(), "not-a-key"); ok {
+			t.Errorf("%s: an unknown key was accepted", name)
+		}
 	}
 }
 

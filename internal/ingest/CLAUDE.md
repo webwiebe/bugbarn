@@ -79,7 +79,14 @@ Direct log ingest on the writer skips the spool and inserts synchronously.
 
 `internal/mutqueue` (writer only) is the fallback for admin issue mutations: the handler
 tries the store for 5s, then appends to `mutations.ndjson` and returns 202
-`{"queued":true}`.
+`{"queued":true}`. `Drain` claims the file as `mutations.processing.ndjson` and writes a
+byte-offset cursor after each handled line, so a failed drain resumes after the last
+applied mutation. A line that does not parse goes to `mutations.deadletter.ndjson` with
+one ERROR log.
+
+A record with no project slug belongs to the default project. A record whose slug cannot
+be resolved (store error) is a failure, never filed under the default project: transient
+causes retry, others count as persist errors.
 
 ## Response contract (`ingestresp`)
 

@@ -393,19 +393,19 @@ func TestReplayRecordsSummarisesAMaintenancePass(t *testing.T) {
 		slugged(t, "o-3", "unapproved"),
 		releaseSpoolRecord("o-4", `{"name":"v1"}`, proj.ID),
 	}
-	got, err := replayRecords(ctx, proc, records)
+	got, err := replayPending(ctx, proc, t.TempDir(), pendingOf(records))
 	if err != nil {
-		t.Fatalf("replayRecords: %v", err)
+		t.Fatalf("replayPending: %v", err)
 	}
 	want := replaySummary{Records: 4, Events: 2, Releases: 1, Held: 1, Issues: 1}
 	if got != want {
 		t.Errorf("summary = %+v, want %+v", got, want)
 	}
 
-	if _, err := replayRecords(ctx, proc, []spool.Record{{IngestID: "x", BodyBase64: "!!!"}}); err == nil {
+	if _, err := replayPending(ctx, proc, t.TempDir(), pendingOf([]spool.Record{{IngestID: "x", BodyBase64: "!!!"}})); err == nil {
 		t.Error("an unparseable record must stop the pass with its error")
 	}
-	if _, err := replayRecords(ctx, proc, []spool.Record{releaseSpoolRecord("r", "{", 0)}); err == nil {
+	if _, err := replayPending(ctx, proc, t.TempDir(), pendingOf([]spool.Record{releaseSpoolRecord("r", "{", 0)})); err == nil {
 		t.Error("a broken release must stop the pass with its error")
 	}
 }

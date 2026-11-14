@@ -224,6 +224,8 @@ func TestPersistRecordSpanMarksFailures(t *testing.T) {
 	proc, store := newProcessor(t)
 	proc.SetTracer(tp.Tracer("test"))
 	store.Close()
+
+	// A named project that cannot be resolved fails at the resolve span.
 	res := proc.PersistRecord(context.Background(), slugRecord(t, "f", "doomed"))
 	if res.Outcome != OutcomePersistError {
 		t.Fatalf("outcome=%v", res.Outcome)
@@ -232,7 +234,17 @@ func TestPersistRecordSpanMarksFailures(t *testing.T) {
 	if s := spans[spanResolveProject]; s.Status.Code == 0 {
 		t.Errorf("resolve span status = %v, want error", s.Status)
 	}
-	if s := spans[spanPersist]; s.Status.Code == 0 {
+	if _, ok := spans[spanPersist]; ok {
+		t.Error("a record that never resolved its project must not reach the persist span")
+	}
+
+	// Without a slug the failure is the persist call itself.
+	exp.Reset()
+	res = proc.PersistRecord(context.Background(), slugRecord(t, "g", ""))
+	if res.Outcome != OutcomePersistError {
+		t.Fatalf("outcome=%v", res.Outcome)
+	}
+	if s := spanNames(exp.GetSpans())[spanPersist]; s.Status.Code == 0 {
 		t.Errorf("persist span status = %v, want error", s.Status)
 	}
 }

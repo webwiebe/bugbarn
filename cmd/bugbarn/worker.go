@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -15,8 +13,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
-	"github.com/wiebe-xyz/bugbarn/internal/config"
-	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
@@ -25,67 +21,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
-
-// replaySummary is what worker-once reports after one pass over the spool.
-type replaySummary struct {
-	Records  int `json:"records"`
-	Events   int `json:"events"`
-	Releases int `json:"releases"`
-	Held     int `json:"held"`
-	Issues   int `json:"issues"`
-}
-
-func runWorkerOnce(cfg config.Config) error {
-	persistentStore, err := storage.Open(cfg.DBPath)
-	if err != nil {
-		return err
-	}
-	defer persistentStore.Close()
-	persistentStore.SetSampleAfter(int64(cfg.EventSampleAfter))
-
-	records, err := spool.ReadRecords(spool.Path(cfg.SpoolDir))
-	if err != nil {
-		return err
-	}
-
-	// No alert subscribers: a maintenance replay stores events and sends no mail.
-	publisher := domainevents.NewIssuePublisher(&domainevents.Bus{})
-	proc := ingestproc.NewProcessor(persistentStore, publisher, slog.Default(), cfg.AutoApproveProjects)
-	summary, err := replayRecords(context.Background(), proc, records)
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(os.Stdout).Encode(summary)
-}
-
-// replayRecords persists every record through the shared pipeline and stops at
-// the first failure. Release markers share the spool with events but take the
-// release path.
-func replayRecords(ctx context.Context, proc *ingestproc.Processor, records []spool.Record) (replaySummary, error) {
-	summary := replaySummary{Records: len(records)}
-	issues := make(map[string]struct{})
-	for _, record := range records {
-		if record.Kind == ingest.RecordKindRelease {
-			if err := proc.PersistRelease(ctx, record); err != nil {
-				return summary, err
-			}
-			summary.Releases++
-			continue
-		}
-		res := proc.PersistRecord(ctx, record)
-		switch res.Outcome {
-		case ingestproc.OutcomeSuccess:
-			summary.Events++
-			issues[res.Fingerprint] = struct{}{}
-		case ingestproc.OutcomeHeld:
-			summary.Held++
-		default:
-			return summary, res.Err
-		}
-	}
-	summary.Issues = len(issues)
-	return summary, nil
-}
 
 const (
 	workerMaxRetries      = 3

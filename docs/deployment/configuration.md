@@ -176,7 +176,7 @@ bugbarn apikey create --project=SLUG --name=NAME \
 bugbarn project create --slug=SLUG --name=NAME           # Create a new project
 ```
 
-`bugbarn worker-once` reads all pending spool records, processes them into the database, and exits. It is useful for replaying events after a spool backup restore or for debugging ingestion issues without running the full server.
+`bugbarn worker-once` reads the pending spool records (from the worker's cursor on, across any rotated segment the cursor names, then the active segment), processes them into the database through the same pipeline as the running worker, advances the cursor after each record and exits. A second run finds nothing to do. It is useful for draining a spool backup restore or for debugging ingestion issues without running the full server. Stop the server first: both write the same cursor. To replay records the worker already handled, delete `cursor.json` in the spool directory first.
 
 ---
 

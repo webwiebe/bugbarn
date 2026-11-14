@@ -270,9 +270,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := ensureProductionAPIKeyAuth(cfg, apiAuthorizer); err != nil {
-		return err
-	}
 	userAuth, err := newUserAuthenticator(cfg)
 	if err != nil {
 		return err
