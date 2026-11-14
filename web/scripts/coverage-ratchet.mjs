@@ -36,7 +36,7 @@ export function suggestedBaseline(total) {
  * The whole decision. Pure, so the gate can be tested without running c8.
  * Returns { ok, failures } where each failure names what to do.
  */
-export function evaluate({ total, baseline, minimum = MINIMUM, maxDrift = MAX_DRIFT }) {
+export function evaluate({ total, baseline, files = [], minimum = MINIMUM, maxDrift = MAX_DRIFT }) {
   const failures = [];
   if (!Number.isFinite(total)) {
     return { ok: false, failures: ["could not read a coverage total, the test run did not produce one"] };
@@ -55,6 +55,9 @@ export function evaluate({ total, baseline, minimum = MINIMUM, maxDrift = MAX_DR
       `line coverage ${total}% is more than ${maxDrift}pp above the baseline of ${baseline}%, so that gain is unprotected. Raise the floor in this same commit: echo ${suggestedBaseline(total)} > ${BASELINE_FILE}`,
     );
   }
+  for (const f of filesBelow(files, minimum)) {
+    failures.push(`${f.name} has ${f.pct}% line coverage, below the per-file minimum of ${minimum}%`);
+  }
   return { ok: failures.length === 0, failures };
 }
 
@@ -62,7 +65,7 @@ export function evaluate({ total, baseline, minimum = MINIMUM, maxDrift = MAX_DR
 export function readSummary(summary) {
   const total = summary?.total?.lines?.pct;
   const files = Object.entries(summary ?? {})
-    .filter(([name]) => name !== "total")
+    .filter(([name, entry]) => name !== "total" && typeof entry.lines.pct === "number")
     .map(([name, entry]) => ({ name, pct: entry.lines.pct }));
   return { total: typeof total === "number" ? total : Number.NaN, files };
 }
@@ -106,7 +109,7 @@ function main() {
 
   const baselinePath = path.join(webDir, BASELINE_FILE);
   const baseline = fs.existsSync(baselinePath) ? Number(fs.readFileSync(baselinePath, "utf8").trim()) : Number.NaN;
-  const res = evaluate({ total, baseline });
+  const res = evaluate({ total, baseline, files });
   const below = filesBelow(files);
   if (below.length) {
     console.log("files under the minimum:");

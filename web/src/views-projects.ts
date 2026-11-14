@@ -283,9 +283,10 @@ function renderScopeSheetBody(filter = ""): void {
     html += `<div class="scope-section-label">Environment</div>`;
     html += `<button class="scope-item scope-item-sub${!state.currentEnv ? " selected" : ""}" data-scope-env="">All environments</button>`;
     html += `<div id="scope-env-list"></div>`;
-    loadScopeEnvs();
   }
   scopeBody.innerHTML = html;
+  // The list container exists only once the markup is in the DOM.
+  if (!state.currentGroup && current && current !== "__all") void loadScopeEnvs();
 
   scopeBody.querySelector<HTMLInputElement>(".scope-sheet-filter")?.addEventListener("input", (e) => {
     renderScopeSheetBody((e.target as HTMLInputElement).value);

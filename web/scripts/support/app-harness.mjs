@@ -1,4 +1,4 @@
-// Boots the real SPA (src/bootstrap.ts) in jsdom against a stubbed fetch, and
+// Boots the real SPA (src/app.ts) in jsdom against a stubbed fetch, and
 // offers helpers to navigate by hash and to drive what a view rendered.
 import { after } from "node:test";
 import { win, settle, navigations } from "./dom-env.mjs";
@@ -159,7 +159,7 @@ export async function boot(routes = defaultRoutes(), hash = "#/issues") {
   const fetchStub = stubFetch(routes);
   globalThis.fetch = (...args) => win.fetch(...args);
   win.location.hash = hash;
-  await import("../../src/bootstrap.ts");
+  await import("../../src/app.ts");
   await settleAll();
   return fetchStub;
 }
