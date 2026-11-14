@@ -66,11 +66,8 @@ func TestDrainFailsWhenTheClaimRenameIsRefused(t *testing.T) {
 	if err := q.Append(mutqueue.Record{Op: mutqueue.OpResolve, IssueID: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	// A read-only directory refuses the rename of the active file.
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	// The filesystem refuses the rename of the active file.
+	t.Cleanup(mutqueue.SetClaimRename(func(string, string) error { return os.ErrPermission }))
 
 	err := q.Drain(noApply(t))
 	if err == nil || !strings.Contains(err.Error(), "claim") {

@@ -26,6 +26,10 @@ const (
 	deadLetterFile = "mutations.deadletter.ndjson"
 )
 
+// claimRename moves the active file to the processing path. Tests swap it to
+// refuse the claim, which a permission bit cannot do for a root test runner.
+var claimRename = os.Rename
+
 // Op is the mutation operation type.
 type Op string
 
@@ -99,7 +103,7 @@ func (q *Queue) Drain(apply func(Record) error) error {
 	// Under the lock: rename active → processing and open a fresh active file.
 	// Appends during this window are queued behind the mutex.
 	q.mu.Lock()
-	renameErr := os.Rename(q.path, procPath)
+	renameErr := claimRename(q.path, procPath)
 	if renameErr == nil {
 		// Open a new active file before releasing the lock so appenders never see
 		// a missing file.
