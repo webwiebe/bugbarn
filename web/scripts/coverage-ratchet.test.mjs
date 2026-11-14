@@ -68,3 +68,22 @@ test("filesBelow lists files under the minimum, worst first", () => {
   const files = [{ name: "a", pct: 79.9 }, { name: "b", pct: 100 }, { name: "c", pct: 10 }, { name: "d", pct: 80 }];
   assert.deepEqual(filesBelow(files).map((f) => f.name), ["c", "a"]);
 });
+
+test("a file under the per-file minimum fails even when the total passes", () => {
+  const files = [{ name: "src/a.ts", pct: 100 }, { name: "src/b.ts", pct: 79.9 }];
+  const res = evaluate({ total: 90, baseline: 89, files });
+  assert.equal(res.ok, false);
+  assert.equal(res.failures.length, 1);
+  assert.match(res.failures[0], /src\/b\.ts has 79\.9% line coverage, below the per-file minimum of 80%/);
+});
+
+test("files exactly on the minimum pass and every failing file is named", () => {
+  assert.equal(evaluate({ total: 90, baseline: 89, files: [{ name: "a", pct: 80 }] }).ok, true);
+  const res = evaluate({ total: 90, baseline: 89, files: [{ name: "a", pct: 12 }, { name: "b", pct: 0 }] });
+  assert.deepEqual(res.failures.map((f) => f.split(" ")[0]), ["b", "a"]);
+});
+
+test("readSummary skips files that report no statements", () => {
+  const { files } = readSummary({ total: { lines: { pct: 90 } }, "/w/src/t.ts": { lines: { pct: "Unknown" } }, "/w/src/a.ts": { lines: { pct: 100 } } });
+  assert.deepEqual(files.map((f) => f.name), ["/w/src/a.ts"]);
+});

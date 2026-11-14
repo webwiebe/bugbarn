@@ -61,10 +61,6 @@ function startLiveStream(): void {
   };
 }
 
-function _stopLivePolling(): void {
-  stopLiveStream();
-}
-
 export function stopLiveStream(): void {
   if (state.liveSource) {
     state.liveSource.close();

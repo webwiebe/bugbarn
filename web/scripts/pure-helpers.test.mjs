@@ -81,6 +81,9 @@ test("firstIdentifier reads id keys, nested records and nested issue/event objec
   assert.equal(domain.firstIdentifier({ ID: { id: "n" } }), "n");
   assert.equal(domain.firstIdentifier({ id: "a", ID: "b" }, ["id"]), "b");
   assert.equal(domain.firstIdentifier({}), "");
+  assert.equal(domain.firstIdentifier({ issue: { id: "deep" } }), "deep");
+  assert.equal(domain.firstIdentifier({ id: "", Event: { event_id: "ev" } }), "ev");
+  assert.equal(domain.firstIdentifier({ id: { id: "" }, issue: { IssueID: "x" } }), "x");
 });
 
 test("issue accessors read every spelling and default sensibly", () => {

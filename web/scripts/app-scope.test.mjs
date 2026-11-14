@@ -91,6 +91,12 @@ test("the scope sheet lists groups and projects, filters, and selects a project"
   assert.equal(win.localStorage.getItem("bugbarn_project"), "api");
   assert.equal(win.localStorage.getItem("bugbarn_group"), null);
   assert.ok(q("#scope-sheet-body [data-scope-env='']"), "the project scope offers the environment section");
+  await settleAll();
+  assert.deepEqual(
+    qa("#scope-env-list [data-scope-env]").map((b) => b.dataset.scopeEnv),
+    ["production", "staging"],
+    "the sheet lists the project's environments",
+  );
 });
 
 test("All environments in the scope sheet clears the environment, closes the sheet and reloads", async () => {
