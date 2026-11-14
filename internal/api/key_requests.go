@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -13,65 +12,33 @@ import (
 // access logs and URLs.
 const pollSecretHeader = "X-BugBarn-Poll-Secret"
 
-// serveKeyRequestEndpoint handles the public side of agent key requests:
-//
-//	POST /api/v1/setup/<slug>/key-requests        open a request
-//	GET  /api/v1/setup/<slug>/key-requests/<id>   poll it (claims the key once approved)
+// handleKeyRequest serves the public side of agent key requests: an empty id
+// opens a request, a set id polls one (and claims the key once approved). The
+// routing (paths and methods) is serveKeyRequestEndpoint in routes_public.go.
 //
 // Both write (the poll claims the key), so a reader forwards them to the writer.
-// It returns true when the path belongs to this endpoint.
-func (s *Server) serveKeyRequestEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	slug, id, ok := parseKeyRequestPath(r.URL.Path)
-	if !ok {
-		return false
-	}
-	create := id == "" && r.Method == http.MethodPost
-	poll := id != "" && r.Method == http.MethodGet
-	if !create && !poll {
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return true
-	}
-
+func (s *Server) handleKeyRequest(w http.ResponseWriter, r *http.Request, slug, id string) {
 	ip := s.clientIP(r)
 	if s.overRateLimit(&s.setupLimiter, ip, setupRateLimit) {
 		s.logger.Warn("setup: key request rate-limited", "ip", ip, "slug", slug)
 		w.Header().Set("Retry-After", "60")
 		http.Error(w, "too many setup requests", http.StatusTooManyRequests)
-		return true
+		return
 	}
 	if s.writeForwarder != nil {
 		s.writeForwarder.Forward(w, r)
-		return true
+		return
 	}
 	if s.keyRequests == nil {
 		http.Error(w, "key requests are not available", http.StatusServiceUnavailable)
-		return true
+		return
 	}
 
-	if create {
+	if id == "" {
 		s.createKeyRequest(w, r, slug)
 	} else {
 		s.pollKeyRequest(w, r, slug, id)
 	}
-	return true
-}
-
-// parseKeyRequestPath splits /api/v1/setup/<slug>/key-requests[/<id>]. The id is
-// empty for the collection path.
-func parseKeyRequestPath(path string) (slug, id string, ok bool) {
-	rest, ok := strings.CutPrefix(path, "/api/v1/setup/")
-	if !ok {
-		return "", "", false
-	}
-	parts := strings.Split(strings.Trim(rest, "/"), "/")
-	if len(parts) < 2 || len(parts) > 3 || parts[1] != "key-requests" {
-		return "", "", false
-	}
-	if len(parts) == 3 {
-		id = parts[2]
-	}
-	return parts[0], id, true
 }
 
 func (s *Server) createKeyRequest(w http.ResponseWriter, r *http.Request, slug string) {
@@ -153,25 +120,6 @@ Or with the CLI, which waits for the approval and writes the key to stdout only
 when asked: `+"`bb key-request %[2]s --label my-org/my-repo --output-secret | gh secret set BUGBARN_API_KEY`"+`
 The key is project-scoped and can post events and release markers.
 `, endpoint, slug)
-}
-
-// dispatchKeyRequestRoutes serves the admin side: list the open requests and
-// approve or deny one. Writes reach the writer through the generic reader forward.
-func (s *Server) dispatchKeyRequestRoutes(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path == "/api/v1/key-requests" && r.Method == http.MethodGet {
-		s.listKeyRequests(w, r)
-		return true
-	}
-	rest, ok := strings.CutPrefix(r.URL.Path, "/api/v1/key-requests/")
-	if !ok || r.Method != http.MethodPost {
-		return false
-	}
-	id, action, found := strings.Cut(rest, "/")
-	if !found || id == "" || (action != "approve" && action != "deny") {
-		return false
-	}
-	s.resolveKeyRequest(w, r, id, action)
-	return true
 }
 
 func (s *Server) listKeyRequests(w http.ResponseWriter, r *http.Request) {

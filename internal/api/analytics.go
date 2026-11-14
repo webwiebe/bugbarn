@@ -62,18 +62,9 @@ func (s *Server) resolveAnalyticsProjectID(r *http.Request) int64 {
 	return s.projects.DefaultProjectID()
 }
 
-var analyticsRoutes = map[string]func(*Server, http.ResponseWriter, *http.Request, analytics.Query){
-	"overview":  (*Server).analyticsOverview,
-	"pages":     (*Server).analyticsPages,
-	"timeline":  (*Server).analyticsTimeline,
-	"referrers": (*Server).analyticsReferrers,
-	"segments":  (*Server).analyticsSegments,
-	"flow":      (*Server).analyticsFlow,
-	"scroll":    (*Server).analyticsScroll,
-	"dropout":   (*Server).analyticsDropout,
-}
-
-func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
+// serveAnalyticsQuery answers /api/v1/analytics/<tail>. The tail is looked up in
+// analyticsRoutes (routes_protected.go) after the query parameters validate.
+func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request, tail string) {
 	projectID := s.resolveAnalyticsProjectID(r)
 
 	q, err := parseAnalyticsQuery(r, projectID)
@@ -82,7 +73,6 @@ func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tail := strings.TrimPrefix(r.URL.Path, "/api/v1/analytics/")
 	handler, ok := analyticsRoutes[tail]
 	if !ok {
 		http.NotFound(w, r)

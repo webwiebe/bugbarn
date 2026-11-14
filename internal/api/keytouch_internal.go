@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -28,20 +27,6 @@ type KeyToucher interface {
 // SetKeyToucher enables the writer-internal endpoint the readers use to report
 // API key use. Writer/single-process only.
 func (s *Server) SetKeyToucher(t KeyToucher) { s.keyToucher = t }
-
-// serveInternalEndpoint routes the writer-internal endpoints that answer only to
-// HMAC-signed reader requests. It reports whether the path was one of them.
-func (s *Server) serveInternalEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case strings.HasPrefix(r.URL.Path, sessionstore.InternalPathPrefix):
-		s.serveInternalSessions(w, r)
-	case r.URL.Path == keytouch.Path:
-		s.serveInternalKeyTouch(w, r)
-	default:
-		return false
-	}
-	return true
-}
 
 // serveInternalKeyTouch applies one batch of API key last-use times from a
 // reader. It shares the signing scheme of the internal session endpoints.
