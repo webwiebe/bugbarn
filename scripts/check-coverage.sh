@@ -23,12 +23,19 @@
 # The baseline sits at least 1.0pp under the lowest observed measurement, so a
 # legitimate refactor that deletes tested code does not break the build.
 #
+# A second rule applies to every Go package that has statements, in the root
+# module and in each nested module (sdks/go): its own coverage must reach
+# MIN_PACKAGE, a constant with no allowlist and no override. Each failing
+# package is named with its number. Packages without statements are skipped.
+# The total ratchet above is unchanged.
+#
 # Runs on the runner rather than inside the cache-only Docker build, because the
 # coverage profile cannot escape `--output type=cacheonly`.
 set -eu
 
 BASELINE_FILE="scripts/coverage-baseline.txt"
 MAX_DRIFT="3.0"
+MIN_PACKAGE="80.0"
 PROFILE="coverage/go.out"
 
 mkdir -p coverage
@@ -81,4 +88,39 @@ if awk -v b="$baseline" -v t="$total" -v d="$MAX_DRIFT" 'BEGIN { exit !(t > b + 
 	exit 1
 fi
 
-echo "coverage: OK (${total}% within [${baseline}%, ${baseline}% + ${MAX_DRIFT}pp])"
+# Per-package minimum. Nested modules are profiled separately so their
+# statements do not move the root total that the ratchet above measures.
+ROOT=$(pwd)
+PKG_PROFILES="$PROFILE"
+n=0
+for gomod in $(find . -name go.mod -not -path './go.mod' -not -path '*/node_modules/*'); do
+	n=$((n + 1))
+	out="coverage/module-$n.out"
+	(cd "$(dirname "$gomod")" && go test -covermode=atomic -coverprofile="$ROOT/$out" ./...)
+	PKG_PROFILES="$PKG_PROFILES $out"
+done
+
+# shellcheck disable=SC2086
+low=$(awk -v min="$MIN_PACKAGE" '
+	/^mode:/ { next }
+	{
+		pkg = $1
+		sub(/:[^:]*$/, "", pkg)
+		sub(/\/[^\/]*$/, "", pkg)
+		stmts[pkg] += $2
+		if ($3 > 0) covered[pkg] += $2
+	}
+	END {
+		for (p in stmts) {
+			if (stmts[p] == 0) continue
+			pct = 100 * covered[p] / stmts[p]
+			if (pct < min) printf "  %s %.1f%%\n", p, pct
+		}
+	}' $PKG_PROFILES | sort)
+if [ -n "$low" ]; then
+	echo "FAIL: packages below the ${MIN_PACKAGE}% minimum:"
+	echo "$low"
+	exit 1
+fi
+
+echo "coverage: OK (${total}% within [${baseline}%, ${baseline}% + ${MAX_DRIFT}pp], every package at or above ${MIN_PACKAGE}%)"
