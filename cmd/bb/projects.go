@@ -54,6 +54,13 @@ func cmdResourceList(args []string, fsName, singular, createPath, listPath strin
 }
 
 func cmdAPIKeys(args []string) error {
+	fs := flag.NewFlagSet("apikeys", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("usage: bb apikeys")
+	}
 	client, err := newClient()
 	if err != nil {
 		return err

@@ -99,6 +99,14 @@ func sseServer(t *testing.T, status int, lines ...string) (*httptest.Server, fun
 	var mu sync.Mutex
 	var got http.Header
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/projects":
+			_, _ = w.Write([]byte(`{"projects":[{"slug":"a"}]}`))
+			return
+		case "/api/v1/groups":
+			_, _ = w.Write([]byte(`{"groups":[{"slug":"g"}]}`))
+			return
+		}
 		mu.Lock()
 		got = r.Header.Clone()
 		mu.Unlock()
@@ -140,6 +148,40 @@ func TestLogsFollowStreamsAndFilters(t *testing.T) {
 	out, err = runCmd(t, cmdLogs, "--follow")
 	if err != nil || !strings.Contains(out, "ERROR") || !strings.Contains(out, "loud one") {
 		t.Errorf("colored follow: %v\n%s", err, out)
+	}
+}
+
+// The stream request goes through the shared header setup, so a group scope
+// reaches the server (it used to be dropped, which tailed every project).
+func TestLogsFollowSendsGroupScope(t *testing.T) {
+	inEmptyDir(t)
+	srv, headers := sseServer(t, http.StatusOK)
+	useConfig(t, apiKeyConfig(srv.URL))
+	if _, err := runCmd(t, cmdLogs, "-f", "--group", "g"); err != nil {
+		t.Fatal(err)
+	}
+	if got := headers().Get("X-BugBarn-Group"); got != "g" {
+		t.Errorf("X-BugBarn-Group = %q, want g", got)
+	}
+	if got := headers().Get("X-BugBarn-Project"); got != "" {
+		t.Errorf("X-BugBarn-Project = %q, want none when a group is set", got)
+	}
+}
+
+func TestLogsAndTUIScopeLikeIssues(t *testing.T) {
+	inEmptyDir(t)
+	srv, _ := sseServer(t, http.StatusOK)
+	useConfig(t, apiKeyConfig(srv.URL))
+	for name, cmd := range map[string]func([]string) error{"logs": cmdLogs, "tui": cmdTUI} {
+		if _, err := runCmd(t, cmd, "--group", "g", "--project", "a"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("%s: both flags: %v", name, err)
+		}
+		if _, err := runCmd(t, cmd, "--project", "nope"); err == nil || !strings.Contains(err.Error(), `project "nope" not found`) {
+			t.Errorf("%s: unknown project: %v", name, err)
+		}
+		if _, err := runCmd(t, cmd, "--group", "nope"); err == nil || !strings.Contains(err.Error(), `group "nope" not found`) {
+			t.Errorf("%s: unknown group: %v", name, err)
+		}
 	}
 }
 

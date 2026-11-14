@@ -132,56 +132,105 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 	return req, nil
 }
 
-func (c *Client) doRetry(ctx context.Context, method, path string, body any, retried bool) (result json.RawMessage, err error) {
-	target, _, _ := strings.Cut(path, "?")
+// response is one completed HTTP exchange: the status, the cookies the server
+// set and the whole body. It is not judged: a 4xx or 5xx status is data here.
+type response struct {
+	status  int
+	cookies []*http.Cookie
+	body    []byte
+}
 
-	ctx, span := tracing.Tracer().Start(ctx, "cli.Request",
+// startSpan opens the client span every CLI request runs under.
+func startSpan(ctx context.Context, method, path string) (context.Context, trace.Span) {
+	target, _, _ := strings.Cut(path, "?")
+	return tracing.Tracer().Start(ctx, "cli.Request",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("http.method", method),
 			attribute.String("http.target", target),
 		),
 	)
-	defer span.End()
+}
 
-	start := time.Now()
-	defer func() { recordRequestMetrics(ctx, method, start, err) }()
+// roundTrip sends one request under a span and reads the whole response. The
+// error covers building and transport only; HTTP statuses come back in the
+// response. Login and the JSON commands share it.
+func (c *Client) roundTrip(ctx context.Context, method, path string, body any) (response, error) {
+	ctx, span := startSpan(ctx, method, path)
+	defer span.End()
 
 	req, err := c.buildRequest(ctx, method, path, body)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return nil, err
+		return response{}, err
 	}
-
 	resp, err := c.http.Do(req)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return nil, fmt.Errorf("request failed: %w", err)
+		return response{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return nil, fmt.Errorf("read response: %w", err)
+		return response{}, fmt.Errorf("read response: %w", err)
+	}
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	if resp.StatusCode >= 400 {
+		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
+	}
+	return response{status: resp.StatusCode, cookies: resp.Cookies(), body: data}, nil
+}
+
+// openStream opens a long-lived GET (the log stream) under a span and hands the
+// open body to the caller, who must close it. A status other than 200 is an
+// error.
+func (c *Client) openStream(ctx context.Context, path string) (io.ReadCloser, error) {
+	ctx, span := startSpan(ctx, http.MethodGet, path)
+	defer span.End()
+
+	req, err := c.buildRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("stream connect: %w", err)
+	}
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
+		return nil, fmt.Errorf("stream: HTTP %d", resp.StatusCode)
+	}
+	return resp.Body, nil
+}
+
+func (c *Client) doRetry(ctx context.Context, method, path string, body any, retried bool) (result json.RawMessage, err error) {
+	start := time.Now()
+	defer func() { recordRequestMetrics(ctx, method, start, err) }()
+
+	resp, err := c.roundTrip(ctx, method, path, body)
+	if err != nil {
+		return nil, err
 	}
 
-	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
-
-	if result, retriedResp, err := c.reauthAndRetry(ctx, method, path, body, retried, resp.StatusCode); retriedResp {
+	if result, retriedResp, err := c.reauthAndRetry(ctx, method, path, body, retried, resp.status); retriedResp {
 		return result, err
 	}
 
-	if resp.StatusCode >= 400 {
-		msg := string(respBody)
+	if resp.status >= 400 {
+		msg := string(resp.body)
 		if len(msg) > 200 {
 			msg = msg[:200]
 		}
-		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(msg))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.status, strings.TrimSpace(msg))
 	}
 
-	return json.RawMessage(respBody), nil
+	return json.RawMessage(resp.body), nil
 }
 
 // setRequestHeaders sets the content-type, project/group scoping, and auth

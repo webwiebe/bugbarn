@@ -89,3 +89,4 @@ sdks/php/.phpunit.result.cache
 docker-compose.override.yml
 .tools/
 .gotmp/
+/cmd/bb/bb

@@ -6,21 +6,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
-
-	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 func cmdLogin(args []string) error {
@@ -105,45 +97,20 @@ func authenticate(cfg *Config, apiKey, username, password string) error {
 }
 
 func loginWithPassword(ctx context.Context, baseURL, username, password string) (session, csrf string, err error) {
-	ctx, span := tracing.Tracer().Start(ctx, "cli.Request",
-		trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(
-			attribute.String("http.method", http.MethodPost),
-			attribute.String("http.target", "/api/v1/login"),
-		),
-	)
-	defer span.End()
-
-	body, _ := json.Marshal(map[string]string{"username": username, "password": password})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/login", bytes.NewReader(body))
+	c := &Client{base: baseURL, http: http.DefaultClient}
+	resp, err := c.roundTrip(ctx, http.MethodPost, "/api/v1/login", map[string]string{"username": username, "password": password})
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
 		return "", "", fmt.Errorf("login request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
-		return "", "", fmt.Errorf("login request: %w", err)
+	if resp.status != http.StatusOK {
+		return "", "", fmt.Errorf("login failed: HTTP %d", resp.status)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.ReadAll(resp.Body)
-
-	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
-
-	if resp.StatusCode != 200 {
-		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
-		return "", "", fmt.Errorf("login failed: HTTP %d", resp.StatusCode)
-	}
-
-	for _, c := range resp.Cookies() {
-		switch c.Name {
+	for _, ck := range resp.cookies {
+		switch ck.Name {
 		case "bugbarn_session":
-			session = c.Value
+			session = ck.Value
 		case "bugbarn_csrf":
-			csrf = c.Value
+			csrf = ck.Value
 		}
 	}
 	if session == "" {
@@ -165,10 +132,8 @@ func cmdTUI(args []string) error {
 	if err != nil {
 		return err
 	}
-	if g := resolveGroup(*group); g != "" && *project == "" {
-		client.group = g
-	} else if p := resolveProject(*project, client); p != "" {
-		client.project = p
+	if err := scopeClient(client, *project, *group); err != nil {
+		return err
 	}
 	return runTUI(client, *status)
 }
@@ -195,7 +160,7 @@ func cmdIssues(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := scopeIssuesClient(client, *project, *group); err != nil {
+	if err := scopeClient(client, *project, *group); err != nil {
 		return err
 	}
 
@@ -225,31 +190,6 @@ func flagWasSet(fs *flag.FlagSet, name string) bool {
 		}
 	})
 	return set
-}
-
-// scopeIssuesClient scopes the client to a group or project.
-// Resolution order: explicit flag > .bugbarn.json group > .bugbarn.json project / global config.
-func scopeIssuesClient(client *Client, project, group string) error {
-	if group != "" && project != "" {
-		return fmt.Errorf("--group and --project are mutually exclusive")
-	}
-	resolvedGroup := resolveGroup(group)
-	if resolvedGroup != "" && project == "" {
-		if err := validateGroup(client, resolvedGroup); err != nil {
-			return err
-		}
-		client.group = resolvedGroup
-		return nil
-	}
-	projectSlug := resolveProject(project, client)
-	if projectSlug == "" {
-		return nil
-	}
-	if err := validateProject(client, projectSlug); err != nil {
-		return err
-	}
-	client.project = projectSlug
-	return nil
 }
 
 func cmdIssue(args []string) error {
@@ -383,39 +323,6 @@ func cmdUnmute(args []string) error {
 		return err
 	}
 	return requireIssueStatus(data, remaining[0], "unresolved")
-}
-
-// newProjectClient builds a client scoped to the project named by the flag, the
-// directory's .bugbarn.json or the global config, in that order.
-func newProjectClient(flagValue string) (*Client, error) {
-	client, err := newClient()
-	if err != nil {
-		return nil, err
-	}
-	if p := resolveProject(flagValue, client); p != "" {
-		client.project = p
-	}
-	return client, nil
-}
-
-func resolveProject(flag string, c *Client) string {
-	if flag != "" {
-		return flag
-	}
-	if lc, ok := findLocalConfig(); ok && lc.Project != "" {
-		return lc.Project
-	}
-	return c.config.Project
-}
-
-func resolveGroup(flag string) string {
-	if flag != "" {
-		return flag
-	}
-	if lc, ok := findLocalConfig(); ok {
-		return lc.Group
-	}
-	return ""
 }
 
 func writeOut(v any) {

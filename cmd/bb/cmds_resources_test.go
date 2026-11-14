@@ -74,6 +74,12 @@ func TestGroupsListAndCreate(t *testing.T) {
 func TestAPIKeysListsKeys(t *testing.T) {
 	newHarness(t)
 	inEmptyDir(t)
+	if _, err := runCmd(t, cmdAPIKeys, "extra"); err == nil || !strings.Contains(err.Error(), "usage: bb apikeys") {
+		t.Errorf("extra argument: %v", err)
+	}
+	if _, err := runCmd(t, cmdAPIKeys, "--bogus"); err == nil {
+		t.Error("an unknown flag must fail")
+	}
 	out, err := runCmd(t, cmdAPIKeys)
 	if err != nil || !strings.Contains(out, "harness") {
 		t.Fatalf("apikeys: %v\n%s", err, out)
