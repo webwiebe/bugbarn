@@ -20,7 +20,7 @@ SDK/client -> ingest API -> durable spool -> background worker -> normalization/
 - `internal/ingest`: request-path ingest handler. It owns API key validation, size checks, and durable enqueue into the spool.
 - `internal/api`: HTTP server and routing (ServeMux patterns, registered in `routes*.go`). It owns request/response handling and delegates use cases to `internal/service`.
 - `internal/service`: business use cases and error boundary between HTTP handlers and repositories.
-- `internal/worker`: spool record processing. It owns decoding, normalization, privacy scrubbing, and fingerprint generation before persistence.
+- `internal/worker`: spool record processing and the background spool worker loop (cursor, rotated segments, retries, dead letter, queued admin mutations). It owns decoding, normalization, privacy scrubbing, and fingerprint generation before persistence.
 - `internal/storage`: SQLite repository implementation, schema setup, migrations, inserts, issue grouping, event persistence, facet storage, and read queries.
 - `internal/normalize`, `internal/privacy`, `internal/fingerprint`: transformation helpers used by the worker before data reaches storage.
 - `web`: browser UI for issue and event inspection.

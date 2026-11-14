@@ -22,7 +22,7 @@ fact; fix the document that is wrong.
 ## Project Layout
 
 ```
-cmd/bugbarn/          Server entrypoint; wires each role (main.go single/writer, reader.go reader, worker.go spool worker)
+cmd/bugbarn/          Server entrypoint; wires each role (main.go single/writer, reader.go reader, spool_worker.go adapter for the spool worker)
 cmd/bb/               The bb CLI
 internal/
   Write path ★ internal/ingest/CLAUDE.md
@@ -32,7 +32,7 @@ internal/
     ingesthealth/     Ingest stall monitor, health endpoint status, out-of-band alerts
     queue/            Redis write queue between readers and the writer
     spool/            On-disk NDJSON event queue with cursor and dead letter
-    worker/           ProcessRecord (decode, normalize, fingerprint), symbolication, worker status
+    worker/           ProcessRecord (decode, normalize, fingerprint), symbolication, the spool worker loop (cursor, segments, queued mutations), worker status
     mutqueue/         Durable queue for admin issue mutations when the store is slow
     logparse/         Pino-style log body parsing, shared by the HTTP endpoint and the consumer
   Grouping ★ internal/fingerprint/CLAUDE.md

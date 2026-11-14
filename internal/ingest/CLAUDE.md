@@ -46,7 +46,7 @@ Two consumers persist events. Both call `ingestproc.Processor.PersistRecord`: pa
 symbolication, `storage.PersistProcessedEvent` and the domain event. Each rule exists once
 there. The consumers keep only their delivery policy:
 
-- **Legacy file-spool worker** (`cmd/bugbarn/worker.go`, 1s tick). Drains
+- **Legacy file-spool worker** (`internal/worker/spool_worker.go`, 1s tick). Drains
   `internal/mutqueue` first, then `ingest.ndjson` from its cursor. Used by direct writer
   ingest, HTTP-mode reader replays, Alertmanager and `POST /api/v1/releases`. A transient
   outcome (database busy or locked, or an expired deadline) stops the batch and retries on
@@ -71,7 +71,11 @@ there. The consumers keep only their delivery policy:
 A change to what happens to a record belongs in `Processor.PersistRecord` and reaches both
 consumers. A change to retries, acks, the cursor or the dead letter belongs to one consumer.
 The pipeline lives in `ingestproc` because `storage` imports `worker`, so `worker` cannot
-hold anything that needs `storage`. `storage.IsTransient` is the one rule for a retryable
+hold anything that needs `storage`. The spool worker therefore takes the pipeline and the
+issue store as interfaces (`worker.RecordPersister`, `worker.IssueMutator`);
+`cmd/bugbarn/spool_worker.go` adapts `ingestproc.Processor` to the first, and `*storage.Store`
+satisfies the second. `cmd/bugbarn/worker_once.go` (`replayPending`) stays in `cmd` because it
+calls `ingestproc` directly and returns the CLI summary. `storage.IsTransient` is the one rule for a retryable
 write failure, by SQLite result code and not by error text.
 
 Direct log ingest on the writer skips the spool and inserts synchronously.

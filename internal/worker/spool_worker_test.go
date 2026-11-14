@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 // newTestWorker builds a spoolWorker pointed at a temp spool dir with a live
@@ -18,7 +17,7 @@ func newTestWorker(t *testing.T) *spoolWorker {
 	t.Helper()
 	return &spoolWorker{
 		spoolDir:    t.TempDir(),
-		ws:          worker.NewStatus(),
+		ws:          NewStatus(),
 		retryCounts: make(map[string]int),
 	}
 }

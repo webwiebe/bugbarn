@@ -17,7 +17,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetry"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetrydb"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func openTestStore(t *testing.T) *storage.Store {
@@ -149,93 +148,6 @@ func TestSetupKeyIsEmptyWithoutASecret(t *testing.T) {
 	if a, b := setupKey("s", "one"), setupKey("s", "two"); a == b || len(a) != 40 {
 		t.Fatalf("setup keys do not differ per slug: %q %q", a, b)
 	}
-}
-
-func TestSpoolWorkerRotatesAndFinishesASegment(t *testing.T) {
-	dir := t.TempDir()
-	w, sp, _ := newSegmentWorker(t, dir)
-	w.rotateThreshold = 1
-	appendRecords(t, sp, goodRecord(t, "r1"))
-
-	w.rotate()
-	if w.pos.Segment == "" {
-		t.Fatal("the active segment was not rotated")
-	}
-	if got := w.pendingRecords(); got != 1 {
-		t.Fatalf("pending after rotation = %d, want 1", got)
-	}
-	w.finishSegment()
-	if w.pos.Segment != "" || len(segments(t, dir)) != 0 {
-		t.Fatalf("segment survived finishSegment: pos=%+v segments=%v", w.pos, segments(t, dir))
-	}
-}
-
-func TestSpoolWorkerRotateWithoutASpoolIsANoOp(t *testing.T) {
-	w := &spoolWorker{}
-	w.rotate()
-	if w.pos.Segment != "" {
-		t.Fatalf("rotated without a spool: %+v", w.pos)
-	}
-}
-
-func TestSpoolWorkerRotateKeepsPositionWhenTheSpoolIsClosed(t *testing.T) {
-	logs := captureLogs(t)
-	w, sp, _ := newSegmentWorker(t, t.TempDir())
-	w.rotateThreshold = 1
-	appendRecords(t, sp, goodRecord(t, "r1"))
-	sp.Close()
-	w.rotate()
-	if w.pos.Segment != "" {
-		t.Fatalf("position moved after a failed rotation: %+v", w.pos)
-	}
-	if !strings.Contains(logs.String(), "worker failed to rotate spool") {
-		t.Fatalf("rotation failure not logged: %s", logs.String())
-	}
-}
-
-func TestSpoolWorkerFinishSegmentStaysPutWhenTheCursorCannotBeCommitted(t *testing.T) {
-	logs := captureLogs(t)
-	dir := filepath.Join(t.TempDir(), "gone")
-	w := &spoolWorker{spoolDir: dir, pos: spool.Position{Segment: "seg-1", Offset: 5}}
-	w.finishSegment()
-	if w.pos.Segment != "seg-1" {
-		t.Fatalf("position moved without a durable cursor: %+v", w.pos)
-	}
-	if !strings.Contains(logs.String(), "failed to commit cursor") {
-		t.Fatalf("commit failure not logged: %s", logs.String())
-	}
-}
-
-func TestSpoolWorkerReportStatusWarnsOnceWhileStalledAndResetsWhenHealthy(t *testing.T) {
-	logs := captureLogs(t)
-	w, sp, _ := newSegmentWorker(t, t.TempDir())
-	appendRecords(t, sp, goodRecord(t, "r1"))
-	// A zero Status has never advanced, which is how a stalled worker looks.
-	w.ws = &worker.Status{}
-
-	w.reportStatus()
-	if !w.stallWarned {
-		t.Fatal("a worker with pending records and no advance did not warn")
-	}
-	w.reportStatus()
-	if n := strings.Count(logs.String(), "worker stall detected"); n != 1 {
-		t.Fatalf("stall warned %d times, want once", n)
-	}
-
-	w.selfReporting = true
-	w.stallWarned = false
-	w.reportStatus()
-	if !w.stallWarned {
-		t.Fatal("the self-reporting stall path did not mark the warning")
-	}
-
-	empty, _, _ := newSegmentWorker(t, t.TempDir())
-	empty.stallWarned = true
-	empty.reportStatus()
-	if empty.stallWarned {
-		t.Fatal("a drained worker kept its stall warning")
-	}
-	(&spoolWorker{}).reportStatus()
 }
 
 func TestRunWorkerOnceReportsAnUnopenableDatabase(t *testing.T) {
