@@ -145,8 +145,9 @@ expect 0 "file-length: an allowlisted file at its recorded size passes" -- sh -c
 expect 1 "file-length: an allowlisted file that grew fails" -- sh -c "cd '$FL' && sh scripts/allowlisted.sh"
 
 # --------------------------------------------------------- check-coverage.sh
-# A throwaway module with exactly two statements, one of them covered, so the
-# measured total is a stable 50.0% and the three band cases are exact.
+# A throwaway module with exactly ten statements, nine of them covered, so the
+# measured total is a stable 90.0% and the band cases are exact. The package
+# minimum (80.0) holds for its only package.
 CV="$WORK/coverage"
 mkdir -p "$CV/scripts"
 cp "$REPO/scripts/check-coverage.sh" "$CV/scripts/"
@@ -155,44 +156,49 @@ module gatetest
 
 go 1.21
 EOF
-cat >"$CV/lib.go" <<'EOF'
-package gatetest
-
-func A() int { return 1 }
-
-func B() int { return 2 }
-EOF
-cat >"$CV/lib_test.go" <<'EOF'
-package gatetest
-
-import "testing"
-
-func TestA(t *testing.T) {
-	if A() != 1 {
-		t.Fatal("A")
-	}
+# writepkg DIR NAME STATEMENTS COVERED: a package of one-statement functions
+# whose test calls the first COVERED of them.
+writepkg() {
+	mkdir -p "$1"
+	{
+		echo "package $2"
+		i=1
+		while [ "$i" -le "$3" ]; do
+			echo "func F$i() int { return $i }"
+			i=$((i + 1))
+		done
+	} >"$1/lib.go"
+	{
+		printf 'package %s\n\nimport "testing"\n\nfunc TestCovered(t *testing.T) {\n' "$2"
+		i=1
+		while [ "$i" -le "$4" ]; do
+			printf '\tif F%s() != %s {\n\t\tt.Fatal("F%s")\n\t}\n' "$i" "$i" "$i"
+			i=$((i + 1))
+		done
+		echo "}"
+	} >"$1/lib_test.go"
 }
-EOF
+writepkg "$CV" gatetest 10 9
 
 measured=$(cd "$CV" && go test -covermode=atomic -coverprofile=c.out ./... >/dev/null 2>&1 && go tool cover -func=c.out | awk '/^total:/ { gsub(/%/, "", $3); print $3 }')
-if [ "$measured" != "50.0" ]; then
+if [ "$measured" != "90.0" ]; then
 	fail=$((fail + 1))
-	echo "FAIL coverage: fixture measured ${measured}%, expected 50.0% — the rest of this section is meaningless"
+	echo "FAIL coverage: fixture measured ${measured}%, expected 90.0%; the rest of this section is meaningless"
 else
 	pass=$((pass + 1))
-	echo "ok   coverage: fixture measures a stable 50.0%"
+	echo "ok   coverage: fixture measures a stable 90.0%"
 
-	echo 49.0 >"$CV/scripts/coverage-baseline.txt"
+	echo 89.0 >"$CV/scripts/coverage-baseline.txt"
 	expect 0 "coverage: inside the band passes" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
 
-	echo 55.0 >"$CV/scripts/coverage-baseline.txt"
+	echo 95.0 >"$CV/scripts/coverage-baseline.txt"
 	expect 1 "coverage: below the floor fails" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
 
-	echo 40.0 >"$CV/scripts/coverage-baseline.txt"
+	echo 80.0 >"$CV/scripts/coverage-baseline.txt"
 	expect 1 "coverage: a beatable baseline fails" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
 
-	echo 40.0 >"$CV/scripts/coverage-baseline.txt"
-	if (cd "$CV" && sh scripts/check-coverage.sh 2>&1) | grep -q 'echo 49.0 > scripts/coverage-baseline.txt'; then
+	echo 80.0 >"$CV/scripts/coverage-baseline.txt"
+	if (cd "$CV" && sh scripts/check-coverage.sh 2>&1) | grep -q 'echo 89.0 > scripts/coverage-baseline.txt'; then
 		pass=$((pass + 1))
 		echo "ok   coverage: names the exact refresh command"
 	else
@@ -205,6 +211,34 @@ else
 
 	printf 'nonsense\n' >"$CV/scripts/coverage-baseline.txt"
 	expect 1 "coverage: a non-numeric baseline fails" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
+
+	# Per-package minimum. A statement-less package and a package sitting
+	# exactly on 80.0% (4 of 5) pass; a package at 75.0% (3 of 4) fails and is
+	# named with its number. The total stays inside the band in both cases.
+	mkdir -p "$CV/empty"
+	printf 'package empty\n\ntype T struct{}\n' >"$CV/empty/types.go"
+	writepkg "$CV/edge" edge 5 4
+	echo 86.0 >"$CV/scripts/coverage-baseline.txt"
+	expect 0 "coverage: packages at the minimum and statement-less packages pass" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
+
+	writepkg "$CV/low" low 4 3
+	echo 84.0 >"$CV/scripts/coverage-baseline.txt"
+	expect 1 "coverage: a package below the minimum fails" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
+	if (cd "$CV" && sh scripts/check-coverage.sh 2>&1) | grep -q 'gatetest/low 75.0%'; then
+		pass=$((pass + 1))
+		echo "ok   coverage: names the failing package with its number"
+	else
+		fail=$((fail + 1))
+		echo "FAIL coverage: does not name the failing package with its number"
+	fi
+
+	# A nested module is measured too.
+	rm -rf "$CV/low"
+	echo 86.0 >"$CV/scripts/coverage-baseline.txt"
+	mkdir -p "$CV/nested"
+	printf 'module gatenested\n\ngo 1.21\n' >"$CV/nested/go.mod"
+	writepkg "$CV/nested" nested 4 3
+	expect 1 "coverage: a nested module package below the minimum fails" -- sh -c "cd '$CV' && sh scripts/check-coverage.sh"
 fi
 
 # Runner scope: no workflow step may reach into another runner's directory. The

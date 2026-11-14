@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,11 +13,19 @@ import (
 )
 
 func main() {
-	endpoint := os.Getenv("BUGBARN_ENDPOINT")
-	apiKey := os.Getenv("BUGBARN_API_KEY")
-	if endpoint == "" || apiKey == "" {
-		slog.Error("Set BUGBARN_ENDPOINT and BUGBARN_API_KEY")
+	if err := run(os.Getenv, os.Stdout); err != nil {
+		slog.Error(err.Error())
 		os.Exit(1)
+	}
+}
+
+// run is the whole sample, with its environment and output injected so a test
+// can drive it.
+func run(getenv func(string) string, out io.Writer) error {
+	endpoint := getenv("BUGBARN_ENDPOINT")
+	apiKey := getenv("BUGBARN_API_KEY")
+	if endpoint == "" || apiKey == "" {
+		return errors.New("BUGBARN_ENDPOINT and BUGBARN_API_KEY must be set")
 	}
 
 	bugbarn.Init(bugbarn.Options{
@@ -29,12 +38,13 @@ func main() {
 	// Manual capture.
 	bugbarn.CaptureError(errors.New("something went wrong in Go"),
 		bugbarn.WithAttributes(map[string]any{"service": "go-sample"}))
-	fmt.Println("Captured error")
+	_, _ = fmt.Fprintln(out, "Captured error")
 
 	// Panic recovery via middleware.
 	handler := bugbarn.RecoverMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("example panic")
 	}))
 	_ = handler // In real usage: http.ListenAndServe(":8080", handler)
-	fmt.Println("Done — flushing...")
+	_, _ = fmt.Fprintln(out, "Done — flushing...")
+	return nil
 }
