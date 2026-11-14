@@ -1,4 +1,4 @@
-package storage
+package sqlitedb
 
 import (
 	"context"
@@ -16,15 +16,15 @@ const readonlyRetryBase = "sqlite-readonly-retry"
 
 var (
 	registerReadonlyOnce sync.Once
-	readonlyDriver       = baseDriverName
+	readonlyDriver       = BaseDriverName
 )
 
-// readonlyTracedDriver registers (once) the driver OpenReadOnly uses. A reader
+// ReadOnlyDriverName registers (once) the driver OpenReadOnly uses. A reader
 // pod opens the -shm file read-only, so it cannot rebuild a wal-index header
 // that needs recovery and the read fails with 264 until the writer has rebuilt
 // it (#242, #261). Retrying in the driver covers every read on the reader
 // pool, whichever store method or caller issues it.
-func readonlyTracedDriver() string {
+func ReadOnlyDriverName() string {
 	registerReadonlyOnce.Do(func() {
 		sql.Register(readonlyRetryBase, readonlyRetryDriver{base: &sqlite.Driver{}})
 		readonlyDriver = registerTracedOn(readonlyRetryBase, nil)

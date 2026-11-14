@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/sqlitedb"
 )
 
 const (
@@ -61,7 +61,7 @@ func (d *DB) RunMaintenance(ctx context.Context, interval time.Duration, log *sl
 func (d *DB) maintain(ctx context.Context, log *slog.Logger) {
 	passCtx, cancel := context.WithTimeout(ctx, passBudget)
 	defer cancel()
-	storage.CheckpointDB(passCtx, d.write, checkpointRetry, log)
+	sqlitedb.CheckpointDB(passCtx, d.write, checkpointRetry, log)
 	if err := d.EnforceCap(passCtx); err != nil && ctx.Err() == nil {
 		log.Warn("telemetry size cap enforcement failed", "error", err)
 	}
@@ -74,7 +74,7 @@ func (d *DB) FinalCheckpoint(log *slog.Logger) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	storage.CheckpointDB(ctx, d.write, 0, log)
+	sqlitedb.CheckpointDB(ctx, d.write, 0, log)
 }
 
 // UsedBytes is the space the file's live pages and its WAL take up. Free
@@ -141,7 +141,7 @@ func (d *DB) EnforceCap(ctx context.Context) error {
 // checkpoint is a single TRUNCATE attempt; a reader holding a snapshot only
 // delays it to the next attempt.
 func (d *DB) checkpoint(ctx context.Context) {
-	storage.CheckpointDB(ctx, d.write, 0, slog.New(slog.DiscardHandler))
+	sqlitedb.CheckpointDB(ctx, d.write, 0, slog.New(slog.DiscardHandler))
 }
 
 // evictOldest deletes up to evictBatch rows with the lowest evictCol. Both

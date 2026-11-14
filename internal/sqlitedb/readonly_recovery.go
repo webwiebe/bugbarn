@@ -1,4 +1,4 @@
-package storage
+package sqlitedb
 
 import (
 	"context"

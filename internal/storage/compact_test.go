@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/wiebe-xyz/bugbarn/internal/sqlitedb"
 )
 
 // fillAndFree writes about 8 MB into a scratch table and drops it, leaving the
@@ -23,7 +25,7 @@ func fillAndFree(t *testing.T, s *Store) {
 	if _, err := s.db.ExecContext(ctx, `DROP TABLE scratch`); err != nil {
 		t.Fatalf("drop scratch: %v", err)
 	}
-	CheckpointDB(ctx, s.db, 0, quietLogger())
+	sqlitedb.CheckpointDB(ctx, s.db, 0, quietLogger())
 }
 
 func stats(t *testing.T, s *Store) (mode, pages, free int64) {
@@ -125,7 +127,7 @@ func TestIncrementalVacuumReturnsFreedPagesAfterCompact(t *testing.T) {
 		t.Fatalf("freelist = %d pages, want the dropped table's pages on it", free)
 	}
 
-	incrementalVacuum(ctx, store.db, checkpointVacuumPages, quietLogger())
+	sqlitedb.IncrementalVacuum(ctx, store.db, checkpointVacuumPages, quietLogger())
 	_, pagesAfter, freeAfter := stats(t, store)
 	if freeAfter != 0 {
 		t.Errorf("freelist = %d pages after incremental vacuum, want 0", freeAfter)
