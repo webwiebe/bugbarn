@@ -29,12 +29,17 @@ func StartPruner(ctx context.Context, db Pruner, logger *slog.Logger, wg *sync.W
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if n, err := db.PruneWebSessions(ctx, time.Now().UTC()); err != nil {
-					logger.Error("web-session prune failed", "error", err)
-				} else if n > 0 {
-					logger.Info("pruned expired web sessions", "count", n)
-				}
+				pruneOnce(ctx, db, logger, time.Now().UTC())
 			}
 		}
 	}()
+}
+
+// pruneOnce removes the sessions that expired before now and logs the outcome.
+func pruneOnce(ctx context.Context, db Pruner, logger *slog.Logger, now time.Time) {
+	if n, err := db.PruneWebSessions(ctx, now); err != nil {
+		logger.Error("web-session prune failed", "error", err)
+	} else if n > 0 {
+		logger.Info("pruned expired web sessions", "count", n)
+	}
 }

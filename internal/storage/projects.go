@@ -35,7 +35,7 @@ INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_a
 func (s *ProjectStore) ListProjects(ctx context.Context) ([]Project, error) {
 	rows, err := s.readDB().QueryContext(ctx, `SELECT `+projectColumns+` FROM projects ORDER BY name ASC`)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list projects")
 	}
 	defer rows.Close()
 
@@ -43,11 +43,11 @@ func (s *ProjectStore) ListProjects(ctx context.Context) ([]Project, error) {
 	for rows.Next() {
 		p, err := scanProject(rows)
 		if err != nil {
-			return nil, err
+			return nil, wrapErr(err, "list projects")
 		}
 		projects = append(projects, p)
 	}
-	return projects, rows.Err()
+	return projects, wrapErr(rows.Err(), "list projects")
 }
 
 // projectColumns is the column list every single-project lookup selects, in the
@@ -196,7 +196,7 @@ func deleteInBatches(ctx context.Context, db *sql.DB, table string, projectID in
 func (s *ProjectStore) ApproveProject(ctx context.Context, slug string) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE projects SET status='active' WHERE slug=?`, slug)
 	if err != nil {
-		return err
+		return wrapErr(err, "approve project")
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -297,7 +297,7 @@ func (s *ProjectStore) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUs
 		LEFT JOIN (SELECT project_id, SUM(sample_weight) cnt FROM events GROUP BY project_id) ec ON ec.project_id = p.id
 		LEFT JOIN (SELECT project_id, COUNT(*) cnt FROM log_entries GROUP BY project_id) lc ON lc.project_id = p.id`)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "project usage")
 	}
 	defer rows.Close()
 
@@ -305,12 +305,12 @@ func (s *ProjectStore) ProjectUsageAll(ctx context.Context) (map[int64]ProjectUs
 		var u ProjectUsage
 		if err := rows.Scan(&u.ProjectID, &u.IssueCount, &u.EventCount, &u.LogCount,
 			&u.IssueStatus.Open, &u.IssueStatus.Regressed, &u.IssueStatus.Resolved, &u.IssueStatus.Muted); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "project usage")
 		}
 		u.IssueStatus.All = u.IssueCount
 		usage[u.ProjectID] = u
 	}
-	return usage, rows.Err()
+	return usage, wrapErr(rows.Err(), "project usage")
 }
 
 // --- Alias operations ---
@@ -355,18 +355,18 @@ func (s *ProjectStore) ListAliases(ctx context.Context) ([]ProjectAlias, error) 
 		JOIN projects p ON pa.project_id = p.id
 		ORDER BY pa.alias_slug ASC`)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list aliases")
 	}
 	defer rows.Close()
 	var aliases []ProjectAlias
 	for rows.Next() {
 		var a ProjectAlias
 		if err := rows.Scan(&a.AliasSlug, &a.ProjectID, &a.ProjectSlug); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "list aliases")
 		}
 		aliases = append(aliases, a)
 	}
-	return aliases, rows.Err()
+	return aliases, wrapErr(rows.Err(), "list aliases")
 }
 
 // --- Rename and Merge ---
@@ -375,7 +375,7 @@ func (s *ProjectStore) ListAliases(ctx context.Context) ([]ProjectAlias, error) 
 func (s *ProjectStore) RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return wrapErr(err, "rename project")
 	}
 	defer tx.Rollback()
 
@@ -395,7 +395,7 @@ func (s *ProjectStore) RenameProject(ctx context.Context, oldSlug, newSlug, newN
 		return wrapErr(err, "create rename alias")
 	}
 
-	return tx.Commit()
+	return wrapErr(tx.Commit(), "rename project")
 }
 
 // MergeProjects moves all data from the source project to the target project,
@@ -403,20 +403,20 @@ func (s *ProjectStore) RenameProject(ctx context.Context, oldSlug, newSlug, newN
 func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return wrapErr(err, "merge projects")
 	}
 	defer tx.Rollback()
 
 	var sourceID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, sourceSlug).Scan(&sourceID)
 	if err != nil {
-		return apperr.NotFound("source project not found", err)
+		return wrapNotFound(err, "source project not found")
 	}
 
 	var targetID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, targetSlug).Scan(&targetID)
 	if err != nil {
-		return apperr.NotFound("target project not found", err)
+		return wrapNotFound(err, "target project not found")
 	}
 
 	// Move or drop each project-owned table as projectTables says. The issues
@@ -437,5 +437,5 @@ func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug
 		return apperr.Internal("merge: delete source", err)
 	}
 
-	return tx.Commit()
+	return wrapErr(tx.Commit(), "merge projects")
 }

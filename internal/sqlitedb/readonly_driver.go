@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -45,6 +46,9 @@ func (d readonlyRetryDriver) Open(dsn string) (driver.Conn, error) {
 // walPathFromDSN returns the -wal path for a file: DSN, for the span event the
 // retry records.
 func walPathFromDSN(dsn string) string {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme == "file" && u.Path != "" {
+		return u.Path + "-wal"
+	}
 	p := strings.TrimPrefix(dsn, "file:")
 	if i := strings.IndexByte(p, '?'); i >= 0 {
 		p = p[:i]

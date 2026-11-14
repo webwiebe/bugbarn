@@ -22,7 +22,7 @@ func (s *GroupStore) CreateGroup(ctx context.Context, name, slug string) (Projec
 func (s *GroupStore) ListGroups(ctx context.Context) ([]ProjectGroup, error) {
 	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, created_at FROM project_groups ORDER BY name ASC`)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list groups")
 	}
 	defer rows.Close()
 
@@ -31,12 +31,12 @@ func (s *GroupStore) ListGroups(ctx context.Context) ([]ProjectGroup, error) {
 		var g ProjectGroup
 		var createdAt string
 		if err := rows.Scan(&g.ID, &g.Name, &g.Slug, &createdAt); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "list groups")
 		}
 		g.CreatedAt, _ = parseTime(createdAt)
 		groups = append(groups, g)
 	}
-	return groups, rows.Err()
+	return groups, wrapErr(rows.Err(), "list groups")
 }
 
 // DeleteGroup removes a project group by slug.
@@ -57,7 +57,7 @@ func (s *GroupStore) AssignProjectToGroup(ctx context.Context, projectSlug, grou
 	var groupID int64
 	err := s.readDB().QueryRowContext(ctx, `SELECT id FROM project_groups WHERE slug = ?`, groupSlug).Scan(&groupID)
 	if err != nil {
-		return apperr.NotFound("group not found", err)
+		return wrapNotFound(err, "group not found")
 	}
 
 	res, err := s.db.ExecContext(ctx, `UPDATE projects SET group_id = ? WHERE slug = ?`, groupID, projectSlug)
@@ -89,14 +89,14 @@ func (s *GroupStore) ListGroupProjects(ctx context.Context, groupSlug string) ([
 	var groupID int64
 	err := s.readDB().QueryRowContext(ctx, `SELECT id FROM project_groups WHERE slug = ?`, groupSlug).Scan(&groupID)
 	if err != nil {
-		return nil, apperr.NotFound("group not found", err)
+		return nil, wrapNotFound(err, "group not found")
 	}
 
 	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT id, name, slug, status, issue_prefix, issue_counter, group_id, created_at
 		FROM projects WHERE group_id = ? ORDER BY name ASC`, groupID)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list group projects")
 	}
 	defer rows.Close()
 
@@ -105,10 +105,10 @@ func (s *GroupStore) ListGroupProjects(ctx context.Context, groupSlug string) ([
 		var p Project
 		var createdAt string
 		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter, &p.GroupID, &createdAt); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "list group projects")
 		}
 		p.CreatedAt, _ = parseTime(createdAt)
 		projects = append(projects, p)
 	}
-	return projects, rows.Err()
+	return projects, wrapErr(rows.Err(), "list group projects")
 }
