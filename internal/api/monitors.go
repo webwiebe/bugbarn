@@ -15,9 +15,6 @@ import (
 )
 
 const (
-	monitorsPathPrefix = "/api/v1/monitors/"
-	checkInsSuffix     = "/check-ins"
-
 	// checkInStoreTimeout bounds the write of a check-in on the writer once the
 	// request is accepted, however soon the caller hangs up. A check-in assigns
 	// the monitor's latest state, so a beat that lands late, or twice because
@@ -28,56 +25,34 @@ const (
 	checkInForwardTimeout = 25 * time.Second
 )
 
-// serveMonitorCheckInEndpoint handles POST /api/v1/monitors/<slug>/check-ins.
-// A scheduled job calls it with a project key to report "ok" or "error".
+// handleMonitorCheckIn serves POST /api/v1/monitors/<slug>/check-ins, already
+// routed by serveMonitorCheckInEndpoint in routes_ingest.go. A scheduled job
+// calls it with a project key to report "ok" or "error".
 //
 //	{"status":"ok","message":"...","interval":"1h","grace":"5m"}
 //
 // interval and grace are optional; sent, they create or update the monitor.
 // Readers forward the write to the writer, which owns the database.
-func (s *Server) serveMonitorCheckInEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	slug, ok := monitorCheckInSlug(r.URL.Path)
-	if !ok {
-		return false
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return true
-	}
+func (s *Server) handleMonitorCheckIn(w http.ResponseWriter, r *http.Request, slug string) {
 	if s.ingestHandler == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return true
+		return
 	}
 	// A key check that failed in the store is retryable; only a rejected key is
 	// 401, and a bound key that names another project is 403.
 	if !s.requireIngestKey(w, r) {
-		return true
+		return
 	}
 	if s.writeForwarder != nil {
 		// A worker hangs up after a few seconds; the beat still lands.
 		s.writeForwarder.ForwardDetached(w, r, checkInForwardTimeout)
-		return true
+		return
 	}
 	if s.monitors == nil {
 		http.Error(w, "monitors unavailable", http.StatusServiceUnavailable)
-		return true
+		return
 	}
 	s.recordCheckIn(w, r, slug)
-	return true
-}
-
-// monitorCheckInSlug extracts <slug> from /api/v1/monitors/<slug>/check-ins.
-func monitorCheckInSlug(path string) (string, bool) {
-	rest, ok := strings.CutPrefix(path, monitorsPathPrefix)
-	if !ok {
-		return "", false
-	}
-	slug, ok := strings.CutSuffix(rest, checkInsSuffix)
-	if !ok || slug == "" || strings.Contains(slug, "/") {
-		return "", false
-	}
-	return slug, true
 }
 
 type checkInBody struct {
@@ -254,20 +229,6 @@ func (s *Server) deleteMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// dispatchMonitorRoutes serves the authenticated monitor routes: the list and
-// the delete. Check-ins have their own key-authenticated entry point.
-func (s *Server) dispatchMonitorRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/monitors" && r.Method == http.MethodGet:
-		s.listMonitors(w, r)
-	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, monitorsPathPrefix):
-		s.deleteMonitor(w, r)
-	default:
-		return false
-	}
-	return true
 }
 
 // monitorTimezone is the zone a cron monitor is evaluated in, UTC when none was

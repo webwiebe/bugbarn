@@ -8,23 +8,9 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
 )
 
-const detectionRulesPath = "/api/v1/detection/rules"
-
 // DetectionRules returns the rules service, so the writer can hook the
 // running detection engine to it.
 func (s *Server) DetectionRules() *detectionrules.Service { return s.detectionRules }
-
-func (s *Server) dispatchDetectionRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == detectionRulesPath && r.Method == http.MethodGet:
-		s.listDetectionRules(w, r)
-	case strings.HasPrefix(r.URL.Path, detectionRulesPath+"/"):
-		s.serveDetectionRule(w, r)
-	default:
-		return false
-	}
-	return true
-}
 
 func (s *Server) listDetectionRules(w http.ResponseWriter, r *http.Request) {
 	if s.detectionRules == nil {

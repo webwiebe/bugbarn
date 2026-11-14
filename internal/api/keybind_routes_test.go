@@ -204,14 +204,14 @@ var routePathPattern = regexp.MustCompile(`r\.URL\.Path (?:== |, )?"(/[^"]+)"|Ha
 func TestEveryProtectedRouteIsScopedOrExplained(t *testing.T) {
 	t.Parallel()
 
-	src, err := os.ReadFile("routes.go")
+	src, err := os.ReadFile("routes_protected.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(src)
 	start := strings.Index(text, "func (s *Server) dispatchProtected(")
 	if start < 0 {
-		t.Fatal("dispatchProtected not found in routes.go")
+		t.Fatal("dispatchProtected not found in routes_protected.go")
 	}
 	known := map[string]bool{}
 	for _, rt := range scopedReadRoutes {
@@ -223,7 +223,7 @@ func TestEveryProtectedRouteIsScopedOrExplained(t *testing.T) {
 	}
 	matches := routePathPattern.FindAllStringSubmatch(text[start:], -1)
 	if len(matches) < 30 {
-		t.Fatalf("found %d protected routes in routes.go, the pattern no longer matches the dispatchers", len(matches))
+		t.Fatalf("found %d protected routes in routes_protected.go, the pattern no longer matches the dispatchers", len(matches))
 	}
 	for _, m := range matches {
 		path := m[1] + m[2]

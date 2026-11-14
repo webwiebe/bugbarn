@@ -12,36 +12,11 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/telemetrydb"
 )
 
-const (
-	telemetryHostsPath      = "/api/v1/telemetry/hosts"
-	telemetryHostPathPrefix = telemetryHostsPath + "/"
-)
-
 // SetTelemetryViews wires the telemetry read endpoints. The writer and the
 // monolith pass telemetrydb.Fixed over the handles they write through; reader
 // pods pass telemetrydb.Lazy sources.
 func (s *Server) SetTelemetryViews(security, metrics telemetrydb.Source) {
 	s.telemetryView = telemetryview.New(security, metrics, s.logger)
-}
-
-// dispatchTelemetryRoutes serves the authenticated telemetry GET endpoints.
-// The POST ingest endpoints on the same paths are handled before
-// authentication by serveTelemetryIngestEndpoint.
-func (s *Server) dispatchTelemetryRoutes(w http.ResponseWriter, r *http.Request) bool {
-	if r.Method != http.MethodGet {
-		return false
-	}
-	switch p := r.URL.Path; {
-	case p == telemetrySecurityPath:
-		s.searchSecurityTelemetry(w, r)
-	case p == telemetryHostsPath:
-		s.listTelemetryHosts(w, r)
-	case strings.HasPrefix(p, telemetryHostPathPrefix):
-		s.serveTelemetryHostRoute(w, r)
-	default:
-		return false
-	}
-	return true
 }
 
 func (s *Server) telemetryViewOrUnavailable(w http.ResponseWriter) *telemetryview.Service {
@@ -147,49 +122,35 @@ func (s *Server) listTelemetryHosts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"hosts": hosts})
 }
 
-// serveTelemetryHostRoute handles GET /api/v1/telemetry/hosts/{host}/metrics
-// and /api/v1/telemetry/hosts/{host}/series.
-func (s *Server) serveTelemetryHostRoute(w http.ResponseWriter, r *http.Request) {
-	host, action, ok := splitHostRoute(r.URL.EscapedPath())
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
+// serveTelemetryHostAction serves GET /api/v1/telemetry/hosts/{host}/metrics and
+// /api/v1/telemetry/hosts/{host}/series, already matched by routeTelemetryHost
+// in routes_protected.go. A nil action is an unknown sub-route and answers 404
+// once the telemetry views are known to be configured.
+func (s *Server) serveTelemetryHostAction(w http.ResponseWriter, r *http.Request, host string, action telemetryHostAction) {
 	view := s.telemetryViewOrUnavailable(w)
 	if view == nil {
 		return
 	}
-	switch action {
-	case "metrics":
-		names, err := view.HostMetrics(r.Context(), host)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		if names == nil {
-			names = []string{}
-		}
-		writeJSON(w, map[string]any{"host": host, "metrics": names})
-	case "series":
-		s.serveTelemetrySeries(w, r, view, host)
-	default:
+	if action == nil {
 		http.NotFound(w, r)
+		return
 	}
+	action(s, w, r, view, host)
 }
 
-// splitHostRoute splits /api/v1/telemetry/hosts/{host}/{action}. The host
-// segment is path-escaped by the client.
-func splitHostRoute(escapedPath string) (host, action string, ok bool) {
-	rest := strings.TrimPrefix(escapedPath, telemetryHostPathPrefix)
-	seg, action, found := strings.Cut(rest, "/")
-	if !found || seg == "" || strings.Contains(action, "/") {
-		return "", "", false
-	}
-	host, err := url.PathUnescape(seg)
+// telemetryHostAction is one handler under /api/v1/telemetry/hosts/{host}/.
+type telemetryHostAction func(s *Server, w http.ResponseWriter, r *http.Request, view *telemetryview.Service, host string)
+
+func (s *Server) serveTelemetryHostMetrics(w http.ResponseWriter, r *http.Request, view *telemetryview.Service, host string) {
+	names, err := view.HostMetrics(r.Context(), host)
 	if err != nil {
-		return "", "", false
+		writeServiceError(w, err)
+		return
 	}
-	return host, action, true
+	if names == nil {
+		names = []string{}
+	}
+	writeJSON(w, map[string]any{"host": host, "metrics": names})
 }
 
 func (s *Server) serveTelemetrySeries(w http.ResponseWriter, r *http.Request, view *telemetryview.Service, host string) {

@@ -99,7 +99,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 
 | Claim | Source | Tree |
 |---|---|---|
-| Status Draft; every task in `tasks.md` unchecked | Header, tasks.md | Delete, rename, merge, aliases and groups ship (`internal/api/routes.go`, `internal/storage/projects.go`, `groups.go`) |
+| Status Draft; every task in `tasks.md` unchecked | Header, tasks.md | Delete, rename, merge, aliases and groups ship (`internal/api/routes_protected.go`, `internal/storage/projects.go`, `groups.go`) |
 | `POST /api/v1/projects/:slug/reject` | tasks.md T008 | Retired in #228. `DELETE` removes the project row, its held ingest payloads and its key requests, and the settings Reject button calls it. A reject route would add no record, because nothing reads one. Ingest for the same slug afterwards creates a new pending project |
 | Delete of an active project with issues requires confirmation | Story 3, scenario 3 | Confirmation is a UI concern; not established from the API |
 | Layout fixes verified at 375, 600, 1120 and 1440px | tasks.md T003 | Not established |
@@ -112,6 +112,6 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 
 ## Sources
 
-- `internal/api/routes.go`, `internal/api/projects.go`
+- `internal/api/routes_protected.go`, `internal/api/projects.go`
 - `internal/storage/projects.go`, `internal/storage/groups.go`
 - `web/styles.css`
