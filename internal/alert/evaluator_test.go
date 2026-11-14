@@ -10,10 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 )
 
 // fakeRepo implements Repository for testing.
@@ -59,10 +58,10 @@ func TestEvaluator_ConditionMatching(t *testing.T) {
 		{ID: "alert-000002", Name: "Regressions", Enabled: true, Condition: "regression", WebhookURL: srv.URL},
 	}
 	repo := newFakeRepo(rules)
-	deliverer := NewDeliverer(digest.MailConfig{})
+	deliverer := NewDeliverer(mail.Config{})
 	evaluator := NewEvaluator(repo, deliverer, "http://example.com", "", slog.Default())
 
-	issue := storage.Issue{ID: "issue-000001", Title: "Test"}
+	issue := domain.Issue{ID: "issue-000001", Title: "Test"}
 
 	// Only the new_issue rule should fire for IssueCreated.
 	evaluator.evaluate(context.Background(), 1, issue, "new_issue")
@@ -92,9 +91,9 @@ func TestEvaluator_DisabledRuleSkipped(t *testing.T) {
 		{ID: "alert-000001", Name: "Disabled", Enabled: false, Condition: "new_issue", WebhookURL: srv.URL},
 	}
 	repo := newFakeRepo(rules)
-	evaluator := NewEvaluator(repo, NewDeliverer(digest.MailConfig{}), "http://example.com", "", slog.Default())
+	evaluator := NewEvaluator(repo, NewDeliverer(mail.Config{}), "http://example.com", "", slog.Default())
 
-	evaluator.evaluate(context.Background(), 1, storage.Issue{ID: "issue-000001"}, "new_issue")
+	evaluator.evaluate(context.Background(), 1, domain.Issue{ID: "issue-000001"}, "new_issue")
 	time.Sleep(100 * time.Millisecond)
 
 	if fired.Load() != 0 {
@@ -126,8 +125,8 @@ func TestEvaluator_CooldownPreventsDoubleFire(t *testing.T) {
 	// Pre-seed a recent firing so cooldown is still active.
 	repo.firings["alert-000001/issue-000001"] = time.Now().UTC().Add(-5 * time.Minute)
 
-	evaluator := NewEvaluator(repo, NewDeliverer(digest.MailConfig{}), "http://example.com", "", slog.Default())
-	evaluator.evaluate(context.Background(), 1, storage.Issue{ID: "issue-000001"}, "new_issue")
+	evaluator := NewEvaluator(repo, NewDeliverer(mail.Config{}), "http://example.com", "", slog.Default())
+	evaluator.evaluate(context.Background(), 1, domain.Issue{ID: "issue-000001"}, "new_issue")
 	time.Sleep(100 * time.Millisecond)
 
 	if fired.Load() != 0 {
@@ -159,8 +158,8 @@ func TestEvaluator_CooldownExpiredAllowsFire(t *testing.T) {
 	// Pre-seed an old firing (2 minutes ago > 1 minute cooldown).
 	repo.firings["alert-000001/issue-000001"] = time.Now().UTC().Add(-2 * time.Minute)
 
-	evaluator := NewEvaluator(repo, NewDeliverer(digest.MailConfig{}), "http://example.com", "", slog.Default())
-	evaluator.evaluate(context.Background(), 1, storage.Issue{ID: "issue-000001"}, "new_issue")
+	evaluator := NewEvaluator(repo, NewDeliverer(mail.Config{}), "http://example.com", "", slog.Default())
+	evaluator.evaluate(context.Background(), 1, domain.Issue{ID: "issue-000001"}, "new_issue")
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) && fired.Load() < 1 {
@@ -185,13 +184,13 @@ func TestEvaluator_HandleEvent(t *testing.T) {
 	rules := []Rule{
 		{ID: "alert-000001", Name: "Test", Enabled: true, Condition: "new_issue", WebhookURL: srv.URL},
 	}
-	evaluator := NewEvaluator(newFakeRepo(rules), NewDeliverer(digest.MailConfig{}), "http://example.com", "", slog.Default())
+	evaluator := NewEvaluator(newFakeRepo(rules), NewDeliverer(mail.Config{}), "http://example.com", "", slog.Default())
 
 	// Subscribe via bus and publish.
 	var bus domainevents.Bus
 	bus.Subscribe(evaluator.HandleEvent)
 	bus.Publish(domainevents.IssueCreated{
-		Issue:     storage.Issue{ID: "issue-000001", Title: "Test"},
+		Issue:     domain.Issue{ID: "issue-000001", Title: "Test"},
 		ProjectID: 1,
 	})
 
@@ -247,8 +246,8 @@ func TestEvaluator_AdminNotifiedOnNewIssueAndRegression(t *testing.T) {
 
 	var bus domainevents.Bus
 	bus.Subscribe(evaluator.HandleEvent)
-	bus.Publish(domainevents.IssueCreated{Issue: storage.Issue{ID: "issue-000001", Title: "boom"}, ProjectID: 7})
-	bus.Publish(domainevents.IssueRegressed{Issue: storage.Issue{ID: "issue-000002", Title: "back again"}, ProjectID: 7})
+	bus.Publish(domainevents.IssueCreated{Issue: domain.Issue{ID: "issue-000001", Title: "boom"}, ProjectID: 7})
+	bus.Publish(domainevents.IssueRegressed{Issue: domain.Issue{ID: "issue-000002", Title: "back again"}, ProjectID: 7})
 
 	calls := waitForCalls(notif, 2)
 	if len(calls) != 2 {
@@ -277,7 +276,7 @@ func TestEvaluator_AdminNotificationGated(t *testing.T) {
 		t.Parallel()
 		notif := &fakeNotifier{configured: true}
 		evaluator := NewEvaluator(newFakeRepo(nil), notif, "http://example.com", "", slog.Default())
-		evaluator.notifyAdmin(storage.Issue{ID: "i1"}, "new_issue")
+		evaluator.notifyAdmin(domain.Issue{ID: "i1"}, "new_issue")
 		if c := waitForCalls(notif, 1); len(c) != 0 {
 			t.Errorf("expected no notification without admin email, got %d", len(c))
 		}
@@ -287,7 +286,7 @@ func TestEvaluator_AdminNotificationGated(t *testing.T) {
 		t.Parallel()
 		notif := &fakeNotifier{configured: false}
 		evaluator := NewEvaluator(newFakeRepo(nil), notif, "http://example.com", "admin@example.com", slog.Default())
-		evaluator.notifyAdmin(storage.Issue{ID: "i1"}, "new_issue")
+		evaluator.notifyAdmin(domain.Issue{ID: "i1"}, "new_issue")
 		if c := waitForCalls(notif, 1); len(c) != 0 {
 			t.Errorf("expected no notification when SMTP unconfigured, got %d", len(c))
 		}

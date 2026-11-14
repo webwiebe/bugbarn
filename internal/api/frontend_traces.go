@@ -10,10 +10,6 @@ import (
 )
 
 const (
-	// frontendTracesBase is the endpoint the SPA hands to the SpanBarn SDK. The
-	// SDK appends /api/v1/spans, which is the path served here.
-	frontendTracesBase = "/api/v1/frontend-traces"
-	frontendTracesPath = frontendTracesBase + "/api/v1/spans"
 	// frontendTracesMaxBody bounds one batch of spans from a browser.
 	frontendTracesMaxBody = 256 << 10
 )
@@ -51,41 +47,28 @@ func (s *Server) SetSpanBarnUIURL(u string) {
 	s.spanBarnUIURL = strings.TrimRight(strings.TrimSpace(u), "/")
 }
 
-// serveFrontendTraces handles POST /api/v1/frontend-traces/api/v1/spans for an
-// already-authenticated caller. It returns true when it wrote a response.
+// relayFrontendTraces relays one browser span batch to SpanBarn, once
+// serveFrontendTraces (routes_protected.go) has matched POST on the spans path.
 //
 // The SDK posts with the session cookie and no CSRF header. That is safe here:
 // the endpoint changes nothing in BugBarn, and the session cookie is
 // SameSite=Strict, so another site cannot make the browser send it.
-func (s *Server) serveFrontendTraces(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != frontendTracesPath {
-		return false
-	}
-	if s.frontendTraces == nil {
-		http.NotFound(w, r)
-		return true
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return true
-	}
-
+func (s *Server) relayFrontendTraces(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, frontendTracesMaxBody))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-			return true
+			return
 		}
 		http.Error(w, "bad request", http.StatusBadRequest)
-		return true
+		return
 	}
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, s.frontendTraces.spansURL, bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
-		return true
+		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-SpanBarn-Api-Key", s.frontendTraces.apiKey)
@@ -93,15 +76,14 @@ func (s *Server) serveFrontendTraces(w http.ResponseWriter, r *http.Request) boo
 	resp, err := s.frontendTraces.client.Do(req)
 	if err != nil {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
-		return true
+		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
-		return true
+		return
 	}
 	w.WriteHeader(http.StatusAccepted)
-	return true
 }

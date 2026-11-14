@@ -12,13 +12,13 @@ import (
 const releaseIDPrefix = "release-"
 
 // ListReleases returns every release of the scoped project, newest first.
-func (s *ReleaseStore) ListReleases(ctx context.Context) ([]Release, error) {
+func (s *ReleaseStore) ListReleases(ctx context.Context) ([]domain.Release, error) {
 	return s.listReleases(ctx, -1)
 }
 
 // ListRecentReleases returns at most limit releases of the scoped project,
 // newest first.
-func (s *ReleaseStore) ListRecentReleases(ctx context.Context, limit int) ([]Release, error) {
+func (s *ReleaseStore) ListRecentReleases(ctx context.Context, limit int) ([]domain.Release, error) {
 	if limit <= 0 {
 		return nil, apperr.InvalidInput("release list limit must be positive", nil)
 	}
@@ -26,7 +26,7 @@ func (s *ReleaseStore) ListRecentReleases(ctx context.Context, limit int) ([]Rel
 }
 
 // listReleases lists the scoped project's releases; a negative limit lists all.
-func (s *ReleaseStore) listReleases(ctx context.Context, limit int) ([]Release, error) {
+func (s *ReleaseStore) listReleases(ctx context.Context, limit int) ([]domain.Release, error) {
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -55,7 +55,7 @@ LIMIT ?`,
 	}
 	defer rows.Close()
 
-	var releases []Release
+	var releases []domain.Release
 	for rows.Next() {
 		item, err := scanRelease(rows)
 		if err != nil {
@@ -66,10 +66,10 @@ LIMIT ?`,
 	return releases, rows.Err()
 }
 
-func (s *ReleaseStore) GetRelease(ctx context.Context, releaseID string) (Release, error) {
+func (s *ReleaseStore) GetRelease(ctx context.Context, releaseID string) (domain.Release, error) {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
-		return Release{}, apperr.InvalidInput("invalid release ID", err)
+		return domain.Release{}, err
 	}
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -96,7 +96,7 @@ WHERE project_id = ? AND id = ?`,
 	)
 	release, err := scanRelease(row)
 	if err != nil {
-		return Release{}, wrapNotFound(err, "release not found")
+		return domain.Release{}, wrapNotFound(err, "release not found")
 	}
 	return release, nil
 }
@@ -120,9 +120,9 @@ func capReleaseNotes(notes string) string {
 	return notes
 }
 
-func (s *ReleaseStore) CreateRelease(ctx context.Context, release Release) (Release, error) {
+func (s *ReleaseStore) CreateRelease(ctx context.Context, release domain.Release) (domain.Release, error) {
 	if strings.TrimSpace(release.Name) == "" {
-		return Release{}, apperr.InvalidInput("release name is required", nil)
+		return domain.Release{}, apperr.InvalidInput("release name is required", nil)
 	}
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
@@ -157,24 +157,24 @@ INSERT INTO releases (
 		release.CreatedBy,
 	)
 	if err != nil {
-		return Release{}, err
+		return domain.Release{}, err
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return Release{}, err
+		return domain.Release{}, err
 	}
 	release.ID = formatID(releaseIDPrefix, id)
 	release.CreatedAt = time.Now().UTC()
 	return release, nil
 }
 
-func (s *ReleaseStore) UpdateRelease(ctx context.Context, releaseID string, release Release) (Release, error) {
+func (s *ReleaseStore) UpdateRelease(ctx context.Context, releaseID string, release domain.Release) (domain.Release, error) {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
-		return Release{}, apperr.InvalidInput("invalid release ID", err)
+		return domain.Release{}, err
 	}
 	if strings.TrimSpace(release.Name) == "" {
-		return Release{}, apperr.InvalidInput("release name is required", nil)
+		return domain.Release{}, apperr.InvalidInput("release name is required", nil)
 	}
 	if release.ObservedAt.IsZero() {
 		release.ObservedAt = time.Now().UTC()
@@ -201,7 +201,7 @@ WHERE project_id = ? AND id = ?`,
 		projectID,
 		rowID,
 	); err != nil {
-		return Release{}, err
+		return domain.Release{}, err
 	}
 
 	return s.GetRelease(ctx, releaseID)
@@ -217,15 +217,15 @@ func (s *ReleaseStore) DeleteRelease(ctx context.Context, releaseID string) erro
 		projectID = s.defaultProjectID
 	}
 	_, err = s.db.ExecContext(ctx, `DELETE FROM releases WHERE project_id = ? AND id = ?`, projectID, rowID)
-	return err
+	return wrapErr(err, "delete release")
 }
 
 func scanRelease(scanner interface {
 	Scan(dest ...any) error
-}) (Release, error) {
+}) (domain.Release, error) {
 	var (
 		id        int64
-		item      Release
+		item      domain.Release
 		observed  string
 		createdAt string
 	)
@@ -241,7 +241,7 @@ func scanRelease(scanner interface {
 		&item.CreatedBy,
 		&createdAt,
 	); err != nil {
-		return Release{}, err
+		return domain.Release{}, err
 	}
 	item.ID = formatID(releaseIDPrefix, id)
 	item.ObservedAt, _ = parseTime(observed)

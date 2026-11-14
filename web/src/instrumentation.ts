@@ -21,7 +21,6 @@ interface SpanPayload {
 }
 
 const spanQueue: SpanPayload[] = [];
-let flushTimer: ReturnType<typeof setInterval> | null = null;
 let pageTraceId = hex(16);
 let pageSpanId = hex(8);
 let originalFetch: typeof window.fetch;
@@ -224,16 +223,8 @@ function initBuiltInInstrumentation(): void {
   instrumentFetch();
   instrumentNavigation();
   installErrorHandlers();
-  flushTimer = setInterval(flushSpans, FLUSH_INTERVAL_MS);
+  setInterval(flushSpans, FLUSH_INTERVAL_MS);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushSpans();
   });
-}
-
-export function shutdownInstrumentation(): void {
-  if (flushTimer) {
-    clearInterval(flushTimer);
-    flushTimer = null;
-  }
-  flushSpans();
 }

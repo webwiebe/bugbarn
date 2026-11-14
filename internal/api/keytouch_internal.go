@@ -3,9 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -29,29 +29,11 @@ type KeyToucher interface {
 // API key use. Writer/single-process only.
 func (s *Server) SetKeyToucher(t KeyToucher) { s.keyToucher = t }
 
-// serveInternalEndpoint routes the writer-internal endpoints that answer only to
-// HMAC-signed reader requests. It reports whether the path was one of them.
-func (s *Server) serveInternalEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case strings.HasPrefix(r.URL.Path, sessionstore.InternalPathPrefix):
-		s.serveInternalSessions(w, r)
-	case r.URL.Path == keytouch.Path:
-		s.serveInternalKeyTouch(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
 // serveInternalKeyTouch applies one batch of API key last-use times from a
 // reader. It shares the signing scheme of the internal session endpoints.
 func (s *Server) serveInternalKeyTouch(w http.ResponseWriter, r *http.Request) {
 	if len(s.internalSessionSecret) == 0 || s.keyToucher == nil {
 		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<20))
@@ -80,7 +62,7 @@ func (s *Server) serveInternalKeyTouch(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), keyTouchApplyTimeout)
 	defer cancel()
 	if err := s.keyToucher.TouchAPIKeysAt(ctx, batch.Touches); err != nil {
-		if !clientGone(err) {
+		if !apperr.IsContextError(err) {
 			s.logger.Error("internal api key touch: apply failed", "error", err)
 		}
 		http.Error(w, "touch failed", http.StatusInternalServerError)

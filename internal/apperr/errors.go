@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 // IsContextError reports whether err is a context cancellation or deadline
@@ -11,6 +12,28 @@ import (
 // not be logged at ERROR level by services.
 func IsContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// IsClientError reports whether err is the caller's doing and not a fault of
+// ours: an invalid input, a missing record, a conflict, or a context
+// cancellation. The API answers these with 4xx (or nothing, on a disconnect),
+// so services must not log them at ERROR.
+func IsClientError(err error) bool {
+	return errors.Is(err, ErrInvalidInput) ||
+		errors.Is(err, ErrNotFound) ||
+		errors.Is(err, ErrConflict) ||
+		IsContextError(err)
+}
+
+// LogFailure is the one way a service reports a failed call. It logs at ERROR
+// unless err is a client error, because internal/selflog turns every ERROR
+// record into a BugBarn issue against ourselves. args are extra slog
+// attributes; the error is appended as "error".
+func LogFailure(ctx context.Context, log *slog.Logger, msg string, err error, args ...any) {
+	if IsClientError(err) {
+		return
+	}
+	log.ErrorContext(ctx, msg, append(args, "error", err)...)
 }
 
 type Error struct {
@@ -47,6 +70,10 @@ var (
 	// ErrUnavailable marks a dependency that is not ready yet (for example a
 	// file another process has still to create). The API answers 503.
 	ErrUnavailable = &Error{Code: "unavailable"}
+	// ErrBusy marks lock contention in the database (SQLite busy or locked).
+	// It clears on its own, so callers retry; the API answers 503 with
+	// Retry-After.
+	ErrBusy = &Error{Code: "busy"}
 )
 
 func NotFound(msg string, cause error) *Error {
@@ -63,6 +90,12 @@ func InvalidInput(msg string, cause error) *Error {
 
 func Internal(msg string, cause error) *Error {
 	return &Error{Code: "internal", Message: msg, Err: cause}
+}
+
+// Busy wraps database lock contention. Storage maps SQLITE_BUSY and
+// SQLITE_LOCKED to it; callers test it with errors.Is(err, apperr.ErrBusy).
+func Busy(msg string, cause error) *Error {
+	return &Error{Code: "busy", Message: msg, Err: cause}
 }
 
 func Unavailable(msg string, cause error) *Error {

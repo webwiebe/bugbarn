@@ -42,7 +42,7 @@ export function monitorsStatus(): string {
 }
 
 /** formatSeconds writes a duration the way a schedule is spoken: 1h, 10m, 90s. */
-export function formatSeconds(total: number): string {
+function formatSeconds(total: number): string {
   if (total <= 0) return "0s";
   const units: [string, number][] = [["d", 86400], ["h", 3600], ["m", 60], ["s", 1]];
   const parts: string[] = [];
@@ -56,7 +56,7 @@ export function formatSeconds(total: number): string {
 }
 
 /** monitorAge says how long ago a timestamp was, or "never" when there is none. */
-export function monitorAge(iso: string | undefined, now = Date.now()): string {
+function monitorAge(iso: string | undefined, now = Date.now()): string {
   const t = iso ? Date.parse(iso) : NaN;
   if (!Number.isFinite(t)) return "never";
   const secs = Math.max(0, Math.round((now - t) / 1000));
@@ -70,7 +70,7 @@ function stateChip(m: Monitor): string {
 }
 
 /** monitorTiming describes what a monitor expects: an interval or a cron schedule, plus the grace. */
-export function monitorTiming(m: Monitor): string {
+function monitorTiming(m: Monitor): string {
   const grace = `grace ${formatSeconds(m.graceSeconds)}`;
   if (m.schedule) return `cron ${m.schedule} (${m.timezone || "UTC"}), ${grace}`;
   return `every ${formatSeconds(m.intervalSeconds)}, ${grace}`;

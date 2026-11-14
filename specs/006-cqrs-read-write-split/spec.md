@@ -117,12 +117,12 @@ The reader validates auth/session **before** forwarding, rejecting invalid reque
 Reader pods forward writes to the writer via plain HTTP reverse proxy:
 
 ```go
-type WriteForwarder struct {
+type Proxy struct {
     writerURL string   // "http://bugbarn-writer:8080"
     client    *http.Client
 }
 
-func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
+func (f *Proxy) Forward(w http.ResponseWriter, r *http.Request) {
     // Copy method, path, query, headers, body → upstream
     // Copy response status, headers, body → downstream
 }
@@ -252,7 +252,7 @@ esac
 - Test that it refuses writes and serves reads
 
 ### Phase 3 — Write forwarder
-- Implement `internal/api/forwarder.go`
+- Implement `internal/writeforward/forwarder.go` (was `internal/api/forwarder.go`)
 - Plain HTTP reverse proxy, ~30 lines
 - Test with httptest
 
@@ -321,7 +321,7 @@ esac
 | Reader forwards events by HTTP | Event Forwarding | With a spool dir and a Redis URL the reader publishes to Redis (spec 007); sync forwarding stays for mutations |
 | Entrypoint runs `litestream restore` | Startup, Phase 6 | `deploy/docker/entrypoint.sh` documents that Litestream is gone |
 | Status Draft; acceptance boxes unchecked | Header | Production runs one writer and 2 to 6 HPA-scaled readers |
-| `internal/api/forwarder.go` | Phase 3 | Not established; forwarding tests live in `internal/api/server_forwarding_test.go` |
+| `internal/writeforward/forwarder.go` | Phase 3 | Not established; forwarding tests live in `internal/api/server_forwarding_test.go` |
 
 ## Proof contract
 

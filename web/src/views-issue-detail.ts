@@ -1,7 +1,7 @@
 // Issue / event detail views: loading, rendering, action wiring (copy, resolve,
 // mute, navigation), and the issue status mutations.
 import { renderErrorDetailMarkup, renderEventDetailMarkup, renderIssueDetailMarkup } from "./components.js";
-import { normalizeList, normalizeObject } from "./data.js";
+import { normalizeList, normalizeObject } from "./records.js";
 import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { errorMessage } from "./format.js";
 import type { ApiEvent, ApiIssue } from "./types.js";
@@ -111,38 +111,12 @@ function renderIssueDetail(issue: ApiIssue, events: ApiEvent[], hasMore = false)
   }
 }
 
-async function loadOlderEvents(issueId: string, beforeRowId: number, existing: ApiEvent[]): Promise<void> {
-  const btn = elements.detailBody.querySelector<HTMLButtonElement>("[data-load-older]");
-  if (btn) btn.disabled = true;
-  try {
-    const payload = await fetchJson(
-      `/api/v1/issues/${encodeURIComponent(issueId)}/events?limit=25&before=${beforeRowId}`
-    );
-    const raw = payload as Record<string, unknown>;
-    const older = normalizeList<ApiEvent>(raw, "events");
-    const hasMore = Boolean(raw?.["hasMore"]);
-    const combined = [...older, ...existing];
-    renderIssueDetail(
-      normalizeObject<ApiIssue>({ ID: issueId }, "issue"),
-      combined,
-      hasMore,
-    );
-    // Re-fetch the issue so the header stays accurate — use cached issues list.
-    const cached = state.issues.find((i) => String(firstIdentifier(i)) === issueId);
-    if (cached) {
-      renderIssueDetail(cached, combined, hasMore);
-    }
-  } catch {
-    if (btn) btn.disabled = false;
-  }
-}
-
-async function loadOlderEventsForEvent(
-  currentEvent: ApiEvent,
-  issue: ApiIssue | null,
+/** Fetches the page of events before beforeRowId and hands the merged list to render. */
+async function loadOlderPage(
   issueId: string,
   beforeRowId: number,
   existing: ApiEvent[],
+  render: (events: ApiEvent[], hasMore: boolean) => void,
 ): Promise<void> {
   const btn = elements.detailBody.querySelector<HTMLButtonElement>("[data-load-older]");
   if (btn) btn.disabled = true;
@@ -152,12 +126,33 @@ async function loadOlderEventsForEvent(
     );
     const raw = payload as Record<string, unknown>;
     const older = normalizeList<ApiEvent>(raw, "events");
-    const hasMore = Boolean(raw?.["hasMore"]);
-    const combined = [...older, ...existing];
-    renderEventDetail(currentEvent, issue, combined, hasMore);
+    render([...older, ...existing], Boolean(raw?.["hasMore"]));
   } catch {
     if (btn) btn.disabled = false;
   }
+}
+
+function loadOlderEvents(issueId: string, beforeRowId: number, existing: ApiEvent[]): Promise<void> {
+  return loadOlderPage(issueId, beforeRowId, existing, (combined, hasMore) => {
+    renderIssueDetail(normalizeObject<ApiIssue>({ ID: issueId }, "issue"), combined, hasMore);
+    // Re-fetch the issue so the header stays accurate: use the cached issues list.
+    const cached = state.issues.find((i) => String(firstIdentifier(i)) === issueId);
+    if (cached) {
+      renderIssueDetail(cached, combined, hasMore);
+    }
+  });
+}
+
+function loadOlderEventsForEvent(
+  currentEvent: ApiEvent,
+  issue: ApiIssue | null,
+  issueId: string,
+  beforeRowId: number,
+  existing: ApiEvent[],
+): Promise<void> {
+  return loadOlderPage(issueId, beforeRowId, existing, (combined, hasMore) => {
+    renderEventDetail(currentEvent, issue, combined, hasMore);
+  });
 }
 
 function renderEventDetail(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[], hasMore = false): void {

@@ -35,7 +35,7 @@ SELECT
 FROM alerts a
 LEFT JOIN projects p ON p.id = a.project_id`
 
-func (s *AlertStore) ListAlerts(ctx context.Context) ([]Alert, error) {
+func (s *AlertStore) ListAlerts(ctx context.Context) ([]domain.Alert, error) {
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -54,7 +54,7 @@ func (s *AlertStore) ListAlerts(ctx context.Context) ([]Alert, error) {
 	}
 	defer rows.Close()
 
-	var alerts []Alert
+	var alerts []domain.Alert
 	for rows.Next() {
 		item, err := scanAlertWithProject(rows)
 		if err != nil {
@@ -65,10 +65,10 @@ func (s *AlertStore) ListAlerts(ctx context.Context) ([]Alert, error) {
 	return alerts, rows.Err()
 }
 
-func (s *AlertStore) GetAlert(ctx context.Context, alertID string) (Alert, error) {
+func (s *AlertStore) GetAlert(ctx context.Context, alertID string) (domain.Alert, error) {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
-		return Alert{}, err
+		return domain.Alert{}, err
 	}
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
@@ -105,14 +105,14 @@ WHERE a.id = ?`, rowID)
 	}
 	alert, err := scanAlertWithProject(row)
 	if err != nil {
-		return Alert{}, wrapNotFound(err, "alert not found")
+		return domain.Alert{}, wrapNotFound(err, "alert not found")
 	}
 	return alert, nil
 }
 
-func (s *AlertStore) CreateAlert(ctx context.Context, alert Alert) (Alert, error) {
+func (s *AlertStore) CreateAlert(ctx context.Context, alert domain.Alert) (domain.Alert, error) {
 	if strings.TrimSpace(alert.Name) == "" {
-		return Alert{}, apperr.InvalidInput("alert name is required", nil)
+		return domain.Alert{}, apperr.InvalidInput("alert name is required", nil)
 	}
 	if alert.Rule == nil {
 		alert.Rule = map[string]any{}
@@ -149,11 +149,11 @@ INSERT INTO alerts (
 		alert.CooldownMinutes,
 	)
 	if err != nil {
-		return Alert{}, err
+		return domain.Alert{}, err
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return Alert{}, err
+		return domain.Alert{}, err
 	}
 	alert.ID = formatID(alertIDPrefix, id)
 	alert.CreatedAt = now
@@ -161,13 +161,13 @@ INSERT INTO alerts (
 	return alert, nil
 }
 
-func (s *AlertStore) UpdateAlert(ctx context.Context, alertID string, alert Alert) (Alert, error) {
+func (s *AlertStore) UpdateAlert(ctx context.Context, alertID string, alert domain.Alert) (domain.Alert, error) {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
-		return Alert{}, apperr.InvalidInput("invalid alert ID", err)
+		return domain.Alert{}, err
 	}
 	if strings.TrimSpace(alert.Name) == "" {
-		return Alert{}, apperr.InvalidInput("alert name is required", nil)
+		return domain.Alert{}, apperr.InvalidInput("alert name is required", nil)
 	}
 	if alert.Rule == nil {
 		alert.Rule = map[string]any{}
@@ -195,7 +195,7 @@ WHERE project_id = ? AND id = ?`,
 		projectID,
 		rowID,
 	); err != nil {
-		return Alert{}, err
+		return domain.Alert{}, wrapErr(err, "update alert")
 	}
 	return s.GetAlert(ctx, alertID)
 }
@@ -210,15 +210,15 @@ func (s *AlertStore) DeleteAlert(ctx context.Context, alertID string) error {
 		projectID = s.defaultProjectID
 	}
 	_, err = s.db.ExecContext(ctx, `DELETE FROM alerts WHERE project_id = ? AND id = ?`, projectID, rowID)
-	return err
+	return wrapErr(err, "delete alert")
 }
 
 func scanAlertWithProject(scanner interface {
 	Scan(dest ...any) error
-}) (Alert, error) {
+}) (domain.Alert, error) {
 	var (
 		id          int64
-		item        Alert
+		item        domain.Alert
 		ruleRaw     []byte
 		lastFiredAt string
 		createdAt   string
@@ -242,7 +242,7 @@ func scanAlertWithProject(scanner interface {
 		&updatedAt,
 		&item.ProjectSlug,
 	); err != nil {
-		return Alert{}, err
+		return domain.Alert{}, err
 	}
 	item.ID = formatID(alertIDPrefix, id)
 	item.Enabled = enabled != 0
@@ -251,7 +251,7 @@ func scanAlertWithProject(scanner interface {
 	item.UpdatedAt, _ = parseTime(updatedAt)
 	if len(ruleRaw) > 0 {
 		if err := json.Unmarshal(ruleRaw, &item.Rule); err != nil {
-			return Alert{}, err
+			return domain.Alert{}, err
 		}
 	}
 	if item.Rule == nil {

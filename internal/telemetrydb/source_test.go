@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/sqlitedb"
 )
 
 func TestFixedNilIsUnavailable(t *testing.T) {
@@ -57,7 +57,7 @@ func TestLazyOpensOnceTheWriterCreatedTheFile(t *testing.T) {
 // between must keep answering ErrNotCreated.
 func TestOpenReadOnlyWithoutSchemaIsNotCreated(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "metrics.db")
-	raw, err := sql.Open(storage.DriverName(), writeDSN(path))
+	raw, err := sql.Open(sqlitedb.DriverName(), writeDSN(path))
 	if err != nil {
 		t.Fatal(err)
 	}

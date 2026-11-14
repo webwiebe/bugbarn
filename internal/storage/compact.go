@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/wiebe-xyz/bugbarn/internal/sqlitedb"
 )
 
 // autoVacuumIncremental is PRAGMA auto_vacuum's value for INCREMENTAL.
@@ -67,7 +69,7 @@ func (s *core) Compact(ctx context.Context, path string, maxLiveBytes int64) (Co
 	}
 
 	// Fold the WAL into the file first so VACUUM starts from a short WAL.
-	CheckpointDB(ctx, s.db, 0, nopLogger())
+	sqlitedb.CheckpointDB(ctx, s.db, 0, nopLogger())
 	if _, err := s.db.ExecContext(ctx, `PRAGMA main.auto_vacuum = INCREMENTAL`); err != nil {
 		return res, wrapErr(err, "set auto_vacuum")
 	}
@@ -76,7 +78,7 @@ func (s *core) Compact(ctx context.Context, path string, maxLiveBytes int64) (Co
 	}
 	// In WAL mode VACUUM writes the new pages through the WAL; the file only
 	// shrinks once a checkpoint copies them back and truncates it.
-	CheckpointDB(ctx, s.db, 0, nopLogger())
+	sqlitedb.CheckpointDB(ctx, s.db, 0, nopLogger())
 
 	_, pageSize, pages, _, err = pageStats(ctx, s.db)
 	if err != nil {
@@ -88,15 +90,6 @@ func (s *core) Compact(ctx context.Context, path string, maxLiveBytes int64) (Co
 		res.BytesAfter = fi.Size()
 	}
 	return res, nil
-}
-
-// incrementalVacuum returns up to pages freelist pages of db's main schema to
-// the filesystem. It does nothing on a database that is not in
-// auto_vacuum=INCREMENTAL mode (see Compact).
-func incrementalVacuum(ctx context.Context, db *sql.DB, pages int, log *slog.Logger) {
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA main.incremental_vacuum(%d)`, pages)); err != nil && ctx.Err() == nil {
-		log.Warn("incremental vacuum error", "error", err)
-	}
 }
 
 func nopLogger() *slog.Logger {

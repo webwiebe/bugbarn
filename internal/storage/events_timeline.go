@@ -13,15 +13,6 @@ import (
 // stored text exactly.
 var ErrorSeverities = []string{"ERROR", "CRITICAL", "FATAL", "ALERT", "EMERGENCY"}
 
-// TimelineRow is the error-event weight of one project in one UTC hour.
-type TimelineRow struct {
-	ProjectID   int64
-	ProjectSlug string
-	ProjectName string
-	Hour        time.Time
-	Count       int64
-}
-
 // ErrorTimelineRows returns, per project and UTC hour, the sample-weighted
 // number of error events received at or after since. The request scope applies:
 // a project in the context (API key or X-BugBarn-Project) narrows the result to
@@ -33,7 +24,7 @@ type TimelineRow struct {
 // serve the range or the severity filter and reads the table row by row.
 // Hours are the finest grain; the service folds them into wider buckets, which
 // keeps the SQL grouping on a cheap substr instead of a date parse per row.
-func (s *EventStore) ErrorTimelineRows(ctx context.Context, since time.Time) ([]TimelineRow, error) {
+func (s *EventStore) ErrorTimelineRows(ctx context.Context, since time.Time) ([]domain.TimelineRow, error) {
 	scope, scopeArgs := timelineScope(ctx)
 	args := []any{formatTime(since)}
 	marks := make([]string, len(ErrorSeverities))
@@ -58,9 +49,9 @@ ORDER BY t.hour`, args...)
 	}
 	defer rows.Close()
 
-	var out []TimelineRow
+	var out []domain.TimelineRow
 	for rows.Next() {
-		var r TimelineRow
+		var r domain.TimelineRow
 		var hour string
 		if err := rows.Scan(&r.ProjectID, &r.ProjectSlug, &r.ProjectName, &hour, &r.Count); err != nil {
 			return nil, wrapErr(err, "scan error timeline")

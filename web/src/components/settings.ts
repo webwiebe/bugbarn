@@ -1,8 +1,8 @@
-import { readFirst } from "../data.js";
+import { readFirst } from "../records.js";
 import { escapeAttr, escapeHtml, errorMessage } from "../format.js";
-import type { ApiApiKey, ApiKeyRequest, ApiProject, ApiSettings } from "../types.js";
+import type { ApiApiKey, ApiKeyRequest, ApiProject, ApiSettings, IngestHealth } from "../types.js";
 import { renderKeyRequests } from "./key-requests.js";
-import { renderField } from "./shared.js";
+import { renderField } from "./event-detail.js";
 
 export function renderSettingsViewMarkup(
   settings: ApiSettings | null,
@@ -356,7 +356,7 @@ function renderSettingsKeys(apiKeys: ApiApiKey[]): string {
 
 // spoolBacklogLabel shows the writer spool's unprocessed bytes, or "n/a" when
 // this instance cannot see the writer's spool.
-function spoolBacklogLabel(ingest: import("../types.js").IngestHealth | null, fmtBytes: (n: number) => string): string {
+function spoolBacklogLabel(ingest: IngestHealth | null, fmtBytes: (n: number) => string): string {
   if (!ingest || !ingest.spoolBacklogKnown) return "n/a";
   return fmtBytes(ingest.spoolBacklogBytes ?? 0);
 }

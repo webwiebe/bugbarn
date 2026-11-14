@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/sqlitedb"
 )
 
 // These tests force SQLITE_READONLY_RECOVERY (264) the way a reader pod meets
@@ -61,7 +62,7 @@ func TestReadonlyRecoveryReaderHelper(t *testing.T) {
 	// One connection per pool, so each read reuses the connection that was
 	// open before the header was zeroed, as a long-lived reader pod does.
 	st.roDB.SetMaxOpenConns(1)
-	plain, err := sql.Open(baseDriverName, dsn)
+	plain, err := sql.Open(sqlitedb.BaseDriverName, dsn)
 	if err != nil {
 		fmt.Println("RESULT open plain", err)
 		return
@@ -70,21 +71,21 @@ func TestReadonlyRecoveryReaderHelper(t *testing.T) {
 	plain.SetMaxOpenConns(1)
 
 	in := bufio.NewScanner(os.Stdin)
-	readonlyRecoveryHook = func() {
+	sqlitedb.SetReadonlyRecoveryHook(func() {
 		fmt.Println("RETRYING")
 		in.Scan()
-	}
+	})
 	ctx := context.Background()
 	for in.Scan() {
 		switch in.Text() {
 		case "plain":
 			var id int64
 			err := plain.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, "profotograaf").Scan(&id)
-			fmt.Printf("RESULT recovery=%v err=%v\n", IsReadonlyRecovery(err), err)
+			fmt.Printf("RESULT recovery=%v err=%v\n", sqlitedb.IsReadonlyRecovery(err), err)
 		case "store":
 			p, err := st.ProjectBySlug(ctx, "profotograaf")
 			fmt.Printf("RESULT recovery=%v unavailable=%v slug=%s err=%v\n",
-				IsReadonlyRecovery(err), errors.Is(err, apperr.ErrUnavailable), p.Slug, err)
+				sqlitedb.IsReadonlyRecovery(err), errors.Is(err, apperr.ErrUnavailable), p.Slug, err)
 		}
 	}
 }
@@ -195,17 +196,5 @@ func TestReaderReadonlyRecoveryThatPersistsIsUnavailable(t *testing.T) {
 	got := r.next(t)
 	if !strings.Contains(got, "recovery=true unavailable=true") || !strings.Contains(got, "after 3 retries") {
 		t.Fatalf("store read with no writer write: want Unavailable with 264 after 3 retries, got %s", got)
-	}
-}
-
-func TestWrapErrMapsReadonlyRecoveryToUnavailable(t *testing.T) {
-	err := fmt.Errorf("after 3 retries: %w", errReadonlyRecovery)
-	for name, wrapped := range map[string]error{
-		"wrapErr":      wrapErr(err, "x"),
-		"wrapNotFound": wrapNotFound(err, "x"),
-	} {
-		if !errors.Is(wrapped, apperr.ErrUnavailable) {
-			t.Errorf("%s: want apperr.ErrUnavailable, got %v", name, wrapped)
-		}
 	}
 }

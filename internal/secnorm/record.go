@@ -11,6 +11,7 @@ package secnorm
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -232,4 +233,12 @@ func parseTime(s string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+// StatusString is Status for rule matching; empty when unset.
+func (r Record) StatusString() string {
+	if r.Status == 0 {
+		return ""
+	}
+	return fmt.Sprint(r.Status)
 }

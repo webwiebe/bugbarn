@@ -14,13 +14,13 @@ package retention
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/metric"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -228,14 +228,6 @@ func StartWorker(ctx context.Context, store Store, cfg Config, log *slog.Logger,
 	}()
 }
 
-// shuttingDown reports whether err is just the process stopping. A sweep
-// interrupted by shutdown is expected, not a fault — logging it at ERROR would
-// file a bug against ourselves on every deploy, because selflog reports every
-// error-level record to our own ingest endpoint.
-func shuttingDown(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-}
-
 // sweepResult is what one pass of the batch loop accomplished.
 type sweepResult struct {
 	deleted int64
@@ -269,7 +261,7 @@ func drainBatches(
 		batchDur := tun.clock().Sub(batchStart)
 		res.deleteTime += batchDur
 		if err != nil {
-			if !shuttingDown(err) {
+			if !apperr.IsContextError(err) {
 				log.Error("retention: delete batch failed",
 					"cutoff", cutoff.Format(time.RFC3339), "deleted_so_far", res.deleted, "error", err)
 			}
@@ -330,7 +322,7 @@ func sweep(ctx context.Context, store Store, cfg Config, tun tuning, log *slog.L
 		countStart := time.Now()
 		n, err := store.CountEventsBefore(ctx, cutoff)
 		countMS = time.Since(countStart).Milliseconds()
-		if err != nil && !shuttingDown(err) {
+		if err != nil && !apperr.IsContextError(err) {
 			log.Warn("retention: could not measure remaining backlog", "error", err)
 		}
 		remaining = n
@@ -368,7 +360,7 @@ func sweepProjectOverrides(
 	}
 	overrides, err := store.ProjectsWithRetentionOverride(ctx)
 	if err != nil {
-		if !shuttingDown(err) {
+		if !apperr.IsContextError(err) {
 			log.Warn("retention: could not read per-project retention windows", "error", err)
 		}
 		return

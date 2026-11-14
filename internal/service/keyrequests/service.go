@@ -18,8 +18,12 @@ import (
 	"time"
 	"unicode"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 const (
@@ -67,32 +71,48 @@ type Created struct {
 
 // Create opens a pending request for an active project.
 func (s *Service) Create(ctx context.Context, project domain.Project, label string) (Created, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.keyrequests.Create",
+		trace.WithAttributes(attribute.String("slug", project.Slug)))
+	defer span.End()
 	label, ok := cleanLabel(label)
 	if !ok {
-		return Created{}, apperr.InvalidInput("label is required (1 to 100 printable characters, for example the repo and environment)", nil)
+		err := apperr.InvalidInput("label is required (1 to 100 printable characters, for example the repo and environment)", nil)
+		tracing.SetError(span, err)
+		return Created{}, err
 	}
 	now := s.now().UTC()
 	pending, err := s.repo.CountPendingKeyRequests(ctx, project.ID, now)
 	if err != nil {
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "count pending key requests", err, "project", project.Slug)
 		return Created{}, err
 	}
 	if pending >= MaxPendingPerProject {
-		return Created{}, apperr.Conflict("too many pending key requests for this project", nil)
+		err := apperr.Conflict("too many pending key requests for this project", nil)
+		tracing.SetError(span, err)
+		return Created{}, err
 	}
 	id, err := randomHex(16)
 	if err != nil {
-		return Created{}, apperr.Internal("generate key request id", err)
+		err = apperr.Internal("generate key request id", err)
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "generate key request id", err)
+		return Created{}, err
 	}
 	poll, err := randomHex(32)
 	if err != nil {
-		return Created{}, apperr.Internal("generate poll secret", err)
+		err = apperr.Internal("generate poll secret", err)
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "generate poll secret", err)
+		return Created{}, err
 	}
 	kr := domain.KeyRequest{
 		ID: id, ProjectID: project.ID, ProjectSlug: project.Slug, Label: label,
 		Status: domain.KeyRequestPending, CreatedAt: now, ExpiresAt: now.Add(RequestTTL),
 	}
 	if err := s.repo.CreateKeyRequest(ctx, kr, sha256Hex(poll)); err != nil {
-		s.logger.ErrorContext(ctx, "create key request", "project", project.Slug, "label", label, "error", err)
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "create key request", err, "project", project.Slug, "label", label)
 		return Created{}, err
 	}
 	s.logger.InfoContext(ctx, "key request created", "project", project.Slug, "label", label, "request_id", id)
@@ -114,8 +134,13 @@ type PollResult struct {
 // secret, an unknown id or a slug that does not match answers NotFound, so the
 // endpoint reveals nothing about other requests.
 func (s *Service) Poll(ctx context.Context, slug, id, pollSecret string) (PollResult, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.keyrequests.Poll",
+		trace.WithAttributes(attribute.String("slug", slug), attribute.String("request_id", id)))
+	defer span.End()
 	kr, pollSHA, err := s.repo.GetKeyRequest(ctx, id)
 	if err != nil {
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "get key request", err, "request_id", id)
 		return PollResult{}, err
 	}
 	if kr.ProjectSlug != slug || subtle.ConstantTimeCompare([]byte(sha256Hex(pollSecret)), []byte(pollSHA)) != 1 {
@@ -131,7 +156,10 @@ func (s *Service) Poll(ctx context.Context, slug, id, pollSecret string) (PollRe
 
 	key, err := randomHex(20)
 	if err != nil {
-		return PollResult{}, apperr.Internal("generate api key", err)
+		err = apperr.Internal("generate api key", err)
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "generate api key", err, "request_id", id)
+		return PollResult{}, err
 	}
 	err = s.repo.ClaimKeyRequest(ctx, id, "agent: "+kr.Label, sha256Hex(key), now)
 	switch {
@@ -142,14 +170,24 @@ func (s *Service) Poll(ctx context.Context, slug, id, pollSecret string) (PollRe
 		// Another poll claimed it first.
 		return PollResult{Status: domain.KeyRequestClaimed}, nil
 	default:
-		s.logger.ErrorContext(ctx, "claim key request", "project", kr.ProjectSlug, "label", kr.Label, "request_id", id, "error", err)
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "claim key request", err, "project", kr.ProjectSlug, "label", kr.Label, "request_id", id)
 		return PollResult{}, err
 	}
 }
 
 // ListPending returns the open requests of every project for the dashboard.
 func (s *Service) ListPending(ctx context.Context) ([]domain.KeyRequest, error) {
-	return s.repo.ListPendingKeyRequests(ctx, s.now().UTC())
+	ctx, span := tracing.Tracer().Start(ctx, "service.keyrequests.ListPending")
+	defer span.End()
+	list, err := s.repo.ListPendingKeyRequests(ctx, s.now().UTC())
+	if err != nil {
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list pending key requests", err)
+		return nil, err
+	}
+	span.SetAttributes(attribute.Int("count", len(list)))
+	return list, nil
 }
 
 // Approve lets the requester claim a key. actor is the admin, for the log.
@@ -163,14 +201,18 @@ func (s *Service) Deny(ctx context.Context, id, actor string) error {
 }
 
 func (s *Service) resolve(ctx context.Context, id, actor, status, msg string) error {
+	ctx, span := tracing.Tracer().Start(ctx, "service.keyrequests.Resolve",
+		trace.WithAttributes(attribute.String("request_id", id), attribute.String("status", status)))
+	defer span.End()
 	kr, _, err := s.repo.GetKeyRequest(ctx, id)
 	if err != nil {
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "get key request", err, "request_id", id)
 		return err
 	}
 	if err := s.repo.ResolveKeyRequest(ctx, id, status, s.now().UTC()); err != nil {
-		if !errors.Is(err, apperr.ErrConflict) {
-			s.logger.ErrorContext(ctx, "resolve key request", "request_id", id, "status", status, "error", err)
-		}
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "resolve key request", err, "request_id", id, "status", status)
 		return err
 	}
 	s.logger.InfoContext(ctx, msg, "project", kr.ProjectSlug, "label", kr.Label, "request_id", id, "actor", actor)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+from support import RecordingTransport
+
 from bugbarn.breadcrumbs import (
     MAX_BREADCRUMBS,
     add_breadcrumb,
@@ -9,21 +11,6 @@ from bugbarn.breadcrumbs import (
     get_breadcrumbs,
 )
 from bugbarn.client import capture_exception, init, shutdown
-
-
-class RecordingTransport:
-    def __init__(self):
-        self.events = []
-
-    def submit(self, event):
-        self.events.append(event)
-        return True
-
-    def flush(self, timeout: float = 2.0) -> bool:
-        return True
-
-    def close(self, timeout: float = 2.0) -> bool:
-        return True
 
 
 class BreadcrumbTests(unittest.TestCase):

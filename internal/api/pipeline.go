@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -119,8 +118,7 @@ func (s *Server) checkAPIKeyScope(w http.ResponseWriter, r *http.Request, scope 
 		// Allow ingest keys to post release markers — the setup page uses
 		// the same key for both events and releases — but reject every
 		// other endpoint.
-		isReleaseMarker := r.URL.Path == "/api/v1/releases" && r.Method == http.MethodPost
-		if !isReleaseMarker {
+		if r.Pattern != "POST /api/v1/releases" {
 			s.logger.Warn("auth: ingest-only key rejected", "method", r.Method, "path", r.URL.Path)
 			http.Error(w, "forbidden: ingest-only key cannot access this endpoint", http.StatusForbidden)
 			return false
@@ -132,7 +130,7 @@ func (s *Server) checkAPIKeyScope(w http.ResponseWriter, r *http.Request, scope 
 			http.Error(w, "forbidden: read-only key cannot modify data", http.StatusForbidden)
 			return false
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/v1/settings") || strings.HasPrefix(r.URL.Path, "/api/v1/apikeys") {
+		if hasRouteFlag(r, flagAdminOnly) {
 			s.logger.Warn("auth: read-only key rejected settings/apikeys", "method", r.Method, "path", r.URL.Path)
 			http.Error(w, "forbidden: read-only key cannot access this endpoint", http.StatusForbidden)
 			return false

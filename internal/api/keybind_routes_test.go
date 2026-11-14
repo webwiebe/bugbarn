@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +16,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 // scopedReadRoute is a protected GET route that returns project data. mark is
@@ -42,44 +39,46 @@ var scopedReadRoutes = []scopedReadRoute{
 	{"/api/v1/key-requests", "homemark-key-request"},
 }
 
-// routesCoveredElsewhere lists the protected paths that no seeded-row case above
-// covers, each with where it is covered or why it needs none.
+// routesCoveredElsewhere lists the protected GET patterns that no seeded-row
+// case above covers, each with where it is covered or why it needs none. Keys
+// are the registered paths, wildcards included.
 var routesCoveredElsewhere = map[string]string{
-	"/api/v1/issues":                  "TestBoundKeyIsConfinedToItsProject",
-	"/api/v1/issues/":                 "TestBoundKeyIsConfinedToItsProject",
-	"/api/v1/issues/sparklines":       "TestBoundKeyIsConfinedToItsProject",
-	"/api/v1/events/":                 "TestBoundReadKeySeesOnlyItsProject",
-	"/api/v1/projects":                "TestBoundReadKeySeesOnlyItsProject",
-	"/api/v1/projects/":               "write routes; a read key is refused every non-GET",
-	"/api/v1/projects/pending-count":  "TestBoundReadKeySeesOnlyItsProject",
-	"/api/v1/groups":                  "TestBoundReadKeySeesOnlyItsProject",
-	"/api/v1/groups/":                 "TestBoundReadKeySeesOnlyItsProject",
-	"/api/v1/settings":                "a read key is refused /settings",
-	"/api/v1/apikeys":                 "a read key is refused /apikeys",
-	"/api/v1/apikeys/":                "a read key is refused /apikeys",
-	"/api/v1/apikeys/revoke-setup":    "POST only, and it takes a signed-in session",
-	"/api/v1/releases/":               "one release by id, filtered by project_id in the store",
-	"/api/v1/alerts/":                 "one alert by id, filtered by project_id in the store",
-	"/api/v1/aliases/":                "DELETE only; a read key is refused every non-GET",
-	"/api/v1/facets":                  "prefix of the facets routes above",
-	"/api/v1/analytics/":              "prefix of the analytics routes above",
-	"/api/v1/logs/stream":             "SSE stream of the request's project",
-	"/api/v1/logs/histogram":          "TestLogExplorerEndpoints; same logQueryFromRequest project scope as /api/v1/logs",
-	"/api/v1/logs/facets":             "TestLogExplorerEndpoints; same logQueryFromRequest project scope as /api/v1/logs",
-	"/api/v1/events/stream":           "SSE stream of the request's project",
-	"/api/v1/events/timeline":         "aggregate counts of the request's project",
-	"/api/v1/live/events":             "events of the request's project",
-	"/api/v1/telemetry":               "POST only",
-	"/api/v1/client-errors":           "POST only",
-	"/api/v1/admin/digest":            "POST only",
-	"/internal/v1/db-backup":          "not reachable with an API key",
-	"/api/v1/detection-rules":         "detection rules are global, not per project",
-	"/api/v1/detection-rules/":        "detection rules are global, not per project",
-	"/api/v1/monitors/":               "one monitor by slug, filtered by project_id in the store",
-	"/api/v1/key-requests/":           "one key request by id; ids are random",
-	"/api/v1/issues/{id}/events":      "TestBoundKeyIsConfinedToItsProject",
-	"/api/v1/alertmanager":            "public ingest path, not a protected route",
-	"/api/v1/projects/{slug}/approve": "POST only",
+	"/api/v1/issues":                         "TestBoundKeyIsConfinedToItsProject",
+	"/api/v1/issues/sparklines":              "TestBoundKeyIsConfinedToItsProject",
+	"/api/v1/issues/{id}":                    "TestBoundKeyIsConfinedToItsProject (inIssueScope)",
+	"/api/v1/issues/{id}/events":             "TestBoundKeyIsConfinedToItsProject (inIssueScope)",
+	"/api/v1/issues/{id}/releases":           "inIssueScope; releases of an issue of the request's project",
+	"/api/v1/events/{id}":                    "TestBoundReadKeySeesOnlyItsProject",
+	"/api/v1/projects":                       "TestBoundReadKeySeesOnlyItsProject",
+	"/api/v1/projects/pending-count":         "TestBoundReadKeySeesOnlyItsProject",
+	"/api/v1/projects/{slug}/silence-watch":  "one project's rule, read by slug",
+	"/api/v1/groups":                         "TestBoundReadKeySeesOnlyItsProject",
+	"/api/v1/groups/{slug}/projects":         "TestBoundReadKeySeesOnlyItsProject",
+	"/api/v1/settings":                       "a read key is refused /settings",
+	"/api/v1/apikeys":                        "a read key is refused /apikeys",
+	"/api/v1/releases/{id}":                  "one release by id, filtered by project_id in the store",
+	"/api/v1/alerts/{id}":                    "one alert by id, filtered by project_id in the store",
+	"/api/v1/facets":                         "the facet keys of the request's project, like /api/v1/facets/{key}",
+	"/api/v1/facets/{key}":                   "the facets/attributes.surface case above",
+	"/api/v1/analytics/pages":                "same analyticsView project scope as /api/v1/analytics/overview",
+	"/api/v1/analytics/timeline":             "same analyticsView project scope as /api/v1/analytics/overview",
+	"/api/v1/analytics/referrers":            "same analyticsView project scope as /api/v1/analytics/overview",
+	"/api/v1/analytics/segments":             "same analyticsView project scope as /api/v1/analytics/overview",
+	"/api/v1/analytics/flow":                 "same analyticsView project scope as /api/v1/analytics/overview",
+	"/api/v1/analytics/scroll":               "same analyticsView project scope as /api/v1/analytics/overview",
+	"/api/v1/analytics/dropout":              "same analyticsView project scope as /api/v1/analytics/overview",
+	"/api/v1/logs/stream":                    "SSE stream of the request's project",
+	"/api/v1/logs/histogram":                 "TestLogExplorerEndpoints; same logQueryFromRequest project scope as /api/v1/logs",
+	"/api/v1/logs/facets":                    "TestLogExplorerEndpoints; same logQueryFromRequest project scope as /api/v1/logs",
+	"/api/v1/events/stream":                  "SSE stream of the request's project",
+	"/api/v1/events/timeline":                "aggregate counts of the request's project",
+	"/api/v1/live/events":                    "events of the request's project",
+	"/api/v1/detection/rules":                "detection rules are global, not per project",
+	"/api/v1/telemetry/security":             "infrastructure telemetry is global, not per project",
+	"/api/v1/telemetry/hosts":                "infrastructure telemetry is global, not per project",
+	"/api/v1/telemetry/hosts/{host}/metrics": "infrastructure telemetry is global, not per project",
+	"/api/v1/telemetry/hosts/{host}/series":  "infrastructure telemetry is global, not per project",
+	"/internal/v1/db-backup":                 "not reachable with an API key",
 }
 
 func seedScopedRows(t *testing.T, store *storage.Store, home domain.Project) {
@@ -87,27 +86,27 @@ func seedScopedRows(t *testing.T, store *storage.Store, home domain.Project) {
 	ctx := domain.WithProjectID(context.Background(), home.ID)
 	now := time.Now().UTC()
 
-	if err := store.InsertLogEntries(ctx, []storage.LogEntry{{
+	if err := store.InsertLogEntries(ctx, []domain.LogEntry{{
 		ProjectID: home.ID, ReceivedAt: now, LevelNum: 30, Level: "info", Message: "homemark-log",
 	}}); err != nil {
 		t.Fatalf("seed log: %v", err)
 	}
-	if _, err := store.CreateRelease(ctx, storage.Release{Name: "homemark-release", ObservedAt: now}); err != nil {
+	if _, err := store.CreateRelease(ctx, domain.Release{Name: "homemark-release", ObservedAt: now}); err != nil {
 		t.Fatalf("seed release: %v", err)
 	}
-	if _, err := store.CreateAlert(ctx, storage.Alert{Name: "homemark-alert", Severity: "error", Enabled: true}); err != nil {
+	if _, err := store.CreateAlert(ctx, domain.Alert{Name: "homemark-alert", Severity: "error", Enabled: true}); err != nil {
 		t.Fatalf("seed alert: %v", err)
 	}
 	if err := store.CreateAlias(ctx, "homemark-alias", home.ID); err != nil {
 		t.Fatalf("seed alias: %v", err)
 	}
-	if _, err := store.UploadSourceMap(ctx, storage.SourceMapUpload{
+	if _, err := store.UploadSourceMap(ctx, domain.SourceMapUpload{
 		Release: "r1", BundleURL: "homemark-bundle.js", Blob: []byte("{}"),
 	}); err != nil {
 		t.Fatalf("seed source map: %v", err)
 	}
 	interval := time.Hour
-	if _, err := store.RecordMonitorCheckIn(ctx, storage.MonitorCheckIn{
+	if _, err := store.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{
 		ProjectID: home.ID, Slug: "homemark-monitor", Status: "ok", Interval: &interval, At: now,
 	}); err != nil {
 		t.Fatalf("seed monitor: %v", err)
@@ -123,7 +122,7 @@ func seedScopedRows(t *testing.T, store *storage.Store, home domain.Project) {
 	}); err != nil {
 		t.Fatalf("seed page view: %v", err)
 	}
-	pe := worker.ProcessedEvent{
+	pe := event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: now, ReceivedAt: now.Add(time.Second), Severity: "ERROR", Message: "surface error",
 			Exception:  event.Exception{Type: "TestError", Message: "surface error"},
@@ -166,8 +165,8 @@ func TestBoundReadKeyRoutesCarryNoOtherProjectData(t *testing.T) {
 		}
 		return plain
 	}
-	alphaRead := addKey("alpha-read", alpha.ID, storage.APIKeyScopeRead)
-	fullKey := addKey("home-full", home.ID, storage.APIKeyScopeFull)
+	alphaRead := addKey("alpha-read", alpha.ID, domain.APIKeyScopeRead)
+	fullKey := addKey("home-full", home.ID, domain.APIKeyScopeFull)
 
 	authorizer := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")
@@ -198,38 +197,33 @@ func TestBoundReadKeyRoutesCarryNoOtherProjectData(t *testing.T) {
 	}
 }
 
-var routePathPattern = regexp.MustCompile(`r\.URL\.Path (?:== |, )?"(/[^"]+)"|HasPrefix\(r\.URL\.Path, "(/[^"]+)"\)`)
-
 // A protected route added without a seeded-row case or a reason fails here, so a
-// new route cannot reach other projects' data unnoticed.
+// new route cannot reach other projects' data unnoticed. Only the operations
+// registered by registerProtectedRoutes are checked.
 func TestEveryProtectedRouteIsScopedOrExplained(t *testing.T) {
 	t.Parallel()
 
-	src, err := os.ReadFile("routes.go")
-	if err != nil {
-		t.Fatal(err)
+	srv := &Server{}
+	rt := &router{mux: http.NewServeMux()}
+	srv.registerProtectedRoutes(rt)
+	if len(rt.operations) < 80 {
+		t.Fatalf("found %d protected operations, the route table lost routes", len(rt.operations))
 	}
-	text := string(src)
-	start := strings.Index(text, "func (s *Server) dispatchProtected(")
-	if start < 0 {
-		t.Fatal("dispatchProtected not found in routes.go")
-	}
+
 	known := map[string]bool{}
-	for _, rt := range scopedReadRoutes {
-		known[rt.path] = true
-		known[strings.TrimSuffix(rt.path, "/"+rt.path[strings.LastIndex(rt.path, "/")+1:])] = true
+	for _, sr := range scopedReadRoutes {
+		known[normalizePath(sr.path)] = true
 	}
 	for path := range routesCoveredElsewhere {
-		known[path] = true
+		known[normalizePath(path)] = true
 	}
-	matches := routePathPattern.FindAllStringSubmatch(text[start:], -1)
-	if len(matches) < 30 {
-		t.Fatalf("found %d protected routes in routes.go, the pattern no longer matches the dispatchers", len(matches))
-	}
-	for _, m := range matches {
-		path := m[1] + m[2]
-		if !known[path] && !known[strings.TrimSuffix(path, "/")] {
-			t.Errorf("protected route %q has no entry in scopedReadRoutes or routesCoveredElsewhere", path)
+	for _, pattern := range rt.operations {
+		method, path, _ := strings.Cut(pattern, " ")
+		if method != http.MethodGet {
+			continue
+		}
+		if !known[normalizePath(path)] {
+			t.Errorf("protected route %q has no entry in scopedReadRoutes or routesCoveredElsewhere", pattern)
 		}
 	}
 }

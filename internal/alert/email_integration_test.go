@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 )
 
 // capturedMail is one message a fakeSMTPServer received over the wire.
@@ -113,7 +113,7 @@ func (s *fakeSMTPServer) handle(conn net.Conn) {
 }
 
 // TestEvaluator_AdminEmailFiresOverSMTP runs the real production path
-// (Bus -> HandleEvent -> notifyAdmin -> Deliverer.Fire -> digest.DeliverEmail
+// (Bus -> HandleEvent -> notifyAdmin -> Deliverer.Fire -> mail.Send
 // -> net/smtp) against a live in-process SMTP server, and asserts that a new
 // issue and a regression each deliver a real email to the admin address.
 func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
@@ -123,7 +123,7 @@ func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
 	defer srv.close()
 	host, port := srv.addr()
 
-	mailCfg := digest.MailConfig{
+	mailCfg := mail.Config{
 		Enabled: true,
 		Host:    host,
 		Port:    port,
@@ -142,11 +142,11 @@ func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
 	bus.Subscribe(evaluator.HandleEvent)
 
 	bus.Publish(domainevents.IssueCreated{
-		Issue:     storage.Issue{ID: "issue-000001", Title: "NewBoom: kaboom in prod", ProjectSlug: "qr"},
+		Issue:     domain.Issue{ID: "issue-000001", Title: "NewBoom: kaboom in prod", ProjectSlug: "qr"},
 		ProjectID: 42,
 	})
 	bus.Publish(domainevents.IssueRegressed{
-		Issue:     storage.Issue{ID: "issue-000002", Title: "RegressBoom: it came back", ProjectSlug: "qr"},
+		Issue:     domain.Issue{ID: "issue-000002", Title: "RegressBoom: it came back", ProjectSlug: "qr"},
 		ProjectID: 42,
 	})
 

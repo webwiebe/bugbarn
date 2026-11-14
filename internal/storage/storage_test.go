@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable(t *testing.T) {
@@ -255,13 +255,13 @@ func TestResolveIssueReopensOnRegressionAndLiveEventsAreWindowed(t *testing.T) {
 	}
 }
 
-func processedEventFrom(evt event.Event) worker.ProcessedEvent {
+func processedEventFrom(evt event.Event) event.ProcessedEvent {
 	snapshot := fingerprint.SnapshotFor(evt)
 	fp := fingerprint.Fingerprint(evt)
 	evt.Fingerprint = fp
 	evt.FingerprintMaterial = snapshot.Material
 	evt.FingerprintExplanation = snapshot.Explanation
-	return worker.ProcessedEvent{
+	return event.ProcessedEvent{
 		Event:                  evt,
 		Fingerprint:            fp,
 		FingerprintMaterial:    snapshot.Material,
@@ -269,7 +269,7 @@ func processedEventFrom(evt event.Event) worker.ProcessedEvent {
 	}
 }
 
-func processedEventForIssue(observed time.Time, message string) worker.ProcessedEvent {
+func processedEventForIssue(observed time.Time, message string) event.ProcessedEvent {
 	evt := event.Event{
 		ObservedAt: observed,
 		ReceivedAt: observed.Add(1 * time.Second),
@@ -316,7 +316,7 @@ func TestConcurrentReads(t *testing.T) {
 	errs := make(chan error, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			_, err := store.ListIssuesFiltered(ctx, IssueFilter{Status: "open", Limit: 10})
+			_, err := store.ListIssuesFiltered(ctx, domain.IssueFilter{Status: "open", Limit: 10})
 			errs <- err
 		}()
 	}
@@ -369,7 +369,7 @@ func TestRegressedFirstOrdering(t *testing.T) {
 		t.Fatal("expected regression")
 	}
 
-	issues, err := store.ListIssuesFiltered(ctx, IssueFilter{Status: "open", Limit: 10})
+	issues, err := store.ListIssuesFiltered(ctx, domain.IssueFilter{Status: "open", Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

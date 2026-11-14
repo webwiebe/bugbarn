@@ -4,7 +4,7 @@
 //   app, bootstrap                      entrypoints, compose everything
 //   views-*, router, http, live         screens and the plumbing they share
 //   components, components/*            rendering helpers
-//   types, data, domain, format, core,  shared vocabulary and pure helpers
+//   types, records, domain, format, core,  shared vocabulary and pure helpers
 //   and the small pure modules
 //
 // Dependencies point down. Test files are not part of src/, so these rules judge
@@ -12,7 +12,7 @@
 
 // Modules every layer may import. They import only each other.
 const BOTTOM =
-  "(types|data|domain|format|core|infinite-scroll|timeline-stack|project-filter|release-rows|surfaces)";
+  "(types|records|domain|format|core|infinite-scroll|timeline-stack|project-filter|release-rows|surfaces)";
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {

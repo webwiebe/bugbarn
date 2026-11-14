@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -31,11 +31,11 @@ const usageTTL = time.Minute
 // competed for the read pool and timed each other out.
 type usageCache struct {
 	mu      sync.Mutex
-	value   map[int64]storage.ProjectUsage
+	value   map[int64]domain.ProjectUsage
 	fetched time.Time
 }
 
-type usageFetch func(context.Context) (map[int64]storage.ProjectUsage, error)
+type usageFetch func(context.Context) (map[int64]domain.ProjectUsage, error)
 
 // usageRefreshTimeout bounds one refresh. Generous relative to the query (which
 // costs on the order of seconds) but finite, so a wedged read can never pin the
@@ -50,7 +50,7 @@ const usageRefreshTimeout = 30 * time.Second
 // an empty map. An empty map is indistinguishable from "every project has zero
 // events", which is exactly the silent-wrong-data failure this replaces: the
 // handler used to discard this error and render zeros.
-func (c *usageCache) get(ctx context.Context, fetch usageFetch) (map[int64]storage.ProjectUsage, bool, error) {
+func (c *usageCache) get(ctx context.Context, fetch usageFetch) (map[int64]domain.ProjectUsage, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -99,7 +99,7 @@ func (c *usageCache) invalidate() {
 // UsageAll returns per-project issue, event, and log counts, served from a
 // short-lived cache. The bool reports whether the snapshot is stale (a refresh
 // failed and an older one is being served).
-func (s *Service) UsageAll(ctx context.Context) (map[int64]storage.ProjectUsage, bool, error) {
+func (s *Service) UsageAll(ctx context.Context) (map[int64]domain.ProjectUsage, bool, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.UsageAll")
 	defer span.End()
 
@@ -109,9 +109,7 @@ func (s *Service) UsageAll(ctx context.Context) (map[int64]storage.ProjectUsage,
 		// Context errors mean the caller went away mid-query, which is not a
 		// fault of ours; logging them at error level self-reports a bug on
 		// every client disconnect.
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "usage all", "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "usage all", err)
 		return nil, false, err
 	}
 	span.SetAttributes(attribute.Bool("usage.stale", stale))

@@ -1,6 +1,6 @@
 // Volume settings view: per-project retention window and event sampling.
 import { renderVolumeViewMarkup } from "./components.js";
-import { normalizeList } from "./data.js";
+import { normalizeList } from "./records.js";
 import { errorMessage } from "./format.js";
 import type { ApiProject, VolumeDefaults } from "./types.js";
 import { elements, setActiveView, setStatus, showFlash, state } from "./core.js";

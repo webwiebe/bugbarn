@@ -15,7 +15,7 @@ import (
 // evaluator runs from the ingest pipeline rather than from a scoped request.
 
 // ListAlertsForProject returns every alert rule of one project, newest first.
-func (s *AlertStore) ListAlertsForProject(ctx context.Context, projectID int64) ([]Alert, error) {
+func (s *AlertStore) ListAlertsForProject(ctx context.Context, projectID int64) ([]domain.Alert, error) {
 	if projectID <= 0 {
 		return nil, nil
 	}
@@ -74,7 +74,7 @@ LIMIT 1`,
 func (s *AlertStore) UpdateAlertLastFired(ctx context.Context, alertID string, firedAt time.Time) error {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
-		return apperr.InvalidInput("invalid alert ID", err)
+		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
 UPDATE alerts SET last_fired_at = ? WHERE id = ?`,

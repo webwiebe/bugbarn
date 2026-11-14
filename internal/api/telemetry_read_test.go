@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/hostmetrics"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/secnorm"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetrydb"
 )
 
@@ -57,7 +57,7 @@ func newTelemetryReadFixture(t *testing.T) *telemetryReadFixture {
 
 	f := &telemetryReadFixture{
 		server: server,
-		ingest: createKey(t, store, def.ID, storage.APIKeyScopeIngest),
+		ingest: createKey(t, store, def.ID, domain.APIKeyScopeIngest),
 		sec:    sec, met: met,
 		now: time.Now().UTC().Truncate(time.Minute),
 	}
@@ -218,7 +218,7 @@ func TestTelemetryHostsAndSeries(t *testing.T) {
 		"/api/v1/telemetry/hosts/k3s1/series?metric=load1&from=1&to=" + fmt.Sprint(f.now.UnixMilli()): http.StatusBadRequest,
 		"/api/v1/telemetry/hosts/k3s1/other":         http.StatusNotFound,
 		"/api/v1/telemetry/hosts/k3s1/metrics/extra": http.StatusNotFound,
-		"/api/v1/telemetry/hosts//metrics":           http.StatusNotFound,
+		"/api/v1/telemetry/hosts//metrics":           http.StatusTemporaryRedirect, // ServeMux cleans the double slash
 	} {
 		if code := f.get(t, path, nil); code != want {
 			t.Errorf("%s: status %d, want %d", path, code, want)

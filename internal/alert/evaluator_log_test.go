@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 type syncBuffer struct {
@@ -57,7 +56,7 @@ func TestEvaluator_AdminDeliveryOutcomeIsLogged(t *testing.T) {
 		log := slog.New(slog.NewJSONHandler(buf, nil))
 		e := NewEvaluator(newFakeRepo(nil), &fakeNotifier{configured: true}, "http://x", "admin@example.com", log)
 
-		e.notifyAdmin(storage.Issue{ID: "issue-1", ProjectSlug: "demo"}, "new_issue")
+		e.notifyAdmin(domain.Issue{ID: "issue-1", ProjectSlug: "demo"}, "new_issue")
 
 		if !waitForLog(buf, `"msg":"admin alert sent"`) {
 			t.Fatalf("no send line in log: %s", buf.String())
@@ -79,7 +78,7 @@ func TestEvaluator_AdminDeliveryOutcomeIsLogged(t *testing.T) {
 		log := slog.New(slog.NewJSONHandler(buf, nil))
 		e := NewEvaluator(newFakeRepo(nil), errNotifier{err: errors.New("smtp down")}, "http://x", "admin@example.com", log)
 
-		e.notifyAdmin(storage.Issue{ID: "issue-1"}, "regression")
+		e.notifyAdmin(domain.Issue{ID: "issue-1"}, "regression")
 
 		if !waitForLog(buf, `"msg":"failed to fire admin alert"`) {
 			t.Fatalf("no failure line in log: %s", buf.String())
@@ -102,7 +101,7 @@ func TestEvaluator_RuleDeliveryFailureLogsError(t *testing.T) {
 	repo := newFakeRepo([]Rule{{ID: "alert-1", Enabled: true, Condition: "new_issue", EmailTo: "x@example.com"}})
 	e := NewEvaluator(repo, errNotifier{err: errors.New("smtp down")}, "http://x", "", log)
 
-	e.evaluate(context.Background(), 1, storage.Issue{ID: "issue-1"}, "new_issue")
+	e.evaluate(context.Background(), 1, domain.Issue{ID: "issue-1"}, "new_issue")
 
 	if !waitForLog(buf, `"msg":"failed to fire alert"`) {
 		t.Fatalf("no failure line in log: %s", buf.String())

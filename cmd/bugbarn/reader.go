@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -61,10 +61,10 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	}
 	defer store.Close()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	forwarder := api.NewWriteForwarder(cfg.WriterURL)
+	forwarder := writeforward.NewProxy(cfg.WriterURL)
 
 	// The ingest spool is opt-in for readers: only enabled when BUGBARN_SPOOL_DIR
 	// is set explicitly in the environment (config.SpoolDir has a default that
@@ -74,7 +74,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	// write queue instead of forwarding to the writer over HTTP. The spool remains
 	// the durability anchor (cursor advances only after a successful publish), so
 	// the lazy queue client is fine — ingest keeps spooling even if Redis is down.
-	var ingestSpool *api.SpoolForwarder
+	var ingestSpool *writeforward.Spool
 	if os.Getenv("BUGBARN_SPOOL_DIR") != "" {
 		if cfg.RedisQueueURL != "" {
 			writeQueue, qerr := queue.NewRedisQueueLazy(cfg.RedisQueueURL)
@@ -82,10 +82,10 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 				return fmt.Errorf("open write queue: %w", qerr)
 			}
 			defer writeQueue.Close()
-			ingestSpool, err = api.NewRedisSpoolForwarder(cfg.SpoolDir, writeQueue, cfg.MaxBodyBytes, logger)
+			ingestSpool, err = writeforward.NewRedisSpool(cfg.SpoolDir, writeQueue, cfg.MaxBodyBytes, logger)
 			logger.Info("ingest spool draining to redis write queue", "url", cfg.RedisQueueURL)
 		} else {
-			ingestSpool, err = api.NewSpoolForwarder(cfg.SpoolDir, cfg.WriterURL, cfg.MaxBodyBytes, logger)
+			ingestSpool, err = writeforward.NewSpool(cfg.SpoolDir, cfg.WriterURL, cfg.MaxBodyBytes, logger)
 		}
 		if err != nil {
 			return fmt.Errorf("open ingest spool: %w", err)
@@ -104,9 +104,6 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	}
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store, touch)
 	if err != nil {
-		return err
-	}
-	if err := ensureProductionAPIKeyAuth(cfg, apiAuthorizer); err != nil {
 		return err
 	}
 	// A project-scoped ingest key identifies its project without the caller

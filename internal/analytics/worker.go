@@ -2,10 +2,11 @@ package analytics
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
 
 // Store is the subset of storage.Store used by the analytics worker.
@@ -19,7 +20,11 @@ type Store interface {
 // cadence. It performs an initial run on startup to catch any missed rollups.
 // If wg is non-nil, it increments the WaitGroup before starting and decrements
 // it when the goroutine exits, so callers can wait for a clean shutdown.
-func StartWorker(ctx context.Context, store Store, retentionDays int, wg *sync.WaitGroup) {
+func StartWorker(ctx context.Context, store Store, retentionDays int, log *slog.Logger, wg *sync.WaitGroup) {
+	if log == nil {
+		log = slog.Default()
+	}
+	log = log.With("component", "analytics")
 	if retentionDays <= 0 {
 		retentionDays = 90
 	}
@@ -32,16 +37,16 @@ func StartWorker(ctx context.Context, store Store, retentionDays int, wg *sync.W
 		}
 		defer func() {
 			if p := recover(); p != nil {
-				slog.Error("analytics worker panic", "panic", p)
+				log.Error("analytics worker panic", "panic", p)
 			}
 		}()
-		runRollup(ctx, store, retentionDays)
+		runRollup(ctx, log, store, retentionDays)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				runRollup(ctx, store, retentionDays)
+				runRollup(ctx, log, store, retentionDays)
 			case <-ctx.Done():
 				return
 			}
@@ -49,19 +54,10 @@ func StartWorker(ctx context.Context, store Store, retentionDays int, wg *sync.W
 	}()
 }
 
-// shuttingDown reports whether err is just the process stopping. A rollup
-// interrupted by shutdown is expected, not a fault: logging it at ERROR made
-// every deploy self-report one bug per project per date.
-func shuttingDown(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-}
-
-func runRollup(ctx context.Context, store Store, retentionDays int) {
+func runRollup(ctx context.Context, log *slog.Logger, store Store, retentionDays int) {
 	projectIDs, err := store.ListProjectIDs(ctx)
 	if err != nil {
-		if !shuttingDown(err) {
-			slog.Error("analytics rollup: failed to list projects", "error", err)
-		}
+		apperr.LogFailure(ctx, log, "analytics rollup: failed to list projects", err)
 		return
 	}
 
@@ -76,19 +72,19 @@ func runRollup(ctx context.Context, store Store, retentionDays int) {
 		// Stop at the first sign of shutdown rather than walking the rest of
 		// the fleet just to fail on every one of them.
 		if ctx.Err() != nil {
-			slog.Info("analytics rollup: stopping early, context done", "error", ctx.Err())
+			log.InfoContext(ctx, "analytics rollup: stopping early, context done", "error", ctx.Err())
 			return
 		}
 		for _, date := range dates {
-			if err := store.RollupDailyAnalytics(ctx, pid, date); err != nil && !shuttingDown(err) {
-				slog.Error("analytics rollup: failed to roll up project",
-					"project_id", pid, "date", date.Format("2006-01-02"), "error", err)
+			if err := store.RollupDailyAnalytics(ctx, pid, date); err != nil {
+				apperr.LogFailure(ctx, log, "analytics rollup: failed to roll up project", err,
+					"project_id", pid, "date", date.Format("2006-01-02"))
 			}
 		}
 	}
 
 	cutoff := now.AddDate(0, 0, -retentionDays)
-	if err := store.DeleteOldPageviews(ctx, cutoff); err != nil && !shuttingDown(err) {
-		slog.Error("analytics retention: failed to delete old pageviews", "error", err)
+	if err := store.DeleteOldPageviews(ctx, cutoff); err != nil {
+		apperr.LogFailure(ctx, log, "analytics retention: failed to delete old pageviews", err)
 	}
 }

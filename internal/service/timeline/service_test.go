@@ -9,17 +9,17 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 type fakeRepo struct {
-	rows  []storage.TimelineRow
+	rows  []domain.TimelineRow
 	err   error
 	calls int
 	since time.Time
 }
 
-func (f *fakeRepo) ErrorTimelineRows(_ context.Context, since time.Time) ([]storage.TimelineRow, error) {
+func (f *fakeRepo) ErrorTimelineRows(_ context.Context, since time.Time) ([]domain.TimelineRow, error) {
 	f.calls++
 	f.since = since
 	return f.rows, f.err
@@ -35,7 +35,7 @@ func hour(day, h int) time.Time { return time.Date(2026, 10, day, h, 0, 0, 0, ti
 
 func TestErrorTimeline24hZeroFillsHourlyBuckets(t *testing.T) {
 	now := time.Date(2026, 10, 14, 10, 30, 0, 0, time.UTC)
-	repo := &fakeRepo{rows: []storage.TimelineRow{
+	repo := &fakeRepo{rows: []domain.TimelineRow{
 		{ProjectSlug: "alpha", ProjectName: "Alpha", Hour: hour(14, 10), Count: 4},
 		{ProjectSlug: "beta", ProjectName: "Beta", Hour: hour(14, 10), Count: 1},
 		{ProjectSlug: "alpha", ProjectName: "Alpha", Hour: hour(13, 12), Count: 2},
@@ -69,7 +69,7 @@ func TestErrorTimeline24hZeroFillsHourlyBuckets(t *testing.T) {
 
 func TestErrorTimeline7dFoldsHoursIntoSixHourBuckets(t *testing.T) {
 	now := time.Date(2026, 10, 14, 10, 30, 0, 0, time.UTC)
-	repo := &fakeRepo{rows: []storage.TimelineRow{
+	repo := &fakeRepo{rows: []domain.TimelineRow{
 		{ProjectSlug: "alpha", Hour: hour(14, 6), Count: 1},
 		{ProjectSlug: "alpha", Hour: hour(14, 9), Count: 2},
 		{ProjectSlug: "alpha", Hour: hour(14, 5), Count: 5},
@@ -92,7 +92,7 @@ func TestErrorTimeline7dFoldsHoursIntoSixHourBuckets(t *testing.T) {
 
 func TestErrorTimeline30dUsesDailyBuckets(t *testing.T) {
 	now := time.Date(2026, 10, 14, 10, 30, 0, 0, time.UTC)
-	repo := &fakeRepo{rows: []storage.TimelineRow{
+	repo := &fakeRepo{rows: []domain.TimelineRow{
 		{ProjectSlug: "alpha", Hour: hour(14, 1), Count: 1},
 		{ProjectSlug: "alpha", Hour: hour(14, 23), Count: 1},
 	}}
@@ -117,7 +117,7 @@ func TestErrorTimelineRejectsUnknownRange(t *testing.T) {
 
 func TestErrorTimelineCachesAndServesStaleOnFailure(t *testing.T) {
 	now := time.Date(2026, 10, 14, 10, 30, 0, 0, time.UTC)
-	repo := &fakeRepo{rows: []storage.TimelineRow{{ProjectSlug: "alpha", Hour: hour(14, 10), Count: 1}}}
+	repo := &fakeRepo{rows: []domain.TimelineRow{{ProjectSlug: "alpha", Hour: hour(14, 10), Count: 1}}}
 	svc := newService(repo, now)
 	ctx := context.Background()
 	if _, err := svc.ErrorTimeline(ctx, "24h"); err != nil {

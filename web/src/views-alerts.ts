@@ -1,6 +1,6 @@
 // Alerts view: list loading, rendering, the create-alert form, and deletion.
 import { renderAlertsViewMarkup } from "./components.js";
-import { normalizeList } from "./data.js";
+import { normalizeList } from "./records.js";
 import { errorMessage } from "./format.js";
 import type { ApiAlert } from "./types.js";
 import { elements, setActiveView, setStatus, state } from "./core.js";

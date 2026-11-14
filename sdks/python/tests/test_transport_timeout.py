@@ -2,75 +2,45 @@ from __future__ import annotations
 
 import io
 import threading
-import time
 import unittest
 import urllib.error
 from contextlib import redirect_stderr
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from support import StubIngest, make_event, wait_for
 
 from bugbarn import client
-from bugbarn.client import CheckIn, Envelope, Transport
+from bugbarn.client import CheckIn, Transport
 
 
-class _StallingIngest:
+class _StallingIngest(StubIngest):
     """Ingest that never answers its first *stalls* requests, then answers *status*."""
 
     def __init__(self, stalls: int = 1, status: int = 202) -> None:
         self.attempts = 0
-        self.received: list[str] = []
-        self.first = threading.Event()
+        self.stalls = stalls
+        self.status = status
         self.release = threading.Event()
-        owner = self
+        super().__init__()
 
-        class Handler(BaseHTTPRequestHandler):
-            def do_POST(self) -> None:
-                length = int(self.headers.get("content-length", 0))
-                self.rfile.read(length)
-                owner.attempts += 1
-                if owner.attempts <= stalls:
-                    owner.first.set()
-                    owner.release.wait(timeout=10)
-                    return
-                owner.received.append(self.path)
-                self.send_response(status)
-                self.end_headers()
-
-            def log_message(self, *args: object) -> None:
-                pass
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.url = f"http://127.0.0.1:{self.server.server_port}"
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+    def respond(self, handler) -> None:
+        self.attempts += 1
+        if self.attempts <= self.stalls:
+            self.first.set()
+            self.release.wait(timeout=10)
+            return
+        self.received.append(handler.path)
+        handler.send_response(self.status)
+        handler.end_headers()
 
     def close(self) -> None:
         self.release.set()
-        self.server.shutdown()
-        self.server.server_close()
-
-
-def _wait_for(condition, seconds: float = 8.0) -> bool:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if condition():
-            return True
-        time.sleep(0.05)
-    return False
+        super().close()
 
 
 def _fast_check_ins(transport: Transport, delays: tuple[float, ...] = (0.0, 0.01, 0.01)) -> Transport:
     transport.check_in_timeout = 0.2
     transport.check_in_retry_delays = delays
     return transport
-
-
-def _event() -> Envelope:
-    return Envelope(
-        timestamp="2026-10-31T00:00:00Z",
-        severityText="ERROR",
-        body="boom",
-        exception_type="Exception",
-        exception_message="boom",
-    )
 
 
 class TransportTimeoutTests(unittest.TestCase):
@@ -80,12 +50,12 @@ class TransportTimeoutTests(unittest.TestCase):
         try:
             with redirect_stderr(io.StringIO()):
                 transport.submit_check_in(CheckIn(slug="job", body={"status": "ok"}))
-                self.assertTrue(_wait_for(ingest.first.is_set))
+                self.assertTrue(wait_for(ingest.first.is_set))
 
                 # With a single attempt the stalled request is given up after the read limit.
                 transport.submit_check_in(CheckIn(slug="job", body={"status": "ok"}))
 
-                self.assertTrue(_wait_for(lambda: bool(ingest.received)), "nothing sent after the timeout")
+                self.assertTrue(wait_for(lambda: bool(ingest.received)), "nothing sent after the timeout")
             self.assertEqual(ingest.received, ["/api/v1/monitors/job/check-ins"])
             self.assertTrue(transport._worker.is_alive())
         finally:
@@ -143,9 +113,9 @@ class CheckInRetryTests(unittest.TestCase):
         transport = _fast_check_ins(Transport(api_key="k", endpoint=ingest.url), delays=(0.0, 60.0))
         try:
             transport.submit_check_in(CheckIn(slug="job", body={"status": "ok"}))
-            self.assertTrue(_wait_for(ingest.first.is_set))
+            self.assertTrue(wait_for(ingest.first.is_set))
             self.assertFalse(transport.close(timeout=0.3))
-            self.assertTrue(_wait_for(lambda: not transport._worker.is_alive()))
+            self.assertTrue(wait_for(lambda: not transport._worker.is_alive()))
             self.assertEqual(ingest.attempts, 1)
         finally:
             ingest.close()
@@ -156,7 +126,7 @@ class CheckInRetryTests(unittest.TestCase):
         try:
             err = io.StringIO()
             with redirect_stderr(err):
-                transport.submit(_event())
+                transport.submit(make_event())
                 self.assertTrue(transport.flush(timeout=5))
             self.assertEqual(ingest.attempts, 1)
             self.assertIn("event dropped", err.getvalue())

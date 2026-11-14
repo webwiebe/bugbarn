@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 )
 
 // fakeNotifier records deliveries; err (when set) is returned to the monitor.
@@ -130,7 +130,7 @@ func TestAddNotifierSkipsUnconfigured(t *testing.T) {
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
 	m := New(Config{StaleAfter: time.Minute}, baseDeps(now.Add(-time.Hour), 2), nil)
 	m.now = func() time.Time { return now }
-	m.AddNotifier(NewWebhookNotifier(""), NewEmailNotifier(digest.MailConfig{}, ""))
+	m.AddNotifier(NewWebhookNotifier(""), NewEmailNotifier(mail.Config{}, ""))
 
 	if len(m.notifiers) != 0 {
 		t.Fatalf("expected unconfigured channels to be dropped, got %d", len(m.notifiers))
@@ -246,17 +246,17 @@ func TestNewWebhookNotifierBlankURL(t *testing.T) {
 }
 
 func TestNewEmailNotifierRequiresSMTPAndRecipient(t *testing.T) {
-	full := digest.MailConfig{Enabled: true, Host: "smtp.example.com", Port: 587, From: "bb@example.com"}
+	full := mail.Config{Enabled: true, Host: "smtp.example.com", Port: 587, From: "bb@example.com"}
 	cases := []struct {
 		name string
-		mail digest.MailConfig
+		mail mail.Config
 		to   string
 		want bool
 	}{
 		{"configured", full, "ops@example.com", true},
 		{"no recipient", full, "  ", false},
-		{"smtp disabled", digest.MailConfig{Host: "smtp.example.com"}, "ops@example.com", false},
-		{"no host", digest.MailConfig{Enabled: true}, "ops@example.com", false},
+		{"smtp disabled", mail.Config{Host: "smtp.example.com"}, "ops@example.com", false},
+		{"no host", mail.Config{Enabled: true}, "ops@example.com", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

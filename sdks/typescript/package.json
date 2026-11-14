@@ -22,7 +22,8 @@
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
-    "test": "pnpm run build && node --test test/sdk.test.mjs test/user.test.mjs test/breadcrumbs.test.mjs test/interceptors.test.mjs test/pino-transport.test.mjs"
+    "test": "pnpm run build && node --test test/*.test.mjs",
+    "coverage": "pnpm run build && node --test --experimental-test-coverage --test-coverage-include='dist/esm/**/*.js' test/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/keytouch"
 	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // hangUpRepo cancels the client's request the moment the store is asked to
@@ -28,7 +28,7 @@ type hangUpRepo struct {
 	calls        atomic.Int32
 }
 
-func (h *hangUpRepo) RecordMonitorCheckIn(ctx context.Context, in storage.MonitorCheckIn) (storage.MonitorCheckInResult, error) {
+func (h *hangUpRepo) RecordMonitorCheckIn(ctx context.Context, in domain.MonitorCheckIn) (domain.MonitorCheckInResult, error) {
 	h.calls.Add(1)
 	h.hangUp()
 	h.ctxErrAtCall = ctx.Err()
@@ -97,7 +97,7 @@ func TestForwardDetachedFinishesAfterTheClientHangsUp(t *testing.T) {
 		}
 	}))
 	t.Cleanup(writer.Close)
-	fwd := NewWriteForwarder(writer.URL)
+	fwd := writeforward.NewProxy(writer.URL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitors/job/check-ins",
@@ -122,7 +122,7 @@ func TestForwardDetachedGivesUpAtItsOwnDeadline(t *testing.T) {
 	}))
 	t.Cleanup(writer.Close)
 	t.Cleanup(func() { close(release) })
-	fwd := NewWriteForwarder(writer.URL)
+	fwd := writeforward.NewProxy(writer.URL)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitors/job/check-ins", strings.NewReader(`{}`))
 	rr := httptest.NewRecorder()

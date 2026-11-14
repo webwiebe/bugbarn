@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -104,72 +103,63 @@ func (s *Server) createRelease(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"release": item})
 }
 
-func (s *Server) serveReleasesRoot(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		releases, err := s.releases.List(r.Context())
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{"releases": releases})
-	case http.MethodPost:
-		s.createRelease(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (s *Server) listReleases(w http.ResponseWriter, r *http.Request) {
+	releases, err := s.releases.List(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
 	}
+	writeJSON(w, map[string]any{"releases": releases})
 }
 
-func (s *Server) serveReleaseRoute(w http.ResponseWriter, r *http.Request) {
-	releaseID := strings.TrimPrefix(r.URL.Path, "/api/v1/releases/")
-	switch r.Method {
-	case http.MethodGet:
-		item, err := s.releases.Get(r.Context(), releaseID)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{"release": item})
-	case http.MethodPut:
-		var request struct {
-			Name        string `json:"name"`
-			Environment string `json:"environment"`
-			ObservedAt  string `json:"observedAt"`
-			Version     string `json:"version"`
-			CommitSHA   string `json:"commitSha"`
-			URL         string `json:"url"`
-			Notes       string `json:"notes"`
-			CreatedBy   string `json:"createdBy"`
-		}
-		if err := decodeJSON(w, r, &request); err != nil {
-			http.Error(w, "invalid release payload", http.StatusBadRequest)
-			return
-		}
-		release := domain.Release{
-			Name:        request.Name,
-			Environment: request.Environment,
-			Version:     request.Version,
-			CommitSHA:   request.CommitSHA,
-			URL:         request.URL,
-			Notes:       request.Notes,
-			CreatedBy:   request.CreatedBy,
-		}
-		if parsed, err := time.Parse(time.RFC3339Nano, request.ObservedAt); err == nil {
-			release.ObservedAt = parsed
-		}
-		item, err := s.releases.Update(r.Context(), releaseID, release)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{"release": item})
-	case http.MethodDelete:
-		if err := s.releases.Delete(r.Context(), releaseID); err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{"deleted": true})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (s *Server) getRelease(w http.ResponseWriter, r *http.Request) {
+	item, err := s.releases.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
 	}
+	writeJSON(w, map[string]any{"release": item})
+}
+
+func (s *Server) updateRelease(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Name        string `json:"name"`
+		Environment string `json:"environment"`
+		ObservedAt  string `json:"observedAt"`
+		Version     string `json:"version"`
+		CommitSHA   string `json:"commitSha"`
+		URL         string `json:"url"`
+		Notes       string `json:"notes"`
+		CreatedBy   string `json:"createdBy"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		http.Error(w, "invalid release payload", http.StatusBadRequest)
+		return
+	}
+	release := domain.Release{
+		Name:        request.Name,
+		Environment: request.Environment,
+		Version:     request.Version,
+		CommitSHA:   request.CommitSHA,
+		URL:         request.URL,
+		Notes:       request.Notes,
+		CreatedBy:   request.CreatedBy,
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, request.ObservedAt); err == nil {
+		release.ObservedAt = parsed
+	}
+	item, err := s.releases.Update(r.Context(), r.PathValue("id"), release)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"release": item})
+}
+
+func (s *Server) deleteRelease(w http.ResponseWriter, r *http.Request) {
+	if err := s.releases.Delete(r.Context(), r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"deleted": true})
 }

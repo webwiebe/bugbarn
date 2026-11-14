@@ -12,8 +12,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 // The facets endpoints are what the dashboard's environment switcher is built
@@ -28,9 +26,9 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 	// Fingerprint the events the way the pipeline does. A hand-written
 	// fingerprint would be rewritten under the test by the store's own
 	// fingerprint migration, splitting one issue in two.
-	persist := func(environment string, n int) storage.Issue {
+	persist := func(environment string, n int) domain.Issue {
 		t.Helper()
-		var issue storage.Issue
+		var issue domain.Issue
 		for i := 0; i < n; i++ {
 			evt := event.Event{
 				ObservedAt: time.Now().UTC(),
@@ -48,7 +46,7 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 			evt.FingerprintExplanation = snapshot.Explanation
 
 			var err error
-			issue, _, _, _, err = store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+			issue, _, _, _, err = store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 				Event:                  evt,
 				Fingerprint:            evt.Fingerprint,
 				FingerprintMaterial:    snapshot.Material,
@@ -70,7 +68,7 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 	// GET /api/v1/facets
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/facets", nil).WithContext(ctx)
-	srv.serveFacetsRoute(rr, req)
+	srv.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list keys: status %d, body %s", rr.Code, rr.Body.String())
 	}
@@ -96,7 +94,7 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 	// GET /api/v1/facets/attributes.environment
 	rr = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/facets/attributes.environment", nil).WithContext(ctx)
-	srv.serveFacetsRoute(rr, req)
+	srv.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list values: status %d, body %s", rr.Code, rr.Body.String())
 	}

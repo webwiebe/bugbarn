@@ -6,22 +6,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
-
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 func cmdLogs(args []string) error {
@@ -43,20 +34,14 @@ func cmdLogs(args []string) error {
 		return err
 	}
 
-	proj := ""
-	if g := resolveGroup(*group); g != "" && *project == "" {
-		client.group = g
-	} else {
-		proj = resolveProject(*project, client)
-		if proj != "" {
-			client.project = proj
-		}
+	if err := scopeClient(client, *project, *group); err != nil {
+		return err
 	}
 
 	if *follow {
-		return streamLogs(client, *level, proj, *noColor)
+		return streamLogs(client, *level, client.project, *noColor)
 	}
-	return fetchLogs(client, *level, proj, *query, *limit, *noColor)
+	return fetchLogs(client, *level, client.project, *query, *limit, *noColor)
 }
 
 func fetchLogs(client *Client, level, project, query string, limit int, noColor bool) error {
@@ -93,43 +78,18 @@ func fetchLogs(client *Client, level, project, query string, limit int, noColor 
 }
 
 func streamLogs(client *Client, level, project string, noColor bool) error {
-	path := "/api/v1/logs/stream"
-
-	ctx, span := tracing.Tracer().Start(context.Background(), "cli.Request",
-		trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(
-			attribute.String("http.method", http.MethodGet),
-			attribute.String("http.target", path),
-		),
-	)
-	defer span.End()
-
-	req, err := newStreamRequest(ctx, client, path)
+	body, err := client.openStream(context.Background(), "/api/v1/logs/stream")
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-
-	resp, err := client.http.Do(req)
-	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
-		return fmt.Errorf("stream connect: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
-
-	if resp.StatusCode != 200 {
-		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
-		return fmt.Errorf("stream: HTTP %d", resp.StatusCode)
-	}
+	defer func() { _ = body.Close() }()
 
 	levelMin := levelNum(level)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(body)
 	for {
 		select {
 		case <-sigCh:
@@ -146,25 +106,6 @@ func streamLogs(client *Client, level, project string, noColor bool) error {
 
 		printStreamLine(scanner.Text(), levelMin, project, noColor)
 	}
-}
-
-// newStreamRequest builds the authenticated, trace-propagating GET for the log stream.
-func newStreamRequest(ctx context.Context, client *Client, path string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.base+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	if client.project != "" {
-		req.Header.Set("X-BugBarn-Project", client.project)
-	}
-	switch client.config.Auth.Type {
-	case "apikey":
-		req.Header.Set("X-BugBarn-API-Key", client.config.Auth.APIKey)
-	case "session":
-		req.AddCookie(&http.Cookie{Name: "bugbarn_session", Value: client.config.Auth.SessionToken})
-	}
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-	return req, nil
 }
 
 // printStreamLine prints one SSE line when it is a data line that passes the

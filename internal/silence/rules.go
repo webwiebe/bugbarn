@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/tick"
 )
 
 // Rule names as they appear in the "would fire" log line.
@@ -394,20 +395,7 @@ func (r *Rules) Start(ctx context.Context, wg *sync.WaitGroup) {
 	if interval <= 0 {
 		interval = time.Hour
 	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case now := <-ticker.C:
-				r.Check(ctx, now)
-			}
-		}
-	}()
+	tick.Start(ctx, wg, interval, func(now time.Time) { r.Check(ctx, now) })
 }
 
 // StoreSource reads the signals from the project store.

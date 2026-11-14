@@ -62,33 +62,17 @@ func (s *Server) resolveAnalyticsProjectID(r *http.Request) int64 {
 	return s.projects.DefaultProjectID()
 }
 
-var analyticsRoutes = map[string]func(*Server, http.ResponseWriter, *http.Request, analytics.Query){
-	"overview":  (*Server).analyticsOverview,
-	"pages":     (*Server).analyticsPages,
-	"timeline":  (*Server).analyticsTimeline,
-	"referrers": (*Server).analyticsReferrers,
-	"segments":  (*Server).analyticsSegments,
-	"flow":      (*Server).analyticsFlow,
-	"scroll":    (*Server).analyticsScroll,
-	"dropout":   (*Server).analyticsDropout,
-}
-
-func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request) {
-	projectID := s.resolveAnalyticsProjectID(r)
-
-	q, err := parseAnalyticsQuery(r, projectID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+// analyticsView serves one GET /api/v1/analytics/<view> route: it parses the
+// shared query once and hands it to the view's handler.
+func (s *Server) analyticsView(handler func(*Server, http.ResponseWriter, *http.Request, analytics.Query)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q, err := parseAnalyticsQuery(r, s.resolveAnalyticsProjectID(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		handler(s, w, r, q)
 	}
-
-	tail := strings.TrimPrefix(r.URL.Path, "/api/v1/analytics/")
-	handler, ok := analyticsRoutes[tail]
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	handler(s, w, r, q)
 }
 
 func (s *Server) analyticsOverview(w http.ResponseWriter, r *http.Request, q analytics.Query) {

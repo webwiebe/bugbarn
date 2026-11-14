@@ -13,7 +13,7 @@ func BuildNotifiers(cfg Config) []Notifier {
 	if cfg.WebhookURL != "" {
 		notifiers = append(notifiers, &WebhookNotifier{URL: cfg.WebhookURL})
 	}
-	if cfg.Mail.active() {
+	if cfg.Mail.Active() {
 		notifiers = append(notifiers, &EmailNotifier{Cfg: cfg.Mail})
 	}
 	return notifiers
@@ -24,7 +24,11 @@ func BuildNotifiers(cfg Config) []Notifier {
 // is canceled. No-ops if cfg.Enabled() is false.
 // If wg is non-nil, it increments the WaitGroup before starting and decrements
 // it when the goroutine exits, so callers can wait for a clean shutdown.
-func StartScheduler(ctx context.Context, cfg Config, store Store, wg *sync.WaitGroup) {
+func StartScheduler(ctx context.Context, cfg Config, store Store, log *slog.Logger, wg *sync.WaitGroup) {
+	if log == nil {
+		log = slog.Default()
+	}
+	log = log.With("component", "digest")
 	if !cfg.Enabled() {
 		return
 	}
@@ -41,41 +45,51 @@ func StartScheduler(ctx context.Context, cfg Config, store Store, wg *sync.WaitG
 		}
 		defer func() {
 			if p := recover(); p != nil {
-				slog.Error("digest scheduler panic", "panic", p)
+				log.Error("digest scheduler panic", "panic", p)
 			}
 		}()
-		run(ctx, cfg, store, notifiers)
+		run(ctx, log, cfg, store, notifiers)
 	}()
 }
 
-func run(ctx context.Context, cfg Config, store Store, notifiers []Notifier) {
-	var lastFired time.Time
-
+func run(ctx context.Context, log *slog.Logger, cfg Config, store Store, notifiers []Notifier) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
+	runTicks(ctx, log, cfg, store, notifiers, ticker.C)
+}
 
+// due reports whether the digest should fire at now: the weekday and hour match
+// the configuration (UTC) and the last run was at least 23 hours ago.
+func due(cfg Config, now, lastFired time.Time) bool {
+	now = now.UTC()
+	if int(now.Weekday()) != cfg.Day || now.Hour() != cfg.Hour {
+		return false
+	}
+	return lastFired.IsZero() || now.Sub(lastFired) >= 23*time.Hour
+}
+
+// runTicks fires the digest on each tick that is due, until ctx is canceled.
+func runTicks(ctx context.Context, log *slog.Logger, cfg Config, store Store, notifiers []Notifier, ticks <-chan time.Time) {
+	var lastFired time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-ticker.C:
+		case now := <-ticks:
 			now = now.UTC()
-			if int(now.Weekday()) != cfg.Day || now.Hour() != cfg.Hour {
-				continue
-			}
-			if !lastFired.IsZero() && now.Sub(lastFired) < 23*time.Hour {
+			if !due(cfg, now, lastFired) {
 				continue
 			}
 			lastFired = now
-			slog.Info("digest: sending weekly digest")
+			log.InfoContext(ctx, "sending weekly digest")
 			// Send owns its own gather/delivery budgets; ctx here only carries
 			// shutdown cancellation.
-			errs := Send(ctx, cfg, store, notifiers)
-			for _, err := range errs {
-				slog.Error("digest: delivery error", "error", err)
-			}
+			errs := Send(ctx, log, cfg, store, notifiers)
+			// Send already logged each failure at ERROR; this line only closes the run.
 			if len(errs) == 0 {
-				slog.Info("digest: sent successfully")
+				log.InfoContext(ctx, "digest sent")
+			} else {
+				log.InfoContext(ctx, "digest finished with failures", "failures", len(errs))
 			}
 		}
 	}

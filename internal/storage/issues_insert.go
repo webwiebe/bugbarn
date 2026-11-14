@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
@@ -24,13 +25,13 @@ type newIssueParams struct {
 
 // insertNewIssue allocates the next issue number and INSERTs a new issue within
 // the open transaction.
-func (s *core) insertNewIssue(ctx context.Context, tx *sql.Tx, p newIssueParams) (Issue, int64, bool, error) {
+func (s *core) insertNewIssue(ctx context.Context, tx *sql.Tx, p newIssueParams) (domain.Issue, int64, bool, error) {
 	issueNumber, issuePrefix, err := allocateIssueNumber(ctx, tx, p.projectID)
 	if err != nil {
-		return Issue{}, 0, false, err
+		return domain.Issue{}, 0, false, err
 	}
 
-	issue := Issue{
+	issue := domain.Issue{
 		Fingerprint:            p.fingerprintValue,
 		FingerprintMaterial:    p.material,
 		FingerprintExplanation: p.explanation,
@@ -48,12 +49,12 @@ func (s *core) insertNewIssue(ctx context.Context, tx *sql.Tx, p newIssueParams)
 
 	id, err := insertIssueRow(ctx, tx, p, issueNumber)
 	if err != nil {
-		return Issue{}, 0, false, err
+		return domain.Issue{}, 0, false, err
 	}
 	issue.ID = displayIssueID(issuePrefix, issueNumber, id)
 
 	if err := tx.Commit(); err != nil {
-		return Issue{}, 0, false, err
+		return domain.Issue{}, 0, false, err
 	}
 
 	return issue, id, false, nil
@@ -135,9 +136,9 @@ func issueDetails(evt event.Event) (title, normalizedTitle, exceptionType string
 	// browser errors (promise rejections, cross-origin) that arrive with
 	// exception: {} but have details in rawScrubbed.
 	if exceptionType == "" && message == "" {
-		if raw := rawScrubbedFallback(evt.RawScrubbed); raw.name != "" || raw.message != "" {
-			exceptionType = strings.TrimSpace(raw.name)
-			message = strings.TrimSpace(raw.message)
+		if raw := event.RawScrubbedDetails(evt.RawScrubbed); raw.Name != "" || raw.Message != "" {
+			exceptionType = strings.TrimSpace(raw.Name)
+			message = strings.TrimSpace(raw.Message)
 		}
 	}
 

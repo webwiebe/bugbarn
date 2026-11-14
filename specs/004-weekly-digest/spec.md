@@ -166,7 +166,7 @@ The scheduler goroutine wakes every minute, checks if it is the configured weekd
 ### Functional Requirements
 
 - **FR-401**: When `BUGBARN_DIGEST_WEBHOOK_URL` is set, the digest MUST be POSTed as JSON to that URL every configured day/hour. Issues: none found. Tests: `internal/digest/digest_test.go::TestSendNotifierFailuresAreIndependent`.
-- **FR-402**: When SMTP is configured and `BUGBARN_DIGEST_TO` is set, the digest MUST be sent as an email (HTML + plain text multipart) every configured day/hour. Issues: none found. Tests: `internal/digest/mail_test.go::TestDeliverEmailBuildsMultipart`.
+- **FR-402**: When SMTP is configured and `BUGBARN_DIGEST_TO` is set, the digest MUST be sent as an email (HTML + plain text multipart) every configured day/hour. Issues: none found. Tests: `internal/mail/send_test.go::TestDeliverEmailBuildsMultipart`.
 - **FR-403**: Digest delivery failures MUST be logged and MUST NOT crash the service. Issues: none found. Tests: `internal/digest/digest_test.go::TestSendNotifierFailuresAreIndependent`.
 - **FR-404**: When neither channel is configured, the scheduler goroutine MUST NOT start. [inferred]
 - **FR-405**: The digest MUST cover the 7 days preceding the send time. [inferred]
@@ -176,7 +176,7 @@ The scheduler goroutine wakes every minute, checks if it is the configured weekd
 ### Non-Functional Requirements
 
 - **NFR-401**: Storage queries for digest data MUST NOT hold the database connection for more than 2 seconds; a context deadline of 10 seconds is applied. Issues: none found. The tree budgets 30 seconds per project and 10 minutes per run (`internal/digest/digest.go`); see Drift. Tests: `internal/digest/digest_test.go::TestSendSlowProjectDoesNotStarveTheRest`.
-- **NFR-402**: Email and webhook delivery MUST each have a 15-second timeout. Issues: none found. Tests: `internal/digest/mail_test.go::TestDeliverEmailHonorsContextDeadline`.
+- **NFR-402**: Email and webhook delivery MUST each have a 15-second timeout. Issues: none found. Tests: `internal/mail/send_test.go::TestDeliverEmailHonorsContextDeadline`.
 - **NFR-403**: The scheduler MUST add no observable CPU overhead between fire times (sleeps until next minute check). [inferred]
 
 ---

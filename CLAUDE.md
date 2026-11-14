@@ -22,7 +22,7 @@ fact; fix the document that is wrong.
 ## Project Layout
 
 ```
-cmd/bugbarn/          Server entrypoint; wires each role (main.go single/writer, reader.go reader, worker.go spool worker)
+cmd/bugbarn/          Server entrypoint; wires each role (main.go single/writer, reader.go reader, spool_worker.go adapter for the spool worker)
 cmd/bb/               The bb CLI
 internal/
   Write path ★ internal/ingest/CLAUDE.md
@@ -30,9 +30,10 @@ internal/
     ingestproc/       Writer-side persistence pipeline for the Redis consumer, held-event replay
     ingestresp/       Ingest response contract (accepted / retryable / permanent drop)
     ingesthealth/     Ingest stall monitor, health endpoint status, out-of-band alerts
+    writeforward/     Reader-to-writer transport: HTTP proxy, on-disk forward spool, Redis enqueue
     queue/            Redis write queue between readers and the writer
     spool/            On-disk NDJSON event queue with cursor and dead letter
-    worker/           ProcessRecord (decode, normalize, fingerprint), symbolication, worker status
+    worker/           ProcessRecord (decode, normalize, fingerprint), symbolication, the spool worker loop (cursor, segments, queued mutations), worker status
     mutqueue/         Durable queue for admin issue mutations when the store is slow
     logparse/         Pino-style log body parsing, shared by the HTTP endpoint and the consumer
   Grouping ★ internal/fingerprint/CLAUDE.md
@@ -40,19 +41,23 @@ internal/
     normalize/        SDK payload to event.Event mapping, Validate
     privacy/          Scrubbing of sensitive keys and values
     sourcemap/        Source map resolution for JS frames
-    event/            Canonical ingest event type
-    issues/           In-memory issue store used by the spool worker
+    event/            Canonical ingest event type and its processed form (ProcessedEvent)
   Storage ★ internal/storage/CLAUDE.md
-    storage/          SQLite layer (single Store of domain stores), migrations, WAL checkpoint
+    storage/          SQLite layer for bugbarn.db (single Store of domain stores), migrations
+    sqlitedb/         SQLite drivers, read-only recovery driver and WAL checkpoint, shared by storage and telemetrydb
     retention/        Writer-only sweep that expires events past their retention window
   Domain and services
     domain/           Domain types (Issue, Project, Event, Alert, ...)
-    domainevents/     In-process bus: issue created / regressed / event recorded
-    service/          Domain services (issues, projects, alerts, releases, logs, analytics)
+    domainevents/     In-process bus: issue created / regressed / event recorded, and IssuePublisher
+    service/          Domain services, one subpackage each (issues, projects, alerts, releases, logs, ...)
     alert/            Alert evaluation and delivery (webhook, email)
     digest/           Periodic project summaries (mail, webhook)
     analytics/        Analytics types, queries and the rollup worker
     logstream/        SSE fan-out for live log tailing
+    silence/          Writer-only rules that alert when a project that reported errors goes quiet
+    monitorwatch/     Writer-only detector that turns missed or failed monitor check-ins into issues
+    cronexpr/         5-field cron parsing and next-run times for monitor schedules
+    tick/             Runs a function on an interval until the context ends (shared by the writer-side loops)
   Infrastructure telemetry (Vector agents, deploy/vector)
     telemetry/        Writer-side ingester: normalize, observe (detections), store
     telemetrydb/      Size-capped security.db and metrics.db next to the main DB
@@ -60,15 +65,18 @@ internal/
     hostmetrics/      Vector host_metrics to per-minute samples
     cfpoller/         Writer-only poller for Cloudflare firewall events (GraphQL Analytics API)
     detect/           Detection rules and engine; each hit becomes an issue in the telemetry project
-  HTTP and auth
+  HTTP and auth ★ internal/api/CLAUDE.md
     api/              HTTP handlers and routing; reader-to-writer forwarders
     apperr/           Shared error types (NotFound, Conflict, InvalidInput, Internal)
     auth/             Local login and the opt-in OIDC adapter
     sessionstore/     Server-side web sessions; readers delegate writes to the writer
+    keytouch/         Readers batch API key last-use touches and send them to the writer
     oidctest/         In-process fake OIDC provider for tests
   Platform
     config/           Env-var configuration (BUGBARN_*)
+    mail/             SMTP delivery with retries, used by digest, alert and ingesthealth
     selflog/          ★ slog handler that reports errors to BugBarn itself
+    logtest/          Test helper that records slog output and checks the service logging rule
     tracing/          OpenTelemetry setup, HTTP middleware, tail sampler
     cli/              `bugbarn user|project` admin subcommands
 web/                  SPA frontend (TypeScript, no framework)
@@ -142,6 +150,6 @@ Config lives at `~/.config/bugbarn/cli.json`. Authenticated against https://bugb
 - `go build ./...` — build
 - `go test ./...` — run all tests
 - `make spec-check` — validate OpenAPI specs
-- `make quality` — the CI quality gates (file length, lint at zero findings, coverage, duplication)
+- `make quality` — the CI quality gates (file length, lint at zero findings, coverage, duplication). Coverage ratchets the total and fails any Go package under 80.0% (constant `MIN_PACKAGE` in `scripts/check-coverage.sh`, no allowlist)
 - `make secret-scan` — gitleaks over the git history (`scripts/secret-scan.sh`, config in `.gitleaks.toml`, known hits as fingerprints in `.gitleaksignore`, which may only shrink; report-only until 2026-10-31)
 - `bb issues` — check for open bugs (dogfood check)

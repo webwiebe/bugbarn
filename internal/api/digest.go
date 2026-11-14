@@ -43,7 +43,7 @@ func (s *Server) serveDigestTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errs := digest.Send(r.Context(), cfg, s.digestStore, notifiers)
+	errs := digest.Send(r.Context(), s.logger, cfg, s.digestStore, notifiers)
 	if len(errs) > 0 {
 		msgs := make([]string, len(errs))
 		for i, e := range errs {

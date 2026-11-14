@@ -29,7 +29,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/retention"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
-	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
@@ -54,6 +53,10 @@ var (
 // via runtime-config), so this is a fixed constant rather than a config
 // value — every bugbarn deployment reports under the same project.
 const funnelbarnProjectName = "bugbarn"
+
+// notifyContext returns the context a role runs under until the process is
+// told to stop. Tests replace it to drive the shutdown path without a signal.
+var notifyContext = signal.NotifyContext
 
 func main() {
 	if err := run(); err != nil {
@@ -135,7 +138,7 @@ func run() error {
 	}
 	defer mutQueue.Close()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Nothing else checkpoints the WAL: sqliteDSN sets wal_autocheckpoint(0),
@@ -158,7 +161,7 @@ func run() error {
 	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL, cfg.AdminAlertEmail, logger.With("component", "alert-evaluator"))
 	bus.Subscribe(evaluator.HandleEvent)
 
-	eventPub := service.NewEventPublisher(bus)
+	eventPub := domainevents.NewIssuePublisher(bus)
 
 	// FunnelBarn product-event tracking is opt-in, same gate as the frontend's
 	// runtime-config block: only enabled when an API key is configured.
@@ -188,13 +191,17 @@ func run() error {
 	workerStatus := worker.NewStatus()
 	var bgWg sync.WaitGroup
 	bgWg.Add(1)
+	// The spool worker persists through the same pipeline as the queue consumer
+	// below. It gets its own Processor only to switch on the per-step spans.
+	spoolProc := ingestproc.NewProcessor(store, eventPub, logger, cfg.AutoApproveProjects)
+	spoolProc.SetTracer(tracing.Tracer())
 	go func() {
 		defer bgWg.Done()
-		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus, mutQueue)
+		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, spoolProc, selfReporting, workerStatus, mutQueue)
 	}()
 
-	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
-	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, &bgWg)
+	digest.StartScheduler(ctx, cfg.Digest, store, logger, &bgWg)
+	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, logger, &bgWg)
 
 	// Event retention. Writer-only: this is past the cfg.Mode=="reader" early
 	// return, so a reader — which holds the database read-only — never gets
@@ -230,7 +237,7 @@ func run() error {
 	// build them once. The replayer works without Redis — approving a pending
 	// project drains its backlog even if no consumer is running.
 	eventProc := ingestproc.NewProcessor(store, eventPub, logger, cfg.AutoApproveProjects)
-	logService := logsvc.New(store.LogStore, logger)
+	logService := logsvc.New(store.LogStore, logger, logsvc.WithTransient(storage.IsTransient))
 	heldReplayer := ingestproc.NewReplayer(store, eventProc, logService, logger)
 	// Detections persist through the same pipeline as SDK events, so each one
 	// becomes an issue in the telemetry project. Started before the consumer so
@@ -265,9 +272,6 @@ func run() error {
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store, store.TouchAPIKey)
 	if err != nil {
-		return err
-	}
-	if err := ensureProductionAPIKeyAuth(cfg, apiAuthorizer); err != nil {
 		return err
 	}
 	userAuth, err := newUserAuthenticator(cfg)
@@ -346,13 +350,7 @@ func run() error {
 		shutdownErr := server.Shutdown(shutdownCtx)
 		// Wait for the worker to finish its current batch (and write its cursor)
 		// before exiting, so a deploy doesn't strand in-flight records.
-		drained := make(chan struct{})
-		go func() { bgWg.Wait(); close(drained) }()
-		select {
-		case <-drained:
-		case <-shutdownCtx.Done():
-			slog.Warn("worker did not drain before shutdown deadline")
-		}
+		waitForBackground(shutdownCtx, &bgWg)
 		if selfReporting {
 			bb.Shutdown(2 * time.Second)
 		}
@@ -363,10 +361,28 @@ func run() error {
 		}
 		return shutdownErr
 	case err := <-errCh:
+		// The listener stopped on its own. Stop the background loops and let
+		// them finish before the deferred closes run on the store they write to.
+		stop()
+		drainCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		waitForBackground(drainCtx, &bgWg)
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
+	}
+}
+
+// waitForBackground blocks until every goroutine on wg has returned or ctx is
+// done, whichever comes first.
+func waitForBackground(ctx context.Context, wg *sync.WaitGroup) {
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+	select {
+	case <-drained:
+	case <-ctx.Done():
+		slog.Warn("background workers did not stop before the deadline")
 	}
 }
 

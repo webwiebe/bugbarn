@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
-	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetry"
 )
 
@@ -17,11 +16,6 @@ type TelemetryIngester interface {
 	Ingest(ctx context.Context, kind string, body []byte) error
 }
 
-const (
-	telemetrySecurityPath = "/api/v1/telemetry/security"
-	telemetryMetricsPath  = "/api/v1/telemetry/metrics"
-)
-
 // SetTelemetry wires telemetry ingest. ingester is nil on readers, which
 // forward. project is the slug whose ingest-scoped keys may post telemetry.
 func (s *Server) SetTelemetry(ingester TelemetryIngester, project string) {
@@ -29,33 +23,12 @@ func (s *Server) SetTelemetry(ingester TelemetryIngester, project string) {
 	s.telemetryProject = project
 }
 
-func telemetryKind(path string) string {
-	switch path {
-	case telemetrySecurityPath:
-		return queue.KindSecurity
-	case telemetryMetricsPath:
-		return queue.KindMetrics
-	}
-	return ""
-}
-
-// serveTelemetryIngestEndpoint handles POST /api/v1/telemetry/{security,metrics}
-// and answers 405 to methods other than GET and POST.
-// No CORS: the senders are Vector agents, never browsers.
-func (s *Server) serveTelemetryIngestEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	kind := telemetryKind(r.URL.Path)
-	// GET on the same path is the authenticated read API (telemetry_read.go).
-	if kind == "" || r.Method == http.MethodGet {
-		return false
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return true
-	}
+// handleTelemetryIngest stores a Vector batch of the given queue kind, routed by
+// serveTelemetryIngestEndpoint in routes_ingest.go.
+func (s *Server) handleTelemetryIngest(w http.ResponseWriter, r *http.Request, kind string) {
 	if deny := s.telemetryAuthorized(r); deny != nil {
 		ingestresp.WriteDropped(w, *deny)
-		return true
+		return
 	}
 	switch {
 	case s.ingestSpool != nil:
@@ -65,7 +38,6 @@ func (s *Server) serveTelemetryIngestEndpoint(w http.ResponseWriter, r *http.Req
 	default:
 		s.ingestTelemetryLocal(w, r, kind)
 	}
-	return true
 }
 
 // telemetryAuthorized accepts a full-scope key, or an ingest-scoped key bound

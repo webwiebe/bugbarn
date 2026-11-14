@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"net"
 	"net/http"
 	"strings"
@@ -111,7 +112,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		AuthMethod: domain.WebSessionAuthLocal,
 	})
 	if err != nil {
-		if !clientGone(err) {
+		if !apperr.IsContextError(err) {
 			s.logger.Error("auth: create session failed", "error", err)
 		}
 		http.Error(w, "session unavailable", http.StatusServiceUnavailable)

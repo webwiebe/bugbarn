@@ -14,11 +14,11 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
-func (s *IssueStore) ListIssues(ctx context.Context) ([]Issue, error) {
-	return s.ListIssuesFiltered(ctx, IssueFilter{})
+func (s *IssueStore) ListIssues(ctx context.Context) ([]domain.Issue, error) {
+	return s.ListIssuesFiltered(ctx, domain.IssueFilter{})
 }
 
-func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter) (_ []Issue, retErr error) {
+func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter domain.IssueFilter) (_ []domain.Issue, retErr error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListIssuesFiltered")
 	defer func() {
 		if retErr != nil {
@@ -68,7 +68,7 @@ func (s *IssueStore) ListIssuesFiltered(ctx context.Context, filter IssueFilter)
 //
 // The threshold lookup is cached per project, and an issue list is almost always
 // one project, so this is a map hit per row rather than a query per row.
-func (s *core) annotateSampleRates(ctx context.Context, issues []Issue) {
+func (s *core) annotateSampleRates(ctx context.Context, issues []domain.Issue) {
 	thresholds := make(map[int64]int64)
 	for i := range issues {
 		projectID := issues[i].ProjectID
@@ -84,7 +84,7 @@ func (s *core) annotateSampleRates(ctx context.Context, issues []Issue) {
 // buildIssueListQuery assembles the SELECT/FROM/WHERE/ORDER BY/LIMIT SQL for the
 // issue list query from the already-built FROM clause, WHERE conditions, and
 // ORDER BY expression.
-func buildIssueListQuery(fromClause string, conditions []string, orderBy string, filter IssueFilter) string {
+func buildIssueListQuery(fromClause string, conditions []string, orderBy string, filter domain.IssueFilter) string {
 	sqlQuery := `
 SELECT
 	i.id,
@@ -127,8 +127,8 @@ ORDER BY ` + orderBy
 }
 
 // scanIssueRows materializes all rows from an issue list query into a slice.
-func scanIssueRows(rows *sql.Rows) ([]Issue, error) {
-	issues := []Issue{}
+func scanIssueRows(rows *sql.Rows) ([]domain.Issue, error) {
+	issues := []domain.Issue{}
 	for rows.Next() {
 		issue, err := scanIssue(rows)
 		if err != nil {
@@ -146,7 +146,7 @@ func scanIssueRows(rows *sql.Rows) ([]Issue, error) {
 type facetFilter struct{ k, v string }
 
 // collectFacetFilters returns the filter's non-empty facet key/value pairs.
-func collectFacetFilters(filter IssueFilter) []facetFilter {
+func collectFacetFilters(filter domain.IssueFilter) []facetFilter {
 	var facetFilters []facetFilter
 	for fk, fv := range filter.Facets {
 		if strings.TrimSpace(fk) != "" && strings.TrimSpace(fv) != "" {
@@ -181,7 +181,7 @@ func buildIssueFromClause(facetFilters []facetFilter, projectID int64) (string, 
 }
 
 // issueOrderBy maps the filter's sort/status to the ORDER BY clause.
-func issueOrderBy(filter IssueFilter) string {
+func issueOrderBy(filter domain.IssueFilter) string {
 	var orderBy string
 	switch filter.Sort {
 	case "first_seen":
@@ -200,7 +200,7 @@ func issueOrderBy(filter IssueFilter) string {
 // issueWhereConditions builds the WHERE conditions and their bound args from the
 // project/group scope and the filter's status/query.
 func issueWhereConditions(
-	filter IssueFilter, projectID int64, allProjects bool, groupIDs []int64, hasGroupFilter bool,
+	filter domain.IssueFilter, projectID int64, allProjects bool, groupIDs []int64, hasGroupFilter bool,
 ) (conditions []string, whereArgs []any) {
 	if hasGroupFilter {
 		placeholders := make([]string, len(groupIDs))
@@ -245,29 +245,29 @@ func issueWhereConditions(
 	return conditions, whereArgs
 }
 
-func (s *IssueStore) GetIssue(ctx context.Context, issueID string) (Issue, error) {
+func (s *IssueStore) GetIssue(ctx context.Context, issueID string) (domain.Issue, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.GetIssue")
 	defer span.End()
 	span.SetAttributes(attribute.String("issue_id", issueID))
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
-		return Issue{}, err
+		return domain.Issue{}, err
 	}
 	return s.issueByRowID(ctx, rowID)
 }
 
 // IssueByFingerprint loads the issue of a project that carries fingerprint.
-func (s *IssueStore) IssueByFingerprint(ctx context.Context, projectID int64, fingerprint string) (Issue, error) {
+func (s *IssueStore) IssueByFingerprint(ctx context.Context, projectID int64, fingerprint string) (domain.Issue, error) {
 	var rowID int64
 	err := s.readDB().QueryRowContext(ctx,
 		`SELECT id FROM issues WHERE project_id = ? AND fingerprint = ?`, projectID, fingerprint).Scan(&rowID)
 	if err != nil {
-		return Issue{}, wrapNotFound(err, "issue not found")
+		return domain.Issue{}, wrapNotFound(err, "issue not found")
 	}
 	return s.issueByRowID(ctx, rowID)
 }
 
-func (s *IssueStore) issueByRowID(ctx context.Context, rowID int64) (Issue, error) {
+func (s *IssueStore) issueByRowID(ctx context.Context, rowID int64) (domain.Issue, error) {
 	const sel = `
 SELECT
 	i.id,
@@ -299,7 +299,7 @@ WHERE i.id = ?`
 	row := s.readDB().QueryRowContext(ctx, sel, rowID)
 	issue, err := scanIssue(row)
 	if err != nil {
-		return Issue{}, wrapNotFound(err, "issue not found")
+		return domain.Issue{}, wrapNotFound(err, "issue not found")
 	}
 	issue.SampleRate = int(sampleRateFor(int64(issue.EventCount), s.sampleAfterFor(ctx, issue.ProjectID)))
 	return issue, nil
@@ -308,7 +308,7 @@ WHERE i.id = ?`
 // parseIssueTimes fills the issue's time fields from their stored text. First
 // and last seen are required; the resolved, reopened and regressed times are
 // empty on an issue that never had them, so a parse failure leaves them zero.
-func parseIssueTimes(issue *Issue, firstSeen, lastSeen, resolvedAt, reopenedAt, lastRegressedAt string) error {
+func parseIssueTimes(issue *domain.Issue, firstSeen, lastSeen, resolvedAt, reopenedAt, lastRegressedAt string) error {
 	parsedFirstSeen, err := parseTime(firstSeen)
 	if err != nil {
 		return err
@@ -327,10 +327,10 @@ func parseIssueTimes(issue *Issue, firstSeen, lastSeen, resolvedAt, reopenedAt, 
 
 func scanIssue(scanner interface {
 	Scan(dest ...any) error
-}) (Issue, error) {
+}) (domain.Issue, error) {
 	var (
 		id                int64
-		issue             Issue
+		issue             domain.Issue
 		representativeRaw []byte
 		explanationRaw    []byte
 		firstSeen         string
@@ -365,16 +365,16 @@ func scanIssue(scanner interface {
 		&issue.ProjectID,
 		&issue.FirstRelease,
 	); err != nil {
-		return Issue{}, err
+		return domain.Issue{}, err
 	}
 	if err := unmarshalStringSlice(explanationRaw, &issue.FingerprintExplanation); err != nil {
-		return Issue{}, err
+		return domain.Issue{}, err
 	}
 	if err := json.Unmarshal(representativeRaw, &issue.RepresentativeEvent); err != nil {
-		return Issue{}, err
+		return domain.Issue{}, err
 	}
 	if err := parseIssueTimes(&issue, firstSeen, lastSeen, resolvedAt, reopenedAt, lastRegressedAt); err != nil {
-		return Issue{}, err
+		return domain.Issue{}, err
 	}
 	issue.IssueNumber = issueNumber
 	issue.ID = displayIssueID(issuePrefix, issueNumber, id)

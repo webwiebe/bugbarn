@@ -23,14 +23,13 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
+	"github.com/wiebe-xyz/bugbarn/internal/sqlitedb"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 const (
 	defaultDBPath  = ".data/bugbarn.db"
 	defaultProject = "default"
-	baseDriverName = "sqlite"
 	issueIDPrefix  = "issue-"
 	eventIDPrefix  = "event-"
 	// timeLayout writes every stored timestamp with a nine-digit fraction.
@@ -52,65 +51,6 @@ var (
 	pathNumber      = regexp.MustCompile(`/\d+`)
 	trimPunctuation = regexp.MustCompile(`^[\s:;,_\-]+|[\s:;,_\-]+$`)
 )
-
-var (
-	registerDriverOnce sync.Once
-	registeredDriver   = baseDriverName
-
-	registerBudgetedOnce sync.Once
-	budgetedDriver       = baseDriverName
-)
-
-// registerTraced registers an otelsql-wrapped SQLite driver and returns its
-// name. Falls back to the plain driver if registration fails. recordError
-// decides which errors mark a span as failed; nil records all of them.
-func registerTraced(recordError func(error) bool) string {
-	return registerTracedOn(baseDriverName, recordError)
-}
-
-// registerTracedOn is registerTraced over the registered driver base.
-func registerTracedOn(base string, recordError func(error) bool) string {
-	name, err := otelsql.Register(base,
-		otelsql.WithAttributes(semconv.DBSystemSqlite),
-		otelsql.WithSpanOptions(otelsql.SpanOptions{
-			OmitConnResetSession: true,
-			OmitConnPrepare:      true,
-			OmitRows:             true,
-			RecordError:          recordError,
-		}),
-		otelsql.WithMeterProvider(otel.GetMeterProvider()),
-	)
-	if err != nil {
-		slog.Warn("otelsql driver registration failed; falling back to plain driver", "err", err)
-		return base
-	}
-	return name
-}
-
-// tracedDriver registers (once) the driver the main database uses.
-func tracedDriver() string {
-	registerDriverOnce.Do(func() { registeredDriver = registerTraced(nil) })
-	return registeredDriver
-}
-
-// DriverName returns the otelsql-wrapped SQLite driver name, so other SQLite
-// files (internal/telemetrydb) get the same tracing as the main database.
-func DriverName() string { return tracedDriver() }
-
-// BudgetedDriverName returns a driver with the same tracing as DriverName,
-// except that an expired context deadline does not mark the span as failed.
-// It is for handles whose work runs under a deadline that ends it on purpose,
-// such as the telemetry maintenance pass, where every expiry would otherwise
-// count as an error trace. The span keeps its statement and duration, and the
-// pass still logs what it could not finish.
-func BudgetedDriverName() string {
-	registerBudgetedOnce.Do(func() {
-		budgetedDriver = registerTraced(func(err error) bool {
-			return !errors.Is(err, context.DeadlineExceeded)
-		})
-	})
-	return budgetedDriver
-}
 
 // dbStatsRegs tracks the otelsql connection-pool metric registrations keyed
 // by the *sql.DB they observe, so Close can unregister the callback and stop
@@ -165,7 +105,7 @@ func OpenReadOnly(path string) (*Store, error) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "OpenReadOnly")
 	}
 	return openReadOnlyDSN(sqliteReadOnlyDSN(absPath))
 }
@@ -173,9 +113,9 @@ func OpenReadOnly(path string) (*Store, error) {
 // openReadOnlyDSN is OpenReadOnly on a full DSN. Tests add readonly_shm=1, the
 // state a reader pod is in because its volume is mounted read-only.
 func openReadOnlyDSN(dsn string) (*Store, error) {
-	roDB, err := sql.Open(readonlyTracedDriver(), dsn)
+	roDB, err := sql.Open(sqlitedb.ReadOnlyDriverName(), dsn)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "openReadOnlyDSN")
 	}
 	roDB.SetMaxOpenConns(4)
 	registerDBStats(roDB, "read")
@@ -184,7 +124,7 @@ func openReadOnlyDSN(dsn string) (*Store, error) {
 	if err := roDB.Ping(); err != nil {
 		unregisterDBStats(roDB)
 		_ = roDB.Close()
-		return nil, err
+		return nil, wrapErr(err, "openReadOnlyDSN")
 	}
 
 	return newStore(&core{db: nil, roDB: roDB}), nil
@@ -205,25 +145,25 @@ func open(path string, autoMigrate bool) (*Store, error) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 
-	db, err := sql.Open(tracedDriver(), sqliteDSN(absPath))
+	db, err := sql.Open(sqlitedb.DriverName(), sqliteDSN(absPath))
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 	db.SetMaxOpenConns(1)
 	registerDBStats(db, "write")
 
-	roDB, err := sql.Open(tracedDriver(), sqliteReadOnlyDSN(absPath))
+	roDB, err := sql.Open(sqlitedb.DriverName(), sqliteReadOnlyDSN(absPath))
 	if err != nil {
 		unregisterDBStats(db)
 		_ = db.Close()
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 	roDB.SetMaxOpenConns(4)
 	registerDBStats(roDB, "read")
@@ -238,22 +178,41 @@ func open(path string, autoMigrate bool) (*Store, error) {
 		unregisterDBStats(db)
 		_ = roDB.Close()
 		_ = db.Close()
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 	if autoMigrate {
-		go func() {
-			if err := c.migrateFingerprints(context.Background()); err != nil {
-				slog.Error("fingerprint migration failed", "err", err)
-			}
-		}()
+		c.startFingerprintMigration()
 	}
 	return newStore(c), nil
+}
+
+// startFingerprintMigration runs the one-time fingerprint migration for the
+// lifetime of the store: Close cancels it and waits for it to return.
+func (s *core) startFingerprintMigration() {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.bgCancel = cancel
+	s.bg.Add(1)
+	go func() {
+		defer s.bg.Done()
+		err := s.migrateFingerprints(ctx)
+		switch {
+		case err == nil:
+		case ctx.Err() != nil:
+			slog.Warn("fingerprint migration stopped before it finished", "err", err)
+		default:
+			slog.Error("fingerprint migration failed", "err", err)
+		}
+	}()
 }
 
 func (s *core) Close() error {
 	if s == nil {
 		return nil
 	}
+	if s.bgCancel != nil {
+		s.bgCancel()
+	}
+	s.bg.Wait()
 	var firstErr error
 	if s.roDB != nil {
 		unregisterDBStats(s.roDB)
@@ -290,7 +249,9 @@ func (s *core) DB() *sql.DB {
 // PersistProcessedEvent stores a processed event and upserts the related issue.
 // It returns the upserted issue, the stored event, a flag indicating whether this
 // was a brand-new issue, a flag indicating whether the issue regressed, and any error.
-func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.ProcessedEvent) (Issue, Event, bool, bool, error) {
+func (s *core) PersistProcessedEvent(
+	ctx context.Context, processed event.ProcessedEvent,
+) (domain.Issue, domain.Event, bool, bool, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.PersistProcessedEvent",
 		trace.WithAttributes(attribute.String("fingerprint", processed.Fingerprint)),
 	)
@@ -298,7 +259,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 
 	if s == nil || s.db == nil {
 		span.SetStatus(codes.Error, "storage is nil")
-		return Issue{}, Event{}, false, false, errors.New("storage is nil")
+		return domain.Issue{}, domain.Event{}, false, false, errors.New("storage is nil")
 	}
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -310,7 +271,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 	issue, issueID, regressed, err := s.upsertIssueTraced(ctx, projectID, processed)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, err
+		return domain.Issue{}, domain.Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 
 	// The upsert works entirely from the numeric project id, so the returned
@@ -338,10 +299,10 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 		span.SetAttributes(attribute.Bool("sampled_out", true))
 		if err := s.persistFacetsFor(ctx, projectID, issueID, processed.Event); err != nil {
 			span.SetStatus(codes.Error, err.Error())
-			return Issue{}, Event{}, false, false, err
+			return domain.Issue{}, domain.Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 		}
 		span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
-		return issue, Event{}, isNew, regressed, nil
+		return issue, domain.Event{}, isNew, regressed, nil
 	}
 
 	_, insertSpan := tracing.Tracer().Start(ctx, "storage.InsertEvent")
@@ -350,13 +311,13 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 		insertSpan.SetStatus(codes.Error, err.Error())
 		insertSpan.End()
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, err
+		return domain.Issue{}, domain.Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 	insertSpan.End()
 
 	if err := s.persistFacetsFor(ctx, projectID, issueID, processed.Event); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, err
+		return domain.Issue{}, domain.Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 
 	span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
@@ -364,13 +325,15 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 }
 
 // upsertIssueTraced runs upsertIssue under its own span.
-func (s *core) upsertIssueTraced(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
+func (s *core) upsertIssueTraced(
+	ctx context.Context, projectID int64, processed event.ProcessedEvent,
+) (domain.Issue, int64, bool, error) {
 	_, span := tracing.Tracer().Start(ctx, "storage.UpsertIssue")
 	defer span.End()
 	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, 0, false, err
+		return domain.Issue{}, 0, false, wrapErr(err, "upsertIssueTraced")
 	}
 	span.SetAttributes(attribute.String("issue_id", issue.ID), attribute.Bool("regressed", regressed))
 	return issue, issueID, regressed, nil
@@ -398,11 +361,11 @@ func (s *core) persistFacetsFor(ctx context.Context, projectID, issueID int64, e
 
 	if err := s.insertFacets(ctx, projectID, issueID, evt); err != nil {
 		facetSpan.SetStatus(codes.Error, err.Error())
-		return err
+		return wrapErr(err, "persistFacetsFor")
 	}
 	if err := s.PersistFacets(ctx, issueID, extractFacets(evt)); err != nil {
 		facetSpan.SetStatus(codes.Error, err.Error())
-		return err
+		return wrapErr(err, "persistFacetsFor")
 	}
 	s.ensureRelease(ctx, projectID, evt)
 	return nil

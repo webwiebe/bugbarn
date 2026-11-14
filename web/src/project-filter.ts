@@ -62,7 +62,7 @@ export interface ProjectListControls {
 }
 
 /** Applies the filter, status and sort controls to the project rows. */
-export function applyProjectList(controls: ProjectListControls): void {
+function applyProjectList(controls: ProjectListControls): void {
   const { list, filter, sort, status } = controls;
   const rows = Array.from(list.querySelectorAll<HTMLElement>(".project-row"));
   const rawQuery = (filter?.value ?? "").trim();

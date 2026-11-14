@@ -1,6 +1,6 @@
 // HTTP layer: authenticated fetch helpers (CSRF retry, project/group headers),
 // session bootstrap, login/logout, and the login screen / OIDC redirect flow.
-import { normalizeObject, readString } from "./data.js";
+import { normalizeObject, readString } from "./records.js";
 import { errorMessage } from "./format.js";
 import type { RawRecord } from "./types.js";
 import {
@@ -84,7 +84,7 @@ export async function logout(): Promise<void> {
   renderLogin();
 }
 
-export async function fetchIAMBarnEndSessionURL(): Promise<string> {
+async function fetchIAMBarnEndSessionURL(): Promise<string> {
   try {
     const res = await fetch("/api/v1/runtime-config");
     if (!res.ok) return "";
@@ -145,12 +145,12 @@ export async function fetchJson(path: string, allowMissing = false, unscoped = f
   }
 }
 
-export function getCSRFToken(): string {
+function getCSRFToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)bugbarn_csrf=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-export async function refreshCSRFToken(): Promise<void> {
+async function refreshCSRFToken(): Promise<void> {
   await fetch(apiUrl("/api/v1/me"), { credentials: "include", headers: { Accept: "application/json" } });
 }
 
@@ -361,7 +361,7 @@ async function renderOIDCAccessDenied(err: { code: string; identity: string }): 
 }
 
 let oidcRedirectStarted = false;
-export async function maybeRedirectToOIDC(): Promise<void> {
+async function maybeRedirectToOIDC(): Promise<void> {
   if (oidcRedirectStarted) return;
   try {
     const res = await fetch("/api/v1/runtime-config");

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +28,7 @@ func TestWriteForwarder_IngestPOSTForwarded(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"error":"test"}`))
@@ -61,7 +62,7 @@ func TestWriteForwarder_IngestOPTIONSNotForwarded(t *testing.T) {
 	defer upstream.Close()
 
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/events", nil)
@@ -89,7 +90,7 @@ func TestWriteForwarder_LogPOSTForwarded(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/logs", strings.NewReader(`[{"level":"error","message":"oops"}]`))
@@ -118,7 +119,7 @@ func TestWriteForwarder_AnalyticsCollectForwarded(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/analytics/collect", strings.NewReader(`{"url":"https://example.com","referrer":""}`))
@@ -146,7 +147,7 @@ func TestWriteForwarder_GETNotForwarded(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	for _, path := range []string{"/api/v1/issues", "/api/v1/health", "/api/v1/projects"} {
 		rr := httptest.NewRecorder()
@@ -179,7 +180,7 @@ func TestWriteForwarder_AuthenticatedPOSTForwarded(t *testing.T) {
 
 	// No auth configured — acts like unauthenticated server (all protected routes open).
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	rr := httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"name":"v1.0.0"}`)
@@ -214,7 +215,7 @@ func TestWriteForwarder_LoginForwarded(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader(`{"username":"admin","password":"pass"}`))
@@ -247,7 +248,7 @@ func TestWriteForwarder_DeleteForwarded(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/test-proj", nil)
@@ -287,7 +288,7 @@ func TestWriteForwarder_WriterDown502(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(deadURL))
+	server.SetWriteForwarder(writeforward.NewProxy(deadURL))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{}`))

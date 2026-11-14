@@ -29,3 +29,8 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+[tool.coverage.run]
+source = ["bugbarn"]
+
+[tool.coverage.report]
+precision = 1

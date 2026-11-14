@@ -3,25 +3,11 @@ from __future__ import annotations
 import pathlib
 import re
 import unittest
-from unittest import mock
+
+from support import RecordingTransport, sent_headers
 
 from bugbarn import client
-from bugbarn.client import Envelope, Transport, capture_exception, init, shutdown
-
-
-class RecordingTransport:
-    def __init__(self):
-        self.events = []
-
-    def submit(self, event):
-        self.events.append(event)
-        return True
-
-    def flush(self, timeout: float = 2.0) -> bool:
-        return True
-
-    def close(self, timeout: float = 2.0) -> bool:
-        return True
+from bugbarn.client import Transport, capture_exception, init, shutdown
 
 
 class InitContextTests(unittest.TestCase):
@@ -94,40 +80,16 @@ class InitContextTests(unittest.TestCase):
 
     def test_project_is_sent_as_header(self):
         transport = Transport(api_key="k", endpoint="http://127.0.0.1:1/api/v1/events", project="slimmeagenda")
-        captured = {}
+        headers = sent_headers(transport)
 
-        def fake_urlopen(request, timeout):
-            captured["headers"] = {k.lower(): v for k, v in request.header_items()}
-            raise OSError("stop")
-
-        event = Envelope(timestamp="t", severityText="ERROR", body="b", exception_type="E", exception_message="m")
-        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
-            try:
-                transport._send(event)
-            except OSError:
-                pass
-        transport.close()
-
-        self.assertEqual(captured["headers"]["x-bugbarn-project"], "slimmeagenda")
-        self.assertEqual(captured["headers"]["x-bugbarn-api-key"], "k")
+        self.assertEqual(headers["x-bugbarn-project"], "slimmeagenda")
+        self.assertEqual(headers["x-bugbarn-api-key"], "k")
 
     def test_no_project_means_no_header(self):
         transport = Transport(api_key="k", endpoint="http://127.0.0.1:1/api/v1/events")
-        captured = {}
+        headers = sent_headers(transport)
 
-        def fake_urlopen(request, timeout):
-            captured["headers"] = {k.lower(): v for k, v in request.header_items()}
-            raise OSError("stop")
-
-        event = Envelope(timestamp="t", severityText="ERROR", body="b", exception_type="E", exception_message="m")
-        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
-            try:
-                transport._send(event)
-            except OSError:
-                pass
-        transport.close()
-
-        self.assertNotIn("x-bugbarn-project", captured["headers"])
+        self.assertNotIn("x-bugbarn-project", headers)
 
 
 class VersionTests(unittest.TestCase):

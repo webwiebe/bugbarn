@@ -8,7 +8,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 type fakeRepo struct {
@@ -201,7 +200,7 @@ func (f *fakeRepo) ListGroupProjects(_ context.Context, _ string) ([]domain.Proj
 	return nil, f.err
 }
 
-func (f *fakeRepo) ProjectUsageAll(_ context.Context) (map[int64]storage.ProjectUsage, error) {
+func (f *fakeRepo) ProjectUsageAll(_ context.Context) (map[int64]domain.ProjectUsage, error) {
 	return nil, f.err
 }
 

@@ -30,12 +30,9 @@ func cmdVibe(args []string) error {
 	}
 	id := positional[0]
 
-	client, err := newClient()
+	client, err := newProjectClient(*project)
 	if err != nil {
 		return err
-	}
-	if p := resolveProject(*project, client); p != "" {
-		client.project = p
 	}
 
 	issue, err := fetchIssue(client, id)

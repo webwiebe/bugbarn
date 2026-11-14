@@ -22,7 +22,7 @@ func TestMonitorCheckInCreatesThenUpdates(t *testing.T) {
 	}
 	t0 := time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)
 
-	res, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{
+	res, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{
 		ProjectID: proj.ID, Slug: "sweep", Status: domain.CheckInOK, Interval: dur(time.Hour), Grace: dur(10 * time.Minute), At: t0,
 	})
 	if err != nil {
@@ -37,7 +37,7 @@ func TestMonitorCheckInCreatesThenUpdates(t *testing.T) {
 
 	// A later check-in without timings keeps the stored configuration.
 	t1 := t0.Add(time.Hour)
-	res, err = s.RecordMonitorCheckIn(ctx, MonitorCheckIn{ProjectID: proj.ID, Slug: "sweep", Status: domain.CheckInOK, At: t1})
+	res, err = s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{ProjectID: proj.ID, Slug: "sweep", Status: domain.CheckInOK, At: t1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestMonitorCheckInCreatesThenUpdates(t *testing.T) {
 	}
 
 	// Sent timings replace the stored ones.
-	res, err = s.RecordMonitorCheckIn(ctx, MonitorCheckIn{
+	res, err = s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{
 		ProjectID: proj.ID, Slug: "sweep", Status: domain.CheckInOK, Interval: dur(2 * time.Hour), At: t1,
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func TestMonitorCheckInStateFollowsStatus(t *testing.T) {
 	ctx := context.Background()
 	proj, _ := s.CreateProject(ctx, "geo", "geo")
 	t0 := time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)
-	in := MonitorCheckIn{ProjectID: proj.ID, Slug: "worker", Interval: dur(time.Minute), At: t0}
+	in := domain.MonitorCheckIn{ProjectID: proj.ID, Slug: "worker", Interval: dur(time.Minute), At: t0}
 
 	in.Status = domain.CheckInOK
 	if _, err := s.RecordMonitorCheckIn(ctx, in); err != nil {
@@ -94,7 +94,7 @@ func TestMonitorCheckInUnknownWithoutIntervalIsNotFound(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 	proj, _ := s.CreateProject(ctx, "geo", "geo")
-	_, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{ProjectID: proj.ID, Slug: "ghost", Status: domain.CheckInOK, At: time.Now()})
+	_, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{ProjectID: proj.ID, Slug: "ghost", Status: domain.CheckInOK, At: time.Now()})
 	if !errors.Is(err, apperr.ErrNotFound) {
 		t.Fatalf("unknown monitor: %v", err)
 	}
@@ -110,22 +110,22 @@ func TestMonitorLimitAndIsolation(t *testing.T) {
 	b, _ := s.CreateProject(ctx, "b", "b")
 	now := time.Now().UTC()
 	for i := 0; i < MaxMonitorsPerProject; i++ {
-		_, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{
+		_, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{
 			ProjectID: a.ID, Slug: fmt.Sprintf("job-%03d", i), Status: domain.CheckInOK, Interval: dur(time.Hour), At: now,
 		})
 		if err != nil {
 			t.Fatalf("monitor %d: %v", i, err)
 		}
 	}
-	_, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{ProjectID: a.ID, Slug: "one-too-many", Status: domain.CheckInOK, Interval: dur(time.Hour), At: now})
+	_, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{ProjectID: a.ID, Slug: "one-too-many", Status: domain.CheckInOK, Interval: dur(time.Hour), At: now})
 	if !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("over the limit: %v", err)
 	}
 	// The limit is per project, and an existing monitor still accepts check-ins.
-	if _, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{ProjectID: b.ID, Slug: "job-000", Status: domain.CheckInOK, Interval: dur(time.Hour), At: now}); err != nil {
+	if _, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{ProjectID: b.ID, Slug: "job-000", Status: domain.CheckInOK, Interval: dur(time.Hour), At: now}); err != nil {
 		t.Fatalf("other project: %v", err)
 	}
-	if _, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{ProjectID: a.ID, Slug: "job-000", Status: domain.CheckInOK, At: now}); err != nil {
+	if _, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{ProjectID: a.ID, Slug: "job-000", Status: domain.CheckInOK, At: now}); err != nil {
 		t.Fatalf("existing monitor at the limit: %v", err)
 	}
 	listA, _ := s.ListMonitors(ctx, a.ID)

@@ -12,13 +12,12 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 // Repository is the storage surface the service needs.
 type Repository interface {
-	ErrorTimelineRows(ctx context.Context, since time.Time) ([]storage.TimelineRow, error)
+	ErrorTimelineRows(ctx context.Context, since time.Time) ([]domain.TimelineRow, error)
 }
 
 // rangeSpec describes one selectable range: the bucket width and bucket count.
@@ -121,9 +120,7 @@ func (s *Service) ErrorTimeline(ctx context.Context, rangeName string) (Timeline
 	rows, err := s.repo.ErrorTimelineRows(refreshCtx, first)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "error timeline", "range", rangeName, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "error timeline", err, "range", rangeName)
 		if e, ok := s.cache[key]; ok {
 			return e.value, nil
 		}
@@ -153,7 +150,7 @@ func alignedStart(t time.Time, spec rangeSpec) time.Time {
 }
 
 // build folds hourly rows into zero-filled buckets starting at first.
-func build(rangeName string, spec rangeSpec, first time.Time, rows []storage.TimelineRow) Timeline {
+func build(rangeName string, spec rangeSpec, first time.Time, rows []domain.TimelineRow) Timeline {
 	out := Timeline{
 		Range:         rangeName,
 		BucketSeconds: int64(spec.step / time.Second),

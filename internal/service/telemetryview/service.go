@@ -179,6 +179,6 @@ func (s *Service) fail(ctx context.Context, span trace.Span, op string, err erro
 		return err
 	}
 	tracing.SetError(span, err)
-	s.logger.ErrorContext(ctx, "telemetry read failed", "op", op, "error", err)
+	apperr.LogFailure(ctx, s.logger, "telemetry read failed", err, "op", op)
 	return err
 }

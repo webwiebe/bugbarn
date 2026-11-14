@@ -13,7 +13,7 @@ and `cmd/bugbarn/reader.go` (reader).
   digest, analytics rollup, WAL checkpoint.
 - `"reader"` opens the store read-only and never writes SQLite. `BUGBARN_WRITER_URL` is
   required. Every non-GET request it cannot answer from the read store (issue mutations,
-  releases, login/logout, session writes) is proxied to the writer by `api.WriteForwarder`.
+  releases, login/logout, session writes) is proxied to the writer by `writeforward.Proxy`.
 
 Production runs one writer and several readers on the same PVC; see `deploy/CLAUDE.md`.
 
@@ -24,8 +24,8 @@ happens next is fixed at startup:
 
 | `BUGBARN_SPOOL_DIR` set? | `BUGBARN_REDIS_QUEUE_URL` set? | Path |
 |---|---|---|
-| no | any | Synchronous proxy to the writer (`WriteForwarder`, 30s). A writer outage returns a plain 502. |
-| yes | no | Append to the reader's `forward.ndjson`, reply 202, drain by POSTing to `BUGBARN_WRITER_URL` (`api.SpoolForwarder`). |
+| no | any | Synchronous proxy to the writer (`writeforward.Proxy`, 30s). A writer outage returns a plain 502. |
+| yes | no | Append to the reader's `forward.ndjson`, reply 202, drain by POSTing to `BUGBARN_WRITER_URL` (`writeforward.Spool`). |
 | yes | yes | Same append and 202, drain by `LPUSH` to the Redis list `bugbarn:write-queue` (`queue.Publish`). |
 
 The reader only gets a spool when `BUGBARN_SPOOL_DIR` is set explicitly in the
@@ -41,14 +41,19 @@ dropped with a warning.
 
 ## Writer side
 
-Two consumers persist events, and both go through `worker.ProcessRecord`
-(normalize, scrub, fingerprint), symbolication and `storage.PersistProcessedEvent`:
+Two consumers persist events. Both call `ingestproc.Processor.PersistRecord`: parse
+(`worker.ProcessRecordCtx`), project resolution, holding for a pending project,
+symbolication, `storage.PersistProcessedEvent` and the domain event. Each rule exists once
+there. The consumers keep only their delivery policy:
 
-- **Legacy file-spool worker** (`cmd/bugbarn/worker.go`, 1s tick). Drains
+- **Legacy file-spool worker** (`internal/worker/spool_worker.go`, 1s tick). Drains
   `internal/mutqueue` first, then `ingest.ndjson` from its cursor. Used by direct writer
-  ingest, HTTP-mode reader replays, Alertmanager and `POST /api/v1/releases`. Transient
-  lock errors retry forever; other failures retry 3 times, then go to
-  `deadletter.ndjson`. It creates projects with `EnsureProject` and never holds events.
+  ingest, HTTP-mode reader replays, Alertmanager and `POST /api/v1/releases`. A transient
+  outcome (database busy or locked, or an expired deadline) stops the batch and retries on
+  the next tick without spending the retry budget; other failures retry 3 times, then go
+  to `deadletter.ndjson`. A held outcome advances the cursor like a success. Retries log at
+  WARN and only the dead letter logs at ERROR. It opens spans (`worker.ResolveProject`,
+  `worker.Symbolicate`, `worker.Persist`) through `Processor.SetTracer`; the Redis consumer sets none.
 - **Redis consumer** (`internal/ingestproc`, spec 007). `BLMOVE`s each entry into the
   writer's processing list (`bugbarn:write-queue:processing:writer`), runs `PersistRecord`
   with up to 5 retries on transient errors, and acks with `LREM` once every item has a
@@ -63,17 +68,29 @@ Two consumers persist events, and both go through `worker.ProcessRecord`
   `BUGBARN_AUTO_APPROVE_PROJECTS` off, events for an unapproved project are stored via
   `HoldEvent` and replayed by `ingestproc.Replayer` on approval.
 
-The two copies of the pipeline differ (project creation, held events, transient-error
-detection). They are meant to converge in spec 007 phase 5; until then a pipeline change
-usually has to land in both. The pipeline lives in `ingestproc` because `storage` imports
-`worker`, so `worker` cannot hold anything that needs `storage`.
+A change to what happens to a record belongs in `Processor.PersistRecord` and reaches both
+consumers. A change to retries, acks, the cursor or the dead letter belongs to one consumer.
+The pipeline lives in `ingestproc` because `storage` imports `worker`, so `worker` cannot
+hold anything that needs `storage`. The spool worker therefore takes the pipeline and the
+issue store as interfaces (`worker.RecordPersister`, `worker.IssueMutator`);
+`cmd/bugbarn/spool_worker.go` adapts `ingestproc.Processor` to the first, and `*storage.Store`
+satisfies the second. `cmd/bugbarn/worker_once.go` (`replayPending`) stays in `cmd` because it
+calls `ingestproc` directly and returns the CLI summary. `storage.IsTransient` is the one rule for a retryable
+write failure, by SQLite result code and not by error text.
 
 Direct log ingest on the writer skips the spool and inserts synchronously.
 `internal/logparse` parses pino-style bodies for both the HTTP endpoint and the consumer.
 
 `internal/mutqueue` (writer only) is the fallback for admin issue mutations: the handler
 tries the store for 5s, then appends to `mutations.ndjson` and returns 202
-`{"queued":true}`.
+`{"queued":true}`. `Drain` claims the file as `mutations.processing.ndjson` and writes a
+byte-offset cursor after each handled line, so a failed drain resumes after the last
+applied mutation. A line that does not parse goes to `mutations.deadletter.ndjson` with
+one ERROR log.
+
+A record with no project slug belongs to the default project. A record whose slug cannot
+be resolved (store error) is a failure, never filed under the default project: transient
+causes retry, others count as persist errors.
 
 ## Response contract (`ingestresp`)
 
@@ -86,7 +103,7 @@ SDKs decide whether to retry from the status and body alone:
 `ingest.Handler` runs `normalize.Validate` before replying, so a 202 means the payload
 will parse. The reader's spool forwarder does the same for events and for JSON log bodies
 (`logparse.DecodeJSONBody`: a `logs` array, #263). Known exceptions still answer outside the contract: route-level API-key checks
-(plain 401), a reader log without a project (plain 400) and `WriteForwarder`. The forwarder
+(plain 401), a reader log without a project (plain 400) and `writeforward.Proxy`. The proxy
 answers 503 `ingest_unavailable` only when the dial failed (the writer cannot have seen the
 request) and a plain 502 for anything after a connection existed, so an SDK retry never
 duplicates an event. Each failure is logged at warn and tagged on the span with

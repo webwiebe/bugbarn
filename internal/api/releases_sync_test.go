@@ -22,7 +22,7 @@ func TestServeReleasesRootCreatesSynchronouslyWithoutIngestHandler(t *testing.T)
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/releases", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		server.serveReleasesRoot(rr, req)
+		server.ServeHTTP(rr, req)
 		return rr
 	}
 
@@ -32,7 +32,7 @@ func TestServeReleasesRootCreatesSynchronouslyWithoutIngestHandler(t *testing.T)
 	}
 
 	list := httptest.NewRecorder()
-	server.serveReleasesRoot(list, httptest.NewRequest(http.MethodGet, "/api/v1/releases", nil))
+	server.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/v1/releases", nil))
 	var got struct {
 		Releases []struct {
 			Name       string `json:"name"`
@@ -51,7 +51,7 @@ func TestServeReleasesRootCreatesSynchronouslyWithoutIngestHandler(t *testing.T)
 	}
 
 	del := httptest.NewRecorder()
-	server.serveReleasesRoot(del, httptest.NewRequest(http.MethodDelete, "/api/v1/releases", nil))
+	server.ServeHTTP(del, httptest.NewRequest(http.MethodDelete, "/api/v1/releases", nil))
 	if del.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("DELETE status = %d, want 405", del.Code)
 	}

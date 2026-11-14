@@ -1,12 +1,12 @@
 // Stacking for the error timeline chart. No imports, so the unit test can load
 // it straight from source.
 
-export interface TimelineBucket {
+interface TimelineBucket {
   start: string;
   counts: Record<string, number>;
 }
 
-export interface TimelineProject {
+interface TimelineProject {
   slug: string;
   name: string;
   total: number;
@@ -27,7 +27,7 @@ export interface Series {
   isOther: boolean;
 }
 
-export interface Segment {
+interface Segment {
   key: string;
   name: string;
   count: number;

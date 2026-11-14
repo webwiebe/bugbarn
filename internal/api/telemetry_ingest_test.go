@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
-	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetry"
 )
@@ -60,9 +60,9 @@ func TestTelemetryIngestEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	infraIngest := createKey(t, store, infra.ID, storage.APIKeyScopeIngest)
-	otherIngest := createKey(t, store, other.ID, storage.APIKeyScopeIngest)
-	full := createKey(t, store, other.ID, storage.APIKeyScopeFull)
+	infraIngest := createKey(t, store, infra.ID, domain.APIKeyScopeIngest)
+	otherIngest := createKey(t, store, other.ID, domain.APIKeyScopeIngest)
+	full := createKey(t, store, other.ID, domain.APIKeyScopeFull)
 
 	authorizer := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")
@@ -118,41 +118,5 @@ func TestTelemetryIngestEndpoint(t *testing.T) {
 	server.SetTelemetry(nil, "infra")
 	if got := post(http.MethodPost, telemetryMetricsPath, infraIngest, "{}"); got != http.StatusServiceUnavailable {
 		t.Errorf("no ingester: status %d, want 503", got)
-	}
-}
-
-func TestKindForPathTelemetry(t *testing.T) {
-	t.Parallel()
-	for path, want := range map[string]string{
-		telemetrySecurityPath:          queue.KindSecurity,
-		telemetryMetricsPath + "?x=1":  queue.KindMetrics,
-		"/api/v1/telemetry/other":      "",
-		"/api/v1/telemetry/security/x": "",
-	} {
-		if got := kindForPath(path); got != want {
-			t.Errorf("kindForPath(%q) = %q, want %q", path, got, want)
-		}
-	}
-}
-
-// Readers spool telemetry into the Redis queue with its own kind; the
-// consumer routes on kind and needs no project slug.
-func TestRedisSpoolForwarderTelemetry(t *testing.T) {
-	sf, q := newTestRedisForwarder(t)
-	req := httptest.NewRequest(http.MethodPost, telemetrySecurityPath, strings.NewReader("LINE"))
-	rec := httptest.NewRecorder()
-	sf.Forward(rec, req)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("Forward status = %d, want 202", rec.Code)
-	}
-	if err := sf.DrainOnce(context.Background()); err != nil {
-		t.Fatalf("DrainOnce: %v", err)
-	}
-	items, err := q.Consume(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 1 || items[0].Kind != queue.KindSecurity {
-		t.Fatalf("items = %+v, want one security item", items)
 	}
 }

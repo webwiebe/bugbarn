@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
@@ -25,32 +24,23 @@ func (s *Server) serveSurfaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"surfaces": rows})
 }
 
-func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
-	suffix := strings.TrimPrefix(r.URL.Path, "/api/v1/facets")
-	suffix = strings.TrimPrefix(suffix, "/")
-
-	if suffix == "" {
-		projectID, ok := domain.ProjectIDFromContext(r.Context())
-		if !ok {
-			projectID = s.projects.DefaultProjectID()
-		}
-		keys, err := s.issues.ListFacetKeys(r.Context(), projectID)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		if keys == nil {
-			keys = []string{}
-		}
-		writeJSON(w, map[string]any{"keys": keys})
+// listFacetKeys answers GET /api/v1/facets: the attribute keys seen in the project.
+func (s *Server) listFacetKeys(w http.ResponseWriter, r *http.Request) {
+	keys, err := s.issues.ListFacetKeys(r.Context(), s.scopedProjectID(r))
+	if err != nil {
+		writeServiceError(w, err)
 		return
 	}
-
-	projectID, ok := domain.ProjectIDFromContext(r.Context())
-	if !ok {
-		projectID = s.projects.DefaultProjectID()
+	if keys == nil {
+		keys = []string{}
 	}
-	values, err := s.issues.ListFacetValues(r.Context(), projectID, suffix)
+	writeJSON(w, map[string]any{"keys": keys})
+}
+
+// listFacetValues answers GET /api/v1/facets/{key}: the values seen for one key.
+func (s *Server) listFacetValues(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	values, err := s.issues.ListFacetValues(r.Context(), s.scopedProjectID(r), key)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -58,5 +48,13 @@ func (s *Server) serveFacetsRoute(w http.ResponseWriter, r *http.Request) {
 	if values == nil {
 		values = []string{}
 	}
-	writeJSON(w, map[string]any{"key": suffix, "values": values})
+	writeJSON(w, map[string]any{"key": key, "values": values})
+}
+
+// scopedProjectID is the request's resolved project, or the default project.
+func (s *Server) scopedProjectID(r *http.Request) int64 {
+	if id, ok := domain.ProjectIDFromContext(r.Context()); ok {
+		return id
+	}
+	return s.projects.DefaultProjectID()
 }

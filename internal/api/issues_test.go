@@ -20,7 +20,6 @@ import (
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func setupTestServer(t *testing.T) (*Server, *storage.Store) {
@@ -40,9 +39,9 @@ func setupTestServer(t *testing.T) (*Server, *storage.Store) {
 	}, store
 }
 
-func persistTestIssue(t *testing.T, store *storage.Store) storage.Issue {
+func persistTestIssue(t *testing.T, store *storage.Store) domain.Issue {
 	t.Helper()
-	pe := worker.ProcessedEvent{
+	pe := event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: time.Now().UTC(),
 			ReceivedAt: time.Now().UTC().Add(time.Second),
@@ -83,14 +82,14 @@ func TestMuteIssueEndpoint(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPatch, "/api/v1/issues/"+issue.ID+"/mute", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rr := httptest.NewRecorder()
-			srv.muteIssue(rr, req)
+			srv.ServeHTTP(rr, req)
 
 			if rr.Code != tc.wantStatus {
 				t.Errorf("status: got %d, want %d (body: %s)", rr.Code, tc.wantStatus, rr.Body.String())
 			}
 			if tc.wantStatus == http.StatusOK {
 				var resp struct {
-					Issue storage.Issue `json:"issue"`
+					Issue domain.Issue `json:"issue"`
 				}
 				if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 					t.Fatalf("decode response: %v", err)
@@ -119,14 +118,14 @@ func TestUnmuteIssueEndpoint(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/issues/"+issue.ID+"/unmute", http.NoBody)
 	rr := httptest.NewRecorder()
-	srv.unmuteIssue(rr, req)
+	srv.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d, body: %s", rr.Code, rr.Body.String())
 	}
 
 	var resp struct {
-		Issue storage.Issue `json:"issue"`
+		Issue domain.Issue `json:"issue"`
 	}
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -173,9 +172,9 @@ func TestListIssuesIncludesHourlyCounts(t *testing.T) {
 	}
 }
 
-func persistTestIssueWithFingerprint(t *testing.T, store *storage.Store, fp, message string) storage.Issue {
+func persistTestIssueWithFingerprint(t *testing.T, store *storage.Store, fp, message string) domain.Issue {
 	t.Helper()
-	pe := worker.ProcessedEvent{
+	pe := event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: time.Now().UTC(),
 			ReceivedAt: time.Now().UTC().Add(time.Second),
@@ -260,7 +259,7 @@ func TestListIssuesRegressedFirst(t *testing.T) {
 	}
 	fpB := fingerprint.Fingerprint(evtB)
 	snapB := fingerprint.SnapshotFor(evtB)
-	issueB, _, _, _, err := store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+	issueB, _, _, _, err := store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 		Event:               evtB,
 		Fingerprint:         fpB,
 		FingerprintMaterial: snapB.Material,
@@ -280,7 +279,7 @@ func TestListIssuesRegressedFirst(t *testing.T) {
 		Message:    "will regress error",
 		Exception:  event.Exception{Type: "TestError", Message: "will regress error"},
 	}
-	regressedIssue, _, _, regressed, err := store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+	regressedIssue, _, _, regressed, err := store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 		Event:               regressEvt,
 		Fingerprint:         fpB,
 		FingerprintMaterial: snapB.Material,
@@ -332,7 +331,7 @@ func TestResolveIssueInNonDefaultProject(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	pe := worker.ProcessedEvent{
+	pe := event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: time.Now().UTC(),
 			ReceivedAt: time.Now().UTC().Add(time.Second),
@@ -360,7 +359,7 @@ func TestResolveIssueInNonDefaultProject(t *testing.T) {
 	}
 
 	var resp struct {
-		Issue storage.Issue `json:"issue"`
+		Issue domain.Issue `json:"issue"`
 	}
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)

@@ -80,6 +80,7 @@ flowchart TD
 | Storage | `internal/storage/` | SQLite persistence: upsert issues, insert events, persist facets, manage projects, API keys, alerts, log entries |
 | API Server | `internal/api/server.go` | HTTP router; session and API key authentication; CSRF middleware; REST endpoints; SSE streams |
 | Log Stream Hub | `internal/logstream/hub.go` | In-memory fan-out of log entries to SSE subscribers; buffer 64 entries; non-blocking sends |
+| Mail (SMTP delivery) | `internal/mail` | Shared by digest, alerts and ingest-health notifications |
 | Digest Scheduler | `internal/digest/scheduler.go` | Weekly summary delivery via SMTP and/or webhook |
 | Web UI | `web/src/` | TypeScript single-page application; consumes REST and SSE endpoints |
 

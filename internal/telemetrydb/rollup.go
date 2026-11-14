@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/tick"
 )
 
 const (
@@ -49,16 +50,7 @@ func (d *DB) RunMetricsJobs(ctx context.Context, interval time.Duration, ret Ret
 		interval = DefaultMaintenanceInterval
 	}
 	log = log.With("component", "telemetrydb", "db", d.spec.Name)
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			d.metricsPass(ctx, ret, log)
-		}
-	}
+	tick.Run(ctx, interval, func(time.Time) { d.metricsPass(ctx, ret, log) })
 }
 
 func (d *DB) metricsPass(ctx context.Context, ret Retention, log *slog.Logger) {

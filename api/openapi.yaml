@@ -16,6 +16,10 @@ info:
 
     Ingest endpoints (`/api/v1/events`, `/api/v1/logs`, `/api/v1/analytics/collect`) use
     wildcard CORS and accept ingest-scoped API keys so browser SDKs can POST from any origin.
+
+    The writer-internal endpoints under `/internal/` (HMAC-signed session and API key
+    touch calls between reader and writer pods, and the database export) are not part of
+    this API and are not described here.
   version: 1.0.0
   contact:
     name: BugBarn
@@ -60,6 +64,18 @@ tags:
     description: Web analytics queries
   - name: Setup
     description: Project setup and onboarding
+  - name: Key Requests
+    description: Agent requests for API keys and their approval
+  - name: Monitors
+    description: Scheduled-job monitors and their check-ins
+  - name: Detection
+    description: Detection rules for security and metric telemetry
+  - name: Telemetry
+    description: Host security and metric telemetry, and browser spans
+  - name: Aliases
+    description: Alternative slugs that resolve to a project
+  - name: Admin
+    description: Administrative actions
 
 security:
   - sessionCookie: []
@@ -653,6 +669,40 @@ paths:
                   hasMore:
                     type: boolean
 
+  /api/v1/issues/{issueId}/releases:
+    get:
+      operationId: listIssueReleases
+      tags: [Issues]
+      summary: Releases an issue occurs in
+      description: Counted over the issue's latest events. `sampled_events` says how many were counted.
+      parameters:
+        - $ref: "#/components/parameters/issueId"
+      responses:
+        "200":
+          description: Releases with event counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  releases:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        release:
+                          type: string
+                        events:
+                          type: integer
+                        first_seen:
+                          type: string
+                          format: date-time
+                        last_seen:
+                          type: string
+                          format: date-time
+                  sampled_events:
+                    type: integer
+
   /api/v1/issues/{issueId}/resolve:
     post:
       operationId: resolveIssue
@@ -1124,6 +1174,31 @@ paths:
                     type: boolean
 
   /api/v1/groups/{slug}/projects:
+    get:
+      operationId: listGroupProjects
+      tags: [Groups]
+      summary: List the projects in a group
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Projects in the group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "404":
+          description: Unknown group
     post:
       operationId: assignProjectToGroup
       tags: [Groups]
@@ -1427,6 +1502,31 @@ paths:
       operationId: updateSettings
       tags: [Settings]
       summary: Update project settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    type: object
+                    additionalProperties:
+                      type: string
+    post:
+      operationId: updateSettingsPost
+      tags: [Settings]
+      summary: Update project settings (same as PUT)
+      description: Accepted for clients that cannot send PUT. The behavior is identical to `PUT /api/v1/settings`.
       requestBody:
         required: true
         content:
@@ -1786,6 +1886,1266 @@ paths:
                     items:
                       $ref: "#/components/schemas/DropoutStat"
 
+  # ──────────────────────────────────────────────
+  # Spec and docs
+  # ──────────────────────────────────────────────
+  /api/v1/openapi.yaml:
+    get:
+      operationId: getOpenAPISpec
+      tags: [Health]
+      summary: This OpenAPI document
+      security: []
+      responses:
+        "200":
+          description: The OpenAPI 3.1 document in YAML, with wildcard CORS
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /api/docs:
+    get:
+      operationId: getAPIDocs
+      tags: [Health]
+      summary: Interactive API reference page
+      security: []
+      responses:
+        "200":
+          description: HTML page that renders `/api/v1/openapi.yaml`
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /.well-known/iambarn-theme.json:
+    get:
+      operationId: getIAMBarnTheme
+      tags: [Auth]
+      summary: IAMBarn relying-party theme manifest
+      description: Read by IAMBarn to skin its login page when it redirects a user here for OIDC.
+      security: []
+      responses:
+        "200":
+          description: Theme manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  # ──────────────────────────────────────────────
+  # OIDC browser flow
+  # ──────────────────────────────────────────────
+  /api/v1/oidc/login:
+    get:
+      operationId: oidcLogin
+      tags: [Auth]
+      summary: Start the OIDC authorization-code flow
+      description: |
+        Redirects the browser to the IAMBarn authorize endpoint and sets short-lived
+        state, nonce and return-to cookies (PKCE with S256).
+      security: []
+      parameters:
+        - name: prompt
+          in: query
+          schema:
+            type: string
+            enum: [login, select_account, none]
+          description: Re-prompt behaviour passed on to the IdP. Other values are ignored.
+        - name: return_to
+          in: query
+          schema:
+            type: string
+          description: Local path to return to after login. Anything that is not a local path becomes `/`.
+      responses:
+        "302":
+          description: Redirect to the IdP authorize endpoint
+        "404":
+          description: OIDC is not configured
+        "503":
+          description: The authorize URL could not be built
+
+  /api/v1/oidc/callback:
+    get:
+      operationId: oidcCallback
+      tags: [Auth]
+      summary: OIDC redirect target
+      description: |
+        Completes the authorization-code flow, creates a session and redirects the browser
+        back to where it started. An IdP error or a denied identity redirects to the app with
+        an error query instead.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the return path, or to the app with an error
+        "400":
+          description: State, nonce or code is missing or does not match the flow cookies
+        "401":
+          description: The code exchange failed
+        "404":
+          description: OIDC is not configured
+        "503":
+          description: Sessions are unavailable
+
+  /api/v1/oidc/logged-out:
+    get:
+      operationId: oidcLoggedOut
+      tags: [Auth]
+      summary: Landing page of the IdP logout redirect
+      description: |
+        Clears the local session, CSRF and auth-method cookies, deletes the server-side
+        session row and redirects to `/`. No authentication is required.
+      security: []
+      responses:
+        "302":
+          description: Redirect to `/`
+
+  # ──────────────────────────────────────────────
+  # Ingest: alertmanager, telemetry, monitors
+  # ──────────────────────────────────────────────
+  /api/v1/alertmanager:
+    post:
+      operationId: ingestAlertmanager
+      tags: [Ingest]
+      summary: Ingest an Alertmanager webhook
+      description: |
+        Accepts Alertmanager's batch webhook format and records one event per alert.
+        Requires an ingest-scoped or full-scoped API key. The response follows the same
+        accepted or dropped contract as `POST /api/v1/events`.
+      security:
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/XBugBarnProject"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Alertmanager webhook envelope (version 4)
+              additionalProperties: true
+              properties:
+                alerts:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestAccepted"
+        "400":
+          description: Dropped, malformed payload (permanent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "401":
+          description: Dropped, missing or invalid API key (permanent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "405":
+          description: Method not allowed (Allow header lists POST)
+        "413":
+          description: Dropped, payload exceeds the size limit (permanent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "429":
+          description: Dropped, ingest buffer full (transient, retry after Retry-After)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "503":
+          description: Dropped, ingest pipeline unavailable (transient, retry after Retry-After)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+
+  /api/v1/telemetry/security:
+    post:
+      operationId: ingestSecurityTelemetry
+      tags: [Telemetry]
+      summary: Ingest a batch of security log records
+      description: |
+        Receives Vector batches. Accepts a full-scoped API key, or an ingest-scoped key bound to
+        the telemetry project. No CORS: the senders are agents, never browsers.
+      security:
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+          application/x-ndjson:
+            schema:
+              type: string
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestAccepted"
+        "400":
+          description: Dropped, malformed body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "401":
+          description: Dropped, key missing, invalid or not allowed to post telemetry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "413":
+          description: Dropped, body too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "503":
+          description: Dropped, telemetry store unavailable (retry after Retry-After)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+    get:
+      operationId: searchSecurityTelemetry
+      tags: [Telemetry]
+      summary: Search security log records
+      description: Newest first. Page with `cursor` set to the previous `next_cursor`.
+      parameters:
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: host
+          in: query
+          schema:
+            type: string
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: src_ip
+          in: query
+          schema:
+            type: string
+        - name: user
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: integer
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Free-text filter
+        - $ref: "#/components/parameters/telemetryFrom"
+        - $ref: "#/components/parameters/telemetryTo"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: cursor
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Return rows older than this row id
+      responses:
+        "200":
+          description: Matching rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SecurityRow"
+                  next_cursor:
+                    type: [string, "null"]
+                    description: Cursor of the next page, null when the page was not full
+        "400":
+          description: A query parameter is malformed
+        "503":
+          description: Telemetry is not configured on this server
+
+  /api/v1/telemetry/metrics:
+    post:
+      operationId: ingestMetricsTelemetry
+      tags: [Telemetry]
+      summary: Ingest a batch of host metrics
+      description: Same authentication and response contract as `POST /api/v1/telemetry/security`.
+      security:
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+          application/x-ndjson:
+            schema:
+              type: string
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestAccepted"
+        "400":
+          description: Dropped, malformed body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "401":
+          description: Dropped, key missing, invalid or not allowed to post telemetry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "413":
+          description: Dropped, body too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+        "503":
+          description: Dropped, telemetry store unavailable (retry after Retry-After)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestDropped"
+
+  /api/v1/monitors/{slug}/check-ins:
+    post:
+      operationId: recordMonitorCheckIn
+      tags: [Monitors]
+      summary: Report the result of a scheduled job
+      description: |
+        A job calls this with a project key to report `ok` or `error`. Sending `interval`
+        (or `schedule`) creates the monitor on its first check-in and updates it afterwards.
+        A check-in that does not arrive within the interval plus grace marks the monitor missed.
+        The project is the one the key is bound to, or the `X-BugBarn-Project` header for an unbound key.
+      security:
+        - apiKey: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Monitor slug
+        - $ref: "#/components/parameters/XBugBarnProject"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MonitorCheckInRequest"
+      responses:
+        "200":
+          description: Check-in recorded on an existing monitor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitorCheckInResult"
+        "201":
+          description: Check-in recorded and the monitor was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitorCheckInResult"
+        "400":
+          description: Invalid body, status, duration or schedule, or no project could be resolved
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: The key is bound to another project
+        "404":
+          description: Unknown or inactive project
+        "405":
+          description: Method not allowed (Allow header lists POST)
+        "503":
+          description: Monitors unavailable, or the key lookup failed (retry)
+
+  # ──────────────────────────────────────────────
+  # Setup key requests (public)
+  # ──────────────────────────────────────────────
+  /api/v1/setup/{slug}/key-requests:
+    post:
+      operationId: createKeyRequest
+      tags: [Setup]
+      summary: Ask for a new API key for an existing project
+      description: |
+        An agent opens a request, an admin approves it in the dashboard, and the agent polls
+        for the key. The request holds no key. Rate limited per client address.
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Slug of an existing, active project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  description: Repository and environment, shown to the admin
+      responses:
+        "202":
+          description: Request opened
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  pollSecret:
+                    type: string
+                    description: One-time secret for polling, sent in `X-BugBarn-Poll-Secret`
+                  status:
+                    type: string
+                    enum: [pending]
+                  expiresAt:
+                    type: string
+                    format: date-time
+        "400":
+          description: Invalid JSON body
+        "404":
+          description: Unknown or inactive project
+        "405":
+          description: Method not allowed (Allow header lists GET and POST)
+        "429":
+          description: Too many setup requests
+        "503":
+          description: Key requests are not available
+
+  /api/v1/setup/{slug}/key-requests/{id}:
+    get:
+      operationId: pollKeyRequest
+      tags: [Setup]
+      summary: Poll a key request
+      description: |
+        Returns the key exactly once after approval, then `claimed`. Requests expire after 24 hours.
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-BugBarn-Poll-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The `pollSecret` returned when the request was opened
+      responses:
+        "200":
+          description: Current state of the request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [pending, approved, denied, claimed]
+                  apiKey:
+                    type: string
+                    description: Present once, on the first poll after approval
+        "401":
+          description: The poll secret is missing or wrong
+        "404":
+          description: Unknown request
+        "405":
+          description: Method not allowed (Allow header lists GET and POST)
+        "410":
+          description: The request expired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [expired]
+        "429":
+          description: Too many setup requests
+
+  # ──────────────────────────────────────────────
+  # Key requests (admin)
+  # ──────────────────────────────────────────────
+  /api/v1/key-requests:
+    get:
+      operationId: listKeyRequests
+      tags: [Key Requests]
+      summary: List open key requests
+      description: A key bound to a project sees the requests of that project only.
+      responses:
+        "200":
+          description: Pending requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keyRequests:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/KeyRequest"
+
+  /api/v1/key-requests/{id}/approve:
+    post:
+      operationId: approveKeyRequest
+      tags: [Key Requests]
+      summary: Approve a key request
+      description: Needs a signed-in admin session. An API key of any scope is refused.
+      parameters:
+        - $ref: "#/components/parameters/keyRequestId"
+      responses:
+        "200":
+          description: Approved. The key is minted on the requester's next poll.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "403":
+          description: No admin session
+        "404":
+          description: Unknown request
+        "409":
+          description: The request is no longer pending
+
+  /api/v1/key-requests/{id}/deny:
+    post:
+      operationId: denyKeyRequest
+      tags: [Key Requests]
+      summary: Deny a key request
+      description: Needs a signed-in admin session. An API key of any scope is refused.
+      parameters:
+        - $ref: "#/components/parameters/keyRequestId"
+      responses:
+        "200":
+          description: Denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "403":
+          description: No admin session
+        "404":
+          description: Unknown request
+        "409":
+          description: The request is no longer pending
+
+  # ──────────────────────────────────────────────
+  # Monitors
+  # ──────────────────────────────────────────────
+  /api/v1/monitors:
+    get:
+      operationId: listMonitors
+      tags: [Monitors]
+      summary: List monitors
+      description: |
+        The monitors of the scoped project, or of every project in the caller's scope.
+        Monitors that need attention (`error`, `missed`) come first.
+      parameters:
+        - $ref: "#/components/parameters/XBugBarnProject"
+      responses:
+        "200":
+          description: Monitors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  monitors:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Monitor"
+        "503":
+          description: Monitors unavailable
+
+  /api/v1/monitors/{slug}:
+    delete:
+      operationId: deleteMonitor
+      tags: [Monitors]
+      summary: Delete a monitor
+      description: Deletes the monitor in the scoped project. Its issues stay. Send `X-BugBarn-Project`.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/XBugBarnProject"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          description: No project in scope
+        "404":
+          description: Unknown monitor
+        "503":
+          description: Monitors unavailable
+
+  # ──────────────────────────────────────────────
+  # Detection rules
+  # ──────────────────────────────────────────────
+  /api/v1/detection/rules:
+    get:
+      operationId: listDetectionRules
+      tags: [Detection]
+      summary: List detection rules
+      description: The built-in defaults merged with the rules stored for this deployment.
+      responses:
+        "200":
+          description: Rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DetectionRuleView"
+        "503":
+          description: Storage unavailable
+
+  /api/v1/detection/rules/{ruleId}:
+    put:
+      operationId: putDetectionRule
+      tags: [Detection]
+      summary: Create or override a detection rule
+      parameters:
+        - $ref: "#/components/parameters/detectionRuleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetectionRule"
+      responses:
+        "200":
+          description: The stored rule
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule:
+                    $ref: "#/components/schemas/DetectionRuleView"
+        "400":
+          description: Invalid rule
+        "503":
+          description: Storage unavailable
+    delete:
+      operationId: deleteDetectionRule
+      tags: [Detection]
+      summary: Delete a rule, or restore a built-in rule to its default
+      parameters:
+        - $ref: "#/components/parameters/detectionRuleId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        "404":
+          description: Unknown rule
+        "503":
+          description: Storage unavailable
+
+  # ──────────────────────────────────────────────
+  # Telemetry (read)
+  # ──────────────────────────────────────────────
+  /api/v1/telemetry/hosts:
+    get:
+      operationId: listTelemetryHosts
+      tags: [Telemetry]
+      summary: List hosts that reported metrics
+      description: Most recently seen first.
+      responses:
+        "200":
+          description: Hosts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hosts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TelemetryHost"
+        "503":
+          description: Telemetry is not configured on this server
+
+  /api/v1/telemetry/hosts/{host}/metrics:
+    get:
+      operationId: listTelemetryHostMetrics
+      tags: [Telemetry]
+      summary: List the metric names a host reports
+      parameters:
+        - $ref: "#/components/parameters/telemetryHost"
+      responses:
+        "200":
+          description: Metric names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  host:
+                    type: string
+                  metrics:
+                    type: array
+                    items:
+                      type: string
+        "503":
+          description: Telemetry is not configured on this server
+
+  /api/v1/telemetry/hosts/{host}/series:
+    get:
+      operationId: getTelemetryHostSeries
+      tags: [Telemetry]
+      summary: Read one metric of a host as a time series
+      parameters:
+        - $ref: "#/components/parameters/telemetryHost"
+        - name: metric
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/telemetryFrom"
+        - $ref: "#/components/parameters/telemetryTo"
+      responses:
+        "200":
+          description: Points at 1 minute resolution, or 1 hour for long ranges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  host:
+                    type: string
+                  metric:
+                    type: string
+                  resolution:
+                    type: string
+                    enum: [1m, 1h]
+                  points:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TelemetryPoint"
+        "400":
+          description: A parameter is malformed
+        "503":
+          description: Telemetry is not configured on this server
+
+  # ──────────────────────────────────────────────
+  # Logs and events (explorer)
+  # ──────────────────────────────────────────────
+  /api/v1/logs/histogram:
+    get:
+      operationId: getLogsHistogram
+      tags: [Logs]
+      summary: Log volume per time bucket and level
+      description: |
+        Counts entries per bucket over `from`..`to` (default: the last 24 hours) for the
+        same filters as `GET /api/v1/logs`. Empty buckets are present.
+      parameters:
+        - $ref: "#/components/parameters/logQ"
+        - $ref: "#/components/parameters/logLevel"
+        - $ref: "#/components/parameters/logFrom"
+        - $ref: "#/components/parameters/logTo"
+        - $ref: "#/components/parameters/logAttr"
+        - name: bucket_seconds
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: Requested bucket width. The server picks a coarser step when the range needs it.
+      responses:
+        "200":
+          description: Histogram
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogHistogram"
+        "400":
+          description: A parameter is malformed, or `from` is not before `to`
+
+  /api/v1/logs/facets:
+    get:
+      operationId: getLogsFacets
+      tags: [Logs]
+      summary: Attribute keys of the matching log entries, or the top values of one key
+      parameters:
+        - $ref: "#/components/parameters/logQ"
+        - $ref: "#/components/parameters/logLevel"
+        - $ref: "#/components/parameters/logFrom"
+        - $ref: "#/components/parameters/logTo"
+        - $ref: "#/components/parameters/logAttr"
+        - name: key
+          in: query
+          schema:
+            type: string
+          description: Attribute key. Without it the response lists keys, with it the top 10 values of that key.
+      responses:
+        "200":
+          description: Facet counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogFacets"
+        "400":
+          description: A parameter is malformed
+
+  /api/v1/events/timeline:
+    get:
+      operationId: getErrorTimeline
+      tags: [Events]
+      summary: Error events per project over time
+      description: Feeds the stacked chart on the Issues page. The answer is cached for 30 seconds.
+      parameters:
+        - name: range
+          in: query
+          schema:
+            type: string
+            enum: ["24h", "7d", "30d"]
+            default: "24h"
+      responses:
+        "200":
+          description: Zero-filled buckets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorTimeline"
+        "400":
+          description: Unknown range
+
+  /api/v1/surfaces:
+    get:
+      operationId: listSurfaces
+      tags: [Facets]
+      summary: Issue activity per `surface` attribute value
+      description: Issues seen per value of the `surface` attribute over the last 24 hours and 7 days.
+      parameters:
+        - $ref: "#/components/parameters/XBugBarnProject"
+      responses:
+        "200":
+          description: Surfaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  surfaces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SurfaceActivity"
+
+  # ──────────────────────────────────────────────
+  # Aliases
+  # ──────────────────────────────────────────────
+  /api/v1/aliases:
+    get:
+      operationId: listAliases
+      tags: [Aliases]
+      summary: List project aliases
+      description: A key bound to a project sees the aliases of that project only.
+      responses:
+        "200":
+          description: Aliases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aliases:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectAlias"
+    post:
+      operationId: createAlias
+      tags: [Aliases]
+      summary: Point an alias slug at a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alias, project]
+              properties:
+                alias:
+                  type: string
+                project:
+                  type: string
+                  description: Slug of the target project
+      responses:
+        "201":
+          description: Alias created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          description: Invalid payload, or alias or project missing
+        "404":
+          description: Unknown project
+        "409":
+          description: The alias is already taken
+
+  /api/v1/aliases/{alias}:
+    delete:
+      operationId: deleteAlias
+      tags: [Aliases]
+      summary: Delete an alias
+      parameters:
+        - name: alias
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        "404":
+          description: Unknown alias
+
+  # ──────────────────────────────────────────────
+  # Project settings and API keys
+  # ──────────────────────────────────────────────
+  /api/v1/projects/{slug}/silence-watch:
+    get:
+      operationId: getProjectSilenceWatch
+      tags: [Projects]
+      summary: Whether the silence rules judge the project
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      responses:
+        "200":
+          description: Current setting
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  silence_watch:
+                    type: string
+                    description: Empty means watched, `off` opts the project out
+        "404":
+          description: Unknown project
+    put:
+      operationId: updateProjectSilenceWatch
+      tags: [Projects]
+      summary: Set whether the silence rules judge the project
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                silence_watch:
+                  type: string
+                  description: Empty means watched, `off` opts the project out
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  silence_watch:
+                    type: string
+        "400":
+          description: Invalid payload or value
+        "404":
+          description: Unknown project
+
+  /api/v1/projects/{slug}/funnelbarn:
+    put:
+      operationId: updateProjectFunnelBarnURL
+      tags: [Projects]
+      summary: Set the FunnelBarn page the project's surface rows link to
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                funnelbarn_url:
+                  type: string
+                  description: Empty clears the link
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  funnelbarn_url:
+                    type: string
+        "400":
+          description: Invalid payload or URL
+        "404":
+          description: Unknown project
+
+  /api/v1/apikeys/revoke-setup:
+    post:
+      operationId: revokeSetupKey
+      tags: [API Keys]
+      summary: Revoke the setup key of a project slug
+      description: |
+        Ends the derived setup key of a slug, which may have no key row. Needs a signed-in
+        admin session. An API key of any scope is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug]
+              properties:
+                slug:
+                  type: string
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: boolean
+        "400":
+          description: Invalid body or slug
+        "403":
+          description: No admin session
+        "503":
+          description: Setup keys are not configured (BUGBARN_SESSION_SECRET is required)
+
+  # ──────────────────────────────────────────────
+  # Browser telemetry and admin
+  # ──────────────────────────────────────────────
+  /api/v1/telemetry:
+    post:
+      operationId: reportClientSpans
+      tags: [Telemetry]
+      summary: Report browser spans
+      description: Re-emits spans reported by the dashboard into BugBarn's own tracer. Spans with malformed ids are skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                spans:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/ClientSpan"
+      responses:
+        "200":
+          description: Spans processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  accepted:
+                    type: integer
+                    description: Number of spans in the request
+        "400":
+          description: Invalid payload
+
+  /api/v1/frontend-traces/api/v1/spans:
+    post:
+      operationId: relayFrontendTraces
+      tags: [Telemetry]
+      summary: Relay browser spans to SpanBarn
+      description: |
+        The SpanBarn browser SDK posts here with the session cookie and no CSRF header, so no
+        API key ships in the page. The server forwards the body to SpanBarn under its own key.
+        Served only when the SpanBarn relay is configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Span batch, forwarded unchanged (256 KiB at most)
+      responses:
+        "202":
+          description: SpanBarn accepted the batch
+        "400":
+          description: The body could not be read
+        "404":
+          description: The relay is not configured
+        "405":
+          description: Method not allowed (Allow header lists POST)
+        "413":
+          description: Body too large
+        "502":
+          description: SpanBarn did not accept the batch
+
+  /api/v1/client-errors:
+    post:
+      operationId: reportClientError
+      tags: [Telemetry]
+      summary: Report a browser error
+      description: Logs the error at error level, which BugBarn reports to itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                type:
+                  type: string
+                stack:
+                  type: string
+                url:
+                  type: string
+      responses:
+        "200":
+          description: Logged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          description: Invalid payload
+
+  /api/v1/admin/digest:
+    post:
+      operationId: triggerDigest
+      tags: [Admin]
+      summary: Send the periodic digest now
+      description: |
+        Sends to the configured channels. With `to` the digest goes to that address by mail
+        only. An empty body means the configured channels. A body that does not decode is refused.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to:
+                  type: string
+                  description: Recipient address, overriding the configured channels
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [sent]
+        "400":
+          description: Invalid body, or no notifiers configured
+        "500":
+          description: At least one notifier failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+        "503":
+          description: The digest is not configured
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1859,6 +3219,85 @@ components:
         format: date
         example: "2025-01-31"
       description: End date (YYYY-MM-DD), defaults to today
+
+    keyRequestId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Key request id
+
+    detectionRuleId:
+      name: ruleId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Detection rule id
+
+    telemetryHost:
+      name: host
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Host name, path-escaped
+
+    telemetryFrom:
+      name: from
+      in: query
+      schema:
+        type: string
+      description: Start time, RFC 3339 or unix milliseconds. The server picks a default when absent.
+
+    telemetryTo:
+      name: to
+      in: query
+      schema:
+        type: string
+      description: End time, RFC 3339 or unix milliseconds. The server picks a default when absent.
+
+    logQ:
+      name: q
+      in: query
+      schema:
+        type: string
+      description: Free-text filter
+
+    logLevel:
+      name: level
+      in: query
+      schema:
+        type: string
+      description: Minimum level name (for example `warn`)
+
+    logFrom:
+      name: from
+      in: query
+      schema:
+        type: string
+        format: date-time
+      description: Start time, RFC 3339
+
+    logTo:
+      name: to
+      in: query
+      schema:
+        type: string
+        format: date-time
+      description: End time, RFC 3339
+
+    logAttr:
+      name: attr
+      in: query
+      schema:
+        type: array
+        items:
+          type: string
+      style: form
+      explode: true
+      description: Attribute filter as `key=value`. Repeatable.
 
   schemas:
     OkResponse:
@@ -2634,3 +4073,383 @@ components:
         bounceRate:
           type: number
           format: double
+
+    MonitorCheckInRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        message:
+          type: string
+        interval:
+          type: string
+          description: Expected period between check-ins as a Go duration such as `1h` or `90s`
+        grace:
+          type: string
+          description: Extra time allowed after the interval, as a Go duration
+        schedule:
+          type: string
+          description: Five-field cron expression. Replaces `interval` when set.
+        timezone:
+          type: string
+          description: Zone the cron schedule is evaluated in (UTC when absent)
+
+    MonitorCheckInResult:
+      type: object
+      properties:
+        monitor:
+          type: string
+          description: Monitor slug
+        state:
+          type: string
+          enum: [ok, missed, error]
+        dueBy:
+          type: string
+          format: date-time
+        interval:
+          type: string
+        grace:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        schedule:
+          type: string
+        timezone:
+          type: string
+
+    Monitor:
+      type: object
+      properties:
+        slug:
+          type: string
+        project:
+          type: string
+          description: Project slug
+        state:
+          type: string
+          enum: [ok, missed, error]
+        lastStatus:
+          type: string
+        intervalSeconds:
+          type: integer
+          format: int64
+        graceSeconds:
+          type: integer
+          format: int64
+        dueBy:
+          type: string
+          format: date-time
+        stateSince:
+          type: string
+          format: date-time
+        schedule:
+          type: string
+          description: Present for cron monitors
+        timezone:
+          type: string
+          description: Present for cron monitors
+        lastCheckInAt:
+          type: string
+          format: date-time
+          description: Absent until the first check-in
+
+    KeyRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: integer
+          format: int64
+        project:
+          type: string
+          description: Project slug
+        label:
+          type: string
+        status:
+          type: string
+          enum: [pending, approved, denied, claimed, expired]
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    DetectionRule:
+      type: object
+      description: |
+        One detection rule. Security rules use `match`, `group_by`, `threshold` and `window`.
+        Metric rules use `metric`, `op`, `threshold` and `for`. Durations are Go duration
+        strings such as `5m`, or a number of seconds.
+      required: [id, name, severity]
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        severity:
+          type: string
+          enum: [INFO, WARNING, ERROR, CRITICAL]
+        track:
+          type: string
+        match:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectionCondition"
+        exclude:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectionCondition"
+        group_by:
+          type: array
+          items:
+            type: string
+        issue_by:
+          type: string
+        metric:
+          type: string
+          description: Metric name glob, where `*` matches any run of characters
+        op:
+          type: string
+          enum: [gt, lt]
+        per_core:
+          type: boolean
+        for:
+          type: string
+        exclude_metric:
+          type: array
+          items:
+            type: string
+        threshold:
+          type: number
+        window:
+          type: string
+        cooldown:
+          type: string
+
+    DetectionCondition:
+      type: object
+      required: [field, op]
+      properties:
+        field:
+          type: string
+        op:
+          type: string
+          enum: [eq, ne, in, not_in, prefix, not_prefix, suffix, contains]
+        value: {}
+
+    DetectionRuleView:
+      description: A rule with its provenance
+      allOf:
+        - $ref: "#/components/schemas/DetectionRule"
+        - type: object
+          properties:
+            builtin:
+              type: boolean
+              description: The rule ships with BugBarn
+            overridden:
+              type: boolean
+              description: A stored rule replaces the built-in one
+            updated_at:
+              type: string
+              format: date-time
+
+    SecurityRow:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        ts:
+          type: string
+          format: date-time
+        source:
+          type: string
+        host:
+          type: string
+        kind:
+          type: string
+        src_ip:
+          type: string
+        user:
+          type: string
+        action:
+          type: string
+        status:
+          type: integer
+        method:
+          type: string
+        path:
+          type: string
+        message:
+          type: string
+        raw:
+          type: string
+
+    TelemetryHost:
+      type: object
+      properties:
+        host:
+          type: string
+        cores:
+          type: integer
+        lastSeen:
+          type: string
+          format: date-time
+
+    TelemetryPoint:
+      type: object
+      properties:
+        ts:
+          type: string
+          format: date-time
+        value:
+          type: number
+        min:
+          type: number
+        max:
+          type: number
+
+    LogHistogram:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        bucket_seconds:
+          type: integer
+        buckets:
+          type: array
+          items:
+            type: object
+            properties:
+              start:
+                type: string
+                format: date-time
+              counts:
+                type: object
+                description: Entry count per level name
+                additionalProperties:
+                  type: integer
+        truncated:
+          type: boolean
+          description: True when the scan window cut off rows inside the range
+
+    LogFacets:
+      type: object
+      properties:
+        key:
+          type: string
+          description: The requested key, absent when listing keys
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              count:
+                type: integer
+        truncated:
+          type: boolean
+
+    ErrorTimeline:
+      type: object
+      properties:
+        range:
+          type: string
+        bucket_seconds:
+          type: integer
+          format: int64
+        buckets:
+          type: array
+          items:
+            type: object
+            properties:
+              start:
+                type: string
+                format: date-time
+              counts:
+                type: object
+                description: Error events per project slug. Empty when the slot had none.
+                additionalProperties:
+                  type: integer
+                  format: int64
+        projects:
+          type: array
+          items:
+            type: object
+            properties:
+              slug:
+                type: string
+              name:
+                type: string
+              total:
+                type: integer
+                format: int64
+
+    SurfaceActivity:
+      type: object
+      properties:
+        surface:
+          type: string
+        issues_24h:
+          type: integer
+        issues_7d:
+          type: integer
+        open:
+          type: integer
+
+    ProjectAlias:
+      type: object
+      properties:
+        alias_slug:
+          type: string
+        project_id:
+          type: integer
+          format: int64
+        project_slug:
+          type: string
+
+    ClientSpan:
+      type: object
+      required: [traceId, spanId, name]
+      properties:
+        traceId:
+          type: string
+          description: 32 hex characters
+        spanId:
+          type: string
+          description: 16 hex characters
+        parentSpanId:
+          type: string
+        name:
+          type: string
+        service:
+          type: string
+        kind:
+          type: string
+          enum: [CLIENT, SERVER, INTERNAL, PRODUCER, CONSUMER]
+        status:
+          type: string
+        startTime:
+          type: integer
+          format: int64
+          description: Microseconds
+        duration:
+          type: integer
+          format: int64
+          description: Microseconds
+        attributes:
+          type: object
+          additionalProperties: true

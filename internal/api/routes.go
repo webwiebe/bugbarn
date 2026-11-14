@@ -2,473 +2,149 @@ package api
 
 import (
 	"net/http"
+	"sort"
 	"strings"
-
-	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
-// serveSpecialEndpoint handles the unauthenticated endpoints that must run
-// before the general CORS handling: the wildcard-CORS browser ingest endpoints
-// (events, logs, analytics/collect) and the public, no-CORS endpoints (setup,
-// theme manifest, analytics snippet). It returns true when it has written a
-// response and the caller should stop.
-func (s *Server) serveSpecialEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	for _, serve := range []func(http.ResponseWriter, *http.Request) bool{
-		s.serveEventsIngestEndpoint,
-		s.serveAlertmanagerIngestEndpoint,
-		s.serveLogsIngestEndpoint,
-		s.serveTelemetryIngestEndpoint,
-		// Job check-ins authenticate with a project key, like the ingest endpoints.
-		s.serveMonitorCheckInEndpoint,
-	} {
-		if serve(w, r) {
-			return true
-		}
-	}
-
-	// Agent key requests — public, rate-limited; before the setup page, whose
-	// prefix they share.
-	if s.serveKeyRequestEndpoint(w, r) {
-		return true
-	}
-
-	// Setup endpoint — public, no auth required.
-	if strings.HasPrefix(r.URL.Path, "/api/v1/setup/") && r.Method == http.MethodGet {
-		s.serveSetup(w, r)
-		return true
-	}
-
-	// Writer-internal session endpoints (CQRS): authenticated exclusively by
-	// an HMAC over the request body with the shared session secret, so they
-	// must bypass the cookie/API-key pipeline. 404 unless enabled.
-	// The reader-to-writer API key last-use batches use the same scheme.
-	if s.serveInternalEndpoint(w, r) {
-		return true
-	}
-
-	// IAMBarn theme manifest — public, no auth, no redirect.
-	if r.URL.Path == "/.well-known/iambarn-theme.json" && r.Method == http.MethodGet {
-		s.serveThemeManifest(w, r)
-		return true
-	}
-
-	// Analytics JS snippet — public, no auth required.
-	if r.URL.Path == "/analytics.js" && r.Method == http.MethodGet {
-		s.serveAnalyticsSnippet(w, r)
-		return true
-	}
-
-	if s.serveAnalyticsCollectEndpoint(w, r) {
-		return true
-	}
-
-	return false
-}
-
-// serveAlertmanagerIngestEndpoint accepts Alertmanager's batch webhook format.
-func (s *Server) serveAlertmanagerIngestEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != "/api/v1/alertmanager" {
-		return false
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return true
-	}
-	if !s.requireIngestKey(w, r) {
-		return true
-	}
-	s.deliverWrite(w, r, s.ingestHandler.ServeAlertmanagerHTTP)
-	return true
-}
-
-// serveEventsIngestEndpoint handles /api/v1/events with wildcard CORS so browser
-// SDKs can POST from any origin without credentials. The ingest-only key scope
-// ensures read access is impossible.
-func (s *Server) serveEventsIngestEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != "/api/v1/events" {
-		return false
-	}
-	setWildcardCORS(w, "POST, OPTIONS", ingestCORSHeaders)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
-		return true
-	}
-	if r.Method == http.MethodPost {
-		if !s.requireIngestKey(w, r) {
-			return true
-		}
-		s.deliverWrite(w, r, s.ingestHandler.ServeHTTP)
-		return true
-	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	return true
-}
-
-// serveLogsIngestEndpoint handles POST/OPTIONS /api/v1/logs — wildcard CORS,
-// accepts ingest-scope or full-scope API keys.
-func (s *Server) serveLogsIngestEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path == "/api/v1/logs" && r.Method == http.MethodPost {
-		s.handleLogsIngestPost(w, r)
-		return true
-	}
-	if r.URL.Path == "/api/v1/logs" && r.Method == http.MethodOptions {
-		setWildcardCORS(w, "POST, OPTIONS", ingestCORSHeaders)
-		w.WriteHeader(http.StatusNoContent)
-		return true
-	}
-	return false
-}
-
-// handleLogsIngestPost serves a POST to the log-ingest endpoint: it sets CORS,
-// validates the API key, forwards to the spool/writer when configured, and
-// otherwise resolves the project and persists the batch locally.
-func (s *Server) handleLogsIngestPost(w http.ResponseWriter, r *http.Request) {
-	setWildcardCORS(w, "POST, OPTIONS", ingestCORSHeaders)
-	if !s.requireIngestKey(w, r) {
-		return
-	}
-	s.deliverWrite(w, r, s.ingestLogsLocally)
-}
-
-// ingestLogsLocally persists a log batch in this process: the writer, or the
-// monolith. Readers never get here, deliverWrite sends their batches on.
-func (s *Server) ingestLogsLocally(w http.ResponseWriter, r *http.Request) {
-	// Resolve project from API key / header.
-	var logProjectID int64
-	if s.ingestHandler != nil {
-		pid, _, ok, err := s.ingestHandler.CheckAPIKey(r)
-		if err != nil {
-			w.Header().Set("Retry-After", "1")
-			http.Error(w, "api key lookup failed, retry", http.StatusServiceUnavailable)
-			return
-		}
-		if ok && pid > 0 {
-			logProjectID = pid
-		}
-	}
-	if slug := r.Header.Get("X-BugBarn-Project"); slug != "" && s.projects != nil {
-		if proj, err := s.projects.Ensure(r.Context(), slug); err == nil {
-			logProjectID = proj.ID
-		}
-	}
-	if logProjectID > 0 {
-		r = r.WithContext(domain.WithProjectID(r.Context(), logProjectID))
-	}
-	s.serveLogsIngest(w, r)
-}
-
-// serveAnalyticsCollectEndpoint handles /api/v1/analytics/collect — public,
-// wildcard CORS for sendBeacon from any origin.
-func (s *Server) serveAnalyticsCollectEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != "/api/v1/analytics/collect" {
-		return false
-	}
-	setWildcardCORS(w, "POST, OPTIONS", analyticsCORSHeaders)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
-		return true
-	}
-	if r.Method == http.MethodPost {
-		s.deliverWrite(w, r, s.collectPageView)
-		return true
-	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	return true
-}
-
-// deliverWrite sends an ingest write where this process keeps its writes. A
-// reader with a spool forwarder appends to the spool, a reader with a writer
-// forwarder relays it, and the writer or the monolith runs local.
-func (s *Server) deliverWrite(w http.ResponseWriter, r *http.Request, local http.HandlerFunc) {
-	if s.ingestSpool != nil {
-		s.ingestSpool.Forward(w, r)
-		return
-	}
-	s.forwardWrite(w, r, local)
-}
-
-// forwardWrite relays a write to the writer when this process is a reader, and
-// runs local otherwise. Session writes use it directly because they have no spool.
-func (s *Server) forwardWrite(w http.ResponseWriter, r *http.Request, local http.HandlerFunc) {
-	if s.writeForwarder != nil {
-		s.writeForwarder.Forward(w, r)
-		return
-	}
-	local(w, r)
-}
-
-// servePublicEndpoint handles the endpoints that require no authentication but
-// do use the general CORS headers (already set by the caller). It returns true
-// when it has written a response and the caller should stop.
+// Routing lives in the routes*.go files and nowhere else. Every route is one
+// pattern registered on one http.ServeMux ("METHOD /path/{wildcard}"), and a
+// handler reads its wildcards with r.PathValue. Each auth class keeps its
+// registrations in its own file:
 //
-//nolint:gocyclo // flat public-route table mapping path+method to a handler.
-func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	// OpenAPI spec and docs — public, no auth required.
-	if r.URL.Path == "/api/v1/openapi.yaml" && r.Method == http.MethodGet {
-		s.serveOpenAPISpec(w, r)
-		return true
-	}
-	if r.URL.Path == "/api/docs" && r.Method == http.MethodGet {
-		s.serveAPIDocs(w, r)
-		return true
-	}
+//	routes_ingest.go     key-authenticated ingest endpoints with wildcard CORS
+//	routes_public.go     public endpoints (health, login, OIDC, setup)
+//	routes_internal.go   HMAC-signed writer-internal endpoints
+//	routes_protected.go  endpoints behind the session or API key pipeline
+//	routes_middleware.go the per-group middleware (CORS, auth, forwarding)
+//
+// Feature files hold handlers only: no handler parses the path or re-checks the
+// method, because a pattern that matched already did both.
+//
+// Unmatched requests. A method-less pattern, "/", sits behind the protected
+// middleware, so an unauthenticated request that matches no route (an unknown
+// path, or a known path with the wrong method) answers 401 like every protected
+// route, and an authenticated one answers 404 or 405 with an Allow header. The
+// ingest, check-in and internal endpoints answer a wrong method with 405 before
+// authentication, as they always did (rejectMethods). Routing errors are plain
+// text, the shape http.Error and http.NotFound give; the API has never returned
+// JSON for an unknown path.
 
-	// Public endpoints — no authentication required.
-	switch {
-	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:
-		s.serveHealth(w, r)
-		return true
-	case r.URL.Path == "/api/v1/version" && r.Method == http.MethodGet:
-		s.serveVersion(w, r)
-		return true
-	case r.URL.Path == "/api/v1/runtime-config" && r.Method == http.MethodGet:
-		s.serveRuntimeConfig(w, r)
-		return true
-	case r.URL.Path == "/api/v1/login" && r.Method == http.MethodPost:
-		s.forwardWrite(w, r, s.login)
-		return true
-	case r.URL.Path == "/api/v1/logout" && r.Method == http.MethodPost:
-		s.forwardWrite(w, r, s.logout)
-		return true
-	case r.URL.Path == "/api/v1/me" && r.Method == http.MethodGet:
-		s.me(w, r)
-		return true
-	case r.URL.Path == "/api/v1/oidc/login" && r.Method == http.MethodGet:
-		s.oidcLogin(w, r)
-		return true
-	case r.URL.Path == "/api/v1/oidc/callback" && r.Method == http.MethodGet:
-		s.oidcCallback(w, r)
-		return true
-	case r.URL.Path == "/api/v1/oidc/logged-out" && r.Method == http.MethodGet:
-		s.oidcLoggedOut(w, r)
-		return true
-	case r.URL.Path == "/api/v1/oidc/backchannel-logout" && r.Method == http.MethodPost:
-		// Public (authenticated by the logout token's signature), no CSRF.
-		// Session rows live behind the writer, so readers forward the POST.
-		s.forwardWrite(w, r, s.oidcBackchannelLogout)
-		return true
-	}
-
-	return false
+// router is the one ServeMux that serves the API, plus the patterns registered
+// on it. ServeMux cannot list its patterns, and the OpenAPI parity test and the
+// protected-route scope test read them from here. operations are the routes the
+// API offers; fallbacks answer what no operation matches (preflights, wrong
+// methods, trailing-slash twins of an operation) and are not API surface.
+type router struct {
+	mux        *http.ServeMux
+	operations []string
+	fallbacks  []string
 }
 
-// dispatchProtected routes an authenticated request to its domain handler. The
-// request is offered to each per-domain sub-dispatcher in order; the first that
-// reports it handled the request wins, otherwise it's a 404.
-func (s *Server) dispatchProtected(w http.ResponseWriter, r *http.Request) {
-	dispatchers := []func(http.ResponseWriter, *http.Request) bool{
-		s.dispatchSourceMapRoutes,
-		s.dispatchSettingsReleaseRoutes,
-		s.dispatchAlertRoutes,
-		s.dispatchDetectionRoutes,
-		s.dispatchIssueRoutes,
-		s.dispatchLogEventRoutes,
-		s.dispatchProjectRoutes,
-		s.dispatchProjectItemRoutes,
-		s.dispatchKeyRequestRoutes,
-		s.dispatchMonitorRoutes,
-		s.dispatchGroupAliasRoutes,
-		s.dispatchAPIKeyRoutes,
-		s.dispatchFacetAnalyticsRoutes,
-		s.dispatchTelemetryRoutes,
-		s.dispatchMiscRoutes,
+func (rt *router) handle(pattern string, h http.Handler, fallback bool) {
+	rt.mux.Handle(pattern, h)
+	if fallback {
+		rt.fallbacks = append(rt.fallbacks, pattern)
+		return
 	}
-	for _, d := range dispatchers {
-		if d(w, r) {
-			return
+	rt.operations = append(rt.operations, pattern)
+}
+
+// group is a set of middleware applied to every route registered through it,
+// outermost first.
+type group struct {
+	rt  *router
+	mws []middleware
+}
+
+func (rt *router) group(mws ...middleware) group { return group{rt: rt, mws: mws} }
+
+// handle registers an operation of the API.
+func (g group) handle(pattern string, h http.HandlerFunc) { g.register(pattern, h, false) }
+
+// fallback registers a route that is no API operation: a preflight, a wrong
+// method answer, or a trailing-slash twin of an operation.
+func (g group) fallback(pattern string, h http.HandlerFunc) { g.register(pattern, h, true) }
+
+func (g group) register(pattern string, h http.HandlerFunc, fallback bool) {
+	handler := http.Handler(h)
+	for i := len(g.mws) - 1; i >= 0; i-- {
+		handler = g.mws[i](handler)
+	}
+	g.rt.handle(pattern, handler, fallback)
+}
+
+// router returns the server's route table, building it on first use so the
+// Set* configuration methods may run after NewServer.
+func (s *Server) router() *router {
+	s.routesOnce.Do(func() { s.routes = s.buildRouter() })
+	return s.routes
+}
+
+func (s *Server) buildRouter() *router {
+	rt := &router{mux: http.NewServeMux()}
+	s.registerIngestRoutes(rt)
+	s.registerPublicRoutes(rt)
+	s.registerInternalRoutes(rt)
+	s.registerProtectedRoutes(rt)
+	return rt
+}
+
+// routePatterns lists the pattern of every API operation, sorted.
+func (s *Server) routePatterns() []string {
+	out := append([]string(nil), s.router().operations...)
+	sort.Strings(out)
+	return out
+}
+
+// rejectMethods answers 405 with an Allow header to the given methods of a path,
+// ahead of any authentication. An endpoint with its own method set registers it
+// next to its handlers, so a wrong method never falls through to the protected
+// pipeline.
+func rejectMethods(g group, path, allow string, methods ...string) {
+	for _, m := range methods {
+		g.fallback(m+" "+path, methodNotAllowed(allow))
+	}
+}
+
+func methodNotAllowed(allow string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if allow != "" {
+			w.Header().Set("Allow", allow)
 		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// preflight answers a CORS preflight; the group's CORS middleware set the headers.
+func preflight(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// unmatched is the handler behind the "/" pattern. By the time it runs the
+// request is authenticated, so it can say whether the path exists under another
+// method (405 with Allow) or nowhere (404).
+func (s *Server) unmatched(w http.ResponseWriter, r *http.Request) {
+	if allow := s.router().allowedMethods(r); len(allow) > 0 {
+		w.Header().Set("Allow", strings.Join(allow, ", "))
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 	http.NotFound(w, r)
 }
 
-func (s *Server) dispatchSourceMapRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodGet:
-		s.listSourceMaps(w, r)
-	case r.URL.Path == "/api/v1/source-maps" && r.Method == http.MethodPost:
-		s.uploadSourceMap(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchSettingsReleaseRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/settings" && (r.Method == http.MethodGet || r.Method == http.MethodPut || r.Method == http.MethodPost):
-		s.serveSettingsRoute(w, r)
-	case r.URL.Path == "/api/v1/releases" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		s.serveReleasesRoot(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/releases/"):
-		s.serveReleaseRoute(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchAlertRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/alerts" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		s.serveAlertsRoot(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/alerts/"):
-		s.serveAlertRoute(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchIssueRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/issues" && r.Method == http.MethodGet:
-		s.listIssues(w, r)
-	case r.URL.Path == "/api/v1/issues/sparklines" && r.Method == http.MethodGet:
-		s.issueSparklines(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/issues/"):
-		if s.requireIssueInScope(w, r, issueIDFromPath(r.URL.Path)) {
-			s.serveIssueRoute(w, r)
+// allowedMethods lists the methods some registered pattern accepts for the
+// request's path. HEAD follows GET, as it does in ServeMux.
+func (rt *router) allowedMethods(r *http.Request) []string {
+	var allow []string
+	for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		probe := r.Clone(r.Context())
+		probe.Method = m
+		if _, pattern := rt.mux.Handler(probe); pattern != "" && pattern != "/" {
+			allow = append(allow, m)
+			if m == http.MethodGet {
+				allow = append(allow, http.MethodHead)
+			}
 		}
-	default:
-		return false
 	}
-	return true
-}
-
-func (s *Server) dispatchLogEventRoutes(w http.ResponseWriter, r *http.Request) bool {
-	if r.Method != http.MethodGet {
-		return false
-	}
-	switch {
-	case r.URL.Path == "/api/v1/logs":
-		s.serveLogs(w, r)
-	case r.URL.Path == "/api/v1/logs/histogram":
-		s.serveLogsHistogram(w, r)
-	case r.URL.Path == "/api/v1/logs/facets":
-		s.serveLogsFacets(w, r)
-	case r.URL.Path == "/api/v1/logs/stream":
-		s.serveLogsStream(w, r)
-	case r.URL.Path == "/api/v1/events/stream":
-		s.streamEvents(w, r)
-	case r.URL.Path == "/api/v1/events/timeline":
-		s.serveErrorTimeline(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/events/"):
-		s.getEvent(w, r)
-	case r.URL.Path == "/api/v1/live/events":
-		s.listRecentEvents(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchProjectRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/projects" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		s.serveProjectsRoot(w, r)
-	case r.URL.Path == "/api/v1/projects/pending-count" && r.Method == http.MethodGet:
-		s.servePendingProjectCount(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchProjectItemRoutes(w http.ResponseWriter, r *http.Request) bool {
-	if !strings.HasPrefix(r.URL.Path, "/api/v1/projects/") {
-		return false
-	}
-	switch {
-	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/approve"):
-		s.approveProject(w, r)
-	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/merge"):
-		s.mergeProject(w, r)
-	// Before the bare-PUT case below, which would otherwise swallow them: that one
-	// matches any path under /api/v1/projects/ and treats the whole tail as a slug.
-	case s.dispatchProjectSettingRoutes(w, r):
-	case r.Method == http.MethodPut:
-		s.renameProject(w, r)
-	case r.Method == http.MethodDelete:
-		s.deleteProject(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-// dispatchProjectSettingRoutes serves the per-project setting endpoints that
-// hang off /api/v1/projects/:slug/.
-func (s *Server) dispatchProjectSettingRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/limits"):
-		s.updateProjectLimits(w, r)
-	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/funnelbarn"):
-		s.updateProjectFunnelBarnURL(w, r)
-	case isSilenceWatchRoute(r):
-		s.projectSilenceWatch(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchGroupAliasRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/groups" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		s.serveGroupsRoot(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/groups/"):
-		s.serveGroupRoute(w, r)
-	case r.URL.Path == "/api/v1/aliases" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		s.serveAliasesRoot(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/aliases/") && r.Method == http.MethodDelete:
-		s.deleteAlias(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchAPIKeyRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/apikeys" && r.Method == http.MethodGet:
-		s.listAPIKeys(w, r)
-	case r.URL.Path == "/api/v1/apikeys/revoke-setup" && r.Method == http.MethodPost:
-		s.revokeSetupKey(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/apikeys/") && r.Method == http.MethodDelete:
-		s.deleteAPIKey(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchFacetAnalyticsRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/surfaces" && r.Method == http.MethodGet:
-		s.serveSurfaces(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/facets") && r.Method == http.MethodGet:
-		s.serveFacetsRoute(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/analytics/") && r.Method == http.MethodGet:
-		s.serveAnalyticsQuery(w, r)
-	default:
-		return false
-	}
-	return true
-}
-
-func (s *Server) dispatchMiscRoutes(w http.ResponseWriter, r *http.Request) bool {
-	switch {
-	case r.URL.Path == "/api/v1/telemetry" && r.Method == http.MethodPost:
-		s.serveTelemetry(w, r)
-	case r.URL.Path == "/api/v1/client-errors" && r.Method == http.MethodPost:
-		s.serveClientError(w, r)
-	case r.URL.Path == "/api/v1/admin/digest" && r.Method == http.MethodPost:
-		s.serveDigestTrigger(w, r)
-	case r.URL.Path == "/internal/v1/db-backup" && r.Method == http.MethodGet:
-		s.serveDBBackup(w, r)
-	default:
-		return false
-	}
-	return true
+	return allow
 }

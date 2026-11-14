@@ -58,8 +58,9 @@ func projectIsActive(status string) bool {
 }
 
 func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimPrefix(r.URL.Path, "/api/v1/setup/")
-	slug = strings.TrimSuffix(slug, "/")
+	// The route is GET /api/v1/setup/{slug...}: anything under the prefix lands
+	// here, and a path that is not a single segment is an invalid slug.
+	slug := strings.TrimSuffix(r.PathValue("slug"), "/")
 	if slug == "" || strings.Contains(slug, "/") {
 		http.Error(w, "invalid slug", http.StatusBadRequest)
 		return

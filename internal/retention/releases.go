@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
 
 const (
@@ -31,7 +33,7 @@ func sweepReleases(ctx context.Context, store Store, tun tuning, log *slog.Logge
 		}
 		n, err := store.PruneReleases(ctx, ReleasesPerProject, tun.batchSize)
 		if err != nil {
-			if !shuttingDown(err) {
+			if !apperr.IsContextError(err) {
 				log.Warn("retention: release prune failed", "deleted_so_far", deleted, "error", err)
 			}
 			return

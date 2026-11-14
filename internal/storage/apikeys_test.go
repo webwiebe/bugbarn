@@ -23,7 +23,7 @@ func TestTouchAPIKey_ReadOnlyStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := rw.CreateAPIKey(ctx, "k1", proj.ID, "abc123hash", APIKeyScopeIngest)
+	key, err := rw.CreateAPIKey(ctx, "k1", proj.ID, "abc123hash", domain.APIKeyScopeIngest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestTouchAPIKey_ReadWriteStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := rw.CreateAPIKey(ctx, "k1", proj.ID, "abc123hash", APIKeyScopeIngest)
+	key, err := rw.CreateAPIKey(ctx, "k1", proj.ID, "abc123hash", domain.APIKeyScopeIngest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +84,8 @@ func TestTouchAPIKeysAt_OnlyMovesForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, _ := rw.CreateAPIKey(ctx, "a", proj.ID, "hash-a", APIKeyScopeIngest)
-	b, _ := rw.CreateAPIKey(ctx, "b", proj.ID, "hash-b", APIKeyScopeIngest)
+	a, _ := rw.CreateAPIKey(ctx, "a", proj.ID, "hash-a", domain.APIKeyScopeIngest)
+	b, _ := rw.CreateAPIKey(ctx, "b", proj.ID, "hash-b", domain.APIKeyScopeIngest)
 
 	late := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
 	early := late.Add(-time.Hour)

@@ -11,38 +11,63 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
 type Repository interface {
 	InsertLogEntries(context.Context, []domain.LogEntry) error
 	ListLogEntries(ctx context.Context, projectID int64, levelMin int, query string, limit int, beforeID int64) ([]domain.LogEntry, error)
-	QueryLogEntries(ctx context.Context, q storage.LogQuery, limit int) ([]domain.LogEntry, error)
-	LogHistogram(ctx context.Context, q storage.LogQuery, bucket time.Duration) (storage.LogHistogram, error)
-	LogAttributeKeys(ctx context.Context, q storage.LogQuery) (storage.LogFacets, error)
-	LogAttributeValues(ctx context.Context, q storage.LogQuery, key string) (storage.LogFacets, error)
+	QueryLogEntries(ctx context.Context, q domain.LogQuery, limit int) ([]domain.LogEntry, error)
+	LogHistogram(ctx context.Context, q domain.LogQuery, bucket time.Duration) (domain.LogHistogram, error)
+	LogAttributeKeys(ctx context.Context, q domain.LogQuery) (domain.LogFacets, error)
+	LogAttributeValues(ctx context.Context, q domain.LogQuery, key string) (domain.LogFacets, error)
 }
 
 // Query, AttrFilter, Histogram and Facets are the explorer's request and answer
 // shapes. The API names them through this package, not through storage.
 type (
-	Query      = storage.LogQuery
-	AttrFilter = storage.LogAttrFilter
-	Histogram  = storage.LogHistogram
-	Facets     = storage.LogFacets
+	Query      = domain.LogQuery
+	AttrFilter = domain.LogAttrFilter
+	Histogram  = domain.LogHistogram
+	Facets     = domain.LogFacets
 )
 
 type Service struct {
-	repo   Repository
-	logger *slog.Logger
+	repo      Repository
+	logger    *slog.Logger
+	transient func(error) bool
 }
 
-func New(repo Repository, logger *slog.Logger) *Service {
+// Option adjusts a Service at construction.
+type Option func(*Service)
+
+// WithTransient replaces the rule that decides whether a failed insert is worth
+// another attempt. The composition root passes the storage layer's rule, which
+// also recognizes raw driver errors that never went through storage's error
+// wrapping.
+func WithTransient(fn func(error) bool) Option {
+	return func(s *Service) {
+		if fn != nil {
+			s.transient = fn
+		}
+	}
+}
+
+// defaultTransient treats lock contention already classified as apperr.ErrBusy,
+// and deadlines, as retryable.
+func defaultTransient(err error) bool {
+	return err != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, apperr.ErrBusy))
+}
+
+func New(repo Repository, logger *slog.Logger, opts ...Option) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{repo: repo, logger: logger.With("service", "logs")}
+	s := &Service{repo: repo, logger: logger.With("service", "logs"), transient: defaultTransient}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // insertMaxAttempts bounds how many times one Insert call re-tries a batch that
@@ -65,10 +90,10 @@ const insertRetryBudget = 20 * time.Second
 // arrives here as context.DeadlineExceeded rather than SQLITE_BUSY: the same
 // condition wearing a different error, and just as retryable. Matching only
 // SQLITE_BUSY made this retry loop give up on the first attempt for the very
-// case it exists to ride out. Mirrors ingestproc.isTransientPersistError, which
-// the callers already classify by.
-func contended(err error) bool {
-	return storage.IsDatabaseLocked(err) || errors.Is(err, context.DeadlineExceeded)
+// case it exists to ride out. The composition root injects storage.IsTransient,
+// the rule every writer-side retry shares.
+func (s *Service) contended(err error) bool {
+	return s.transient(err)
 }
 
 func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
@@ -91,7 +116,7 @@ func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
 		}
 		// Nothing to wait for after the final attempt: sleeping there would only
 		// hold the batch (and the consumer's write mutex) for no gain.
-		if !contended(err) || attempt == insertMaxAttempts-1 || !time.Now().Before(budget) {
+		if !s.contended(err) || attempt == insertMaxAttempts-1 || !time.Now().Before(budget) {
 			break
 		}
 		select {
@@ -116,7 +141,7 @@ func (s *Service) reportInsertErr(ctx context.Context, span trace.Span, err erro
 		// caller requeues or abandons the batch deliberately.
 		s.logger.InfoContext(ctx, "insert log entries canceled", "count", count)
 		return err
-	case contended(err):
+	case s.contended(err):
 		// The writer was busy for longer than we are willing to hold the batch.
 		// Nothing is lost yet — the caller retries — so this is back-pressure,
 		// not a fault. Reporting it as one is what filed BS2-83 6866 times.
@@ -125,7 +150,7 @@ func (s *Service) reportInsertErr(ctx context.Context, span trace.Span, err erro
 		return err
 	}
 	tracing.SetError(span, err)
-	s.logger.ErrorContext(ctx, "insert log entries", "count", count, "error", err)
+	apperr.LogFailure(ctx, s.logger, "insert log entries", err, "count", count)
 	return err
 }
 
@@ -142,7 +167,7 @@ func (s *Service) List(
 			return nil, err
 		}
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "list log entries", "project_id", projectID, "error", err)
+		apperr.LogFailure(ctx, s.logger, "list log entries", err, "project_id", projectID)
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("count", len(entries)))
@@ -150,7 +175,7 @@ func (s *Service) List(
 }
 
 // Query lists entries matching the explorer filters, newest first.
-func (s *Service) Query(ctx context.Context, q storage.LogQuery, limit int) ([]domain.LogEntry, error) {
+func (s *Service) Query(ctx context.Context, q domain.LogQuery, limit int) ([]domain.LogEntry, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "service.logs.Query",
 		trace.WithAttributes(attribute.Int("attr_filters", len(q.Attrs))))
 	defer span.End()
@@ -163,25 +188,25 @@ func (s *Service) Query(ctx context.Context, q storage.LogQuery, limit int) ([]d
 }
 
 // Histogram counts entries per time bucket and level for the explorer filters.
-func (s *Service) Histogram(ctx context.Context, q storage.LogQuery, bucket time.Duration) (storage.LogHistogram, error) {
+func (s *Service) Histogram(ctx context.Context, q domain.LogQuery, bucket time.Duration) (domain.LogHistogram, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "service.logs.Histogram",
 		trace.WithAttributes(attribute.Int("attr_filters", len(q.Attrs)), attribute.Int64("bucket_seconds", int64(bucket/time.Second))))
 	defer span.End()
 	h, err := s.repo.LogHistogram(ctx, q, bucket)
 	if err != nil {
-		return storage.LogHistogram{}, s.readErr(ctx, span, "log histogram", q.ProjectID, err)
+		return domain.LogHistogram{}, s.readErr(ctx, span, "log histogram", q.ProjectID, err)
 	}
 	return h, nil
 }
 
 // Facets lists the attribute keys of the matching entries, or, when key is set,
 // the top values of that key.
-func (s *Service) Facets(ctx context.Context, q storage.LogQuery, key string) (storage.LogFacets, error) {
+func (s *Service) Facets(ctx context.Context, q domain.LogQuery, key string) (domain.LogFacets, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "service.logs.Facets",
 		trace.WithAttributes(attribute.Int("attr_filters", len(q.Attrs)), attribute.Bool("values", key != "")))
 	defer span.End()
 	var (
-		f   storage.LogFacets
+		f   domain.LogFacets
 		err error
 	)
 	if key == "" {
@@ -190,7 +215,7 @@ func (s *Service) Facets(ctx context.Context, q storage.LogQuery, key string) (s
 		f, err = s.repo.LogAttributeValues(ctx, q, key)
 	}
 	if err != nil {
-		return storage.LogFacets{}, s.readErr(ctx, span, "log facets", q.ProjectID, err)
+		return domain.LogFacets{}, s.readErr(ctx, span, "log facets", q.ProjectID, err)
 	}
 	return f, nil
 }
@@ -207,7 +232,7 @@ func (s *Service) readErr(ctx context.Context, span trace.Span, what string, pro
 		s.logger.WarnContext(ctx, what+" unavailable", "project_id", projectID, "error", err)
 	default:
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, what, "project_id", projectID, "error", err)
+		apperr.LogFailure(ctx, s.logger, what, err, "project_id", projectID)
 	}
 	return err
 }

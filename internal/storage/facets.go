@@ -164,7 +164,7 @@ func (s *core) PersistFacets(ctx context.Context, issueID int64, facets map[stri
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return wrapErr(err, "PersistFacets")
 	}
 	defer tx.Rollback()
 
@@ -187,7 +187,7 @@ func (s *core) PersistFacets(ctx context.Context, issueID int64, facets map[stri
 		}
 		inserted, err := persistFacet(ctx, tx, projectID, issueID, k, v, keyCount)
 		if err != nil {
-			return err
+			return wrapErr(err, "PersistFacets")
 		}
 		if inserted {
 			keyCount.inc()
@@ -247,7 +247,7 @@ func (c *facetKeyCounter) get() (int, error) {
 		`SELECT COUNT(DISTINCT facet_key) FROM issue_facets WHERE project_id = ?`,
 		c.projectID,
 	).Scan(&c.n); err != nil {
-		return 0, err
+		return 0, wrapErr(err, "get")
 	}
 	c.loaded = true
 	return c.n, nil
@@ -278,7 +278,7 @@ func persistFacet(
 		`SELECT EXISTS(SELECT 1 FROM issue_facets WHERE project_id = ? AND facet_key = ?)`,
 		projectID, k,
 	).Scan(&keyExists); err != nil {
-		return false, err
+		return false, wrapErr(err, "persistFacet")
 	}
 	isNewKey := !keyExists
 
@@ -287,7 +287,7 @@ func persistFacet(
 	if isNewKey {
 		n, err := keyCount.get()
 		if err != nil {
-			return false, err
+			return false, wrapErr(err, "persistFacet")
 		}
 		if n >= maxFacetKeysPerProject {
 			return false, nil
@@ -301,7 +301,7 @@ func persistFacet(
 		`SELECT EXISTS(SELECT 1 FROM issue_facets WHERE project_id = ? AND facet_key = ? AND facet_value = ?)`,
 		projectID, k, v,
 	).Scan(&valueExists); err != nil {
-		return false, err
+		return false, wrapErr(err, "persistFacet")
 	}
 	isNewValue := !valueExists
 
@@ -312,7 +312,7 @@ func persistFacet(
 			`SELECT COUNT(DISTINCT facet_value) FROM issue_facets WHERE project_id = ? AND facet_key = ?`,
 			projectID, k,
 		).Scan(&distinctValueCount); err != nil {
-			return false, err
+			return false, wrapErr(err, "persistFacet")
 		}
 		if distinctValueCount >= maxFacetValuesPerKey {
 			return false, nil
@@ -323,7 +323,7 @@ func persistFacet(
 	// from an earlier event of this issue. The primary key decides that, so no
 	// extra read is needed to find out.
 	if _, err := tx.ExecContext(ctx, insertIssueFacetSQL, projectID, issueID, k, v); err != nil {
-		return false, err
+		return false, wrapErr(err, "persistFacet")
 	}
 
 	return isNewKey, nil
@@ -344,7 +344,7 @@ func (s *FacetStore) ListFacetKeys(ctx context.Context, projectID int64) ([]stri
 		projectID,
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "ListFacetKeys")
 	}
 	defer rows.Close()
 
@@ -352,7 +352,7 @@ func (s *FacetStore) ListFacetKeys(ctx context.Context, projectID int64) ([]stri
 	for rows.Next() {
 		var k string
 		if err := rows.Scan(&k); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "ListFacetKeys")
 		}
 		keys = append(keys, k)
 	}
@@ -368,7 +368,7 @@ func (s *FacetStore) ListFacetValues(ctx context.Context, projectID int64, key s
 		projectID, key,
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "ListFacetValues")
 	}
 	defer rows.Close()
 
@@ -376,7 +376,7 @@ func (s *FacetStore) ListFacetValues(ctx context.Context, projectID int64, key s
 	for rows.Next() {
 		var v string
 		if err := rows.Scan(&v); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "ListFacetValues")
 		}
 		values = append(values, v)
 	}

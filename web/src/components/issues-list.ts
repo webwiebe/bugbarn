@@ -1,4 +1,4 @@
-import { readFirst, readString } from "../data.js";
+import { readFirst, readString } from "../records.js";
 import {
   eventIssueId,
   eventSeverity,
@@ -19,7 +19,7 @@ import {
 } from "../domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "../format.js";
 import type { ApiEvent, ApiIssue, ApiRelease } from "../types.js";
-import { toTimestampMs } from "./shared.js";
+import { toTimestampMs } from "./event-detail.js";
 
 export function renderIssueListMarkup(issues: ApiIssue[], query: string, selectedIssueId: string | null, error: unknown = null): string {
   if (error) {
@@ -87,10 +87,6 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
       })
       .join("")}
   `;
-}
-
-export function filteredIssueCount(issues: ApiIssue[], query: string): number {
-  return filterIssues(issues, query).length;
 }
 
 export function renderEmptyIssues(setupGuide: string): string {

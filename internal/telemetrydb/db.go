@@ -7,7 +7,7 @@
 // main database's write connection, and the main database's 10GB+ migrations
 // and retention sweeps must never see these tables. Do not ATTACH these files
 // to the main database: an attached database breaks the main checkpoint (see
-// internal/storage/checkpoint.go).
+// internal/sqlitedb/checkpoint.go).
 //
 // Each file is hard-capped in size. The maintenance loop evicts the oldest
 // rows once the file passes 90% of its cap, and inserts are refused once it
@@ -29,7 +29,7 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/sqlitedb"
 )
 
 //go:embed migrations
@@ -83,7 +83,7 @@ func Open(ctx context.Context, spec Spec, path string, maxBytes int64) (*DB, err
 	// Only the maintenance and metrics passes set a deadline on this handle, a
 	// budget that ends them on purpose, so an expiry here is no failure. Ingest
 	// inserts run without one; a deadline added there would no longer mark spans.
-	w, err := sql.Open(storage.BudgetedDriverName(), writeDSN(abs))
+	w, err := sql.Open(sqlitedb.BudgetedDriverName(), writeDSN(abs))
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func Open(ctx context.Context, spec Spec, path string, maxBytes int64) (*DB, err
 		_ = w.Close()
 		return nil, err
 	}
-	r, err := sql.Open(storage.DriverName(), readDSN(abs))
+	r, err := sql.Open(sqlitedb.DriverName(), readDSN(abs))
 	if err != nil {
 		_ = w.Close()
 		return nil, err
@@ -114,7 +114,7 @@ func OpenReadOnly(ctx context.Context, spec Spec, path string) (*DB, error) {
 		}
 		return nil, err
 	}
-	r, err := sql.Open(storage.DriverName(), readDSN(abs))
+	r, err := sql.Open(sqlitedb.DriverName(), readDSN(abs))
 	if err != nil {
 		return nil, err
 	}

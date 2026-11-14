@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestExtractFacets(t *testing.T) {
@@ -322,7 +322,7 @@ func TestListIssuesFilteredByFacets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	filtered, err := store.ListIssuesFiltered(ctx, IssueFilter{
+	filtered, err := store.ListIssuesFiltered(ctx, domain.IssueFilter{
 		Facets: map[string]string{"host.name": "web-01"},
 	})
 	if err != nil {
@@ -402,6 +402,3 @@ func indexedKey(i int) string {
 	// Generate keys like "facet.key.aa", "facet.key.ab", ...
 	return "facet.key." + string(rune('a'+i%26)) + string(rune('a'+i/26))
 }
-
-// ensure the worker package is referenced.
-var _ = worker.ProcessedEvent{}

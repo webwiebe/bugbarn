@@ -15,7 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/tick"
 )
 
 // Config sets the silence rule.
@@ -38,7 +39,7 @@ func DefaultConfig() Config {
 
 // Source supplies per-project activity counts.
 type Source interface {
-	ProjectActivity(ctx context.Context, now time.Time, silentFor, lookback time.Duration) ([]storage.ProjectActivity, error)
+	ProjectActivity(ctx context.Context, now time.Time, silentFor, lookback time.Duration) ([]domain.ProjectActivity, error)
 }
 
 // Notifier delivers the alert for one silent project.
@@ -97,18 +98,5 @@ func (m *Monitor) Start(ctx context.Context, wg *sync.WaitGroup) {
 	if interval <= 0 {
 		interval = time.Hour
 	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				m.Check(ctx)
-			}
-		}
-	}()
+	tick.Start(ctx, wg, interval, func(time.Time) { m.Check(ctx) })
 }

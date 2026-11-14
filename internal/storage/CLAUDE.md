@@ -11,11 +11,15 @@ Wrap every DB error before it leaves this package, with `wrapErr` / `wrapNotFoun
 
 - `sql.ErrNoRows` becomes `apperr.NotFound`
 - a UNIQUE violation becomes `apperr.Conflict`
+- SQLITE_BUSY and SQLITE_LOCKED (including extended codes) become `apperr.Busy`, which the
+  API answers with 503 and Retry-After
 - anything else becomes `apperr.Internal`
 
 Never return `sql.ErrNoRows`, a `*sqlite.Error` or a raw driver error. Services and the API
-map on `apperr` codes; a raw error surfaces as a 500. `IsDatabaseLocked` is the one
-exported check on driver errors, for retry decisions in the ingest consumers.
+map on `apperr` codes; a raw error surfaces as a 500. `IsDatabaseLocked` and
+`IsTransient` (busy, locked or an expired deadline) are the exported checks for retry
+decisions in the ingest consumers and the log service. They match on `apperr.ErrBusy` or
+the driver result code through `sqlitedb.IsBusy`, never on error text.
 
 This package does not log as a rule. The existing `slog` calls are best-effort side paths
 (driver registration, the background fingerprint migration, regression bookkeeping). Do
@@ -30,6 +34,14 @@ not add new ones; return an error and let the service log it.
 - `OpenReadOnly` (reader pods): read pool only, `mode=ro`, no migrations. Write methods
   fail because `db` is nil. Readers share the writer's file on the same PVC.
 
+The generic SQLite plumbing lives in `internal/sqlitedb`, shared with `internal/telemetrydb`
+(security.db, metrics.db): driver registration and names, the read-only recovery driver,
+`IsReadonlyRecovery` and the WAL checkpoint mechanics that work on a `*sql.DB`. `storage`
+keeps what is specific to bugbarn.db: the DSNs, pools, migrations, `RunPeriodicCheckpoint`
+and `FinalCheckpoint` as thin methods over `sqlitedb`, and the `CheckpointPolicy`,
+`WALFileSize` names that `cmd/bugbarn` uses (aliases in `wal.go`). Put new driver or
+checkpoint code that any SQLite file could use in `sqlitedb`.
+
 The single write connection is shared by ingest, retention, log trimming, admin mutations
 and the WAL checkpoint. A slow write statement stalls all ingestion. A per-insert
 `COUNT(DISTINCT ...)` once cost 46s per event this way; keep hot-path writes to indexed
@@ -38,7 +50,7 @@ point lookups.
 ## WAL
 
 `sqliteDSN` sets `journal_mode(wal)` and `wal_autocheckpoint(0)`. `RunPeriodicCheckpoint`
-(`checkpoint.go`, writer only, every `BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS`) is the
+(`wal.go`, running `sqlitedb.RunPolicyLoop` in `internal/sqlitedb/checkpoint.go`; writer only, every `BUGBARN_WAL_CHECKPOINT_INTERVAL_SECONDS`) is the
 sole checkpointer. It runs PASSIVE on most ticks and TRUNCATE every
 `BUGBARN_WAL_TRUNCATE_EVERY`-th tick (`CheckpointPolicy`), with a bounded retry per tick.
 Reader pods hold snapshots continuously, so PASSIVE alone never resets the WAL file; the
@@ -52,15 +64,15 @@ checkpointer, and keep WAL mode: the readers depend on it.
 Reader pods mount the volume read-only, so a reader holds the `-shm` file read-only. When
 the wal-index header there needs recovery, only the writer can rebuild it, and until its
 next write every read on the reader fails with `SQLITE_READONLY_RECOVERY` (264).
-`OpenReadOnly` therefore opens its pool on a driver (`readonly_driver.go`) that retries
-every query and prepare on 264 three times (`retryReadonlyRecovery`, 175 ms in all),
+`OpenReadOnly` therefore opens its pool on a driver (`sqlitedb.ReadOnlyDriverName`, `internal/sqlitedb/readonly_driver.go`) that retries
+every query and prepare on 264 three times (`retryReadonlyRecovery` in `internal/sqlitedb`, 175 ms in all),
 counts the outcome in `bugbarn.storage.readonly_recovery` and puts the WAL's size and
 age on a span event (#242, #261). SQLITE_READONLY_CANTINIT (1288), a reader that cannot
 initialize the wal-index, is the same state and takes the same path (#268), and so is
 SQLITE_PROTOCOL (15, "locking protocol"), a reader that lost the wal-index lock race to
-the writer (#275). A 264, 1288 or 15 that outlasts the retries becomes `apperr.Unavailable` (503). Do not add per-call retries; the driver covers every read.
+the writer (#275). A 264, 1288 or 15 that outlasts the retries becomes `apperr.Unavailable` (503) in `wrapErr`. Do not add per-call retries; the driver covers every read.
 
-`readonly_recovery_process_test.go` reproduces the state: a reader in a child process,
+`internal/sqlitedb/readonly_recovery_process_test.go` reproduces the state: a reader in a child process,
 opened with `readonly_shm=1` (a file mode would not hold, since CI runs the tests as
 root), reads once; the test zeroes the header and the reader's
 next read gets 264. The reader must be a separate, long-lived process. A reader in the
@@ -119,5 +131,6 @@ Use a real database in `t.TempDir()`; there are no storage mocks. Tests that wri
 explicit fingerprints use `open(path, false)` so the background migration does not
 rewrite them.
 
-`storage` imports `internal/worker`, so `worker` cannot import `storage`. That is why the
-Redis consumer pipeline lives in `internal/ingestproc`.
+`storage` takes `event.ProcessedEvent` from the leaf package `internal/event` and does not
+import `internal/worker`. The Redis consumer pipeline lives in `internal/ingestproc`, which
+ties the worker's decode and fingerprint step to storage.

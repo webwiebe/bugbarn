@@ -14,7 +14,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 const issueEventCols = `e.id, e.issue_id, e.fingerprint, e.fingerprint_material, e.fingerprint_explanation_json,
@@ -44,13 +43,13 @@ func issueEventsWhere(projectID, issueRowID, beforeID int64) (string, []any) {
 	return "\nWHERE " + strings.Join(conds, " AND "), args
 }
 
-func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]Event, bool, error) {
+func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit int, beforeID int64) ([]domain.Event, bool, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListIssueEvents")
 	defer span.End()
 	span.SetAttributes(attribute.String("issue_id", issueID), attribute.Int("limit", limit))
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
-		return nil, false, err
+		return nil, false, wrapErr(err, "ListIssueEvents")
 	}
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -69,20 +68,20 @@ func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit 
 	rows, err := s.readDB().QueryContext(ctx, `SELECT `+issueEventCols+issueEventJoin+where+`
 ORDER BY e.id DESC LIMIT ?`, append(args, fetch)...)
 	if err != nil {
-		return nil, false, err
+		return nil, false, wrapErr(err, "ListIssueEvents")
 	}
 	defer rows.Close()
 
-	events := []Event{}
+	events := []domain.Event{}
 	for rows.Next() {
 		entry, err := scanEvent(rows)
 		if err != nil {
-			return nil, false, err
+			return nil, false, wrapErr(err, "ListIssueEvents")
 		}
 		events = append(events, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, err
+		return nil, false, wrapErr(err, "ListIssueEvents")
 	}
 
 	hasMore := len(events) > limit
@@ -119,13 +118,13 @@ FROM events e
 JOIN issues i ON i.id = e.issue_id
 JOIN projects p ON p.id = i.project_id`
 
-func (s *EventStore) GetEvent(ctx context.Context, eventID string) (Event, error) {
+func (s *EventStore) GetEvent(ctx context.Context, eventID string) (domain.Event, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.GetEvent")
 	defer span.End()
 	span.SetAttributes(attribute.String("event_id", eventID))
 	rowID, err := parseID(eventIDPrefix, eventID)
 	if err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "GetEvent")
 	}
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -144,7 +143,7 @@ WHERE e.id = ?`, rowID)
 
 	evt, err := scanEvent(row)
 	if err != nil {
-		return Event{}, wrapNotFound(err, "event not found")
+		return domain.Event{}, wrapNotFound(err, "event not found")
 	}
 	return evt, nil
 }
@@ -168,7 +167,7 @@ func (s *EventStore) LastEventReceivedAt(ctx context.Context) (time.Time, error)
 	return parseTime(raw.String)
 }
 
-func (s *EventStore) ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {
+func (s *EventStore) ListRecentEvents(ctx context.Context, limit int, since time.Time) ([]domain.Event, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.ListRecentEvents")
 	defer span.End()
 	if limit <= 0 || limit > 100 {
@@ -200,20 +199,20 @@ ORDER BY e.received_at DESC, e.id DESC
 LIMIT ?`, sinceStr, limit)
 	}
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "ListRecentEvents")
 	}
 	defer rows.Close()
 
-	events := []Event{}
+	events := []domain.Event{}
 	for rows.Next() {
 		entry, err := scanEvent(rows)
 		if err != nil {
-			return nil, err
+			return nil, wrapErr(err, "ListRecentEvents")
 		}
 		events = append(events, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "ListRecentEvents")
 	}
 	return events, nil
 }
@@ -237,18 +236,18 @@ INSERT INTO events (
 
 func (s *core) insertEvent(
 	ctx context.Context, projectID int64, issueID int64, issueDisplayID string,
-	regressed bool, sampleWeight int64, processed worker.ProcessedEvent,
-) (Event, error) {
+	regressed bool, sampleWeight int64, processed event.ProcessedEvent,
+) (domain.Event, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "insertEvent")
 	}
 
 	receivedAt, observedAt := eventTimestamps(processed.Event)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "insertEvent")
 	}
 	defer tx.Rollback()
 
@@ -267,19 +266,19 @@ func (s *core) insertEvent(
 		sampleWeight,
 	)
 	if err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "insertEvent")
 	}
 
 	eventRowID, err := res.LastInsertId()
 	if err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "insertEvent")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "insertEvent")
 	}
 
-	return Event{
+	return domain.Event{
 		ID:                     formatID(eventIDPrefix, eventRowID),
 		IssueID:                issueDisplayID,
 		Fingerprint:            processed.Fingerprint,
@@ -301,7 +300,7 @@ func (s *core) insertEvent(
 func (s *core) insertFacets(ctx context.Context, projectID int64, issueID int64, processed event.Event) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return wrapErr(err, "insertFacets")
 	}
 	defer tx.Rollback()
 
@@ -323,7 +322,7 @@ func (s *core) insertFacets(ctx context.Context, projectID int64, issueID int64,
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, insertIssueFacetSQL, projectID, issueID, row.key, row.value); err != nil {
-			return err
+			return wrapErr(err, "insertFacets")
 		}
 	}
 
@@ -380,11 +379,11 @@ func flattenFacets(out *[]facetRow, prefix string, value any) {
 
 func scanEvent(scanner interface {
 	Scan(dest ...any) error
-}) (Event, error) {
+}) (domain.Event, error) {
 	var (
 		id             int64
 		issueID        int64
-		entry          Event
+		entry          domain.Event
 		payload        []byte
 		explanationRaw []byte
 		receivedAt     string
@@ -408,21 +407,21 @@ func scanEvent(scanner interface {
 		&issueNumber,
 		&issuePrefix,
 	); err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "scanEvent")
 	}
 	if err := unmarshalStringSlice(explanationRaw, &entry.FingerprintExplanation); err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "scanEvent")
 	}
 	if err := json.Unmarshal(payload, &entry.Payload); err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "scanEvent")
 	}
 	parsedReceivedAt, err := parseTime(receivedAt)
 	if err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "scanEvent")
 	}
 	parsedObservedAt, err := parseTime(observedAt)
 	if err != nil {
-		return Event{}, err
+		return domain.Event{}, wrapErr(err, "scanEvent")
 	}
 	entry.ReceivedAt = parsedReceivedAt
 	entry.ObservedAt = parsedObservedAt

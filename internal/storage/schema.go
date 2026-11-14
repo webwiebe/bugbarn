@@ -15,7 +15,7 @@ var migrationFiles embed.FS
 
 func (s *core) init(ctx context.Context) error {
 	if err := s.db.PingContext(ctx); err != nil {
-		return err
+		return wrapErr(err, "init")
 	}
 
 	sub, err := fs.Sub(migrationFiles, "migrations")
@@ -36,24 +36,24 @@ func (s *core) init(ctx context.Context) error {
 		`INSERT INTO projects (slug, name) VALUES (?, ?) ON CONFLICT(slug) DO NOTHING`,
 		defaultProject, "Default Project",
 	); err != nil {
-		return err
+		return wrapErr(err, "init")
 	}
 
 	var projectID int64
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT id FROM projects WHERE slug = ?`, defaultProject,
 	).Scan(&projectID); err != nil {
-		return err
+		return wrapErr(err, "init")
 	}
 	s.defaultProjectID = projectID
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return wrapErr(err, "init")
 	}
 	defer tx.Rollback()
 	if err := migrateIssuePrefixes(ctx, tx); err != nil {
-		return err
+		return wrapErr(err, "init")
 	}
 	return tx.Commit()
 }
@@ -64,14 +64,14 @@ func numberProjectIssues(ctx context.Context, tx *sql.Tx, projectID int64, prefi
 	issueRows, err := tx.QueryContext(ctx,
 		`SELECT id FROM issues WHERE project_id = ? AND issue_number = 0 ORDER BY id ASC`, projectID)
 	if err != nil {
-		return err
+		return wrapErr(err, "numberProjectIssues")
 	}
 	var issueIDs []int64
 	for issueRows.Next() {
 		var id int64
 		if err := issueRows.Scan(&id); err != nil {
 			issueRows.Close()
-			return err
+			return wrapErr(err, "numberProjectIssues")
 		}
 		issueIDs = append(issueIDs, id)
 	}
@@ -80,7 +80,7 @@ func numberProjectIssues(ctx context.Context, tx *sql.Tx, projectID int64, prefi
 	for i, id := range issueIDs {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE issues SET issue_number = ? WHERE id = ?`, i+1, id); err != nil {
-			return err
+			return wrapErr(err, "numberProjectIssues")
 		}
 	}
 
@@ -88,7 +88,7 @@ func numberProjectIssues(ctx context.Context, tx *sql.Tx, projectID int64, prefi
 	_, err = tx.ExecContext(ctx,
 		`UPDATE projects SET issue_prefix = ?, issue_counter = ? WHERE id = ?`,
 		prefix, counter, projectID)
-	return err
+	return wrapErr(err, "numberProjectIssues")
 }
 
 // migrateIssuePrefixes assigns issue_prefix to projects that don't have one yet,
@@ -96,7 +96,7 @@ func numberProjectIssues(ctx context.Context, tx *sql.Tx, projectID int64, prefi
 func migrateIssuePrefixes(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, `SELECT id, slug FROM projects WHERE issue_prefix = ''`)
 	if err != nil {
-		return err
+		return wrapErr(err, "migrateIssuePrefixes")
 	}
 	var projects []struct {
 		id   int64
@@ -109,25 +109,25 @@ func migrateIssuePrefixes(ctx context.Context, tx *sql.Tx) error {
 		}
 		if err := rows.Scan(&p.id, &p.slug); err != nil {
 			rows.Close()
-			return err
+			return wrapErr(err, "migrateIssuePrefixes")
 		}
 		projects = append(projects, p)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return err
+		return wrapErr(err, "migrateIssuePrefixes")
 	}
 
 	usedPrefixes := make(map[string]bool)
 	existingRows, err := tx.QueryContext(ctx, `SELECT issue_prefix FROM projects WHERE issue_prefix != ''`)
 	if err != nil {
-		return err
+		return wrapErr(err, "migrateIssuePrefixes")
 	}
 	for existingRows.Next() {
 		var p string
 		if err := existingRows.Scan(&p); err != nil {
 			existingRows.Close()
-			return err
+			return wrapErr(err, "migrateIssuePrefixes")
 		}
 		usedPrefixes[p] = true
 	}
@@ -142,7 +142,7 @@ func migrateIssuePrefixes(ctx context.Context, tx *sql.Tx) error {
 		usedPrefixes[prefix] = true
 
 		if err := numberProjectIssues(ctx, tx, p.id, prefix); err != nil {
-			return err
+			return wrapErr(err, "migrateIssuePrefixes")
 		}
 	}
 	return nil

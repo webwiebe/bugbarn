@@ -63,7 +63,7 @@ export async function loadHosts(): Promise<void> {
 }
 
 /** chartMetrics picks the metrics worth a chart, in display order. */
-export function chartMetrics(names: string[]): string[] {
+function chartMetrics(names: string[]): string[] {
   const fixed = ["cpu.util", "load1", "mem.avail_pct"].filter(n => names.includes(n));
   const fs = names.filter(n => n.startsWith("fs.") && n.endsWith(".used_pct"));
   const net = names.filter(n => n.startsWith("net.") && /\.(rx|tx)_bytes_per_s$/.test(n));

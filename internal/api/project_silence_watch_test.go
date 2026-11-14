@@ -20,7 +20,7 @@ func silenceWatch(t *testing.T, srv *Server, method, slug, body string) *httptes
 	req := httptest.NewRequest(method, "/api/v1/projects/"+slug+"/silence-watch", reader)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	srv.projectSilenceWatch(rr, req)
+	srv.ServeHTTP(rr, req)
 	return rr
 }
 

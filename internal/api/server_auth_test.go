@@ -10,9 +10,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestServeHTTPStatefulEndpoints(t *testing.T) {
@@ -22,7 +21,7 @@ func TestServeHTTPStatefulEndpoints(t *testing.T) {
 	defer store.Close()
 
 	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
-	issue, _ := mustPersistProcessedEvent(t, store, worker.ProcessedEvent{
+	issue, _ := mustPersistProcessedEvent(t, store, event.ProcessedEvent{
 		Fingerprint: "fingerprint-stateful",
 		Event: event.Event{
 			ReceivedAt: base,
@@ -71,7 +70,7 @@ func TestServeHTTPStatefulEndpoints(t *testing.T) {
 			t.Fatalf("unexpected release list status: got %d want %d body=%q", rr.Code, http.StatusOK, rr.Body.String())
 		}
 		var response struct {
-			Releases []storage.Release `json:"releases"`
+			Releases []domain.Release `json:"releases"`
 		}
 		decodeResponse(t, rr, &response)
 		if len(response.Releases) == 0 {

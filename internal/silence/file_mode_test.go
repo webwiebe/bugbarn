@@ -15,7 +15,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 type recordingFiler struct {
@@ -55,7 +54,7 @@ func (f *fixture) eventWithFingerprint(projectID int64, fp string, at time.Time)
 		ReceivedAt: at, ObservedAt: at, Severity: "ERROR", Message: "self filed",
 		Exception: event.Exception{Type: "monitor", Message: "self filed"},
 	}
-	if _, _, _, _, err := f.store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+	if _, _, _, _, err := f.store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 		Event: evt, Fingerprint: fp, FingerprintMaterial: fp,
 	}); err != nil {
 		f.t.Fatal(err)
@@ -166,7 +165,7 @@ func TestSelfFiledEventsDoNotHideAStop(t *testing.T) {
 }
 
 type fakeIssues struct {
-	target   storage.Project
+	target   domain.Project
 	targetEr error
 	issue    domain.Issue
 	issueErr error
@@ -174,7 +173,7 @@ type fakeIssues struct {
 	order    *[]string
 }
 
-func (f *fakeIssues) ProjectBySlug(context.Context, string) (storage.Project, error) {
+func (f *fakeIssues) ProjectBySlug(context.Context, string) (domain.Project, error) {
 	return f.target, f.targetEr
 }
 
@@ -224,7 +223,7 @@ func newTestReporter(store *fakeIssues, p *persisted) *Reporter {
 
 func TestReporterFilesOneEventPerNewSilentProject(t *testing.T) {
 	t.Parallel()
-	store := &fakeIssues{target: storage.Project{ID: 9, Slug: "infra"}, issueErr: apperr.NotFound("issue not found", nil)}
+	store := &fakeIssues{target: domain.Project{ID: 9, Slug: "infra"}, issueErr: apperr.NotFound("issue not found", nil)}
 	p := &persisted{}
 	finding := Finding{Slug: "github-tamagotchi", Rule: RuleLogs, Gap: 56 * time.Hour, LongestGap: 30 * time.Minute, Volume: 5000}
 	if err := newTestReporter(store, p).Fire(context.Background(), finding); err != nil {
@@ -249,7 +248,7 @@ func TestReporterFilesOneEventPerNewSilentProject(t *testing.T) {
 func TestReporterLeavesAnOpenOrMutedIssueAlone(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"unresolved", "regressed", "muted"} {
-		store := &fakeIssues{target: storage.Project{ID: 9}, issue: domain.Issue{ID: "1", Status: status}}
+		store := &fakeIssues{target: domain.Project{ID: 9}, issue: domain.Issue{ID: "1", Status: status}}
 		p := &persisted{}
 		if err := newTestReporter(store, p).Fire(context.Background(), Finding{Slug: "a", Rule: RuleEvents}); err != nil {
 			t.Fatal(err)
@@ -263,7 +262,7 @@ func TestReporterLeavesAnOpenOrMutedIssueAlone(t *testing.T) {
 // A resolved issue gets a new event, which regresses it.
 func TestReporterReopensAResolvedIssue(t *testing.T) {
 	t.Parallel()
-	store := &fakeIssues{target: storage.Project{ID: 9}, issue: domain.Issue{ID: "1", Status: "resolved"}}
+	store := &fakeIssues{target: domain.Project{ID: 9}, issue: domain.Issue{ID: "1", Status: "resolved"}}
 	p := &persisted{}
 	if err := newTestReporter(store, p).Fire(context.Background(), Finding{Slug: "a", Rule: RuleEvents}); err != nil {
 		t.Fatal(err)
@@ -276,7 +275,7 @@ func TestReporterReopensAResolvedIssue(t *testing.T) {
 func TestReporterResumeRecordsTheEventBeforeItResolves(t *testing.T) {
 	t.Parallel()
 	var order []string
-	store := &fakeIssues{target: storage.Project{ID: 9}, issue: domain.Issue{ID: "42", Status: "unresolved"}, order: &order}
+	store := &fakeIssues{target: domain.Project{ID: 9}, issue: domain.Issue{ID: "42", Status: "unresolved"}, order: &order}
 	p := &persisted{order: &order}
 	if err := newTestReporter(store, p).Resume(context.Background(), "a", RuleLogs); err != nil {
 		t.Fatal(err)
@@ -295,9 +294,9 @@ func TestReporterResumeRecordsTheEventBeforeItResolves(t *testing.T) {
 func TestReporterResumeWithoutAnOpenIssueDoesNothing(t *testing.T) {
 	t.Parallel()
 	for name, store := range map[string]*fakeIssues{
-		"no issue": {target: storage.Project{ID: 9}, issueErr: apperr.NotFound("issue not found", nil)},
-		"resolved": {target: storage.Project{ID: 9}, issue: domain.Issue{ID: "1", Status: "resolved"}},
-		"muted":    {target: storage.Project{ID: 9}, issue: domain.Issue{ID: "1", Status: "muted"}},
+		"no issue": {target: domain.Project{ID: 9}, issueErr: apperr.NotFound("issue not found", nil)},
+		"resolved": {target: domain.Project{ID: 9}, issue: domain.Issue{ID: "1", Status: "resolved"}},
+		"muted":    {target: domain.Project{ID: 9}, issue: domain.Issue{ID: "1", Status: "muted"}},
 	} {
 		p := &persisted{}
 		if err := newTestReporter(store, p).Resume(context.Background(), "a", RuleLogs); err != nil {
@@ -324,9 +323,9 @@ func TestReporterWithoutATargetProjectFilesNothing(t *testing.T) {
 	}
 }
 
-type fakeLogs struct{ entries []storage.LogEntry }
+type fakeLogs struct{ entries []domain.LogEntry }
 
-func (f *fakeLogs) InsertLogEntries(_ context.Context, entries []storage.LogEntry) error {
+func (f *fakeLogs) InsertLogEntries(_ context.Context, entries []domain.LogEntry) error {
 	f.entries = append(f.entries, entries...)
 	return nil
 }
@@ -334,7 +333,7 @@ func (f *fakeLogs) InsertLogEntries(_ context.Context, entries []storage.LogEntr
 func TestLogShipperWritesAnInfoEntryIntoTheSelfProject(t *testing.T) {
 	t.Parallel()
 	logs := &fakeLogs{}
-	s := NewLogShipper(logs, &fakeIssues{target: storage.Project{ID: 5, Slug: "bugbarn-service"}}, "bugbarn-service",
+	s := NewLogShipper(logs, &fakeIssues{target: domain.Project{ID: 5, Slug: "bugbarn-service"}}, "bugbarn-service",
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	s.now = func() time.Time { return now }
 	s.Ship(context.Background(), Finding{Slug: "github-tamagotchi", Rule: RuleLogs, Gap: 56 * time.Hour, Volume: 5000}, ModeDryRun)
@@ -397,7 +396,7 @@ func TestEverySweepIsShippedWithItsCounts(t *testing.T) {
 func TestLogShipperWritesTheSweepCountsWithoutAProjectName(t *testing.T) {
 	t.Parallel()
 	logs := &fakeLogs{}
-	s := NewLogShipper(logs, &fakeIssues{target: storage.Project{ID: 5, Slug: "bugbarn-service"}}, "bugbarn-service",
+	s := NewLogShipper(logs, &fakeIssues{target: domain.Project{ID: 5, Slug: "bugbarn-service"}}, "bugbarn-service",
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	s.now = func() time.Time { return now }
 	s.ShipSweep(context.Background(), ModeDryRun, 55, 2)

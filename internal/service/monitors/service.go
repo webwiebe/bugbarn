@@ -15,7 +15,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/cronexpr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 const (
@@ -32,7 +31,7 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // Repository is the storage the service needs; *storage.MonitorStore satisfies it.
 type Repository interface {
-	RecordMonitorCheckIn(ctx context.Context, in storage.MonitorCheckIn) (storage.MonitorCheckInResult, error)
+	RecordMonitorCheckIn(ctx context.Context, in domain.MonitorCheckIn) (domain.MonitorCheckInResult, error)
 	GetMonitor(ctx context.Context, projectID int64, slug string) (domain.Monitor, error)
 	ListMonitors(ctx context.Context, projectID int64) ([]domain.Monitor, error)
 	MarkMonitorEmitted(ctx context.Context, id int64, now time.Time) error
@@ -103,7 +102,7 @@ func (s *Service) CheckIn(ctx context.Context, projectID int64, in CheckInInput)
 	if err := validateTimings(in); err != nil {
 		return CheckInResult{}, err
 	}
-	rec := storage.MonitorCheckIn{
+	rec := domain.MonitorCheckIn{
 		ProjectID: projectID, Slug: in.Slug, Status: in.Status,
 		Interval: in.Interval, Grace: in.Grace, At: s.now().UTC(),
 	}
@@ -152,15 +151,15 @@ func (s *Service) report(ctx context.Context, res CheckInResult) {
 	switch {
 	case m.State == domain.MonitorStateError && m.NeedsReport(now):
 		if err := s.reporter.Errored(ctx, m, res.Message); err != nil {
-			s.logger.Error("monitor error check-in not reported", "project_id", m.ProjectID, "monitor", m.Slug, "error", err)
+			apperr.LogFailure(ctx, s.logger, "monitor error check-in not reported", err, "project_id", m.ProjectID, "monitor", m.Slug)
 			return
 		}
 		if err := s.repo.MarkMonitorEmitted(ctx, m.ID, now); err != nil {
-			s.logger.Error("monitor report not recorded", "project_id", m.ProjectID, "monitor", m.Slug, "error", err)
+			apperr.LogFailure(ctx, s.logger, "monitor report not recorded", err, "project_id", m.ProjectID, "monitor", m.Slug)
 		}
 	case m.State == domain.MonitorStateOK && res.PreviousState != domain.MonitorStateOK:
 		if err := s.reporter.Recovered(ctx, m, now); err != nil {
-			s.logger.Error("monitor recovery not recorded", "project_id", m.ProjectID, "monitor", m.Slug, "error", err)
+			apperr.LogFailure(ctx, s.logger, "monitor recovery not recorded", err, "project_id", m.ProjectID, "monitor", m.Slug)
 		}
 	}
 }
@@ -168,21 +167,29 @@ func (s *Service) report(ctx context.Context, res CheckInResult) {
 // ListAll returns the enabled monitors of every active project, with their
 // project slug.
 func (s *Service) ListAll(ctx context.Context) ([]domain.Monitor, error) {
-	return s.repo.ListEnabledMonitors(ctx)
+	monitors, err := s.repo.ListEnabledMonitors(ctx)
+	if err != nil {
+		apperr.LogFailure(ctx, s.logger, "list enabled monitors", err)
+	}
+	return monitors, err
 }
 
 // Delete removes a monitor. Its issues are left as they are.
 func (s *Service) Delete(ctx context.Context, projectID int64, slug string) error {
 	err := s.repo.DeleteMonitor(ctx, projectID, slug)
-	if err != nil && errors.Is(err, apperr.ErrInternal) {
-		s.logger.Error("monitor delete failed", "project_id", projectID, "monitor", slug, "error", err)
+	if err != nil {
+		apperr.LogFailure(ctx, s.logger, "monitor delete failed", err, "project_id", projectID, "monitor", slug)
 	}
 	return err
 }
 
 // List returns the monitors of a project.
 func (s *Service) List(ctx context.Context, projectID int64) ([]domain.Monitor, error) {
-	return s.repo.ListMonitors(ctx, projectID)
+	monitors, err := s.repo.ListMonitors(ctx, projectID)
+	if err != nil {
+		apperr.LogFailure(ctx, s.logger, "list monitors", err, "project_id", projectID)
+	}
+	return monitors, err
 }
 
 func validateTimings(in CheckInInput) error {

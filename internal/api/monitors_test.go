@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -36,7 +38,7 @@ func newMonitorHarness(t *testing.T) *monitorHarness {
 	}
 	mint := func(name, plaintext string, projectID int64) {
 		sum := sha256.Sum256([]byte(plaintext))
-		if _, err := store.CreateAPIKey(ctx, name, projectID, hex.EncodeToString(sum[:]), storage.APIKeyScopeIngest); err != nil {
+		if _, err := store.CreateAPIKey(ctx, name, projectID, hex.EncodeToString(sum[:]), domain.APIKeyScopeIngest); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -154,18 +156,20 @@ func TestMonitorCheckInEndpoint(t *testing.T) {
 	})
 }
 
-func TestMonitorCheckInSlugPath(t *testing.T) {
+func TestMonitorCheckInRoutePattern(t *testing.T) {
 	t.Parallel()
-	for path, want := range map[string]string{
-		"/api/v1/monitors/a/check-ins":   "a",
-		"/api/v1/monitors//check-ins":    "",
-		"/api/v1/monitors/a/b/check-ins": "",
-		"/api/v1/monitors/a":             "",
-		"/api/v1/issues":                 "",
+	const checkIn = "POST /api/v1/monitors/{slug}/check-ins"
+	srv := &Server{}
+	for path, matches := range map[string]bool{
+		"/api/v1/monitors/a/check-ins":   true,
+		"/api/v1/monitors//check-ins":    false,
+		"/api/v1/monitors/a/b/check-ins": false,
+		"/api/v1/monitors/a":             false,
+		"/api/v1/issues":                 false,
 	} {
-		got, ok := monitorCheckInSlug(path)
-		if (want == "") == ok || got != want {
-			t.Errorf("%s: got %q ok=%v, want %q", path, got, ok, want)
+		_, got := srv.router().mux.Handler(httptest.NewRequest(http.MethodPost, path, nil))
+		if (got == checkIn) != matches {
+			t.Errorf("%s: matched %q, want check-in route = %v", path, got, matches)
 		}
 	}
 }
@@ -179,7 +183,7 @@ func TestMonitorCheckInIsForwardedByReaders(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}))
 	t.Cleanup(writer.Close)
-	h.server.SetWriteForwarder(NewWriteForwarder(writer.URL))
+	h.server.SetWriteForwarder(writeforward.NewProxy(writer.URL))
 
 	if rr := h.post("job", "", `{"status":"ok","interval":"1h"}`); rr.Code != http.StatusUnauthorized || gotPath != "" {
 		t.Fatalf("a keyless check-in reached the writer: %d %q", rr.Code, gotPath)

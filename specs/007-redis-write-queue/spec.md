@@ -40,7 +40,7 @@ reader (producer)  →  local spool (durability anchor)  →  LPUSH  →  Redis 
 |---|---|---|---|
 | Event ingest (`/api/v1/events`, OTLP) | high | reader spool → HTTP → writer spool → worker | reader spool → **Redis** → writer consumer |
 | Log ingest (`/api/v1/logs`) | high | reader → HTTP proxy → writer `logs.Insert` (sync) | reader spool → **Redis** → writer consumer |
-| Dashboard mutations (resolve/mute, settings, releases, alerts, api keys, source maps) | low | reader → HTTP proxy → writer (sync, needs response) | **unchanged** — stay on `WriteForwarder` (sync HTTP) |
+| Dashboard mutations (resolve/mute, settings, releases, alerts, api keys, source maps) | low | reader → HTTP proxy → writer (sync, needs response) | **unchanged** — stay on `writeforward.Proxy` (sync HTTP) |
 
 Low-volume dashboard mutations need a synchronous response (e.g. resolve issue → return the updated issue), so they stay on the existing HTTP proxy. They were never the storm source.
 
@@ -52,7 +52,7 @@ Low-volume dashboard mutations need a synchronous response (e.g. resolve issue �
         ┌──────▼────────────── reader pods (N, HPA) ──────▼─────────────┐  QUERY side
         │ ingest handler → local spool (durability anchor)              │  (read-only SQLite,
         │   └─ RedisForwarder: LPUSH batches ──────────┐                │   WAL concurrent reads)
-        │ dashboard mutations ── WriteForwarder (sync HTTP) ──┐         │
+        │ dashboard mutations ── writeforward.Proxy (sync HTTP) ──┐         │
         └────────────────────────────────────────────────────┼─────────┘
                                                        │      │
                               Redis list  bugbarn:write-queue │ (sync writes, low volume)
@@ -90,7 +90,7 @@ type QueueItem struct {
 This reuses the existing `spool.Record` shape so the reader spool and the queue carry the same payload.
 
 ### Producer (reader side)
-- New `RedisForwarder` (modeled on `SpoolForwarder.Drain`): reads the local ingest spool, `LPUSH`es batches, advances the cursor only on success.
+- New `RedisForwarder` (modeled on `writeforward.Spool.Drain`): reads the local ingest spool, `LPUSH`es batches, advances the cursor only on success.
 - Log ingest on readers is appended to the **same spool** (as a `Kind:"log"` record) instead of HTTP-proxied, so logs get the same durable, decoupled path as events.
 - The reader checks a JSON log body's shape before it spools: a body whose `logs` key is missing, `null` or not an array answers `400` (`logparse.DecodeJSONBody`, bugbarn#263). It used to answer `202`, and the consumer stored nothing from it. NDJSON bodies are spooled as they are.
 
@@ -121,9 +121,9 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 
 - **Phase 1 — Foundation (no behavior change).** ✅ `internal/queue` package + `Item` envelope + `BUGBARN_REDIS_QUEUE_URL` config + go-redis dependency. Unit tests with miniredis.
 - **Phase 2 — Writer consumer.** ✅ `internal/ingestproc` — `Processor.PersistRecord` (extracted event pipeline) + `Consumer` (`Reserve` → dispatch → `Ack`). Wired into the writer's `run()` behind the flag; connects in a goroutine so startup never blocks on Redis. The shared write mutex is plumbed (nil for now) and activates when retention + the WAL checkpoint move under it (deferred — see note below).
-- **Phase 3 — Reader producer.** ✅ `SpoolForwarder` Redis drain (`NewRedisSpoolForwarder`); `internal/logparse` shared pino parsing; consumer `KindLog` path. Reader uses the Redis spool when configured.
+- **Phase 3 — Reader producer.** ✅ `writeforward.Spool` Redis drain (`writeforward.NewRedisSpool`); `internal/logparse` shared pino parsing; consumer `KindLog` path. Reader uses the Redis spool when configured.
 - **Phase 4 — Deploy.** ✅ `redis-queue-deployment.yaml`/`-service.yaml` for staging + production; `BUGBARN_REDIS_QUEUE_URL` on writer + reader; kustomizations updated. Rollout is staged by the pipeline (staging on tag, prod manual).
-- **Phase 5 — Cutover & cleanup.** ⏳ *Deferred until the Redis path is validated in production.* Then retire the reader→writer ingest HTTP path (`SpoolForwarder` HTTP send) and the writer's inbound ingest HTTP handler, and fold the file-spool worker's inline pipeline into `ingestproc`. Keep `WriteForwarder` for sync dashboard mutations. The feature flag stays as the rollback path until this happens.
+- **Phase 5 — Cutover & cleanup.** ⏳ *Deferred until the Redis path is validated in production.* Then retire the reader→writer ingest HTTP path (`writeforward.Spool` HTTP send) and the writer's inbound ingest HTTP handler, and fold the file-spool worker's inline pipeline into `ingestproc`. Keep `writeforward.Proxy` for sync dashboard mutations. The feature flag stays as the rollback path until this happens.
 
 ### Decisions made during implementation
 
@@ -158,11 +158,11 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 
 ### Functional Requirements
 
-- **FR-701**: With `BUGBARN_SPOOL_DIR` and `BUGBARN_REDIS_QUEUE_URL` set, a reader MUST append the request to its spool, reply 202 and publish to the Redis list `bugbarn:write-queue`, advancing the spool cursor only after a successful publish. Issues: none found. Tests: `internal/api/spool_forwarder_redis_test.go::TestRedisSpoolForwarderPublishes`.
+- **FR-701**: With `BUGBARN_SPOOL_DIR` and `BUGBARN_REDIS_QUEUE_URL` set, a reader MUST append the request to its spool, reply 202 and publish to the Redis list `bugbarn:write-queue`, advancing the spool cursor only after a successful publish. Issues: none found. Tests: `internal/writeforward/spool_forwarder_redis_test.go::TestRedisSpoolForwarderPublishes`.
 - **FR-702**: The writer MUST drain the queue with a single consumer and persist events through the shared pipeline. Issues: none found. Tests: `internal/ingestproc/ingestproc_test.go::TestConsumerDrainsEventQueue`.
 - **FR-703**: Log items MUST flow through the same queue and consumer. Issues: none found. Tests: `internal/ingestproc/ingestproc_test.go::TestConsumerDrainsLogQueue`.
 - **FR-704**: With `BUGBARN_REDIS_QUEUE_URL` empty, readers MUST fall back to the HTTP forwarding path. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_AuthenticatedPOSTForwarded`.
-- **FR-705**: Dashboard mutations MUST stay on the synchronous `WriteForwarder`. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_DeleteForwarded`.
+- **FR-705**: Dashboard mutations MUST stay on the synchronous `writeforward.Proxy`. Issues: none found. Tests: `internal/api/server_forwarding_test.go::TestWriteForwarder_DeleteForwarded`.
 - **FR-706**: The consumer MUST push the unfinished tail of a batch back to the queue on shutdown. Issues: none found. Tests: `internal/ingestproc/ingestproc_test.go::TestConsumerRequeuesOnShutdown`.
 - **FR-710**: The writer MUST hold each entry in its processing list from the pop until the entry's items have a final disposition, and MUST move the processing list back to the write queue on start. A writer killed between pop and commit loses nothing. Issues: bugbarn#257. Tests: `internal/ingestproc/consumer_replay_test.go::TestWriterKilledBetweenPopAndCommitLosesNothing`, `::TestConsumerAcksAStoredEntry`, `internal/queue/processing_test.go::TestRecoverProcessingReplaysOldestFirst`, `::TestReserveDropsAnUndecodableEntry`.
 - **FR-707**: Events for an unapproved project MUST be held and replayed on approval. Issues: none found. Tests: `internal/ingestproc/held_test.go::TestPersistRecordHeldForPendingProject`, `::TestReplayHeldEventsOnApproval`.
@@ -182,9 +182,16 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 | Phase 5 cutover is pending production validation | Header, phase plan | The Redis path runs in production and staging (`deploy/k8s/production/writer-deployment.yaml`); `internal/ingest/CLAUDE.md` says the HTTP drain and the legacy file-spool worker still exist until phase 5 |
 | Rollout is staged by the pipeline, "prod manual" | Phase 4 | Production deploys automatically after staging (`.woodpecker/deploy-production.yaml`) |
 | Retention and the WAL checkpoint run under the shared write mutex | Architecture | The consumer passes a nil mutex; writes serialise through the single write connection (`internal/storage/CLAUDE.md`) |
-| The WAL checkpoint is re-introduced with phase 5 | Decisions | The writer runs `RunPeriodicCheckpoint` (`internal/storage/checkpoint.go`) since Litestream was removed |
-| The periodic `wal_checkpoint(TRUNCATE)` gets clean windows | Header, Architecture | It does not: readers pin snapshots, and a TRUNCATE held the write connection for 12 to 28s (bugbarn#236). Ticks are now PASSIVE except every `BUGBARN_WAL_TRUNCATE_EVERY`-th (default 10), whose reader wait is `BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS` (default 1000) (`internal/storage/checkpoint.go`) |
+| The WAL checkpoint is re-introduced with phase 5 | Decisions | The writer runs `RunPeriodicCheckpoint` (`internal/sqlitedb/checkpoint.go`) since Litestream was removed |
+| The periodic `wal_checkpoint(TRUNCATE)` gets clean windows | Header, Architecture | It does not: readers pin snapshots, and a TRUNCATE held the write connection for 12 to 28s (bugbarn#236). Ticks are now PASSIVE except every `BUGBARN_WAL_TRUNCATE_EVERY`-th (default 10), whose reader wait is `BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS` (default 1000) (`internal/sqlitedb/checkpoint.go`) |
 | The queue is the only reader-to-writer ingest path | Solution | With no spool dir the reader proxies synchronously; with a spool dir and no Redis URL it POSTs to the writer |
+| The spool worker and the Redis consumer persist through separate copies of the pipeline until phase 5 | `internal/ingest/CLAUDE.md` before this change | Both call `ingestproc.Processor.PersistRecord`; only delivery policy differs. Behavior changes for the spool path: the testing monolith holds events of an unknown project as pending unless `BUGBARN_AUTO_APPROVE_PROJECTS` is on (it used to create the project active); a failure to hold an event is a transient retry when the database is busy and a counted failure otherwise (a permanent hold failure on the Redis path now drops at once instead of after 5 retries); a retry logs at WARN and only the dead letter logs at ERROR; releases are persisted by `PersistRelease` and keep their project id; `worker-once` replays through the same processor and reports a `held` count |
+| `mutqueue.Drain` is retry-safe | `internal/mutqueue` before this change | It re-applied every record of a claimed file after a partial failure and stopped on a corrupt line. It now writes a cursor after each handled line, resumes after it, and moves an unparseable line to `mutations.deadletter.ndjson` with an ERROR log |
+| `worker-once` reads the whole active segment | `docs/deployment/configuration.md` says it reads the pending records | It reads from the worker's cursor (rotated segment first, then the active one), advances the cursor per record and deletes a drained rotated segment. To replay handled records, delete `cursor.json` |
+| An unresolvable project slug falls through to the default project | A comment in `PersistRecord` ("non-fatal") since the Redis consumer was added (`4874ae9`) | Rejected. The persist step now returns Transient (busy, locked, deadline) or PersistError, as the log path already did; an empty slug still means the default project (`docs/getting-started.md`). A project-resolution failure on the spool path now retries or dead-letters instead of mis-filing the event |
+| `ensureProductionAPIKeyAuth` guards against a disabled authorizer | `1a30ddb` | Removed. `newAPIAuthorizer` always wires the database key store, so the authorizer is always enabled and cannot fail open; the guard could not fire. `TestNewAPIAuthorizerIsAlwaysEnabled` holds that invariant |
+| Lock contention is recognised by error text | `internal/storage` before this change | `sqlitedb.IsBusy` reads the SQLite result code; `apperr.Busy` maps to 503 with Retry-After in the API; the string match is gone |
+| A listener failure in `run` returns at once | `cmd/bugbarn/main.go` before this change | `run` stops the background loops and waits up to 15s for them before it returns the listener error |
 | `[project_wal_checkpoint]` link | Last line | Points at a private memory note; not established |
 
 ## Proof contract
@@ -195,5 +202,5 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 
 ## Sources
 
-- `internal/queue/queue.go`, `internal/ingestproc/`, `internal/api/spool_forwarder*.go`
+- `internal/queue/queue.go`, `internal/ingestproc/`, `internal/writeforward/spool_forwarder*.go`
 - `internal/ingest/CLAUDE.md`, `deploy/CLAUDE.md`

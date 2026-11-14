@@ -239,18 +239,6 @@ export interface ApiSettings extends RawRecord {
   stacktrace_context_lines?: number;
 }
 
-export interface AnalyticsOverview {
-  pageviews: number;
-  sessions: number;
-  pages: number;
-  avgDurationMs: number;
-}
-
-export interface AnalyticsPage extends RawRecord { pathname: string; pageviews: number; sessions: number; }
-export interface AnalyticsBucket extends RawRecord { date: string; pageviews: number; sessions: number; }
-export interface AnalyticsReferrer extends RawRecord { host: string; pageviews: number; sessions: number; }
-export interface AnalyticsSegmentBucket extends RawRecord { value: string; pageviews: number; sessions: number; }
-
 export type IssueSort = "last_seen" | "first_seen" | "event_count";
 export type IssueStatus = "all" | "open" | "regressed" | "resolved" | "muted";
 
@@ -353,8 +341,3 @@ export interface AppElements {
   statusText: HTMLElement;
 }
 
-export interface FlowEntry { pathname: string; count: number; pct: number; }
-export interface PageFlowResult { pathname: string; cameFrom: FlowEntry[]; wentTo: FlowEntry[]; }
-export interface ScrollBucket { label: string; count: number; pct: number; }
-export interface ScrollDepthResult { pathname: string; buckets: ScrollBucket[]; }
-export interface DropoutStat { pathname: string; pageviews: number; bouncedSessions: number; bounceRate: number; }

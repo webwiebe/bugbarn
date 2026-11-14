@@ -5,7 +5,7 @@
 # DB errors into apperr types, services pass them through, the API maps apperr
 # codes to HTTP status. Two ways to break that are counted here:
 #
-#   raw-db     a non-test file outside internal/storage and internal/telemetrydb
+#   raw-db     a non-test file outside internal/storage, internal/sqlitedb and internal/telemetrydb
 #              imports database/sql or names sql.Err*. A raw DB error reached a
 #              layer that should only see apperr types.
 #   stringly   a non-test file in internal/api or internal/service matches on
@@ -36,14 +36,14 @@ BASELINE="scripts/typed-boundaries-baseline.txt"
 
 nontest() { grep -v '_test\.go$' || true; }
 
-scanned=$(find internal/api internal/service internal/storage internal/telemetrydb -name '*.go' 2>/dev/null | nontest | wc -l | tr -d ' ')
+scanned=$(find internal/api internal/service internal/storage internal/sqlitedb internal/telemetrydb -name '*.go' 2>/dev/null | nontest | wc -l | tr -d ' ')
 if [ "$scanned" -lt "$MIN_FILES" ]; then
 	echo "FAIL (typed-boundaries): scanned $scanned non-test Go files, floor is $MIN_FILES — the gate checked nothing"
 	exit 1
 fi
 
 raw=$(find internal cmd -name '*.go' 2>/dev/null | nontest |
-	grep -v -e '^internal/storage/' -e '^internal/telemetrydb/' |
+	grep -v -e '^internal/storage/' -e '^internal/sqlitedb/' -e '^internal/telemetrydb/' |
 	xargs grep -nE '"database/sql"|\bsql\.Err[A-Za-z]*' 2>/dev/null || true)
 str=$(find internal/api internal/service -name '*.go' 2>/dev/null | nontest |
 	xargs grep -nE 'strings\.(Contains|HasPrefix|HasSuffix)\([a-zA-Z_.]*[eE]rr\.Error\(\)|[eE]rr\.Error\(\) *[!=]=' 2>/dev/null || true)

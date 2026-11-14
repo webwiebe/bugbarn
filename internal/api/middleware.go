@@ -56,27 +56,24 @@ func sameOrigin(origin, host string) bool {
 	return strings.EqualFold(stripped, host)
 }
 
-// isCSRFProtected returns true for state-changing requests that are NOT the
-// ingest endpoint (which uses API key auth) and NOT login/logout.
-// isIssueAction returns true for issue mutation endpoints that operate by
-// numeric row ID (resolve/reopen/mute/unmute). These don't need project
-// scoping because the row ID is globally unique across all projects.
+// isIssueAction reports whether the matched route is an issue mutation that
+// operates by display ID (resolve, reopen, mute, unmute). These need no project
+// scoping because the ID is globally unique across all projects.
 func isIssueAction(r *http.Request) bool {
-	p := r.URL.Path
-	return strings.HasPrefix(p, "/api/v1/issues/") && (strings.HasSuffix(p, "/resolve") ||
-		strings.HasSuffix(p, "/reopen") ||
-		strings.HasSuffix(p, "/mute") ||
-		strings.HasSuffix(p, "/unmute"))
+	switch r.Pattern {
+	case "POST /api/v1/issues/{id}/resolve", "POST /api/v1/issues/{id}/reopen",
+		"PATCH /api/v1/issues/{id}/mute", "PATCH /api/v1/issues/{id}/unmute":
+		return true
+	}
+	return false
 }
 
+// isCSRFProtected returns true for state-changing requests, except on a route
+// that opted out with flagNoCSRF (the frontend span relay).
 func isCSRFProtected(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		switch r.URL.Path {
-		case "/api/v1/events", "/api/v1/login", "/api/v1/logout", frontendTracesPath:
-			return false
-		}
-		return true
+		return !hasRouteFlag(r, flagNoCSRF)
 	}
 	return false
 }

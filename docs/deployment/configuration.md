@@ -66,7 +66,7 @@ Only the writer sweeps. Readers open the database read-only and skip retention e
 | `BUGBARN_API_KEY_SHA256` | — | No | Static ingest API key pre-hashed as a hex-encoded SHA-256 digest. Use this instead of `BUGBARN_API_KEY` to avoid storing the plaintext value. |
 | `BUGBARN_ADMIN_USERNAME` | — | No | Username for the web UI admin account. |
 | `BUGBARN_ADMIN_PASSWORD` | — | No | Admin password in plaintext. BugBarn bcrypts it at startup. Mutually exclusive with `BUGBARN_ADMIN_PASSWORD_BCRYPT`. |
-| `BUGBARN_ADMIN_PASSWORD_BCRYPT` | — | No | Admin password pre-hashed as a bcrypt string. Use this to avoid storing the plaintext password. |
+| `BUGBARN_ADMIN_PASSWORD_BCRYPT` | — | No | Admin password pre-hashed as a bcrypt string. Use this to avoid storing the plaintext password. A value that is not a bcrypt hash stops startup with an error. |
 | `BUGBARN_SESSION_SECRET` | — | No | HMAC key used to sign session tokens. Must be a long, random string (at minimum 32 bytes of entropy). **If unset, a random key is generated at startup — sessions will not survive process restarts.** In production, always set this to a stable value so users are not logged out on redeploy. |
 | `BUGBARN_SESSION_TTL_SECONDS` | `43200` (12 h) | No | Session lifetime in seconds. After expiry the user must log in again. |
 
@@ -176,7 +176,7 @@ bugbarn apikey create --project=SLUG --name=NAME \
 bugbarn project create --slug=SLUG --name=NAME           # Create a new project
 ```
 
-`bugbarn worker-once` reads all pending spool records, processes them into the database, and exits. It is useful for replaying events after a spool backup restore or for debugging ingestion issues without running the full server.
+`bugbarn worker-once` reads the pending spool records (from the worker's cursor on, across any rotated segment the cursor names, then the active segment), processes them into the database through the same pipeline as the running worker, advances the cursor after each record and exits. A second run finds nothing to do. It is useful for draining a spool backup restore or for debugging ingestion issues without running the full server. Stop the server first: both write the same cursor. To replay records the worker already handled, delete `cursor.json` in the spool directory first.
 
 ---
 

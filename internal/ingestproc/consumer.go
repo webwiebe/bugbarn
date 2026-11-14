@@ -254,32 +254,32 @@ func (c *Consumer) processBatch(ctx context.Context, items []queue.Item) bool {
 // Returns ok=false with the outcome label to report when the item cannot be
 // resolved; "resolve_error" is deliberately not a final disposition, so a
 // shutdown hands the item back to the queue instead of eating it.
-func (c *Consumer) resolveProject(ctx context.Context, item queue.Item) (storage.Project, string, bool) {
+func (c *Consumer) resolveProject(ctx context.Context, item queue.Item) (domain.Project, string, bool) {
 	if item.ProjectSlug == "" {
 		// Error, not warn: this discards accepted log data, and selflog only
 		// self-reports at >= Error — at Warn the loss stays invisible.
 		c.logger.Error("dropping log item: no project slug",
 			"ingest_id", item.IngestID, "received_at", item.ReceivedAt)
-		return storage.Project{}, "dropped", false
+		return domain.Project{}, "dropped", false
 	}
 	for attempt := 1; attempt <= consumerMaxRetries; attempt++ {
 		if proj, ok := c.proc.EnsureProjectForIngest(ctx, item.ProjectSlug); ok {
 			return proj, "", true
 		}
 		if ctx.Err() != nil {
-			return storage.Project{}, "transient_drop", false
+			return domain.Project{}, "transient_drop", false
 		}
 		if attempt < consumerMaxRetries {
 			select {
 			case <-ctx.Done():
-				return storage.Project{}, "transient_drop", false
+				return domain.Project{}, "transient_drop", false
 			case <-time.After(time.Duration(attempt*attempt) * 100 * time.Millisecond):
 			}
 		}
 	}
 	c.logger.Error("dropping log item: project unresolved after retries",
 		"project", item.ProjectSlug, "ingest_id", item.IngestID, "attempts", consumerMaxRetries)
-	return storage.Project{}, "resolve_error", false
+	return domain.Project{}, "resolve_error", false
 }
 
 // handled reports whether an outcome is a final disposition — persisted,
@@ -424,7 +424,7 @@ func (c *Consumer) insertLogs(ctx context.Context, slug string, entries []domain
 		if err == nil {
 			return "success"
 		}
-		if !isTransientPersistError(err) {
+		if !storage.IsTransient(err) {
 			c.logger.Error("drop logs after insert error", "project", slug, "count", len(entries), "error", err)
 			return "insert_error"
 		}

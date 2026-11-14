@@ -12,9 +12,9 @@ import (
 
 // CreateAPIKey stores an API key's SHA-256 hash and returns the resulting row.
 // scope must be APIKeyScopeFull or APIKeyScopeIngest.
-func (s *APIKeyStore) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (APIKey, error) {
-	if scope != APIKeyScopeFull && scope != APIKeyScopeIngest && scope != APIKeyScopeRead {
-		scope = APIKeyScopeFull
+func (s *APIKeyStore) CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (domain.APIKey, error) {
+	if scope != domain.APIKeyScopeFull && scope != domain.APIKeyScopeIngest && scope != domain.APIKeyScopeRead {
+		scope = domain.APIKeyScopeFull
 	}
 	now := formatTime(time.Now().UTC())
 	res, err := s.db.ExecContext(ctx, `
@@ -22,17 +22,17 @@ INSERT INTO api_keys (name, project_id, key_sha256, scope, created_at) VALUES (?
 		name, projectID, keySHA256, scope, now,
 	)
 	if err != nil {
-		return APIKey{}, err
+		return domain.APIKey{}, err
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return APIKey{}, err
+		return domain.APIKey{}, err
 	}
-	return APIKey{ID: id, Name: name, ProjectID: projectID, KeySHA256: keySHA256, Scope: scope, CreatedAt: time.Now().UTC()}, nil
+	return domain.APIKey{ID: id, Name: name, ProjectID: projectID, KeySHA256: keySHA256, Scope: scope, CreatedAt: time.Now().UTC()}, nil
 }
 
 // ListAPIKeys returns all API key rows (without the plaintext key).
-func (s *APIKeyStore) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
+func (s *APIKeyStore) ListAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
 	rows, err := s.readDB().QueryContext(ctx, `
 SELECT id, name, project_id, key_sha256, scope, created_at, last_used_at
 FROM api_keys ORDER BY id ASC`)
@@ -41,9 +41,9 @@ FROM api_keys ORDER BY id ASC`)
 	}
 	defer rows.Close()
 
-	var keys []APIKey
+	var keys []domain.APIKey
 	for rows.Next() {
-		var k APIKey
+		var k domain.APIKey
 		var createdAt string
 		var lastUsedAt sql.NullString
 		if err := rows.Scan(&k.ID, &k.Name, &k.ProjectID, &k.KeySHA256, &k.Scope, &createdAt, &lastUsedAt); err != nil {
@@ -62,14 +62,14 @@ FROM api_keys ORDER BY id ASC`)
 func (s *APIKeyStore) DeleteAPIKey(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id)
 	if err != nil {
-		return err
+		return wrapErr(err, "delete api key")
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return wrapErr(err, "delete api key")
 	}
 	if n == 0 {
-		return sql.ErrNoRows
+		return wrapNotFound(sql.ErrNoRows, "api key not found")
 	}
 	return nil
 }

@@ -1,16 +1,16 @@
-import { isRecord, readFirst, readNumber, readRecord, readString } from "./data.js";
+import { isRecord, readFirst, readNumber, readRecord, readString } from "./records.js";
 import type { ApiEvent, ApiIssue, RawRecord } from "./types.js";
 
 export function firstIdentifier(source: ApiIssue | ApiEvent | RawRecord, extraOmitKeys: string[] = []): string {
   const omit = new Set(extraOmitKeys);
   const keys = ["id", "ID", "issueId", "IssueID", "issue_id", "eventId", "EventID", "event_id"].filter((key) => !omit.has(key));
   const value = readFirst(source, keys);
-  if (typeof value === "string" || typeof value === "number") {
+  if ((typeof value === "string" || typeof value === "number") && value !== "") {
     return String(value);
   }
   if (isRecord(value)) {
     const nested = readFirst(value, ["id", "ID"]);
-    if (typeof nested === "string" || typeof nested === "number") {
+    if ((typeof nested === "string" || typeof nested === "number") && nested !== "") {
       return String(nested);
     }
   }
@@ -151,7 +151,7 @@ export function eventRawScrubbed(event: ApiEvent): RawRecord {
   return readRecord(eventPayload(event), ["rawScrubbed", "raw_scrubbed", "RawScrubbed"]);
 }
 
-export function eventSdkName(event: ApiEvent): string {
+function eventSdkName(event: ApiEvent): string {
   const payload = eventPayload(event);
   const sender = readRecord(eventRawScrubbed(event), ["sender", "Sender"]);
   const sdk = readRecord(sender, ["sdk", "SDK"]);

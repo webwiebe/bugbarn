@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 func TestNewIssueLimiter_CapsPerProjectPerWindow(t *testing.T) {
@@ -77,14 +77,14 @@ func TestEvaluator_NewIssueFloodMailsFiveThenOneSummary(t *testing.T) {
 	var bus domainevents.Bus
 	bus.Subscribe(evaluator.HandleEvent)
 	for i := 0; i < 100; i++ {
-		bus.Publish(domainevents.IssueCreated{Issue: storage.Issue{ID: "i", ProjectSlug: "brandtrace"}, ProjectID: 3})
+		bus.Publish(domainevents.IssueCreated{Issue: domain.Issue{ID: "i", ProjectSlug: "brandtrace"}, ProjectID: 3})
 	}
 	if calls := waitForCalls(notif, newIssueMailMax); len(calls) != newIssueMailMax {
 		t.Fatalf("expected %d new-issue mails, got %d", newIssueMailMax, len(calls))
 	}
 
 	clock = clock.Add(newIssueMailWindow)
-	bus.Publish(domainevents.IssueCreated{Issue: storage.Issue{ID: "later", ProjectSlug: "brandtrace"}, ProjectID: 3})
+	bus.Publish(domainevents.IssueCreated{Issue: domain.Issue{ID: "later", ProjectSlug: "brandtrace"}, ProjectID: 3})
 
 	calls := waitForCalls(notif, newIssueMailMax+2)
 	var summary, plain int
@@ -120,7 +120,7 @@ func TestEvaluator_RuleMailsShareTheNewIssueCap(t *testing.T) {
 	bus.Subscribe(evaluator.HandleEvent)
 	const burst = 40
 	for i := 0; i < burst; i++ {
-		bus.Publish(domainevents.IssueCreated{Issue: storage.Issue{ID: "i", ProjectSlug: "leadgen"}, ProjectID: 9})
+		bus.Publish(domainevents.IssueCreated{Issue: domain.Issue{ID: "i", ProjectSlug: "leadgen"}, ProjectID: 9})
 	}
 
 	// Every webhook fires; the email rule stops at the cap.
