@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -151,12 +150,4 @@ func slugify(name string) string {
 		}
 	}
 	return strings.TrimRight(result.String(), "-")
-}
-
-// clientGone reports whether err is just the caller's request going away — the
-// browser navigated off, the tab closed, or the process is shutting down. It is
-// not a server fault, so it must not be logged at ERROR: selflog self-reports
-// at >= Error, which turned every abandoned request into a bug filed against us.
-func clientGone(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

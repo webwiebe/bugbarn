@@ -154,18 +154,20 @@ func TestMonitorCheckInEndpoint(t *testing.T) {
 	})
 }
 
-func TestMonitorCheckInSlugPath(t *testing.T) {
+func TestMonitorCheckInRoutePattern(t *testing.T) {
 	t.Parallel()
-	for path, want := range map[string]string{
-		"/api/v1/monitors/a/check-ins":   "a",
-		"/api/v1/monitors//check-ins":    "",
-		"/api/v1/monitors/a/b/check-ins": "",
-		"/api/v1/monitors/a":             "",
-		"/api/v1/issues":                 "",
+	const checkIn = "POST /api/v1/monitors/{slug}/check-ins"
+	srv := &Server{}
+	for path, matches := range map[string]bool{
+		"/api/v1/monitors/a/check-ins":   true,
+		"/api/v1/monitors//check-ins":    false,
+		"/api/v1/monitors/a/b/check-ins": false,
+		"/api/v1/monitors/a":             false,
+		"/api/v1/issues":                 false,
 	} {
-		got, ok := monitorCheckInSlug(path)
-		if (want == "") == ok || got != want {
-			t.Errorf("%s: got %q ok=%v, want %q", path, got, ok, want)
+		_, got := srv.router().mux.Handler(httptest.NewRequest(http.MethodPost, path, nil))
+		if (got == checkIn) != matches {
+			t.Errorf("%s: matched %q, want check-in route = %v", path, got, matches)
 		}
 	}
 }

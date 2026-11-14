@@ -73,6 +73,8 @@ type Server struct {
 
 	loginLimiter       sync.Map // map[string]*loginAttempt
 	setupLimiter       sync.Map // map[string]*loginAttempt — per-IP limiter for the setup endpoint
+	routes             *router  // built on first use: see router()
+	routesOnce         sync.Once
 	backchannelLimiter sync.Map // map[string]*loginAttempt — per-IP limiter for back-channel logout
 	telemetryIngester  TelemetryIngester
 	telemetryProject   string
@@ -266,46 +268,15 @@ func (s *Server) Start(ctx context.Context) {
 	go s.cleanupLoginLimiter(ctx)
 }
 
+// ServeHTTP serves every request through the route table (routes.go). The mux
+// sets the matched pattern on the request it hands to a handler; it is copied
+// back onto the caller's request so the tracing middleware can label metrics
+// with the pattern instead of the raw path.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Services name the caller in their log lines from this.
-	r = r.WithContext(domain.WithRequestInfo(r.Context(), domain.RequestInfo{
+	routed := r.WithContext(domain.WithRequestInfo(r.Context(), domain.RequestInfo{
 		Route: r.Method + " " + r.URL.Path, UserAgent: r.UserAgent(),
 	}))
-
-	// Unauthenticated wildcard-CORS ingest + public no-CORS endpoints run first.
-	if s.serveSpecialEndpoint(w, r) {
-		return
-	}
-
-	s.setCORSHeaders(w, r)
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	// Public endpoints that use the general CORS headers.
-	if s.servePublicEndpoint(w, r) {
-		return
-	}
-
-	// Authenticate, enforce key scope/CSRF, and resolve project/group scope.
-	var ok bool
-	r, ok = s.authenticateAndResolve(w, r)
-	if !ok {
-		return
-	}
-
-	// Frontend traces keep no BugBarn state, so a reader serves them itself.
-	if s.serveFrontendTraces(w, r) {
-		return
-	}
-
-	// In reader mode, forward all authenticated non-GET requests to the writer.
-	if s.writeForwarder != nil && r.Method != http.MethodGet {
-		s.writeForwarder.Forward(w, r)
-		return
-	}
-
-	s.dispatchProtected(w, r)
+	s.router().mux.ServeHTTP(w, routed)
+	r.Pattern = routed.Pattern
 }

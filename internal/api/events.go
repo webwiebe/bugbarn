@@ -6,14 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func (s *Server) listIssueEvents(w http.ResponseWriter, r *http.Request) {
-	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/events")
+	issueID := r.PathValue("id")
 
 	limit := 25
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -39,7 +38,7 @@ func (s *Server) listIssueEvents(w http.ResponseWriter, r *http.Request) {
 // listIssueReleases answers which releases an issue occurs in, counted over the
 // issue's latest events (sampled_events says how many).
 func (s *Server) listIssueReleases(w http.ResponseWriter, r *http.Request) {
-	issueID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/releases")
+	issueID := r.PathValue("id")
 	releases, sampled, err := s.issues.IssueReleases(r.Context(), issueID)
 	if err != nil {
 		writeServiceError(w, err)
@@ -52,7 +51,7 @@ func (s *Server) listIssueReleases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) {
-	eventID := strings.TrimPrefix(r.URL.Path, "/api/v1/events/")
+	eventID := r.PathValue("id")
 	event, err := s.issues.GetEvent(r.Context(), eventID)
 	if err != nil {
 		writeServiceError(w, err)

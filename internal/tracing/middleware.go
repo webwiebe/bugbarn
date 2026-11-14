@@ -3,6 +3,7 @@ package tracing
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,7 +84,9 @@ func Middleware(next http.Handler) http.Handler {
 
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r.WithContext(ctx))
+		traced := r.WithContext(ctx)
+		next.ServeHTTP(rec, traced)
+		route := routeLabel(traced)
 		durMs := float64(time.Since(start)) / float64(time.Millisecond)
 
 		span.SetAttributes(attribute.Int("http.status_code", rec.status))
@@ -94,12 +97,27 @@ func Middleware(next http.Handler) http.Handler {
 		statusClass := fmt.Sprintf("%dxx", rec.status/100)
 		hm.requests.Add(ctx, 1, metric.WithAttributes(
 			attribute.String("method", r.Method),
-			attribute.String("route", r.URL.Path),
+			attribute.String("route", route),
 			attribute.String("status_class", statusClass),
 		))
 		hm.duration.Record(ctx, durMs, metric.WithAttributes(
 			attribute.String("method", r.Method),
-			attribute.String("route", r.URL.Path),
+			attribute.String("route", route),
 		))
 	})
+}
+
+// routeLabel is the metric label for a request: the ServeMux pattern the router
+// matched, without its method, so path ids do not create a series each. The
+// router records the pattern on the request it was given; a request no pattern
+// matched is labelled "unmatched".
+func routeLabel(r *http.Request) string {
+	_, path, found := strings.Cut(r.Pattern, " ")
+	if !found {
+		path = r.Pattern
+	}
+	if path == "" || path == "/" {
+		return "unmatched"
+	}
+	return path
 }

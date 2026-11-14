@@ -82,7 +82,7 @@ func TestMuteIssueEndpoint(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPatch, "/api/v1/issues/"+issue.ID+"/mute", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rr := httptest.NewRecorder()
-			srv.muteIssue(rr, req)
+			srv.ServeHTTP(rr, req)
 
 			if rr.Code != tc.wantStatus {
 				t.Errorf("status: got %d, want %d (body: %s)", rr.Code, tc.wantStatus, rr.Body.String())
@@ -118,7 +118,7 @@ func TestUnmuteIssueEndpoint(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/issues/"+issue.ID+"/unmute", http.NoBody)
 	rr := httptest.NewRecorder()
-	srv.unmuteIssue(rr, req)
+	srv.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d, body: %s", rr.Code, rr.Body.String())

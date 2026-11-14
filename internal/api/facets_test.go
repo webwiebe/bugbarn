@@ -69,7 +69,7 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 	// GET /api/v1/facets
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/facets", nil).WithContext(ctx)
-	srv.serveFacetsRoute(rr, req)
+	srv.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list keys: status %d, body %s", rr.Code, rr.Body.String())
 	}
@@ -95,7 +95,7 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 	// GET /api/v1/facets/attributes.environment
 	rr = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/facets/attributes.environment", nil).WithContext(ctx)
-	srv.serveFacetsRoute(rr, req)
+	srv.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list values: status %d, body %s", rr.Code, rr.Body.String())
 	}

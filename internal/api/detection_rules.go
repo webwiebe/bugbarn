@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/wiebe-xyz/bugbarn/internal/detect"
 	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
@@ -25,36 +24,32 @@ func (s *Server) listDetectionRules(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"rules": rules})
 }
 
-func (s *Server) serveDetectionRule(w http.ResponseWriter, r *http.Request) {
+func (s *Server) putDetectionRule(w http.ResponseWriter, r *http.Request) {
 	if s.detectionRules == nil {
 		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	id := strings.TrimPrefix(r.URL.Path, detectionRulesPath+"/")
-	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+	var rule detect.Rule
+	if err := decodeJSON(w, r, &rule); err != nil {
+		http.Error(w, "invalid detection rule payload", http.StatusBadRequest)
 		return
 	}
-	switch r.Method {
-	case http.MethodPut:
-		var rule detect.Rule
-		if err := decodeJSON(w, r, &rule); err != nil {
-			http.Error(w, "invalid detection rule payload", http.StatusBadRequest)
-			return
-		}
-		view, err := s.detectionRules.Put(r.Context(), id, rule)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{"rule": view})
-	case http.MethodDelete:
-		if err := s.detectionRules.Delete(r.Context(), id); err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{"deleted": true})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	view, err := s.detectionRules.Put(r.Context(), r.PathValue("id"), rule)
+	if err != nil {
+		writeServiceError(w, err)
+		return
 	}
+	writeJSON(w, map[string]any{"rule": view})
+}
+
+func (s *Server) deleteDetectionRule(w http.ResponseWriter, r *http.Request) {
+	if s.detectionRules == nil {
+		http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.detectionRules.Delete(r.Context(), r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"deleted": true})
 }

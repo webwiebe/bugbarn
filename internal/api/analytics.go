@@ -62,23 +62,17 @@ func (s *Server) resolveAnalyticsProjectID(r *http.Request) int64 {
 	return s.projects.DefaultProjectID()
 }
 
-// serveAnalyticsQuery answers /api/v1/analytics/<tail>. The tail is looked up in
-// analyticsRoutes (routes_protected.go) after the query parameters validate.
-func (s *Server) serveAnalyticsQuery(w http.ResponseWriter, r *http.Request, tail string) {
-	projectID := s.resolveAnalyticsProjectID(r)
-
-	q, err := parseAnalyticsQuery(r, projectID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+// analyticsView serves one GET /api/v1/analytics/<view> route: it parses the
+// shared query once and hands it to the view's handler.
+func (s *Server) analyticsView(handler func(*Server, http.ResponseWriter, *http.Request, analytics.Query)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q, err := parseAnalyticsQuery(r, s.resolveAnalyticsProjectID(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		handler(s, w, r, q)
 	}
-
-	handler, ok := analyticsRoutes[tail]
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	handler(s, w, r, q)
 }
 
 func (s *Server) analyticsOverview(w http.ResponseWriter, r *http.Request, q analytics.Query) {

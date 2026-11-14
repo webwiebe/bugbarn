@@ -64,7 +64,7 @@ internal/
     hostmetrics/      Vector host_metrics to per-minute samples
     cfpoller/         Writer-only poller for Cloudflare firewall events (GraphQL Analytics API)
     detect/           Detection rules and engine; each hit becomes an issue in the telemetry project
-  HTTP and auth
+  HTTP and auth ★ internal/api/CLAUDE.md
     api/              HTTP handlers and routing; reader-to-writer forwarders
     apperr/           Shared error types (NotFound, Conflict, InvalidInput, Internal)
     auth/             Local login and the opt-in OIDC adapter

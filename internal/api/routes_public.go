@@ -1,100 +1,67 @@
 package api
 
-import (
-	"net/http"
-	"strings"
-)
+import "net/http"
 
-// servePublicEndpoint handles the endpoints that require no authentication but
-// do use the general CORS headers (already set by the caller). It returns true
-// when it has written a response and the caller should stop.
-//
-//nolint:gocyclo // flat public-route table mapping path+method to a handler.
-func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	// OpenAPI spec and docs — public, no auth required.
-	if r.URL.Path == "/api/v1/openapi.yaml" && r.Method == http.MethodGet {
-		s.serveOpenAPISpec(w, r)
-		return true
-	}
-	if r.URL.Path == "/api/docs" && r.Method == http.MethodGet {
-		s.serveAPIDocs(w, r)
-		return true
-	}
+// registerPublicRoutes registers the endpoints that need no authentication.
+func (s *Server) registerPublicRoutes(rt *router) {
+	// No CORS headers: the setup page and the manifests are fetched by agents and
+	// by IAMBarn, never by a credentialed browser.
+	bare := rt.group()
+	bare.handle("GET /.well-known/iambarn-theme.json", s.serveThemeManifest)
+	bare.handle("GET /analytics.js", s.serveAnalyticsSnippet)
+	s.registerSetupRoutes(bare)
 
-	// Public endpoints — no authentication required.
-	switch {
-	case r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet:
-		s.serveHealth(w, r)
-		return true
-	case r.URL.Path == "/api/v1/version" && r.Method == http.MethodGet:
-		s.serveVersion(w, r)
-		return true
-	case r.URL.Path == "/api/v1/runtime-config" && r.Method == http.MethodGet:
-		s.serveRuntimeConfig(w, r)
-		return true
-	case r.URL.Path == "/api/v1/login" && r.Method == http.MethodPost:
-		s.forwardWrite(w, r, s.login)
-		return true
-	case r.URL.Path == "/api/v1/logout" && r.Method == http.MethodPost:
-		s.forwardWrite(w, r, s.logout)
-		return true
-	case r.URL.Path == "/api/v1/me" && r.Method == http.MethodGet:
-		s.me(w, r)
-		return true
-	case r.URL.Path == "/api/v1/oidc/login" && r.Method == http.MethodGet:
-		s.oidcLogin(w, r)
-		return true
-	case r.URL.Path == "/api/v1/oidc/callback" && r.Method == http.MethodGet:
-		s.oidcCallback(w, r)
-		return true
-	case r.URL.Path == "/api/v1/oidc/logged-out" && r.Method == http.MethodGet:
-		s.oidcLoggedOut(w, r)
-		return true
-	case r.URL.Path == "/api/v1/oidc/backchannel-logout" && r.Method == http.MethodPost:
-		// Public (authenticated by the logout token's signature), no CSRF.
-		// Session rows live behind the writer, so readers forward the POST.
-		s.forwardWrite(w, r, s.oidcBackchannelLogout)
-		return true
-	}
-
-	return false
+	// The general CORS policy applies to the rest.
+	pub := rt.group(s.generalCORS)
+	pub.handle("GET /api/v1/openapi.yaml", s.serveOpenAPISpec)
+	pub.handle("GET /api/docs", s.serveAPIDocs)
+	pub.handle("GET /api/v1/health", s.serveHealth)
+	pub.handle("GET /api/v1/version", s.serveVersion)
+	pub.handle("GET /api/v1/runtime-config", s.serveRuntimeConfig)
+	pub.handle("GET /api/v1/me", s.me)
+	pub.handle("GET /api/v1/oidc/login", s.oidcLogin)
+	pub.handle("GET /api/v1/oidc/callback", s.oidcCallback)
+	pub.handle("GET /api/v1/oidc/logged-out", s.oidcLoggedOut)
+	pub.handle("POST /api/v1/login", s.forwarded(s.login))
+	pub.handle("POST /api/v1/logout", s.forwarded(s.logout))
+	// Authenticated by the logout token's signature, no CSRF. Session rows live
+	// behind the writer, so readers forward the POST.
+	pub.handle("POST /api/v1/oidc/backchannel-logout", s.forwarded(s.oidcBackchannelLogout))
 }
 
-// serveKeyRequestEndpoint routes the public side of agent key requests:
-//
-//	POST /api/v1/setup/<slug>/key-requests        open a request
-//	GET  /api/v1/setup/<slug>/key-requests/<id>   poll it
-//
-// It returns true when the path belongs to this endpoint.
-func (s *Server) serveKeyRequestEndpoint(w http.ResponseWriter, r *http.Request) bool {
-	slug, id, ok := parseKeyRequestPath(r.URL.Path)
-	if !ok {
-		return false
-	}
-	create := id == "" && r.Method == http.MethodPost
-	poll := id != "" && r.Method == http.MethodGet
-	if !create && !poll {
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return true
-	}
-	s.handleKeyRequest(w, r, slug, id)
-	return true
+// forwarded runs a session-writing handler on the writer: a reader forwards the
+// request there.
+func (s *Server) forwarded(local http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { s.forwardWrite(w, r, local) }
 }
 
-// parseKeyRequestPath splits /api/v1/setup/<slug>/key-requests[/<id>]. The id is
-// empty for the collection path.
-func parseKeyRequestPath(path string) (slug, id string, ok bool) {
-	rest, ok := strings.CutPrefix(path, "/api/v1/setup/")
-	if !ok {
-		return "", "", false
+// registerSetupRoutes registers the setup page and the agent key requests. Both
+// are public and rate-limited per IP.
+func (s *Server) registerSetupRoutes(g group) {
+	// GET /api/v1/setup/{slug...} is the setup page. Anything under the prefix
+	// reaches it, and a path that is not a single segment is an invalid slug
+	// (400), as it always was.
+	g.handle("GET /api/v1/setup/{slug...}", s.serveSetup)
+
+	// Agent key requests:
+	//
+	//	POST /api/v1/setup/{slug}/key-requests        open a request
+	//	GET  /api/v1/setup/{slug}/key-requests/{id}   poll it
+	//
+	// The trailing-slash forms are served too. A wrong method answers 405 with
+	// Allow ahead of authentication. The setup wildcard above overlaps these
+	// paths, so each method is listed rather than matched by a method-less
+	// pattern.
+	collection := "/api/v1/setup/{slug}/key-requests"
+	item := collection + "/{id}"
+	g.handle("POST "+collection, s.createKeyRequest)
+	g.fallback("POST "+collection+"/{$}", s.createKeyRequest)
+	g.handle("GET "+item, s.pollKeyRequest)
+	g.fallback("GET "+item+"/{$}", s.pollKeyRequest)
+	for _, path := range []string{collection, collection + "/{$}"} {
+		rejectMethods(g, path, "GET, POST", "GET", "HEAD", "PUT", "PATCH", "DELETE", "OPTIONS")
 	}
-	parts := strings.Split(strings.Trim(rest, "/"), "/")
-	if len(parts) < 2 || len(parts) > 3 || parts[1] != "key-requests" {
-		return "", "", false
+	for _, path := range []string{item, item + "/{$}"} {
+		rejectMethods(g, path, "GET, POST", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 	}
-	if len(parts) == 3 {
-		id = parts[2]
-	}
-	return parts[0], id, true
 }

@@ -92,6 +92,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 - **FR-509**: Selecting a group in the project dropdown MUST aggregate issues, analytics and alerts across its members. [inferred]
 - **FR-510**: The issue detail page MUST stay readable below 600px: the fingerprint truncates, JSON blocks scroll horizontally and action buttons wrap. [inferred]
 - **FR-511**: A project MUST be able to carry a FunnelBarn URL, set in Settings through `PUT /api/v1/projects/:slug/funnelbarn`. The value is empty or an absolute http(s) URL without credentials; `{surface}` in it is replaced per row. The "By surface" table on the Issues page links each row to it and shows no link column when the setting is empty. BugBarn never calls FunnelBarn. Issues: [#222](https://github.com/webwiebe/bugbarn/issues/222). Tests: `internal/api/project_funnelbarn_test.go::TestProjectFunnelBarnURLIsSetListedAndCleared`, `::TestProjectFunnelBarnURLRejectsUnsafeValues`, `internal/service/projects/funnelbarn_test.go`, `web/scripts/surfaces.test.mjs`.
+- **FR-512**: The project, group and alias endpoints MUST be ServeMux patterns (`DELETE /api/v1/projects/{slug}`, `POST /api/v1/projects/{slug}/merge`, ...) registered in `internal/api/routes_protected.go`. A method a path does not offer answers 405 with an `Allow` header once the caller is authenticated, and an unauthenticated request to any protected path answers 401 first, so an anonymous caller learns nothing about which paths exist. Routing errors are plain text. Issues: none found. Tests: `internal/api/routes_characterization_test.go::TestRoutesCharacterization`, `internal/api/openapi_routes_test.go::TestServedOperationsAreInOpenAPISpec`.
 
 ---
 
@@ -102,6 +103,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 | Status Draft; every task in `tasks.md` unchecked | Header, tasks.md | Delete, rename, merge, aliases and groups ship (`internal/api/routes_protected.go`, `internal/storage/projects.go`, `groups.go`) |
 | `POST /api/v1/projects/:slug/reject` | tasks.md T008 | Retired in #228. `DELETE` removes the project row, its held ingest payloads and its key requests, and the settings Reject button calls it. A reject route would add no record, because nothing reads one. Ingest for the same slug afterwards creates a new pending project |
 | Delete of an active project with issues requires confirmation | Story 3, scenario 3 | Confirmation is a UI concern; not established from the API |
+| Project, group and alias routes matched by path prefix and an in-handler method check (`dispatchProtected`) | Earlier routing in `routes_protected.go` | Replaced by ServeMux patterns with `r.PathValue`. A wrong method on a known path answers 405 with `Allow` where it answered 404, ServeMux redirects unclean paths, and `/api/v1/projects/{slug}/` still serves DELETE. Behavior otherwise unchanged; `routes_characterization.tsv` pins it |
 | Layout fixes verified at 375, 600, 1120 and 1440px | tasks.md T003 | Not established |
 
 ## Proof contract

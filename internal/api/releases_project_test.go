@@ -31,7 +31,7 @@ func TestReleaseMarkerFailsWhenItsProjectDidNotResolve(t *testing.T) {
 			req.Header.Set("X-BugBarn-Project", project)
 		}
 		rr := httptest.NewRecorder()
-		server.serveReleasesRoot(rr, req.WithContext(domain.WithProjectID(ctx, projectID)))
+		server.ServeHTTP(rr, req.WithContext(domain.WithProjectID(ctx, projectID)))
 		return rr
 	}
 	stored := func() int {
@@ -90,7 +90,7 @@ func TestReleaseMarkerRetryableWhenTheProjectLookupFails(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-BugBarn-Project", "alpha")
 	rr := httptest.NewRecorder()
-	server.serveReleasesRoot(rr, req.WithContext(domain.WithProjectID(context.Background(), id)))
+	server.ServeHTTP(rr, req.WithContext(domain.WithProjectID(context.Background(), id)))
 	if rr.Code != http.StatusServiceUnavailable || rr.Header().Get("Retry-After") == "" {
 		t.Fatalf("got %d retry-after=%q, want a retryable 503", rr.Code, rr.Header().Get("Retry-After"))
 	}

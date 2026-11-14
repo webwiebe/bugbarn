@@ -12,14 +12,9 @@ import (
 // contain PII and secrets) plus the api_keys table — so it is gated well beyond
 // ordinary read access: it requires a valid admin session (a scoped API key is
 // rejected, even a read-scope one) and, when trusted proxies are configured, the
-// request must originate from one. The route is registered under the
-// authenticated dispatch, so unauthenticated callers never reach this handler.
+// request must originate from one. The route sits behind the
+// authentication middleware, so unauthenticated callers never reach this handler.
 func (s *Server) serveDBBackup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Full DB export is admin-only: require a session, not just any API key.
 	// When auth is disabled entirely (s.users == nil / !Enabled) the whole API is
 	// open, so we stay consistent with the rest of the surface and allow it.

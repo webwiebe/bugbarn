@@ -29,14 +29,14 @@ func TestMuteEndpointReadsBackMutedAcrossProjects(t *testing.T) {
 	body, _ := json.Marshal(map[string]string{"mute_mode": "until_regression"})
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/issues/"+issue.ID+"/mute", bytes.NewReader(body)).WithContext(ctx)
 	rr := httptest.NewRecorder()
-	srv.muteIssue(rr, req)
+	srv.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("mute status = %d (%s)", rr.Code, rr.Body.String())
 	}
 
 	get := httptest.NewRequest(http.MethodGet, "/api/v1/issues/"+issue.ID, http.NoBody)
 	grr := httptest.NewRecorder()
-	srv.getIssue(grr, get)
+	srv.ServeHTTP(grr, get)
 	var resp struct {
 		Issue storage.Issue `json:"issue"`
 	}
