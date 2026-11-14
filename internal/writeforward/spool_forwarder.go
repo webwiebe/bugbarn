@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"bytes"
@@ -50,14 +50,14 @@ type spooledRequest struct {
 	BodyBase64 string            `json:"bodyBase64"`
 }
 
-// SpoolForwarder buffers fire-and-forget write requests to disk and drains them
+// Spool buffers fire-and-forget write requests to disk and drains them
 // to the upstream writer in the background. Used by reader pods so that ingest
 // keeps accepting traffic while the writer is restarting (deploys etc.).
 //
 // On-disk format is line-delimited JSON; a cursor file tracks the byte offset
 // of the last successfully forwarded record. The active segment is rotated
 // when it exceeds rotateBytes so we never replay an unbounded log.
-type SpoolForwarder struct {
+type Spool struct {
 	dir         string
 	writerURL   string
 	queue       *queue.RedisQueue // spec 007: when set, drain publishes to Redis instead of HTTP
@@ -80,7 +80,7 @@ type SpoolForwarder struct {
 
 // SetProjectResolver wires the API-key → project-slug lookup used to stamp a
 // project onto spooled requests that carry no X-BugBarn-Project header.
-func (s *SpoolForwarder) SetProjectResolver(fn func(ctx context.Context, apiKey string) (string, error)) {
+func (s *Spool) SetProjectResolver(fn func(ctx context.Context, apiKey string) (string, error)) {
 	s.resolveSlug = fn
 }
 
@@ -106,7 +106,7 @@ var forwardedHeaders = []string{
 	"User-Agent",
 }
 
-func NewSpoolForwarder(dir, writerURL string, maxBodyBytes int64, logger *slog.Logger) (*SpoolForwarder, error) {
+func NewSpool(dir, writerURL string, maxBodyBytes int64, logger *slog.Logger) (*Spool, error) {
 	if dir == "" {
 		return nil, errors.New("spool dir is required")
 	}
@@ -121,7 +121,7 @@ func NewSpoolForwarder(dir, writerURL string, maxBodyBytes int64, logger *slog.L
 	if err != nil {
 		return nil, fmt.Errorf("open spool file: %w", err)
 	}
-	return &SpoolForwarder{
+	return &Spool{
 		dir:         dir,
 		writerURL:   writerURL,
 		maxBodyByte: maxBodyBytes,
@@ -133,11 +133,11 @@ func NewSpoolForwarder(dir, writerURL string, maxBodyBytes int64, logger *slog.L
 	}, nil
 }
 
-// NewRedisSpoolForwarder is like NewSpoolForwarder but drains the spool to a
+// NewRedisSpool is like NewSpool but drains the spool to a
 // Redis write queue instead of forwarding to the writer over HTTP (spec 007).
 // The on-disk spool remains the durability anchor: the cursor advances only
 // after a successful publish, so a Redis outage backs the spool up without loss.
-func NewRedisSpoolForwarder(dir string, q *queue.RedisQueue, maxBodyBytes int64, logger *slog.Logger) (*SpoolForwarder, error) {
+func NewRedisSpool(dir string, q *queue.RedisQueue, maxBodyBytes int64, logger *slog.Logger) (*Spool, error) {
 	if dir == "" {
 		return nil, errors.New("spool dir is required")
 	}
@@ -152,7 +152,7 @@ func NewRedisSpoolForwarder(dir string, q *queue.RedisQueue, maxBodyBytes int64,
 	if err != nil {
 		return nil, fmt.Errorf("open spool file: %w", err)
 	}
-	return &SpoolForwarder{
+	return &Spool{
 		dir:         dir,
 		queue:       q,
 		maxBodyByte: maxBodyBytes,
@@ -171,7 +171,7 @@ func NewRedisSpoolForwarder(dir string, q *queue.RedisQueue, maxBodyBytes int64,
 // event is dropped here with a 400 rather than queued and silently discarded by
 // the writer. This keeps the accepted/dropped distinction honest even on reader
 // pods, which return 202 before the writer ever sees the event.
-func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
+func (s *Spool) Forward(w http.ResponseWriter, r *http.Request) {
 	body, drop, ok := s.readBody(r)
 	if !ok {
 		ingestresp.WriteDropped(w, drop)
@@ -218,7 +218,7 @@ func (s *SpoolForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 	ingestresp.WriteAccepted(w, "")
 }
 
-func (s *SpoolForwarder) append(rec spooledRequest) error {
+func (s *Spool) append(rec spooledRequest) error {
 	payload, err := json.Marshal(rec)
 	if err != nil {
 		return err
@@ -237,14 +237,14 @@ func (s *SpoolForwarder) append(rec spooledRequest) error {
 
 // Pending reports the number of records appended but not yet acked by the
 // drain loop. Used by shutdown to decide when it is safe to exit.
-func (s *SpoolForwarder) Pending() int64 {
+func (s *Spool) Pending() int64 {
 	return s.pending.Load()
 }
 
 // Drain repeatedly reads new records from the spool and forwards them to the
 // writer until the context is canceled. Records are acked by advancing a
 // persisted cursor so a restart resumes where we left off.
-func (s *SpoolForwarder) Drain(ctx context.Context) {
+func (s *Spool) Drain(ctx context.Context) {
 	for ctx.Err() == nil {
 		s.drainStep(ctx)
 	}
@@ -258,7 +258,7 @@ const (
 // drainStep reads the records after the cursor once and forwards them in order,
 // advancing the cursor over the ones the writer took. It sleeps when there is
 // nothing to do or something failed, so the caller can loop on it.
-func (s *SpoolForwarder) drainStep(ctx context.Context) {
+func (s *Spool) drainStep(ctx context.Context) {
 	offset, err := readCursor(s.dir)
 	if err != nil {
 		s.logger.Error("spool drain read cursor", "error", err)
@@ -294,7 +294,7 @@ func (s *SpoolForwarder) drainStep(ctx context.Context) {
 // forwardRecords forwards records in order and returns the offset after the last
 // one the writer took. It stops at the first failure, after a backoff, or when
 // the context ends.
-func (s *SpoolForwarder) forwardRecords(ctx context.Context, records []spooledRequestAt, from int64) int64 {
+func (s *Spool) forwardRecords(ctx context.Context, records []spooledRequestAt, from int64) int64 {
 	ackedTo := from
 	for _, r := range records {
 		if err := s.forwardOne(ctx, r.req); err != nil {
@@ -313,7 +313,7 @@ func (s *SpoolForwarder) forwardRecords(ctx context.Context, records []spooledRe
 // DrainOnce drains everything currently in the spool and returns. Used at
 // shutdown so the pod exits with an empty spool. Blocks until the spool is
 // empty, the context expires, or a forward fails.
-func (s *SpoolForwarder) DrainOnce(ctx context.Context) error {
+func (s *Spool) DrainOnce(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -343,7 +343,7 @@ func (s *SpoolForwarder) DrainOnce(ctx context.Context) error {
 	}
 }
 
-func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) error {
+func (s *Spool) forwardOne(ctx context.Context, rec spooledRequest) error {
 	if s.queue != nil {
 		return s.publishOne(ctx, rec)
 	}
@@ -392,7 +392,7 @@ func (s *SpoolForwarder) forwardOne(ctx context.Context, rec spooledRequest) err
 
 // publishOne converts a spooled ingest request into a queue.Item and LPUSHes it.
 // Returning nil acks the record (cursor advances); returning an error retries.
-func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) error {
+func (s *Spool) publishOne(ctx context.Context, rec spooledRequest) error {
 	if strings.HasPrefix(rec.Path, "/api/v1/alertmanager") {
 		return s.publishAlertmanager(ctx, rec)
 	}
@@ -418,7 +418,7 @@ func (s *SpoolForwarder) publishOne(ctx context.Context, rec spooledRequest) err
 	return err
 }
 
-func (s *SpoolForwarder) Close() error {
+func (s *Spool) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.file == nil {
@@ -429,7 +429,7 @@ func (s *SpoolForwarder) Close() error {
 	return err
 }
 
-func (s *SpoolForwarder) maybeRotateLocked(currentEnd int64) error {
+func (s *Spool) maybeRotateLocked(currentEnd int64) error {
 	if s.rotateBytes <= 0 || currentEnd < s.rotateBytes {
 		return nil
 	}

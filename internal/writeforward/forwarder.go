@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"bytes"
@@ -20,16 +20,16 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
-// WriteForwarder proxies write requests to an upstream writer instance
+// Proxy proxies write requests to an upstream writer instance
 // as part of the CQRS read/write split.
-type WriteForwarder struct {
+type Proxy struct {
 	writerURL string
 	client    *http.Client
 }
 
-// NewWriteForwarder creates a forwarder that proxies requests to the given writer URL.
-func NewWriteForwarder(writerURL string) *WriteForwarder {
-	return &WriteForwarder{
+// NewProxy creates a forwarder that proxies requests to the given writer URL.
+func NewProxy(writerURL string) *Proxy {
+	return &Proxy{
 		writerURL: writerURL,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
@@ -70,7 +70,7 @@ func replayableBody(body io.ReadCloser) io.Reader {
 
 // Forward proxies the incoming request to the upstream writer and streams
 // the response back to the client. On connection failure it returns 502.
-func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
+func (f *Proxy) Forward(w http.ResponseWriter, r *http.Request) {
 	f.forward(w, r, r.Context())
 }
 
@@ -79,13 +79,13 @@ func (f *WriteForwarder) Forward(w http.ResponseWriter, r *http.Request) {
 // under its own deadline, so a stalled writer holds this handler for at most
 // timeout and starts no goroutine of its own. Use it only for writes that are
 // safe to apply late and twice, such as a monitor check-in.
-func (f *WriteForwarder) ForwardDetached(w http.ResponseWriter, r *http.Request, timeout time.Duration) {
+func (f *Proxy) ForwardDetached(w http.ResponseWriter, r *http.Request, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), timeout)
 	defer cancel()
 	f.forward(w, r, ctx)
 }
 
-func (f *WriteForwarder) forward(w http.ResponseWriter, r *http.Request, parent context.Context) {
+func (f *Proxy) forward(w http.ResponseWriter, r *http.Request, parent context.Context) {
 	upstreamURL := f.writerURL + r.URL.RequestURI()
 
 	ctx, span := tracing.Tracer().Start(parent, "forwarder.Forward",

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -136,7 +137,7 @@ func newRouteFixture(t *testing.T) *routeFixture {
 	}))
 	t.Cleanup(writerStub.Close)
 	f.reader = newServer()
-	f.reader.SetWriteForwarder(NewWriteForwarder(writerStub.URL))
+	f.reader.SetWriteForwarder(writeforward.NewProxy(writerStub.URL))
 
 	login := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader(`{"username":"admin","password":"pass"}`))

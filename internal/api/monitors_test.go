@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -181,7 +182,7 @@ func TestMonitorCheckInIsForwardedByReaders(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}))
 	t.Cleanup(writer.Close)
-	h.server.SetWriteForwarder(NewWriteForwarder(writer.URL))
+	h.server.SetWriteForwarder(writeforward.NewProxy(writer.URL))
 
 	if rr := h.post("job", "", `{"status":"ok","interval":"1h"}`); rr.Code != http.StatusUnauthorized || gotPath != "" {
 		t.Fatalf("a keyless check-in reached the writer: %d %q", rr.Code, gotPath)

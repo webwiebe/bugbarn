@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -184,7 +185,7 @@ func TestFrontendTracesIsServedByTheReader(t *testing.T) {
 		calls <- upstreamCall{path: r.URL.Path}
 		w.WriteHeader(http.StatusAccepted)
 	})
-	server.SetWriteForwarder(NewWriteForwarder(writer.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(writer.URL))
 
 	rr := postSpans(server, session, `{"spans":[]}`, "")
 	if rr.Code < 200 || rr.Code > 299 {

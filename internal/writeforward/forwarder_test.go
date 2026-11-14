@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"io"
@@ -48,7 +48,7 @@ func TestWriteForwarder_Forward(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	fwd := NewWriteForwarder(upstream.URL)
+	fwd := NewProxy(upstream.URL)
 
 	body := strings.NewReader(`{"error":"something broke"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events?project=test", body)
@@ -82,7 +82,7 @@ func TestWriteForwarder_Forward(t *testing.T) {
 }
 
 func TestWriteForwarder_WriterDown(t *testing.T) {
-	fwd := NewWriteForwarder(deadWriterURL(t))
+	fwd := NewProxy(deadWriterURL(t))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", nil)
 	rec := httptest.NewRecorder()
@@ -99,4 +99,18 @@ func TestWriteForwarder_WriterDown(t *testing.T) {
 	if !strings.Contains(string(body), "upstream writer unavailable") {
 		t.Errorf("expected 'upstream writer unavailable' message, got: %s", string(body))
 	}
+}
+
+// deadWriterURL returns the URL of a writer that drops every connection
+// without answering. The URL of a closed httptest server is not dead: a
+// parallel test can bind the freed port and answer 200.
+func deadWriterURL(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+			_ = conn.Close()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
 }

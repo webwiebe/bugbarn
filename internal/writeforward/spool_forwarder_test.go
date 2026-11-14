@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-func newTestSpool(t *testing.T, writerURL string) *SpoolForwarder {
+func newTestSpool(t *testing.T, writerURL string) *Spool {
 	t.Helper()
-	sf, err := NewSpoolForwarder(t.TempDir(), writerURL, 1<<20, slog.Default())
+	sf, err := NewSpool(t.TempDir(), writerURL, 1<<20, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func newTestSpool(t *testing.T, writerURL string) *SpoolForwarder {
 	return sf
 }
 
-func spoolRecord(t *testing.T, sf *SpoolForwarder) {
+func spoolRecord(t *testing.T, sf *Spool) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")

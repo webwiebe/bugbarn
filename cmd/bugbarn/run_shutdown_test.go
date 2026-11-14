@@ -12,7 +12,7 @@ import (
 )
 
 // stopImmediately replaces the signal context with one that is already
-// cancelled, so a role wires everything and then takes its shutdown path
+// canceled, so a role wires everything and then takes its shutdown path
 // without a process signal.
 func stopImmediately(t *testing.T) {
 	t.Helper()
@@ -29,7 +29,7 @@ func TestNotifyContextDefaultsToSignalNotifyContext(t *testing.T) {
 	ctx, stop := notifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if ctx.Err() != nil {
-		t.Fatalf("context cancelled before any signal: %v", ctx.Err())
+		t.Fatalf("context canceled before any signal: %v", ctx.Err())
 	}
 	signal.Reset(os.Interrupt)
 }

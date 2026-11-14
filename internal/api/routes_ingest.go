@@ -1,27 +1,16 @@
 package api
 
 import (
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"net/http"
 
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 )
 
 const (
-	telemetrySecurityPath = "/api/v1/telemetry/security"
-	telemetryMetricsPath  = "/api/v1/telemetry/metrics"
+	telemetrySecurityPath = writeforward.TelemetrySecurityPath
+	telemetryMetricsPath  = writeforward.TelemetryMetricsPath
 )
-
-// telemetryKind maps a telemetry ingest path to its queue kind, or "" for any
-// other path.
-func telemetryKind(path string) string {
-	switch path {
-	case telemetrySecurityPath:
-		return queue.KindSecurity
-	case telemetryMetricsPath:
-		return queue.KindMetrics
-	}
-	return ""
-}
 
 // registerIngestRoutes registers the endpoints that authenticate with a project
 // API key (or nothing, for page view collection). They answer ahead of the

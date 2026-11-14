@@ -1,4 +1,4 @@
-package api
+package writeforward
 
 import (
 	"net/http"
@@ -32,7 +32,7 @@ func TestForwardSurvivesAWriterThatDropsAReusedConnection(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	fwd := NewWriteForwarder(upstream.URL)
+	fwd := NewProxy(upstream.URL)
 	for i := range 6 {
 		// A bare reader hides the length and the rewind, like a real inbound body.
 		body := struct{ *strings.Reader }{strings.NewReader(`{"status":"ok"}`)}

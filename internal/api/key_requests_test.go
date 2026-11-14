@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -290,7 +291,7 @@ func TestKeyRequestEndpointsForwardOnReader(t *testing.T) {
 	store := mustOpenStore(t)
 	defer store.Close()
 	server := NewServer(nil, store, nil)
-	server.SetWriteForwarder(NewWriteForwarder(upstream.URL))
+	server.SetWriteForwarder(writeforward.NewProxy(upstream.URL))
 
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodPost, "/api/v1/setup/geo/key-requests"},
