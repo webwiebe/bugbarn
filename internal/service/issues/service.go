@@ -20,8 +20,7 @@ import (
 func isClientError(err error) bool {
 	return errors.Is(err, apperr.ErrInvalidInput) ||
 		errors.Is(err, apperr.ErrNotFound) ||
-		errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded)
+		apperr.IsContextError(err)
 }
 
 type Repository interface {
