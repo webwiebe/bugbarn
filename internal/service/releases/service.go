@@ -46,6 +46,7 @@ func (s *Service) List(ctx context.Context) ([]domain.Release, error) {
 	releases, err := s.repo.ListRecentReleases(ctx, ListLimit)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list releases", err)
 	}
 	return releases, err
 }
@@ -57,7 +58,7 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Release, error) {
 	release, err := s.repo.GetRelease(ctx, id)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "get release", "release_id", id, "error", err)
+		apperr.LogFailure(ctx, s.logger, "get release", err, "release_id", id)
 		return domain.Release{}, err
 	}
 	return release, nil
@@ -69,9 +70,7 @@ func (s *Service) Create(ctx context.Context, release domain.Release) (domain.Re
 	created, err := s.repo.CreateRelease(ctx, release)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "create release", "name", release.Name, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "create release", err, "name", release.Name)
 		return domain.Release{}, err
 	}
 	s.logger.InfoContext(ctx, "release created", "release_id", created.ID, "name", created.Name)
@@ -85,7 +84,7 @@ func (s *Service) Update(ctx context.Context, id string, release domain.Release)
 	updated, err := s.repo.UpdateRelease(ctx, id, release)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "update release", "release_id", id, "error", err)
+		apperr.LogFailure(ctx, s.logger, "update release", err, "release_id", id)
 		return domain.Release{}, err
 	}
 	return updated, nil
@@ -97,7 +96,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	defer span.End()
 	if err := s.repo.DeleteRelease(ctx, id); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "delete release", "release_id", id, "error", err)
+		apperr.LogFailure(ctx, s.logger, "delete release", err, "release_id", id)
 		return err
 	}
 	s.logger.InfoContext(ctx, "release deleted", "release_id", id)
@@ -110,7 +109,7 @@ func (s *Service) UploadSourceMap(ctx context.Context, upload domain.SourceMapUp
 	sm, err := s.repo.UploadSourceMap(ctx, upload)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "upload source map", "release", upload.Release, "error", err)
+		apperr.LogFailure(ctx, s.logger, "upload source map", err, "release", upload.Release)
 		return domain.SourceMap{}, err
 	}
 	s.logger.InfoContext(ctx, "source map uploaded", "release", upload.Release, "bundle_url", upload.BundleURL)
@@ -123,6 +122,7 @@ func (s *Service) ListSourceMaps(ctx context.Context) ([]domain.SourceMapMeta, e
 	maps, err := s.repo.ListSourceMaps(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list source maps", err)
 	}
 	return maps, err
 }

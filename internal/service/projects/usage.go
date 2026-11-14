@@ -109,9 +109,7 @@ func (s *Service) UsageAll(ctx context.Context) (map[int64]storage.ProjectUsage,
 		// Context errors mean the caller went away mid-query, which is not a
 		// fault of ours; logging them at error level self-reports a bug on
 		// every client disconnect.
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "usage all", "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "usage all", err)
 		return nil, false, err
 	}
 	span.SetAttributes(attribute.Bool("usage.stale", stale))

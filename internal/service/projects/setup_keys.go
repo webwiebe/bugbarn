@@ -6,6 +6,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -18,6 +19,7 @@ func (s *Service) APIKey(ctx context.Context, id int64) (domain.APIKey, error) {
 	key, err := s.repo.APIKeyByID(ctx, id)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "get api key", err, "api_key_id", id)
 	}
 	return key, err
 }
@@ -29,7 +31,7 @@ func (s *Service) RevokeSetupKey(ctx context.Context, slug, keySHA256 string) er
 	defer span.End()
 	if err := s.repo.RevokeSetupKey(ctx, slug, keySHA256); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "revoke setup key", "slug", slug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "revoke setup key", err, "slug", slug)
 		return err
 	}
 	s.logger.InfoContext(ctx, "setup key revoked", "slug", slug)
@@ -43,6 +45,7 @@ func (s *Service) ListSetupKeyRevocations(ctx context.Context) ([]domain.SetupKe
 	revoked, err := s.repo.ListSetupKeyRevocations(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list setup key revocations", err)
 	}
 	return revoked, err
 }

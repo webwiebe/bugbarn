@@ -49,16 +49,16 @@ func TestList_ReturnsAlerts(t *testing.T) {
 	}
 }
 
-// List passes its error through without logging, unlike the other methods.
-func TestList_ErrorPassesThroughUnlogged(t *testing.T) {
+// List logs an internal failure once, like every other method.
+func TestList_InternalErrorIsLoggedOnce(t *testing.T) {
 	t.Parallel()
 	logger, buf := captureLogger()
 	svc := New(&stubRepo{err: apperr.Internal("db down", nil)}, logger)
 	if _, err := svc.List(context.Background()); !errors.Is(err, apperr.ErrInternal) {
 		t.Fatalf("err = %v, want ErrInternal", err)
 	}
-	if buf.Len() != 0 {
-		t.Fatalf("unexpected log output: %s", buf.String())
+	if n := strings.Count(buf.String(), `"level":"ERROR"`); n != 1 {
+		t.Fatalf("ERROR records = %d, want 1: %s", n, buf.String())
 	}
 }
 
@@ -75,7 +75,7 @@ func TestUpdate_Happy(t *testing.T) {
 	}
 }
 
-func TestMutationsLogErrorsAndKeepKind(t *testing.T) {
+func TestMutationsKeepKindAndLogInternalErrorsOnly(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []error{apperr.ErrNotFound, apperr.ErrConflict, apperr.ErrInvalidInput, apperr.ErrInternal} {
 		cause := wrap(kind)
@@ -97,8 +97,9 @@ func TestMutationsLogErrorsAndKeepKind(t *testing.T) {
 			if !errors.Is(err, kind) {
 				t.Errorf("%s: err = %v, want kind %v", name, err, kind)
 			}
-			if !strings.Contains(buf.String(), `"level":"ERROR"`) {
-				t.Errorf("%s: failure not logged at error level: %s", name, buf.String())
+			logged := strings.Contains(buf.String(), `"level":"ERROR"`)
+			if logged != errors.Is(kind, apperr.ErrInternal) {
+				t.Errorf("%s with %v: ERROR logged = %v: %s", name, kind, logged, buf.String())
 			}
 		}
 	}

@@ -117,7 +117,10 @@ func buildSection(cfg Config, slug string, data domain.DigestData) ProjectSectio
 // Gathering runs under its own budget (cfg.gatherBudget()), with each project
 // further bounded by projectBudget. Delivery is budgeted separately from the
 // caller's context, so whatever was gathered still ships.
-func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []error {
+func Send(ctx context.Context, log *slog.Logger, cfg Config, store Store, notifiers []Notifier) []error {
+	if log == nil {
+		log = slog.Default()
+	}
 	now := time.Now().UTC()
 	since := now.AddDate(0, 0, -7)
 
@@ -135,10 +138,10 @@ func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []
 		PublicURL:   cfg.PublicURL,
 	}
 
-	errs := gather(gatherCtx, cfg, store, projects, since, &report)
+	errs := gather(gatherCtx, log, cfg, store, projects, since, &report)
 
 	if len(report.Projects) == 0 {
-		slog.Info("digest: no activity across all projects, skipping")
+		log.InfoContext(ctx, "digest: no activity across all projects, skipping")
 		return errs
 	}
 
@@ -147,7 +150,7 @@ func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []
 
 	for _, n := range notifiers {
 		if err := n.Send(deliverCtx, report); err != nil {
-			slog.Error("digest: delivery failed", "channel", n.Name(), "error", err)
+			log.ErrorContext(ctx, "digest: delivery failed", "channel", n.Name(), "error", err)
 			errs = append(errs, fmt.Errorf("%s: %w", n.Name(), err))
 		}
 	}
@@ -160,13 +163,13 @@ func Send(ctx context.Context, cfg Config, store Store, notifiers []Notifier) []
 // that once, rather than emitting an identical deadline error per remaining
 // project.
 func gather(
-	ctx context.Context, cfg Config, store Store,
+	ctx context.Context, log *slog.Logger, cfg Config, store Store,
 	projects []domain.Project, since time.Time, report *Report,
 ) []error {
 	var errs []error
 	for i, proj := range projects {
 		if err := ctx.Err(); err != nil {
-			slog.Error("digest: gather budget exhausted",
+			log.ErrorContext(ctx, "digest: gather budget exhausted",
 				"gathered", i, "total", len(projects), "error", err)
 			errs = append(errs, fmt.Errorf(
 				"gather budget exhausted after %d/%d projects: %w", i, len(projects), err))
@@ -177,7 +180,7 @@ func gather(
 		data, err := store.WeeklyDigest(projCtx, proj.ID, since)
 		cancel()
 		if err != nil {
-			slog.Error("digest: failed to gather project data", "project", proj.Slug, "error", err)
+			log.ErrorContext(ctx, "digest: failed to gather project data", "project", proj.Slug, "error", err)
 			errs = append(errs, fmt.Errorf("gather %s: %w", proj.Slug, err))
 			continue
 		}

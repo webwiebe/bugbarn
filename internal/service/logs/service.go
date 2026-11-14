@@ -125,7 +125,7 @@ func (s *Service) reportInsertErr(ctx context.Context, span trace.Span, err erro
 		return err
 	}
 	tracing.SetError(span, err)
-	s.logger.ErrorContext(ctx, "insert log entries", "count", count, "error", err)
+	apperr.LogFailure(ctx, s.logger, "insert log entries", err, "count", count)
 	return err
 }
 
@@ -142,7 +142,7 @@ func (s *Service) List(
 			return nil, err
 		}
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "list log entries", "project_id", projectID, "error", err)
+		apperr.LogFailure(ctx, s.logger, "list log entries", err, "project_id", projectID)
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("count", len(entries)))
@@ -207,7 +207,7 @@ func (s *Service) readErr(ctx context.Context, span trace.Span, what string, pro
 		s.logger.WarnContext(ctx, what+" unavailable", "project_id", projectID, "error", err)
 	default:
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, what, "project_id", projectID, "error", err)
+		apperr.LogFailure(ctx, s.logger, what, err, "project_id", projectID)
 	}
 	return err
 }

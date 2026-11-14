@@ -7,6 +7,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -37,6 +38,7 @@ func (s *Service) List(ctx context.Context) ([]domain.Alert, error) {
 	alerts, err := s.repo.ListAlerts(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list alerts", err)
 	}
 	return alerts, err
 }
@@ -48,7 +50,7 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Alert, error) {
 	alert, err := s.repo.GetAlert(ctx, id)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "get alert", "alert_id", id, "error", err)
+		apperr.LogFailure(ctx, s.logger, "get alert", err, "alert_id", id)
 		return domain.Alert{}, err
 	}
 	return alert, nil
@@ -60,7 +62,7 @@ func (s *Service) Create(ctx context.Context, alert domain.Alert) (domain.Alert,
 	created, err := s.repo.CreateAlert(ctx, alert)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "create alert", "name", alert.Name, "error", err)
+		apperr.LogFailure(ctx, s.logger, "create alert", err, "name", alert.Name)
 		return domain.Alert{}, err
 	}
 	s.logger.InfoContext(ctx, "alert created", "alert_id", created.ID, "name", created.Name)
@@ -74,7 +76,7 @@ func (s *Service) Update(ctx context.Context, id string, alert domain.Alert) (do
 	updated, err := s.repo.UpdateAlert(ctx, id, alert)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "update alert", "alert_id", id, "error", err)
+		apperr.LogFailure(ctx, s.logger, "update alert", err, "alert_id", id)
 		return domain.Alert{}, err
 	}
 	return updated, nil
@@ -86,7 +88,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	defer span.End()
 	if err := s.repo.DeleteAlert(ctx, id); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "delete alert", "alert_id", id, "error", err)
+		apperr.LogFailure(ctx, s.logger, "delete alert", err, "alert_id", id)
 		return err
 	}
 	s.logger.InfoContext(ctx, "alert deleted", "alert_id", id)

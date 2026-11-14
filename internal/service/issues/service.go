@@ -2,7 +2,6 @@ package issues
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"time"
 
@@ -13,15 +12,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
-
-// isClientError returns true for errors that represent bad caller input rather
-// than unexpected server-side failures. These are not logged at ERROR level to
-// avoid self-reporting noise from normal 400/404 responses.
-func isClientError(err error) bool {
-	return errors.Is(err, apperr.ErrInvalidInput) ||
-		errors.Is(err, apperr.ErrNotFound) ||
-		apperr.IsContextError(err)
-}
 
 type Repository interface {
 	ListIssues(context.Context) ([]domain.Issue, error)
@@ -62,9 +52,7 @@ func (s *Service) List(ctx context.Context) ([]domain.Issue, error) {
 	issues, err := s.repo.ListIssues(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "list issues", "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "list issues", err)
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("count", len(issues)))
@@ -77,9 +65,7 @@ func (s *Service) ListFiltered(ctx context.Context, filter domain.IssueFilter) (
 	issues, err := s.repo.ListIssuesFiltered(ctx, filter)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "list issues filtered", "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "list issues filtered", err)
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("count", len(issues)))
@@ -93,9 +79,7 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Issue, error) {
 	issue, err := s.repo.GetIssue(ctx, id)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !isClientError(err) {
-			s.logger.ErrorContext(ctx, "get issue", "issue_id", id, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "get issue", err, "issue_id", id)
 		return domain.Issue{}, err
 	}
 	return issue, nil
@@ -116,9 +100,7 @@ func (s *Service) changeStatus(ctx context.Context, id string, c statusChange) (
 	issue, err := c.apply(ctx, id)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !isClientError(err) {
-			s.logger.ErrorContext(ctx, c.failed, "issue_id", id, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, c.failed, err, "issue_id", id)
 		return domain.Issue{}, err
 	}
 	s.invalidateCounts()
@@ -141,9 +123,7 @@ func (s *Service) Mute(ctx context.Context, id, muteMode string) (domain.Issue, 
 	issue, err := s.repo.MuteIssue(ctx, id, muteMode)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !isClientError(err) {
-			s.logger.ErrorContext(ctx, "mute issue", "issue_id", id, "mute_mode", muteMode, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "mute issue", err, "issue_id", id, "mute_mode", muteMode)
 		return domain.Issue{}, err
 	}
 	s.logger.InfoContext(ctx, "issue muted", "issue_id", id, "mute_mode", muteMode)
@@ -161,7 +141,7 @@ func (s *Service) HourlyEventCounts(ctx context.Context, issueIDs []int64) (map[
 	counts, err := s.repo.HourlyEventCounts(ctx, issueIDs)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "hourly event counts", "error", err)
+		apperr.LogFailure(ctx, s.logger, "hourly event counts", err)
 		return nil, err
 	}
 	return counts, nil
@@ -174,6 +154,7 @@ func (s *Service) RowIDByDisplayID(ctx context.Context, displayID string) (int64
 	rowID, err := s.repo.IssueRowIDByDisplayID(ctx, displayID)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "row i d by display i d", err)
 	}
 	return rowID, err
 }
@@ -185,9 +166,7 @@ func (s *Service) ListEvents(ctx context.Context, issueID string, limit int, bef
 	events, hasMore, err := s.repo.ListIssueEvents(ctx, issueID, limit, beforeID)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !isClientError(err) {
-			s.logger.ErrorContext(ctx, "list events", "issue_id", issueID, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "list events", err, "issue_id", issueID)
 		return nil, false, err
 	}
 	span.SetAttributes(attribute.Int("count", len(events)))
@@ -207,9 +186,7 @@ func (s *Service) IssueReleases(ctx context.Context, issueID string) ([]domain.I
 	releases, sampled, err := s.repo.IssueReleases(ctx, issueID, ReleaseSampleSize)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !isClientError(err) {
-			s.logger.ErrorContext(ctx, "issue releases", "issue_id", issueID, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "issue releases", err, "issue_id", issueID)
 		return nil, 0, err
 	}
 	return releases, sampled, nil
@@ -222,9 +199,7 @@ func (s *Service) GetEvent(ctx context.Context, id string) (domain.Event, error)
 	evt, err := s.repo.GetEvent(ctx, id)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !isClientError(err) && !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "get event", "event_id", id, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "get event", err, "event_id", id)
 		return domain.Event{}, err
 	}
 	return evt, nil
@@ -242,9 +217,7 @@ func (s *Service) ListLiveEvents(ctx context.Context, limit int, since time.Time
 	events, err := s.repo.ListRecentEvents(ctx, limit, since)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "list live events", "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "list live events", err)
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("count", len(events)))
@@ -257,6 +230,7 @@ func (s *Service) ListFacetKeys(ctx context.Context, projectID int64) ([]string,
 	keys, err := s.repo.ListFacetKeys(ctx, projectID)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list facet keys", err)
 	}
 	return keys, err
 }
@@ -268,6 +242,7 @@ func (s *Service) SurfaceActivity(ctx context.Context, projectID int64) ([]domai
 	out, err := s.repo.SurfaceActivity(ctx, projectID, time.Now().UTC())
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "surface activity", err)
 	}
 	return out, err
 }
@@ -279,6 +254,7 @@ func (s *Service) ListFacetValues(ctx context.Context, projectID int64, key stri
 	vals, err := s.repo.ListFacetValues(ctx, projectID, key)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list facet values", err)
 	}
 	return vals, err
 }

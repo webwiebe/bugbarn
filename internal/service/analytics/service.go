@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -37,6 +38,7 @@ func (s *Service) InsertPageView(ctx context.Context, pv analytics.PageView) err
 	defer span.End()
 	if err := s.repo.InsertPageView(ctx, pv); err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "insert page view", err)
 		return err
 	}
 	return nil
@@ -48,7 +50,7 @@ func (s *Service) QueryOverview(ctx context.Context, q analytics.Query) (analyti
 	result, err := s.repo.QueryOverview(ctx, q)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "query overview", "error", err)
+		apperr.LogFailure(ctx, s.logger, "query overview", err)
 		return analytics.OverviewResult{}, err
 	}
 	return result, nil
@@ -60,6 +62,7 @@ func (s *Service) QueryPages(ctx context.Context, q analytics.Query) ([]analytic
 	pages, err := s.repo.QueryPages(ctx, q)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "query pages", err)
 	}
 	return pages, err
 }
@@ -70,6 +73,7 @@ func (s *Service) QueryTimeline(ctx context.Context, q analytics.Query, granular
 	buckets, err := s.repo.QueryTimeline(ctx, q, granularity)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "query timeline", err)
 	}
 	return buckets, err
 }
@@ -80,6 +84,7 @@ func (s *Service) QueryReferrers(ctx context.Context, q analytics.Query) ([]anal
 	refs, err := s.repo.QueryReferrers(ctx, q)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "query referrers", err)
 	}
 	return refs, err
 }
@@ -90,6 +95,7 @@ func (s *Service) QuerySegments(ctx context.Context, q analytics.Query, dimKey s
 	segments, err := s.repo.QuerySegments(ctx, q, dimKey)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "query segments", err)
 	}
 	return segments, err
 }
@@ -100,6 +106,7 @@ func (s *Service) QueryPageFlow(ctx context.Context, q analytics.Query, pathname
 	result, err := s.repo.QueryPageFlow(ctx, q, pathname)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "query page flow", err)
 	}
 	return result, err
 }
@@ -110,6 +117,7 @@ func (s *Service) QueryScrollDepth(ctx context.Context, q analytics.Query, pathn
 	result, err := s.repo.QueryScrollDepth(ctx, q, pathname)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "query scroll depth", err)
 	}
 	return result, err
 }
@@ -120,6 +128,7 @@ func (s *Service) QueryDropout(ctx context.Context, q analytics.Query) ([]analyt
 	stats, err := s.repo.QueryDropout(ctx, q)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "query dropout", err)
 	}
 	return stats, err
 }

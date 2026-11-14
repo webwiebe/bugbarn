@@ -203,8 +203,8 @@ func TestDeleteIsIdempotentOnNotFound(t *testing.T) {
 func TestDeleteSurfacesOtherErrors(t *testing.T) {
 	t.Parallel()
 	logger, buf := newJSONLogger()
-	svc := New(&dataRepo{deleteErr: apperr.Conflict("has events", nil)}, logger)
-	if err := svc.Delete(context.Background(), "p"); !errors.Is(err, apperr.ErrConflict) {
+	svc := New(&dataRepo{deleteErr: apperr.Internal("disk", nil)}, logger)
+	if err := svc.Delete(context.Background(), "p"); !errors.Is(err, apperr.ErrInternal) {
 		t.Fatalf("Delete err = %v", err)
 	}
 	if !strings.Contains(buf.String(), `"level":"ERROR"`) {
@@ -275,8 +275,8 @@ func TestBySlugNotFoundIsNotLogged(t *testing.T) {
 	}
 }
 
-// Every write path keeps the repo's apperr kind and logs at ERROR except the
-// ones that the service passes through silently (listed in silent).
+// Every method keeps the repo's apperr kind, logs one ERROR for an internal
+// failure and none for a client error.
 func TestFailuresKeepKindAndLogBoundary(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -301,8 +301,6 @@ func TestFailuresKeepKindAndLogBoundary(t *testing.T) {
 		"revokeSetupKey": func(s *Service) error { return s.RevokeSetupKey(ctx, "p", "h") },
 		"silenceWatch":   func(s *Service) error { _, err := s.UpdateSilenceWatch(ctx, "p", "off"); return err },
 		"funnelBarn":     func(s *Service) error { _, err := s.UpdateFunnelBarnURL(ctx, "p", "https://f.example"); return err },
-	}
-	silent := map[string]call{
 		"list":           func(s *Service) error { _, err := s.List(ctx); return err },
 		"ensure":         func(s *Service) error { _, err := s.Ensure(ctx, "n"); return err },
 		"ensurePending":  func(s *Service) error { _, err := s.EnsurePending(ctx, "n"); return err },
@@ -318,25 +316,22 @@ func TestFailuresKeepKindAndLogBoundary(t *testing.T) {
 		"revocations":    func(s *Service) error { _, err := s.ListSetupKeyRevocations(ctx); return err },
 		"silenceRead":    func(s *Service) error { _, err := s.SilenceWatch(ctx, "p"); return err },
 	}
-	cause := apperr.Conflict("clash", nil)
 	for name, c := range logged {
 		logger, buf := newJSONLogger()
-		err := c(New(&fakeRepo{err: cause}, logger))
+		err := c(New(&fakeRepo{err: apperr.Internal("disk", nil)}, logger))
+		if !errors.Is(err, apperr.ErrInternal) {
+			t.Errorf("%s: err = %v, want internal", name, err)
+		}
+		if strings.Count(buf.String(), `"level":"ERROR"`) != 1 {
+			t.Errorf("%s: want exactly one ERROR record: %s", name, buf.String())
+		}
+		logger, buf = newJSONLogger()
+		err = c(New(&fakeRepo{err: apperr.Conflict("clash", nil)}, logger))
 		if !errors.Is(err, apperr.ErrConflict) {
 			t.Errorf("%s: err = %v, want conflict", name, err)
 		}
-		if !strings.Contains(buf.String(), `"level":"ERROR"`) {
-			t.Errorf("%s: failure not logged at error level", name)
-		}
-	}
-	for name, c := range silent {
-		logger, buf := newJSONLogger()
-		err := c(New(&fakeRepo{err: cause}, logger))
-		if !errors.Is(err, apperr.ErrConflict) {
-			t.Errorf("%s: err = %v, want conflict", name, err)
-		}
-		if buf.Len() != 0 {
-			t.Errorf("%s: unexpected log output: %s", name, buf.String())
+		if strings.Contains(buf.String(), `"level":"ERROR"`) {
+			t.Errorf("%s: a client error was logged at ERROR: %s", name, buf.String())
 		}
 	}
 }

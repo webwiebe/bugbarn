@@ -104,6 +104,7 @@ func (s *Service) List(ctx context.Context) ([]domain.Project, error) {
 	projects, err := s.repo.ListProjects(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list projects", err)
 	}
 	return projects, err
 }
@@ -115,7 +116,7 @@ func (s *Service) Create(ctx context.Context, name, slug string) (domain.Project
 	proj, err := s.repo.CreateProject(ctx, name, slug)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "create project", "slug", slug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "create project", err, "slug", slug)
 		return domain.Project{}, err
 	}
 	s.usage.invalidate()
@@ -130,6 +131,7 @@ func (s *Service) Ensure(ctx context.Context, slug string) (domain.Project, erro
 	proj, err := s.repo.EnsureProject(ctx, slug)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "ensure project", err)
 	}
 	return proj, err
 }
@@ -141,6 +143,7 @@ func (s *Service) EnsurePending(ctx context.Context, slug string) (domain.Projec
 	proj, err := s.repo.EnsureProjectPending(ctx, slug)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "ensure pending project", err)
 	}
 	return proj, err
 }
@@ -151,13 +154,12 @@ func (s *Service) Delete(ctx context.Context, slug string) error {
 	defer span.End()
 	if err := s.repo.DeleteProject(ctx, slug); err != nil {
 		// Treat "not found" as success — delete is idempotent.
-		var appErr *apperr.Error
-		if errors.As(err, &appErr) && appErr.Code == "not_found" {
+		if errors.Is(err, apperr.ErrNotFound) {
 			s.logger.InfoContext(ctx, "project already deleted", "slug", slug)
 			return nil
 		}
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "delete project", "slug", slug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "delete project", err, "slug", slug)
 		return err
 	}
 	s.usage.invalidate()
@@ -171,7 +173,7 @@ func (s *Service) Approve(ctx context.Context, slug string) error {
 	defer span.End()
 	if err := s.repo.ApproveProject(ctx, slug); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "approve project", "slug", slug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "approve project", err, "slug", slug)
 		return err
 	}
 	s.logger.InfoContext(ctx, "project approved", "slug", slug)
@@ -183,12 +185,12 @@ func (s *Service) Approve(ctx context.Context, slug string) error {
 	if s.replayer != nil {
 		proj, err := s.repo.ProjectBySlug(ctx, slug)
 		if err != nil {
-			s.logger.ErrorContext(ctx, "approve: lookup project for replay", "slug", slug, "error", err)
+			apperr.LogFailure(ctx, s.logger, "approve: lookup project for replay", err, "slug", slug)
 			return nil
 		}
 		n, err := s.replayer.ReplayHeld(ctx, proj.ID)
 		if err != nil {
-			s.logger.ErrorContext(ctx, "approve: replay held events", "slug", slug, "replayed", n, "error", err)
+			apperr.LogFailure(ctx, s.logger, "approve: replay held events", err, "slug", slug, "replayed", n)
 			return nil
 		}
 		if n > 0 {
@@ -205,9 +207,7 @@ func (s *Service) BySlug(ctx context.Context, slug string) (domain.Project, erro
 	proj, err := s.repo.ProjectBySlug(ctx, slug)
 	if err != nil {
 		tracing.SetError(span, err)
-		switch {
-		case errors.Is(err, apperr.ErrNotFound):
-		case errors.Is(err, apperr.ErrUnavailable):
+		if errors.Is(err, apperr.ErrUnavailable) {
 			// A reader could not read the database even after its retries
 			// (SQLITE_READONLY_RECOVERY, #261), so this request failed with a
 			// 503. ERROR lets selflog file it; the line names the caller. A
@@ -215,8 +215,8 @@ func (s *Service) BySlug(ctx context.Context, slug string) (domain.Project, erro
 			info := domain.RequestInfoFromContext(ctx)
 			s.logger.ErrorContext(ctx, "project by slug: database unavailable on this reader",
 				"slug", slug, "route", info.Route, "user_agent", info.UserAgent, "error", err)
-		default:
-			s.logger.ErrorContext(ctx, "project by slug", "slug", slug, "error", err)
+		} else {
+			apperr.LogFailure(ctx, s.logger, "project by slug", err, "slug", slug)
 		}
 		return domain.Project{}, err
 	}
@@ -233,6 +233,7 @@ func (s *Service) ListAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
 	keys, err := s.repo.ListAPIKeys(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list api keys", err)
 	}
 	return keys, err
 }
@@ -243,7 +244,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, name string, projectID int64
 	key, err := s.repo.CreateAPIKey(ctx, name, projectID, keySHA256, scope)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "create api key", "name", name, "error", err)
+		apperr.LogFailure(ctx, s.logger, "create api key", err, "name", name)
 		return domain.APIKey{}, err
 	}
 	s.logger.InfoContext(ctx, "api key created", "name", name, "project_id", projectID)
@@ -256,7 +257,7 @@ func (s *Service) DeleteAPIKey(ctx context.Context, id int64) error {
 	defer span.End()
 	if err := s.repo.DeleteAPIKey(ctx, id); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "delete api key", "id", id, "error", err)
+		apperr.LogFailure(ctx, s.logger, "delete api key", err, "id", id)
 		return err
 	}
 	return nil
@@ -267,6 +268,7 @@ func (s *Service) EnsureSetupAPIKey(ctx context.Context, name string, projectID 
 	defer span.End()
 	if err := s.repo.EnsureSetupAPIKey(ctx, name, projectID, keySHA256); err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "ensure setup api key", err)
 		return err
 	}
 	return nil
@@ -278,6 +280,7 @@ func (s *Service) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (proj
 	projectID, scope, found, err = s.repo.ValidAPIKeySHA256(ctx, keySHA256)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "validate api key", err)
 	}
 	return
 }
@@ -287,6 +290,7 @@ func (s *Service) TouchAPIKey(ctx context.Context, keySHA256 string) error {
 	defer span.End()
 	if err := s.repo.TouchAPIKey(ctx, keySHA256); err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "touch api key", err)
 		return err
 	}
 	return nil
@@ -298,6 +302,7 @@ func (s *Service) GetSettings(ctx context.Context) (map[string]string, error) {
 	result, err := s.repo.GetSettings(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "get settings", err)
 	}
 	return result, err
 }
@@ -307,7 +312,7 @@ func (s *Service) UpdateSettings(ctx context.Context, values map[string]string) 
 	defer span.End()
 	if err := s.repo.UpdateSettings(ctx, values); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "update settings", "error", err)
+		apperr.LogFailure(ctx, s.logger, "update settings", err)
 		return err
 	}
 	return nil
@@ -321,7 +326,7 @@ func (s *Service) CreateAlias(ctx context.Context, aliasSlug string, projectID i
 	defer span.End()
 	if err := s.repo.CreateAlias(ctx, aliasSlug, projectID); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "create alias", "alias", aliasSlug, "project_id", projectID, "error", err)
+		apperr.LogFailure(ctx, s.logger, "create alias", err, "alias", aliasSlug, "project_id", projectID)
 		return err
 	}
 	s.logger.InfoContext(ctx, "alias created", "alias", aliasSlug, "project_id", projectID)
@@ -334,7 +339,7 @@ func (s *Service) DeleteAlias(ctx context.Context, aliasSlug string) error {
 	defer span.End()
 	if err := s.repo.DeleteAlias(ctx, aliasSlug); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "delete alias", "alias", aliasSlug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "delete alias", err, "alias", aliasSlug)
 		return err
 	}
 	s.logger.InfoContext(ctx, "alias deleted", "alias", aliasSlug)
@@ -348,6 +353,7 @@ func (s *Service) ResolveAlias(ctx context.Context, slug string) (int64, error) 
 	id, err := s.repo.ResolveAlias(ctx, slug)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "resolve alias", err)
 	}
 	return id, err
 }
@@ -358,6 +364,7 @@ func (s *Service) ListAliases(ctx context.Context) ([]domain.ProjectAlias, error
 	aliases, err := s.repo.ListAliases(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list aliases", err)
 	}
 	return aliases, err
 }
@@ -370,7 +377,7 @@ func (s *Service) Rename(ctx context.Context, oldSlug, newSlug, newName string) 
 	defer span.End()
 	if err := s.repo.RenameProject(ctx, oldSlug, newSlug, newName); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "rename project", "old_slug", oldSlug, "new_slug", newSlug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "rename project", err, "old_slug", oldSlug, "new_slug", newSlug)
 		return err
 	}
 	s.logger.InfoContext(ctx, "project renamed", "old_slug", oldSlug, "new_slug", newSlug, "new_name", newName)
@@ -384,7 +391,7 @@ func (s *Service) UpdateLimits(ctx context.Context, slug string, retentionDays *
 	defer span.End()
 	if err := s.repo.UpdateProjectLimits(ctx, slug, retentionDays, sampling); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "update project limits", "slug", slug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "update project limits", err, "slug", slug)
 		return err
 	}
 	days := "inherit"
@@ -405,7 +412,7 @@ func (s *Service) Merge(ctx context.Context, sourceSlug, targetSlug string) erro
 	defer span.End()
 	if err := s.repo.MergeProjects(ctx, sourceSlug, targetSlug); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "merge projects", "source", sourceSlug, "target", targetSlug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "merge projects", err, "source", sourceSlug, "target", targetSlug)
 		return err
 	}
 	s.usage.invalidate()
@@ -422,7 +429,7 @@ func (s *Service) CreateGroup(ctx context.Context, name, slug string) (domain.Pr
 	g, err := s.repo.CreateGroup(ctx, name, slug)
 	if err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "create group", "slug", slug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "create group", err, "slug", slug)
 		return domain.ProjectGroup{}, err
 	}
 	s.logger.InfoContext(ctx, "group created", "slug", slug, "id", g.ID)
@@ -435,6 +442,7 @@ func (s *Service) ListGroups(ctx context.Context) ([]domain.ProjectGroup, error)
 	groups, err := s.repo.ListGroups(ctx)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list groups", err)
 	}
 	return groups, err
 }
@@ -445,7 +453,7 @@ func (s *Service) DeleteGroup(ctx context.Context, slug string) error {
 	defer span.End()
 	if err := s.repo.DeleteGroup(ctx, slug); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "delete group", "slug", slug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "delete group", err, "slug", slug)
 		return err
 	}
 	s.logger.InfoContext(ctx, "group deleted", "slug", slug)
@@ -458,7 +466,7 @@ func (s *Service) AssignProjectToGroup(ctx context.Context, projectSlug, groupSl
 	defer span.End()
 	if err := s.repo.AssignProjectToGroup(ctx, projectSlug, groupSlug); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "assign project to group", "project", projectSlug, "group", groupSlug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "assign project to group", err, "project", projectSlug, "group", groupSlug)
 		return err
 	}
 	s.logger.InfoContext(ctx, "project assigned to group", "project", projectSlug, "group", groupSlug)
@@ -471,7 +479,7 @@ func (s *Service) RemoveProjectFromGroup(ctx context.Context, projectSlug string
 	defer span.End()
 	if err := s.repo.RemoveProjectFromGroup(ctx, projectSlug); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "remove project from group", "project", projectSlug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "remove project from group", err, "project", projectSlug)
 		return err
 	}
 	s.logger.InfoContext(ctx, "project removed from group", "project", projectSlug)
@@ -485,6 +493,7 @@ func (s *Service) ListGroupProjects(ctx context.Context, groupSlug string) ([]do
 	projects, err := s.repo.ListGroupProjects(ctx, groupSlug)
 	if err != nil {
 		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "list group projects", err)
 	}
 	return projects, err
 }

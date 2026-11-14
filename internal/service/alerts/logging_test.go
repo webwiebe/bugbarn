@@ -1,0 +1,24 @@
+package alerts
+
+import (
+	"context"
+	"log/slog"
+	"testing"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/logtest"
+)
+
+func TestLoggingRule(t *testing.T) {
+	ctx := context.Background()
+	run := func(f func(*Service)) func(*slog.Logger, error) {
+		return func(log *slog.Logger, err error) { f(New(&fakeRepo{err: err}, log)) }
+	}
+	logtest.CheckRule(t, []logtest.Call{
+		{Name: "List", Run: run(func(s *Service) { _, _ = s.List(ctx) })},
+		{Name: "Get", Run: run(func(s *Service) { _, _ = s.Get(ctx, "a") })},
+		{Name: "Create", Run: run(func(s *Service) { _, _ = s.Create(ctx, domain.Alert{Name: "n"}) })},
+		{Name: "Update", Run: run(func(s *Service) { _, _ = s.Update(ctx, "a", domain.Alert{}) })},
+		{Name: "Delete", Run: run(func(s *Service) { _ = s.Delete(ctx, "a") })},
+	})
+}

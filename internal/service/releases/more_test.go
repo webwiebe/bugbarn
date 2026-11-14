@@ -101,7 +101,7 @@ func TestSourceMapUploadAndList(t *testing.T) {
 }
 
 func TestErrorsKeepKindAndLogAtErrorLevel(t *testing.T) {
-	cause := apperr.Conflict("clash", nil)
+	cause := apperr.Internal("clash", nil)
 	calls := map[string]func(*Service) error{
 		"get":    func(s *Service) error { _, err := s.Get(context.Background(), "x"); return err },
 		"create": func(s *Service) error { _, err := s.Create(context.Background(), domain.Release{}); return err },
@@ -115,8 +115,8 @@ func TestErrorsKeepKindAndLogAtErrorLevel(t *testing.T) {
 	for name, call := range calls {
 		logger, buf := loggerAndBuf()
 		err := call(New(&scriptedRepo{err: cause}, logger))
-		if !errors.Is(err, apperr.ErrConflict) {
-			t.Errorf("%s: err = %v, want conflict", name, err)
+		if !errors.Is(err, apperr.ErrInternal) {
+			t.Errorf("%s: err = %v, want internal", name, err)
 		}
 		if !strings.Contains(buf.String(), `"level":"ERROR"`) {
 			t.Errorf("%s: no error log: %s", name, buf.String())
@@ -124,8 +124,8 @@ func TestErrorsKeepKindAndLogAtErrorLevel(t *testing.T) {
 	}
 }
 
-// List and ListSourceMaps return the repo error without logging it.
-func TestListErrorsPassThroughUnlogged(t *testing.T) {
+// List and ListSourceMaps log an internal failure once, like the other methods.
+func TestListInternalErrorsAreLogged(t *testing.T) {
 	logger, buf := loggerAndBuf()
 	svc := New(&scriptedRepo{err: apperr.Internal("db", nil)}, logger)
 	if _, err := svc.List(context.Background()); !errors.Is(err, apperr.ErrInternal) {
@@ -134,8 +134,8 @@ func TestListErrorsPassThroughUnlogged(t *testing.T) {
 	if _, err := svc.ListSourceMaps(context.Background()); !errors.Is(err, apperr.ErrInternal) {
 		t.Fatalf("ListSourceMaps err = %v", err)
 	}
-	if buf.Len() != 0 {
-		t.Fatalf("unexpected logs: %s", buf.String())
+	if n := strings.Count(buf.String(), `"level":"ERROR"`); n != 2 {
+		t.Fatalf("ERROR records = %d, want 2: %s", n, buf.String())
 	}
 }
 

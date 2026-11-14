@@ -1,11 +1,8 @@
 package analytics
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log/slog"
-	"strings"
 	"testing"
 
 	"github.com/wiebe-xyz/bugbarn/internal/analytics"
@@ -151,23 +148,5 @@ func TestRepoErrorsPassThrough(t *testing.T) {
 		if !errors.Is(err, boom) {
 			t.Errorf("%s: err = %v, want the repo error", name, err)
 		}
-	}
-}
-
-// QueryOverview is the only method that logs its failure; the others pass the
-// error through silently. This pins the current behavior.
-func TestOnlyOverviewLogsErrors(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-	svc := New(&fakeRepo{err: errors.New("boom")}, logger)
-
-	_, _ = svc.QueryPages(context.Background(), analytics.Query{})
-	if buf.Len() != 0 {
-		t.Fatalf("QueryPages logged: %s", buf.String())
-	}
-	_, _ = svc.QueryOverview(context.Background(), analytics.Query{})
-	out := buf.String()
-	if !strings.Contains(out, `"level":"ERROR"`) || !strings.Contains(out, `"service":"analytics"`) {
-		t.Fatalf("overview failure not logged at error level: %s", out)
 	}
 }

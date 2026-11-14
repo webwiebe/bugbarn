@@ -82,16 +82,14 @@ func ids(n int) []int64 {
 	return out
 }
 
-// withErrorCounter swaps the default slog logger for the duration of a test,
-// since runRollup logs through the package-level slog.
+// withErrorCounter returns a counter of the ERROR records written through its
+// logger(), which the tests inject into runRollup.
 func withErrorCounter(t *testing.T) *errorLogCounter {
 	t.Helper()
-	h := &errorLogCounter{}
-	prev := slog.Default()
-	slog.SetDefault(slog.New(h))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-	return h
+	return &errorLogCounter{}
 }
+
+func (h *errorLogCounter) logger() *slog.Logger { return slog.New(h) }
 
 // A shutdown mid-rollup is expected, not a fault. Logging it at ERROR made
 // selflog file one bug per project per date on every deploy.
@@ -102,7 +100,7 @@ func TestRunRollupDoesNotLogShutdownAsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	runRollup(ctx, store, 90)
+	runRollup(ctx, logs.logger(), store, 90)
 
 	if got := logs.errors(); got != 0 {
 		t.Errorf("shutdown produced %d ERROR logs, want 0", got)
@@ -112,13 +110,13 @@ func TestRunRollupDoesNotLogShutdownAsError(t *testing.T) {
 // Once the context is done, walking the remaining projects only produces
 // guaranteed failures — stop instead.
 func TestRunRollupStopsEarlyOnCancel(t *testing.T) {
-	withErrorCounter(t)
+	logs := withErrorCounter(t)
 	store := &fakeStore{projectIDs: ids(50), rollupErr: context.Canceled}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	runRollup(ctx, store, 90)
+	runRollup(ctx, logs.logger(), store, 90)
 
 	if got := store.rollupCount(); got != 0 {
 		t.Errorf("want no rollup attempts on an already-canceled context, got %d", got)
@@ -131,7 +129,7 @@ func TestRunRollupLogsRealErrorsAndContinues(t *testing.T) {
 	logs := withErrorCounter(t)
 	store := &fakeStore{projectIDs: ids(3), rollupErr: errors.New("table is gone")}
 
-	runRollup(context.Background(), store, 90)
+	runRollup(context.Background(), logs.logger(), store, 90)
 
 	// 3 projects x 2 dates, all failing.
 	if got, want := logs.errors(), 6; got != want {
@@ -146,7 +144,7 @@ func TestRunRollupListFailureShutdownIsQuiet(t *testing.T) {
 	logs := withErrorCounter(t)
 	store := &fakeStore{listErr: context.Canceled}
 
-	runRollup(context.Background(), store, 90)
+	runRollup(context.Background(), logs.logger(), store, 90)
 
 	if got := logs.errors(); got != 0 {
 		t.Errorf("canceled project list produced %d ERROR logs, want 0", got)
@@ -155,7 +153,7 @@ func TestRunRollupListFailureShutdownIsQuiet(t *testing.T) {
 	logs2 := withErrorCounter(t)
 	store2 := &fakeStore{listErr: errors.New("db down")}
 
-	runRollup(context.Background(), store2, 90)
+	runRollup(context.Background(), logs2.logger(), store2, 90)
 
 	if got := logs2.errors(); got != 1 {
 		t.Errorf("real list failure produced %d ERROR logs, want 1", got)

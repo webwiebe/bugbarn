@@ -121,9 +121,7 @@ func (s *Service) ErrorTimeline(ctx context.Context, rangeName string) (Timeline
 	rows, err := s.repo.ErrorTimelineRows(refreshCtx, first)
 	if err != nil {
 		tracing.SetError(span, err)
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "error timeline", "range", rangeName, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "error timeline", err, "range", rangeName)
 		if e, ok := s.cache[key]; ok {
 			return e.value, nil
 		}

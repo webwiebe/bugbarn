@@ -95,7 +95,7 @@ func (s *Service) Put(ctx context.Context, id string, rule detect.Rule) (RuleVie
 		return RuleView{}, apperr.Internal("encode detection rule", err)
 	}
 	if err := s.repo.UpsertDetectionRule(ctx, id, string(raw)); err != nil {
-		s.logger.ErrorContext(ctx, "store detection rule", "rule", id, "error", err)
+		apperr.LogFailure(ctx, s.logger, "store detection rule", err, "rule", id)
 		return RuleView{}, err
 	}
 	s.logger.InfoContext(ctx, "detection rule stored", "rule", id, "enabled", rule.Enabled)
@@ -110,7 +110,7 @@ func (s *Service) Put(ctx context.Context, id string, rule detect.Rule) (RuleVie
 func (s *Service) Delete(ctx context.Context, id string) error {
 	if err := s.repo.DeleteDetectionRule(ctx, id); err != nil {
 		if !errors.Is(err, apperr.ErrNotFound) {
-			s.logger.ErrorContext(ctx, "delete detection rule", "rule", id, "error", err)
+			apperr.LogFailure(ctx, s.logger, "delete detection rule", err, "rule", id)
 		}
 		return err
 	}
@@ -125,9 +125,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 func (s *Service) stored(ctx context.Context) ([]detect.Rule, map[string]time.Time, error) {
 	rows, err := s.repo.ListDetectionRules(ctx)
 	if err != nil {
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "list detection rules", "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "list detection rules", err)
 		return nil, nil, err
 	}
 	rules := make([]detect.Rule, 0, len(rows))
@@ -158,7 +156,7 @@ func (s *Service) reload(ctx context.Context) {
 	}
 	rules, err := s.Effective(context.WithoutCancel(ctx))
 	if err != nil {
-		s.logger.ErrorContext(ctx, "reload detection rules; engine keeps the previous set", "error", err)
+		apperr.LogFailure(ctx, s.logger, "reload detection rules; engine keeps the previous set", err)
 		return
 	}
 	s.onChange(rules)
