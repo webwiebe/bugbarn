@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
+	"sync"
 	"sync/atomic"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -22,6 +24,11 @@ type core struct {
 	// default: a merge deletes the folded issue, so its key stops resolving and
 	// its per-event facets and regression history cascade away.
 	mergeFingerprintCollisions bool
+
+	// bgCancel stops the background fingerprint migration and bg lets Close
+	// wait for it, so the databases are never closed under a running query.
+	bgCancel context.CancelFunc
+	bg       sync.WaitGroup
 
 	// sampleAfter is the deployment-wide event-sampling threshold: an issue
 	// stores every event until it has this many, and is sampled past it. 0

@@ -181,19 +181,38 @@ func open(path string, autoMigrate bool) (*Store, error) {
 		return nil, wrapErr(err, "open")
 	}
 	if autoMigrate {
-		go func() {
-			if err := c.migrateFingerprints(context.Background()); err != nil {
-				slog.Error("fingerprint migration failed", "err", err)
-			}
-		}()
+		c.startFingerprintMigration()
 	}
 	return newStore(c), nil
+}
+
+// startFingerprintMigration runs the one-time fingerprint migration for the
+// lifetime of the store: Close cancels it and waits for it to return.
+func (s *core) startFingerprintMigration() {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.bgCancel = cancel
+	s.bg.Add(1)
+	go func() {
+		defer s.bg.Done()
+		err := s.migrateFingerprints(ctx)
+		switch {
+		case err == nil:
+		case ctx.Err() != nil:
+			slog.Warn("fingerprint migration stopped before it finished", "err", err)
+		default:
+			slog.Error("fingerprint migration failed", "err", err)
+		}
+	}()
 }
 
 func (s *core) Close() error {
 	if s == nil {
 		return nil
 	}
+	if s.bgCancel != nil {
+		s.bgCancel()
+	}
+	s.bg.Wait()
 	var firstErr error
 	if s.roDB != nil {
 		unregisterDBStats(s.roDB)

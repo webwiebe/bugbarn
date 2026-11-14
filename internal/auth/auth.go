@@ -238,6 +238,9 @@ func NewUserAuthenticator(username, password, passwordBcrypt string) (*UserAuthe
 		return &UserAuthenticator{}, nil
 	}
 	if passwordBcrypt != "" {
+		if _, err := bcrypt.Cost([]byte(passwordBcrypt)); err != nil {
+			return nil, errors.New("BUGBARN_ADMIN_PASSWORD_BCRYPT is not a bcrypt hash")
+		}
 		return &UserAuthenticator{username: username, passwordHash: []byte(passwordBcrypt)}, nil
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
