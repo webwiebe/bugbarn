@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 // IsContextError reports whether err is a context cancellation or deadline
@@ -11,6 +12,28 @@ import (
 // not be logged at ERROR level by services.
 func IsContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// IsClientError reports whether err is the caller's doing and not a fault of
+// ours: an invalid input, a missing record, a conflict, or a context
+// cancellation. The API answers these with 4xx (or nothing, on a disconnect),
+// so services must not log them at ERROR.
+func IsClientError(err error) bool {
+	return errors.Is(err, ErrInvalidInput) ||
+		errors.Is(err, ErrNotFound) ||
+		errors.Is(err, ErrConflict) ||
+		IsContextError(err)
+}
+
+// LogFailure is the one way a service reports a failed call. It logs at ERROR
+// unless err is a client error, because internal/selflog turns every ERROR
+// record into a BugBarn issue against ourselves. args are extra slog
+// attributes; the error is appended as "error".
+func LogFailure(ctx context.Context, log *slog.Logger, msg string, err error, args ...any) {
+	if IsClientError(err) {
+		return
+	}
+	log.ErrorContext(ctx, msg, append(args, "error", err)...)
 }
 
 type Error struct {

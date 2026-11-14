@@ -166,7 +166,7 @@ func (listFailStore) ListProjects(context.Context) ([]domain.Project, error) {
 
 func TestSendListProjectsFailure(t *testing.T) {
 	notifier := &fakeNotifier{}
-	errs := Send(context.Background(), Config{}, listFailStore{&fakeStore{}}, []Notifier{notifier})
+	errs := Send(context.Background(), nil, Config{}, listFailStore{&fakeStore{}}, []Notifier{notifier})
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "list projects: db down") {
 		t.Fatalf("errs = %v", errs)
 	}
@@ -184,7 +184,7 @@ func (quietStore) WeeklyDigest(context.Context, int64, time.Time) (domain.Digest
 func TestSendSkipsDeliveryWithoutActivity(t *testing.T) {
 	notifier := &fakeNotifier{}
 	store := quietStore{&fakeStore{projects: makeProjects(3)}}
-	if errs := Send(context.Background(), Config{}, store, []Notifier{notifier}); len(errs) != 0 {
+	if errs := Send(context.Background(), nil, Config{}, store, []Notifier{notifier}); len(errs) != 0 {
 		t.Fatalf("errs = %v", errs)
 	}
 	if len(notifier.delivered()) != 0 {

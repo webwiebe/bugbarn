@@ -106,7 +106,7 @@ func TestSendSlowProjectDoesNotStarveTheRest(t *testing.T) {
 	}
 	notifier := &fakeNotifier{}
 
-	errs := Send(context.Background(), cfg, store, []Notifier{notifier})
+	errs := Send(context.Background(), nil, cfg, store, []Notifier{notifier})
 
 	if len(errs) != 1 {
 		t.Fatalf("want exactly 1 error (the slow project), got %d: %v", len(errs), errs)
@@ -141,7 +141,7 @@ func TestSendGatherBudgetExhaustedReportsOnce(t *testing.T) {
 		slow:     map[string]time.Duration{"proj-01": time.Minute},
 	}
 
-	errs := Send(context.Background(), Config{GatherBudget: 100 * time.Millisecond}, store, nil)
+	errs := Send(context.Background(), nil, Config{GatherBudget: 100 * time.Millisecond}, store, nil)
 
 	if len(errs) != 2 {
 		t.Fatalf("want 2 errors (slow project + budget exhausted), got %d: %v", len(errs), errs)
@@ -166,7 +166,7 @@ func TestSendDeliversAfterGatherBudgetExhausted(t *testing.T) {
 	}
 	notifier := &fakeNotifier{}
 
-	Send(context.Background(), Config{GatherBudget: 200 * time.Millisecond}, store, []Notifier{notifier})
+	Send(context.Background(), nil, Config{GatherBudget: 200 * time.Millisecond}, store, []Notifier{notifier})
 
 	reports := notifier.delivered()
 	if len(reports) != 1 {
@@ -186,7 +186,7 @@ func TestSendNotifierFailuresAreIndependent(t *testing.T) {
 	bad := &fakeNotifier{nameText: "webhook", sendErr: errors.New("boom")}
 	good := &fakeNotifier{nameText: "email"}
 
-	errs := Send(context.Background(), Config{}, store, []Notifier{bad, good})
+	errs := Send(context.Background(), nil, Config{}, store, []Notifier{bad, good})
 
 	if len(errs) != 1 {
 		t.Fatalf("want 1 error, got %d: %v", len(errs), errs)

@@ -75,9 +75,7 @@ func (s *Service) Counts(ctx context.Context) (domain.IssueCounts, error) {
 			s.logger.WarnContext(ctx, "serving stale issue counts: refresh failed", "scope", key, "error", err)
 			return e.counts, nil
 		}
-		if !apperr.IsContextError(err) {
-			s.logger.ErrorContext(ctx, "count issues by status", "scope", key, "error", err)
-		}
+		apperr.LogFailure(ctx, s.logger, "count issues by status", err, "scope", key)
 		return domain.IssueCounts{}, err
 	}
 	if c.entries == nil || len(c.entries) >= countsMaxScopes {

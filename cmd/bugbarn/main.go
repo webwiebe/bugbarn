@@ -192,8 +192,8 @@ func run() error {
 		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus, mutQueue)
 	}()
 
-	digest.StartScheduler(ctx, cfg.Digest, store, &bgWg)
-	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, &bgWg)
+	digest.StartScheduler(ctx, cfg.Digest, store, logger, &bgWg)
+	analytics.StartWorker(ctx, store, cfg.AnalyticsRetentionDays, logger, &bgWg)
 
 	// Event retention. Writer-only: this is past the cfg.Mode=="reader" early
 	// return, so a reader — which holds the database read-only — never gets

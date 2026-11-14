@@ -2,6 +2,7 @@ package digest
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func driveTicks(t *testing.T, cfg Config, store Store, notifiers []Notifier, tic
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runTicks(ctx, cfg, store, notifiers, ch)
+		runTicks(ctx, slog.New(slog.DiscardHandler), cfg, store, notifiers, ch)
 	}()
 	for _, tick := range ticks {
 		ch <- tick
@@ -79,7 +80,7 @@ func TestRunTicksStopsOnCancel(t *testing.T) {
 	cancel()
 	done := make(chan struct{})
 	go func() {
-		runTicks(ctx, baseConfig(), &fakeStore{}, nil, make(chan time.Time))
+		runTicks(ctx, slog.New(slog.DiscardHandler), baseConfig(), &fakeStore{}, nil, make(chan time.Time))
 		close(done)
 	}()
 	<-done
@@ -88,7 +89,7 @@ func TestRunTicksStopsOnCancel(t *testing.T) {
 func TestStartSchedulerNoOps(t *testing.T) {
 	var wg sync.WaitGroup
 	// Disabled config: nothing starts and the WaitGroup stays at zero.
-	StartScheduler(context.Background(), Config{}, &fakeStore{}, &wg)
+	StartScheduler(context.Background(), Config{}, &fakeStore{}, nil, &wg)
 	wg.Wait()
 
 	// Mail active but webhook empty still builds a notifier; a config that
@@ -101,12 +102,12 @@ func TestStartSchedulerNoOps(t *testing.T) {
 func TestStartSchedulerStopsWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	StartScheduler(ctx, baseConfig(), &fakeStore{}, &wg)
+	StartScheduler(ctx, baseConfig(), &fakeStore{}, nil, &wg)
 	cancel()
 	wg.Wait()
 	// A nil WaitGroup is allowed.
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	StartScheduler(ctx2, baseConfig(), &fakeStore{}, nil)
+	StartScheduler(ctx2, baseConfig(), &fakeStore{}, nil, nil)
 	cancel2()
 }
 

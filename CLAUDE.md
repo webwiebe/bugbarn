@@ -75,6 +75,7 @@ internal/
     config/           Env-var configuration (BUGBARN_*)
     mail/             SMTP delivery with retries, used by digest, alert and ingesthealth
     selflog/          ★ slog handler that reports errors to BugBarn itself
+    logtest/          Test helper that records slog output and checks the service logging rule
     tracing/          OpenTelemetry setup, HTTP middleware, tail sampler
     cli/              `bugbarn user|project` admin subcommands
 web/                  SPA frontend (TypeScript, no framework)

@@ -27,7 +27,7 @@ func TestStartWorkerRunsInitialRollupAndStopsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
-	StartWorker(ctx, store, 30, &wg)
+	StartWorker(ctx, store, 30, nil, &wg)
 	cutoff := <-store.cutoff
 	cancel()
 	wg.Wait()
@@ -44,7 +44,7 @@ func TestStartWorkerRunsInitialRollupAndStopsOnCancel(t *testing.T) {
 func TestStartWorkerDefaultsRetentionTo90Days(t *testing.T) {
 	store := &cutoffStore{cutoff: make(chan time.Time, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
-	StartWorker(ctx, store, 0, nil)
+	StartWorker(ctx, store, 0, nil, nil)
 	cutoff := <-store.cutoff
 	cancel()
 
@@ -56,11 +56,11 @@ func TestStartWorkerDefaultsRetentionTo90Days(t *testing.T) {
 
 func TestRunRollupLogsRetentionFailure(t *testing.T) {
 	logs := withErrorCounter(t)
-	runRollup(context.Background(), &fakeStore{deleteErr: context.DeadlineExceeded}, 90)
+	runRollup(context.Background(), logs.logger(), &fakeStore{deleteErr: context.DeadlineExceeded}, 90)
 	if logs.errors() != 0 {
 		t.Errorf("a deadline during retention logged %d errors, want 0", logs.errors())
 	}
-	runRollup(context.Background(), &fakeStore{deleteErr: errBoom}, 90)
+	runRollup(context.Background(), logs.logger(), &fakeStore{deleteErr: errBoom}, 90)
 	if logs.errors() != 1 {
 		t.Errorf("a real retention failure logged %d errors, want 1", logs.errors())
 	}
@@ -68,7 +68,7 @@ func TestRunRollupLogsRetentionFailure(t *testing.T) {
 
 func TestRunRollupLogsListFailure(t *testing.T) {
 	logs := withErrorCounter(t)
-	runRollup(context.Background(), &fakeStore{listErr: errBoom}, 90)
+	runRollup(context.Background(), logs.logger(), &fakeStore{listErr: errBoom}, 90)
 	if logs.errors() != 1 {
 		t.Errorf("list failure logged %d errors, want 1", logs.errors())
 	}

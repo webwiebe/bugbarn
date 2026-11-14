@@ -37,6 +37,8 @@ reading (#248).
   shutdowns, 404s and client disconnects file bugs against ourselves if logged at ERROR;
   log them at WARN or below. Loops over projects must stop on `ctx.Err()` instead of
   logging one ERROR per remaining project.
+- Services log failures through `apperr.LogFailure`: ERROR unless `apperr.IsClientError` (not
+  found, conflict, invalid input, context cancellation). `logtest.CheckRule` asserts it per method.
 - Every ERROR creates or bumps an issue. The message plus the `error` attr is the issue
   title and fingerprint. All attrs, including ones bound with `With`/`WithGroup` (group
   keys flattened to `group.key`), are sent as event attributes, and the SDK adds

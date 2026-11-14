@@ -30,7 +30,7 @@ func (s *Service) UpdateFunnelBarnURL(ctx context.Context, slug, raw string) (st
 	}
 	if err := s.repo.UpdateProjectFunnelBarnURL(ctx, slug, link); err != nil {
 		tracing.SetError(span, err)
-		s.logger.ErrorContext(ctx, "update project funnelbarn url", "slug", slug, "error", err)
+		apperr.LogFailure(ctx, s.logger, "update project funnelbarn url", err, "slug", slug)
 		return "", err
 	}
 	s.logger.InfoContext(ctx, "project funnelbarn url updated", "slug", slug, "set", link != "")

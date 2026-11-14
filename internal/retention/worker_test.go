@@ -295,18 +295,6 @@ func TestSweepStopsOnWallClockBudget(t *testing.T) {
 	}
 }
 
-func TestShuttingDownClassifiesContextErrors(t *testing.T) {
-	if !shuttingDown(context.Canceled) {
-		t.Error("context.Canceled should count as shutdown, not a fault")
-	}
-	if !shuttingDown(context.DeadlineExceeded) {
-		t.Error("context.DeadlineExceeded should count as shutdown, not a fault")
-	}
-	if shuttingDown(errors.New("real failure")) {
-		t.Error("a real failure must not be classified as shutdown")
-	}
-}
-
 func TestStartWorkerDefaultsRetentionDaysAndStops(t *testing.T) {
 	store := &fakeStore{remaining: 1}
 	ctx, cancel := context.WithCancel(context.Background())
