@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -14,12 +14,9 @@ import (
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
-	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 const (
@@ -27,30 +24,58 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-// workerMetrics holds the OTel instruments for the background spool worker.
-// Built once per worker (see newWorkerMetrics) and reused across ticks rather
-// than recreated per call, matching the convention in internal/ingestproc.
-type workerMetrics struct {
-	eventsProcessed metric.Int64Counter
-	deadLetters     metric.Int64Counter
+// PersistOutcome classifies what the persist pipeline did with one record. The
+// spool worker applies its delivery policy to it. It mirrors the pipeline's own
+// outcomes because the pipeline (internal/ingestproc) depends on storage, which
+// depends on this package, so the worker cannot import it.
+type PersistOutcome int
+
+const (
+	// OutcomeSuccess: the event was persisted.
+	OutcomeSuccess PersistOutcome = iota
+	// OutcomeParseError: the body could not be parsed; permanent.
+	OutcomeParseError
+	// OutcomeTransient: a retryable failure (locked database, deadline).
+	OutcomeTransient
+	// OutcomePersistError: a non-retryable persist failure.
+	OutcomePersistError
+	// OutcomeHeld: the project is pending approval; the payload is parked.
+	OutcomeHeld
+)
+
+// PersistResult is what a RecordPersister reports for one event record.
+type PersistResult struct {
+	Outcome     PersistOutcome
+	Err         error
+	IsNew       bool
+	Regressed   bool
+	Fingerprint string
+	Severity    string
 }
 
-// newWorkerMetrics builds the worker instruments from the global meter; before
-// tracing.Init wires a MeterProvider they are valid no-op instruments, so
-// construction never fails in tests or when telemetry is disabled.
-func newWorkerMetrics() *workerMetrics {
-	m := tracing.Meter()
-	eventsProcessed, _ := m.Int64Counter(
-		"bugbarn.worker.events_processed",
-		metric.WithDescription("Spool records processed by the background worker, by outcome."),
-		metric.WithUnit("{record}"),
-	)
-	deadLetters, _ := m.Int64Counter(
-		"bugbarn.worker.dead_letters",
-		metric.WithDescription("Spool records dead-lettered by the background worker, by stage."),
-		metric.WithUnit("{record}"),
-	)
-	return &workerMetrics{eventsProcessed: eventsProcessed, deadLetters: deadLetters}
+// RecordPersister is the persistence pipeline the spool worker drives.
+// ingestproc.Processor is adapted to it in cmd/bugbarn.
+type RecordPersister interface {
+	PersistRecord(ctx context.Context, record spool.Record) PersistResult
+	PersistRelease(ctx context.Context, record spool.Record) error
+}
+
+// SpoolWorkerConfig wires the background spool worker.
+type SpoolWorkerConfig struct {
+	// EventSpool is the active spool the worker rotates; nil disables rotation.
+	EventSpool *spool.Spool
+	// SpoolDir holds the segments, cursor and dead-letter file.
+	SpoolDir string
+	// Store applies queued admin mutations.
+	Store IssueMutator
+	// Persister persists event and release records.
+	Persister RecordPersister
+	// SelfReporting reports dead letters and stalls to BugBarn itself.
+	SelfReporting bool
+	// Status receives progress and health; nil disables reporting.
+	Status *Status
+	// Mutations is the durable queue of admin issue mutations.
+	Mutations *mutqueue.Queue
 }
 
 // spoolWorker carries the shared state for the background ingest loop so the
@@ -60,13 +85,13 @@ func newWorkerMetrics() *workerMetrics {
 type spoolWorker struct {
 	eventSpool    *spool.Spool
 	spoolDir      string
-	store         *storage.Store // admin mutations from the mutation queue
-	proc          *ingestproc.Processor
+	store         IssueMutator // admin mutations from the mutation queue
+	proc          RecordPersister
 	selfReporting bool
-	ws            *worker.Status
+	ws            *Status
 	mq            *mutqueue.Queue
 	tracer        trace.Tracer
-	metrics       *workerMetrics
+	metrics       *spoolMetrics
 
 	retryCounts map[string]int // per-ingest-ID failure counts within this process
 	pos         spool.Position // spool cursor: segment being read and offset in it
@@ -75,17 +100,19 @@ type spoolWorker struct {
 	rotateThreshold int64
 }
 
-func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, proc *ingestproc.Processor, selfReporting bool, ws *worker.Status, mq *mutqueue.Queue) {
+// RunSpoolWorker restores the spool cursor and runs the worker loop until ctx
+// ends.
+func RunSpoolWorker(ctx context.Context, cfg SpoolWorkerConfig) {
 	w := &spoolWorker{
-		eventSpool:    eventSpool,
-		spoolDir:      spoolDir,
-		store:         store,
-		proc:          proc,
-		selfReporting: selfReporting,
-		ws:            ws,
-		mq:            mq,
+		eventSpool:    cfg.EventSpool,
+		spoolDir:      cfg.SpoolDir,
+		store:         cfg.Store,
+		proc:          cfg.Persister,
+		selfReporting: cfg.SelfReporting,
+		ws:            cfg.Status,
+		mq:            cfg.Mutations,
 		tracer:        tracing.Tracer(),
-		metrics:       newWorkerMetrics(),
+		metrics:       newSpoolMetrics(),
 		retryCounts:   make(map[string]int),
 	}
 	// Restore the cursor from disk so already-handled records are not
@@ -195,19 +222,19 @@ func (w *spoolWorker) processEventEntry(ctx context.Context, span trace.Span, en
 	}
 
 	switch res.Outcome {
-	case ingestproc.OutcomeSuccess:
+	case OutcomeSuccess:
 		span.End()
 		w.markProcessed(record, entry.EndOffset,
 			attribute.Bool("is_new", res.IsNew),
 			attribute.Bool("is_regressed", res.Regressed),
 		)
 		return false
-	case ingestproc.OutcomeHeld:
+	case OutcomeHeld:
 		// The payload is parked for replay on approval; the record is handled.
 		span.End()
 		w.markHandled(record, entry.EndOffset, "held")
 		return false
-	case ingestproc.OutcomeTransient:
+	case OutcomeTransient:
 		span.SetStatus(codes.Error, res.Err.Error())
 		span.End()
 		// Environmental (lock contention); retry forever, don't burn the budget.
@@ -218,7 +245,7 @@ func (w *spoolWorker) processEventEntry(ctx context.Context, span trace.Span, en
 			))
 		}
 		return true
-	case ingestproc.OutcomeParseError:
+	case OutcomeParseError:
 		span.SetStatus(codes.Error, res.Err.Error())
 		span.End()
 		w.failRecord(record, entry.EndOffset, "process record", res.Err, true)
@@ -332,26 +359,5 @@ func (w *spoolWorker) reportStatus() {
 		w.stallWarned = true
 	case snap.Healthy:
 		w.stallWarned = false
-	}
-}
-
-// applyMutation executes a single queued admin mutation against the store.
-func applyMutation(ctx context.Context, store *storage.Store, r mutqueue.Record) error {
-	switch r.Op {
-	case mutqueue.OpResolve:
-		_, err := store.ResolveIssue(ctx, r.IssueID)
-		return err
-	case mutqueue.OpReopen:
-		_, err := store.ReopenIssue(ctx, r.IssueID)
-		return err
-	case mutqueue.OpMute:
-		_, err := store.MuteIssue(ctx, r.IssueID, r.MuteMode)
-		return err
-	case mutqueue.OpUnmute:
-		_, err := store.UnmuteIssue(ctx, r.IssueID)
-		return err
-	default:
-		slog.Warn("mutqueue: unknown op, skipping", "op", r.Op, "issue_id", r.IssueID)
-		return nil
 	}
 }

@@ -136,6 +136,24 @@ linters:
             - $gostd
             - github.com/wiebe-xyz/bugbarn/internal/event
             - github.com/wiebe-xyz/bugbarn/internal/cronexpr
+        # The spool worker loop lives in internal/worker, which storage imports.
+        # It reaches the pipeline and the store through its own interfaces and may
+        # not import the layers above it or the process entrypoints.
+        worker-points-down:
+          files:
+            - "**/internal/worker/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/api
+              desc: "the worker may not import the API layer"
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/service
+              desc: "the worker may not import the service layer"
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/storage
+              desc: "storage imports the worker; the worker takes interfaces instead"
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/ingestproc
+              desc: "ingestproc imports storage; cmd/bugbarn adapts it to worker.RecordPersister"
+            - pkg: github.com/wiebe-xyz/bugbarn/cmd
+              desc: "the worker may not import a process entrypoint"
         # Dogfooding: internal/selflog only sees records that go through slog.
         # A stdlib log call at error level never reaches BugBarn's own dashboard.
         no-stdlib-log:
@@ -167,7 +185,7 @@ linters:
           - errcheck
       # Complexity of the process entrypoints is tolerated (bootstrap wiring that
       # doesn't decompose cleanly). Scoped to main.go/reader.go only, so the rest
-      # of cmd/bugbarn — notably worker.go's hot loop — is gated like any other
+      # of cmd/bugbarn is gated like any other
       # package and its complexity can't silently regrow.
       - path: cmd/bugbarn/(main|reader)\.go$
         linters:

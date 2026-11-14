@@ -1,119 +1,22 @@
-package main
+package worker
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
-	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
-	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/tracing"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
-
-const segmentFixturePath = "../../specs/001-personal-error-tracker/fixtures/example-event.json"
-
-// newSegmentWorker builds a worker over a real spool and a real SQLite store in
-// a temp dir, the way runBackgroundWorker wires them in the writer.
-func newSegmentWorker(t *testing.T, dir string) (*spoolWorker, *spool.Spool, *storage.Store) {
-	t.Helper()
-	store, err := storage.Open(filepath.Join(t.TempDir(), "bugbarn.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
-	sp, err := spool.New(dir)
-	if err != nil {
-		t.Fatalf("open spool: %v", err)
-	}
-	t.Cleanup(func() { sp.Close() })
-	mq, err := mutqueue.New(dir)
-	if err != nil {
-		t.Fatalf("open mutation queue: %v", err)
-	}
-	t.Cleanup(func() { mq.Close() })
-	w := &spoolWorker{
-		eventSpool:  sp,
-		spoolDir:    dir,
-		store:       store,
-		proc:        ingestproc.NewProcessor(store, domainevents.NewIssuePublisher(&domainevents.Bus{}), nil, true),
-		ws:          worker.NewStatus(),
-		mq:          mq,
-		tracer:      tracing.Tracer(),
-		retryCounts: make(map[string]int),
-		// Keep rotation out of the way unless a test asks for it.
-		rotateThreshold: 1 << 40,
-	}
-	return w, sp, store
-}
-
-func goodRecord(t *testing.T, id string) spool.Record {
-	t.Helper()
-	raw, err := os.ReadFile(segmentFixturePath)
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
-	}
-	return spool.Record{IngestID: id, ReceivedAt: time.Now().UTC(), BodyBase64: base64.StdEncoding.EncodeToString(raw)}
-}
-
-func appendRecords(t *testing.T, sp *spool.Spool, recs ...spool.Record) {
-	t.Helper()
-	for _, r := range recs {
-		if err := sp.Append(r); err != nil {
-			t.Fatalf("append %s: %v", r.IngestID, err)
-		}
-	}
-}
-
-func segments(t *testing.T, dir string) []string {
-	t.Helper()
-	names, err := spool.ListSegments(dir)
-	if err != nil {
-		t.Fatalf("list segments: %v", err)
-	}
-	return names
-}
-
-func eventCount(t *testing.T, store *storage.Store) int64 {
-	t.Helper()
-	n, err := store.CountEventsBefore(context.Background(), time.Now().Add(24*time.Hour))
-	if err != nil {
-		t.Fatalf("count events: %v", err)
-	}
-	return n
-}
-
-func mustPosition(t *testing.T, dir string) spool.Position {
-	t.Helper()
-	pos, err := spool.ReadPosition(dir)
-	if err != nil {
-		t.Fatalf("read position: %v", err)
-	}
-	return pos
-}
-
-func activeSize(t *testing.T, dir string) int64 {
-	t.Helper()
-	info, err := os.Stat(spool.Path(dir))
-	if err != nil {
-		t.Fatalf("stat active segment: %v", err)
-	}
-	return info.Size()
-}
 
 // Rotation, processing and deletion: records in a rotated segment and in the
 // new active segment are each processed once, and the rotated segment is gone
 // once it is drained.
 func TestWorkerDeletesRotatedSegmentOnceDrained(t *testing.T) {
 	dir := t.TempDir()
-	w, sp, store := newSegmentWorker(t, dir)
+	w, sp, fp := newSegmentWorker(t, dir)
 	ctx := context.Background()
 
 	appendRecords(t, sp, goodRecord(t, "a"), goodRecord(t, "b"), goodRecord(t, "c"))
@@ -142,7 +45,7 @@ func TestWorkerDeletesRotatedSegmentOnceDrained(t *testing.T) {
 	}
 
 	w.tick(ctx) // processes d, e from the active segment
-	if got, want := eventCount(t, store), int64(5); got != want {
+	if got, want := fp.count(), int64(5); got != want {
 		t.Fatalf("events persisted = %d, want %d", got, want)
 	}
 	if got, want := mustPosition(t, dir), (spool.Position{Offset: activeSize(t, dir)}); got != want {
@@ -155,7 +58,7 @@ func TestWorkerDeletesRotatedSegmentOnceDrained(t *testing.T) {
 // processed from the rotated segment.
 func TestWorkerKeepsSegmentWithUnprocessedRecords(t *testing.T) {
 	dir := t.TempDir()
-	w, sp, store := newSegmentWorker(t, dir)
+	w, sp, fp := newSegmentWorker(t, dir)
 	ctx := context.Background()
 
 	bad := spool.Record{IngestID: "bad", BodyBase64: "not-base64-$$$"}
@@ -188,7 +91,7 @@ func TestWorkerKeepsSegmentWithUnprocessedRecords(t *testing.T) {
 		t.Fatalf("drained segment not deleted: %v", got)
 	}
 	w.tick(ctx) // processes d from the active segment
-	if got, want := eventCount(t, store), int64(3); got != want {
+	if got, want := fp.count(), int64(3); got != want {
 		t.Fatalf("events persisted = %d, want %d (a, c, d)", got, want)
 	}
 }
@@ -248,7 +151,7 @@ func TestWorkerRestartResumesRotatedSegment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w, _, store := newSegmentWorker(t, dir)
+	w, _, fp := newSegmentWorker(t, dir)
 	w.restorePosition()
 	if got := segments(t, dir); len(got) != 1 || got[0] != draining {
 		t.Fatalf("after restart segments = %v, want only %s", got, draining)
@@ -261,7 +164,7 @@ func TestWorkerRestartResumesRotatedSegment(t *testing.T) {
 	if got := segments(t, dir); len(got) != 0 {
 		t.Fatalf("drained segment not deleted: %v", got)
 	}
-	if got := eventCount(t, store); got != 1 {
+	if got := fp.count(); got != 1 {
 		t.Fatalf("events persisted = %d, want 1 (only the unprocessed record)", got)
 	}
 }
@@ -270,7 +173,7 @@ func TestWorkerRestartResumesRotatedSegment(t *testing.T) {
 // happened: the worker resumes the active segment at the same offset.
 func TestWorkerRestartAfterInterruptedRotation(t *testing.T) {
 	dir := t.TempDir()
-	w, sp, store := newSegmentWorker(t, dir)
+	w, sp, fp := newSegmentWorker(t, dir)
 	appendRecords(t, sp, goodRecord(t, "done"), goodRecord(t, "todo"))
 	recs, err := spool.ReadRecordsFrom(spool.Path(dir), 0)
 	if err != nil || len(recs) != 2 {
@@ -286,7 +189,7 @@ func TestWorkerRestartAfterInterruptedRotation(t *testing.T) {
 		t.Fatalf("restored position %+v, want the active segment at %d", w.pos, recs[0].EndOffset)
 	}
 	w.tick(context.Background())
-	if got := eventCount(t, store); got != 1 {
+	if got := fp.count(); got != 1 {
 		t.Fatalf("events persisted = %d, want 1", got)
 	}
 }
@@ -300,13 +203,13 @@ func TestWorkerRestartDeletesDrainedLeftover(t *testing.T) {
 	if err := spool.CommitPosition(dir, spool.Position{}); err != nil {
 		t.Fatal(err)
 	}
-	w, _, store := newSegmentWorker(t, dir)
+	w, _, fp := newSegmentWorker(t, dir)
 	w.restorePosition()
 	if got := segments(t, dir); len(got) != 0 {
 		t.Fatalf("leftover segment not deleted: %v", got)
 	}
 	w.tick(context.Background())
-	if got := eventCount(t, store); got != 0 {
+	if got := fp.count(); got != 0 {
 		t.Fatalf("leftover segment was re-processed: %d events", got)
 	}
 }
@@ -331,7 +234,7 @@ func TestWorkerRestartWithCorruptCursorKeepsSegments(t *testing.T) {
 // deleted before the next rotation, so the spool never accumulates segments.
 func TestWorkerSpoolDoesNotAccumulateSegments(t *testing.T) {
 	dir := t.TempDir()
-	w, sp, store := newSegmentWorker(t, dir)
+	w, sp, fp := newSegmentWorker(t, dir)
 	w.rotateThreshold = 1
 	ctx := context.Background()
 	for i := 0; i < 5; i++ {
@@ -342,7 +245,94 @@ func TestWorkerSpoolDoesNotAccumulateSegments(t *testing.T) {
 			t.Fatalf("round %d: segments left behind: %v", i, got)
 		}
 	}
-	if got := eventCount(t, store); got != 5 {
+	if got := fp.count(); got != 5 {
 		t.Fatalf("events persisted = %d, want 5", got)
 	}
+}
+
+func TestSpoolWorkerRotatesAndFinishesASegment(t *testing.T) {
+	dir := t.TempDir()
+	w, sp, _ := newSegmentWorker(t, dir)
+	w.rotateThreshold = 1
+	appendRecords(t, sp, goodRecord(t, "r1"))
+
+	w.rotate()
+	if w.pos.Segment == "" {
+		t.Fatal("the active segment was not rotated")
+	}
+	if got := w.pendingRecords(); got != 1 {
+		t.Fatalf("pending after rotation = %d, want 1", got)
+	}
+	w.finishSegment()
+	if w.pos.Segment != "" || len(segments(t, dir)) != 0 {
+		t.Fatalf("segment survived finishSegment: pos=%+v segments=%v", w.pos, segments(t, dir))
+	}
+}
+
+func TestSpoolWorkerRotateWithoutASpoolIsANoOp(t *testing.T) {
+	w := &spoolWorker{}
+	w.rotate()
+	if w.pos.Segment != "" {
+		t.Fatalf("rotated without a spool: %+v", w.pos)
+	}
+}
+
+func TestSpoolWorkerRotateKeepsPositionWhenTheSpoolIsClosed(t *testing.T) {
+	logs := captureLogs(t)
+	w, sp, _ := newSegmentWorker(t, t.TempDir())
+	w.rotateThreshold = 1
+	appendRecords(t, sp, goodRecord(t, "r1"))
+	sp.Close()
+	w.rotate()
+	if w.pos.Segment != "" {
+		t.Fatalf("position moved after a failed rotation: %+v", w.pos)
+	}
+	if !strings.Contains(logs.String(), "worker failed to rotate spool") {
+		t.Fatalf("rotation failure not logged: %s", logs.String())
+	}
+}
+
+func TestSpoolWorkerFinishSegmentStaysPutWhenTheCursorCannotBeCommitted(t *testing.T) {
+	logs := captureLogs(t)
+	dir := filepath.Join(t.TempDir(), "gone")
+	w := &spoolWorker{spoolDir: dir, pos: spool.Position{Segment: "seg-1", Offset: 5}}
+	w.finishSegment()
+	if w.pos.Segment != "seg-1" {
+		t.Fatalf("position moved without a durable cursor: %+v", w.pos)
+	}
+	if !strings.Contains(logs.String(), "failed to commit cursor") {
+		t.Fatalf("commit failure not logged: %s", logs.String())
+	}
+}
+
+func TestSpoolWorkerReportStatusWarnsOnceWhileStalledAndResetsWhenHealthy(t *testing.T) {
+	logs := captureLogs(t)
+	w, sp, _ := newSegmentWorker(t, t.TempDir())
+	appendRecords(t, sp, goodRecord(t, "r1"))
+	// A zero Status has never advanced, which is how a stalled worker looks.
+	w.ws = &Status{}
+
+	w.reportStatus()
+	if !w.stallWarned {
+		t.Fatal("a worker with pending records and no advance did not warn")
+	}
+	w.reportStatus()
+	if n := strings.Count(logs.String(), "worker stall detected"); n != 1 {
+		t.Fatalf("stall warned %d times, want once", n)
+	}
+
+	w.selfReporting = true
+	w.stallWarned = false
+	w.reportStatus()
+	if !w.stallWarned {
+		t.Fatal("the self-reporting stall path did not mark the warning")
+	}
+
+	empty, _, _ := newSegmentWorker(t, t.TempDir())
+	empty.stallWarned = true
+	empty.reportStatus()
+	if empty.stallWarned {
+		t.Fatal("a drained worker kept its stall warning")
+	}
+	(&spoolWorker{}).reportStatus()
 }
