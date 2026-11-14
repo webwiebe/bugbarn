@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
@@ -321,7 +322,7 @@ func TestListIssuesFilteredByFacets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	filtered, err := store.ListIssuesFiltered(ctx, IssueFilter{
+	filtered, err := store.ListIssuesFiltered(ctx, domain.IssueFilter{
 		Facets: map[string]string{"host.name": "web-01"},
 	})
 	if err != nil {

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tick"
 )
 
@@ -39,7 +39,7 @@ func DefaultConfig() Config {
 
 // Source supplies per-project activity counts.
 type Source interface {
-	ProjectActivity(ctx context.Context, now time.Time, silentFor, lookback time.Duration) ([]storage.ProjectActivity, error)
+	ProjectActivity(ctx context.Context, now time.Time, silentFor, lookback time.Duration) ([]domain.ProjectActivity, error)
 }
 
 // Notifier delivers the alert for one silent project.

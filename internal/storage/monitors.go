@@ -16,31 +16,6 @@ const MaxMonitorsPerProject = 100
 
 var errMonitorReadOnly = apperr.Internal("storage is read-only", errors.New("no write connection"))
 
-// MonitorCheckIn is one check-in as the storage layer applies it. Interval and
-// Grace are nil when the caller did not send them: the stored values stay, and
-// an unknown monitor is then not created.
-type MonitorCheckIn struct {
-	ProjectID int64
-	Slug      string
-	Status    string
-	Interval  *time.Duration
-	Grace     *time.Duration
-	// Schedule and Timezone switch the monitor to a cron schedule. Sending an
-	// Interval switches it back to interval mode and clears both. Timezone
-	// alone changes the zone of a monitor that already has a schedule.
-	Schedule *string
-	Timezone *string
-	At       time.Time
-}
-
-// MonitorCheckInResult is the monitor after the check-in plus what it was
-// before, so a caller can tell a recovery from a plain check-in.
-type MonitorCheckInResult struct {
-	Monitor       domain.Monitor
-	Created       bool
-	PreviousState string
-}
-
 const monitorColumns = `id, project_id, slug, interval_s, grace_s, enabled, created_at,
   last_checkin_at, last_status, state, state_since, last_emitted_at, schedule, timezone`
 
@@ -76,36 +51,36 @@ func parseTimeOrZero(value string) time.Time {
 // monitor when the check-in carries an interval, updates the configuration
 // that was sent, and stores the latest status and the state it leads to. An
 // "ok" check-in returns the state to ok, an "error" one sets it to error.
-func (s *MonitorStore) RecordMonitorCheckIn(ctx context.Context, in MonitorCheckIn) (MonitorCheckInResult, error) {
+func (s *MonitorStore) RecordMonitorCheckIn(ctx context.Context, in domain.MonitorCheckIn) (domain.MonitorCheckInResult, error) {
 	if s == nil || s.db == nil {
-		return MonitorCheckInResult{}, errMonitorReadOnly
+		return domain.MonitorCheckInResult{}, errMonitorReadOnly
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return MonitorCheckInResult{}, wrapErr(err, "begin monitor check-in")
+		return domain.MonitorCheckInResult{}, wrapErr(err, "begin monitor check-in")
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	res, err := applyMonitorCheckIn(ctx, tx, in)
 	if err != nil {
-		return MonitorCheckInResult{}, err
+		return domain.MonitorCheckInResult{}, err
 	}
 	return res, wrapErr(tx.Commit(), "commit monitor check-in")
 }
 
-func applyMonitorCheckIn(ctx context.Context, tx *sql.Tx, in MonitorCheckIn) (MonitorCheckInResult, error) {
+func applyMonitorCheckIn(ctx context.Context, tx *sql.Tx, in domain.MonitorCheckIn) (domain.MonitorCheckInResult, error) {
 	m, err := scanMonitor(tx.QueryRowContext(ctx,
 		`SELECT `+monitorColumns+` FROM monitors WHERE project_id = ? AND slug = ?`, in.ProjectID, in.Slug))
 	if errors.Is(err, sql.ErrNoRows) {
 		return createMonitorFromCheckIn(ctx, tx, in)
 	}
 	if err != nil {
-		return MonitorCheckInResult{}, wrapErr(err, "load monitor")
+		return domain.MonitorCheckInResult{}, wrapErr(err, "load monitor")
 	}
 
-	res := MonitorCheckInResult{PreviousState: m.State}
+	res := domain.MonitorCheckInResult{PreviousState: m.State}
 	if err := applyTimings(&m, in); err != nil {
-		return MonitorCheckInResult{}, err
+		return domain.MonitorCheckInResult{}, err
 	}
 	m.LastCheckInAt = in.At
 	m.LastStatus = in.Status
@@ -129,7 +104,7 @@ WHERE id = ?`,
 // applyTimings applies the schedule configuration a check-in carries to a
 // loaded monitor: an interval selects interval mode, a schedule selects cron
 // mode, a timezone alone adjusts a cron monitor.
-func applyTimings(m *domain.Monitor, in MonitorCheckIn) error {
+func applyTimings(m *domain.Monitor, in domain.MonitorCheckIn) error {
 	switch {
 	case in.Interval != nil:
 		m.Interval, m.Schedule, m.Timezone = *in.Interval, "", ""
@@ -154,23 +129,23 @@ func valueOr(v *string, fallback string) string {
 	return fallback
 }
 
-func createMonitorFromCheckIn(ctx context.Context, tx *sql.Tx, in MonitorCheckIn) (MonitorCheckInResult, error) {
+func createMonitorFromCheckIn(ctx context.Context, tx *sql.Tx, in domain.MonitorCheckIn) (domain.MonitorCheckInResult, error) {
 	if in.Interval == nil && in.Schedule == nil {
-		return MonitorCheckInResult{}, apperr.NotFound("monitor not found: send an interval or a schedule to create it", nil)
+		return domain.MonitorCheckInResult{}, apperr.NotFound("monitor not found: send an interval or a schedule to create it", nil)
 	}
 	var n int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM monitors WHERE project_id = ?`, in.ProjectID).Scan(&n); err != nil {
-		return MonitorCheckInResult{}, wrapErr(err, "count monitors")
+		return domain.MonitorCheckInResult{}, wrapErr(err, "count monitors")
 	}
 	if n >= MaxMonitorsPerProject {
-		return MonitorCheckInResult{}, apperr.Conflict("monitor limit reached for this project", nil)
+		return domain.MonitorCheckInResult{}, apperr.Conflict("monitor limit reached for this project", nil)
 	}
 	m := domain.Monitor{
 		ProjectID: in.ProjectID, Slug: in.Slug, Enabled: true,
 		CreatedAt: in.At, LastCheckInAt: in.At, LastStatus: in.Status, State: domain.MonitorStateOK,
 	}
 	if err := applyTimings(&m, in); err != nil {
-		return MonitorCheckInResult{}, err
+		return domain.MonitorCheckInResult{}, err
 	}
 	if in.Status == domain.CheckInError {
 		m.State = domain.MonitorStateError
@@ -183,10 +158,10 @@ VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
 		m.ProjectID, m.Slug, int64(m.Interval/time.Second), int64(m.Grace/time.Second), m.Schedule, m.Timezone,
 		formatTime(m.CreatedAt), formatTime(m.LastCheckInAt), m.LastStatus, m.State, formatTimeOrEmpty(m.StateSince))
 	if err != nil {
-		return MonitorCheckInResult{}, wrapErr(err, "create monitor")
+		return domain.MonitorCheckInResult{}, wrapErr(err, "create monitor")
 	}
 	m.ID, _ = r.LastInsertId()
-	return MonitorCheckInResult{Monitor: m, Created: true, PreviousState: domain.MonitorStateOK}, nil
+	return domain.MonitorCheckInResult{Monitor: m, Created: true, PreviousState: domain.MonitorStateOK}, nil
 }
 
 // GetMonitor loads one monitor of a project by slug.

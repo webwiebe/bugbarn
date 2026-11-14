@@ -249,7 +249,9 @@ func (s *core) DB() *sql.DB {
 // PersistProcessedEvent stores a processed event and upserts the related issue.
 // It returns the upserted issue, the stored event, a flag indicating whether this
 // was a brand-new issue, a flag indicating whether the issue regressed, and any error.
-func (s *core) PersistProcessedEvent(ctx context.Context, processed event.ProcessedEvent) (Issue, Event, bool, bool, error) {
+func (s *core) PersistProcessedEvent(
+	ctx context.Context, processed event.ProcessedEvent,
+) (domain.Issue, domain.Event, bool, bool, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.PersistProcessedEvent",
 		trace.WithAttributes(attribute.String("fingerprint", processed.Fingerprint)),
 	)
@@ -257,7 +259,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed event.Proces
 
 	if s == nil || s.db == nil {
 		span.SetStatus(codes.Error, "storage is nil")
-		return Issue{}, Event{}, false, false, errors.New("storage is nil")
+		return domain.Issue{}, domain.Event{}, false, false, errors.New("storage is nil")
 	}
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -269,7 +271,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed event.Proces
 	issue, issueID, regressed, err := s.upsertIssueTraced(ctx, projectID, processed)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
+		return domain.Issue{}, domain.Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 
 	// The upsert works entirely from the numeric project id, so the returned
@@ -297,10 +299,10 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed event.Proces
 		span.SetAttributes(attribute.Bool("sampled_out", true))
 		if err := s.persistFacetsFor(ctx, projectID, issueID, processed.Event); err != nil {
 			span.SetStatus(codes.Error, err.Error())
-			return Issue{}, Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
+			return domain.Issue{}, domain.Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 		}
 		span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
-		return issue, Event{}, isNew, regressed, nil
+		return issue, domain.Event{}, isNew, regressed, nil
 	}
 
 	_, insertSpan := tracing.Tracer().Start(ctx, "storage.InsertEvent")
@@ -309,13 +311,13 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed event.Proces
 		insertSpan.SetStatus(codes.Error, err.Error())
 		insertSpan.End()
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
+		return domain.Issue{}, domain.Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 	insertSpan.End()
 
 	if err := s.persistFacetsFor(ctx, projectID, issueID, processed.Event); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
+		return domain.Issue{}, domain.Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 
 	span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
@@ -323,13 +325,15 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed event.Proces
 }
 
 // upsertIssueTraced runs upsertIssue under its own span.
-func (s *core) upsertIssueTraced(ctx context.Context, projectID int64, processed event.ProcessedEvent) (Issue, int64, bool, error) {
+func (s *core) upsertIssueTraced(
+	ctx context.Context, projectID int64, processed event.ProcessedEvent,
+) (domain.Issue, int64, bool, error) {
 	_, span := tracing.Tracer().Start(ctx, "storage.UpsertIssue")
 	defer span.End()
 	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, 0, false, wrapErr(err, "upsertIssueTraced")
+		return domain.Issue{}, 0, false, wrapErr(err, "upsertIssueTraced")
 	}
 	span.SetAttributes(attribute.String("issue_id", issue.ID), attribute.Bool("regressed", regressed))
 	return issue, issueID, regressed, nil

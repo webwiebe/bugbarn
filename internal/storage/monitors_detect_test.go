@@ -18,10 +18,10 @@ func TestListEnabledMonitorsCarriesProjectSlug(t *testing.T) {
 		t.Fatal(err)
 	}
 	t0 := time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)
-	if _, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{ProjectID: proj.ID, Slug: "sweep", Status: domain.CheckInOK, Interval: dur(time.Hour), At: t0}); err != nil {
+	if _, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{ProjectID: proj.ID, Slug: "sweep", Status: domain.CheckInOK, Interval: dur(time.Hour), At: t0}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{ProjectID: proj.ID, Slug: "off", Status: domain.CheckInOK, Interval: dur(time.Hour), At: t0}); err != nil {
+	if _, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{ProjectID: proj.ID, Slug: "off", Status: domain.CheckInOK, Interval: dur(time.Hour), At: t0}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.ExecContext(ctx, `UPDATE monitors SET enabled = 0 WHERE slug = 'off'`); err != nil {
@@ -44,7 +44,7 @@ func TestMarkMonitorMissedOnlyWhenNothingCheckedIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	t0 := time.Date(2026, 10, 13, 10, 0, 0, 123456789, time.UTC)
-	res, err := s.RecordMonitorCheckIn(ctx, MonitorCheckIn{ProjectID: proj.ID, Slug: "sweep", Status: domain.CheckInOK, Interval: dur(time.Hour), At: t0})
+	res, err := s.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{ProjectID: proj.ID, Slug: "sweep", Status: domain.CheckInOK, Interval: dur(time.Hour), At: t0})
 	if err != nil {
 		t.Fatal(err)
 	}

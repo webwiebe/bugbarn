@@ -17,6 +17,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/config"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -239,7 +240,7 @@ func TestRevokingASetupKeyTakesASession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.store.CreateAPIKey(ctx, "full", alpha.ID, sha256Hex("a-full-key"), storage.APIKeyScopeFull); err != nil {
+	if _, err := s.store.CreateAPIKey(ctx, "full", alpha.ID, sha256Hex("a-full-key"), domain.APIKeyScopeFull); err != nil {
 		t.Fatal(err)
 	}
 	if rr := s.withKey(http.MethodPost, "/api/v1/apikeys/revoke-setup", "a-full-key", ""); rr.Code != http.StatusForbidden {
@@ -259,7 +260,7 @@ func TestDeletingAKeyNamedLikeASetupKeyRevokesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := s.store.CreateAPIKey(ctx, "alpha-setup", alpha.ID, sha256Hex("not-derived"), storage.APIKeyScopeIngest)
+	row, err := s.store.CreateAPIKey(ctx, "alpha-setup", alpha.ID, sha256Hex("not-derived"), domain.APIKeyScopeIngest)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,30 +5,31 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // CreateGroup inserts a new project group.
-func (s *GroupStore) CreateGroup(ctx context.Context, name, slug string) (ProjectGroup, error) {
+func (s *GroupStore) CreateGroup(ctx context.Context, name, slug string) (domain.ProjectGroup, error) {
 	now := formatTime(time.Now().UTC())
 	res, err := s.db.ExecContext(ctx, `INSERT INTO project_groups (name, slug, created_at) VALUES (?, ?, ?)`, name, slug, now)
 	if err != nil {
-		return ProjectGroup{}, wrapErr(err, "create group")
+		return domain.ProjectGroup{}, wrapErr(err, "create group")
 	}
 	id, _ := res.LastInsertId()
-	return ProjectGroup{ID: id, Name: name, Slug: slug, CreatedAt: time.Now().UTC()}, nil
+	return domain.ProjectGroup{ID: id, Name: name, Slug: slug, CreatedAt: time.Now().UTC()}, nil
 }
 
 // ListGroups returns all project groups ordered by name.
-func (s *GroupStore) ListGroups(ctx context.Context) ([]ProjectGroup, error) {
+func (s *GroupStore) ListGroups(ctx context.Context) ([]domain.ProjectGroup, error) {
 	rows, err := s.readDB().QueryContext(ctx, `SELECT id, name, slug, created_at FROM project_groups ORDER BY name ASC`)
 	if err != nil {
 		return nil, wrapErr(err, "list groups")
 	}
 	defer rows.Close()
 
-	var groups []ProjectGroup
+	var groups []domain.ProjectGroup
 	for rows.Next() {
-		var g ProjectGroup
+		var g domain.ProjectGroup
 		var createdAt string
 		if err := rows.Scan(&g.ID, &g.Name, &g.Slug, &createdAt); err != nil {
 			return nil, wrapErr(err, "list groups")
@@ -85,7 +86,7 @@ func (s *GroupStore) RemoveProjectFromGroup(ctx context.Context, projectSlug str
 }
 
 // ListGroupProjects returns all projects belonging to a group.
-func (s *GroupStore) ListGroupProjects(ctx context.Context, groupSlug string) ([]Project, error) {
+func (s *GroupStore) ListGroupProjects(ctx context.Context, groupSlug string) ([]domain.Project, error) {
 	var groupID int64
 	err := s.readDB().QueryRowContext(ctx, `SELECT id FROM project_groups WHERE slug = ?`, groupSlug).Scan(&groupID)
 	if err != nil {
@@ -100,9 +101,9 @@ func (s *GroupStore) ListGroupProjects(ctx context.Context, groupSlug string) ([
 	}
 	defer rows.Close()
 
-	var projects []Project
+	var projects []domain.Project
 	for rows.Next() {
-		var p Project
+		var p domain.Project
 		var createdAt string
 		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter, &p.GroupID, &createdAt); err != nil {
 			return nil, wrapErr(err, "list group projects")

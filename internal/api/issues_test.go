@@ -39,7 +39,7 @@ func setupTestServer(t *testing.T) (*Server, *storage.Store) {
 	}, store
 }
 
-func persistTestIssue(t *testing.T, store *storage.Store) storage.Issue {
+func persistTestIssue(t *testing.T, store *storage.Store) domain.Issue {
 	t.Helper()
 	pe := event.ProcessedEvent{
 		Event: event.Event{
@@ -89,7 +89,7 @@ func TestMuteIssueEndpoint(t *testing.T) {
 			}
 			if tc.wantStatus == http.StatusOK {
 				var resp struct {
-					Issue storage.Issue `json:"issue"`
+					Issue domain.Issue `json:"issue"`
 				}
 				if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 					t.Fatalf("decode response: %v", err)
@@ -125,7 +125,7 @@ func TestUnmuteIssueEndpoint(t *testing.T) {
 	}
 
 	var resp struct {
-		Issue storage.Issue `json:"issue"`
+		Issue domain.Issue `json:"issue"`
 	}
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -172,7 +172,7 @@ func TestListIssuesIncludesHourlyCounts(t *testing.T) {
 	}
 }
 
-func persistTestIssueWithFingerprint(t *testing.T, store *storage.Store, fp, message string) storage.Issue {
+func persistTestIssueWithFingerprint(t *testing.T, store *storage.Store, fp, message string) domain.Issue {
 	t.Helper()
 	pe := event.ProcessedEvent{
 		Event: event.Event{
@@ -359,7 +359,7 @@ func TestResolveIssueInNonDefaultProject(t *testing.T) {
 	}
 
 	var resp struct {
-		Issue storage.Issue `json:"issue"`
+		Issue domain.Issue `json:"issue"`
 	}
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)

@@ -16,7 +16,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/keytouch"
 	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // hangUpRepo cancels the client's request the moment the store is asked to
@@ -28,7 +27,7 @@ type hangUpRepo struct {
 	calls        atomic.Int32
 }
 
-func (h *hangUpRepo) RecordMonitorCheckIn(ctx context.Context, in storage.MonitorCheckIn) (storage.MonitorCheckInResult, error) {
+func (h *hangUpRepo) RecordMonitorCheckIn(ctx context.Context, in domain.MonitorCheckIn) (domain.MonitorCheckInResult, error) {
 	h.calls.Add(1)
 	h.hangUp()
 	h.ctxErrAtCall = ctx.Err()

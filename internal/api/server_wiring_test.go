@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
@@ -213,7 +212,7 @@ func TestIngestNDJSONLogs(t *testing.T) {
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("ndjson ingest = %d %q, want 204", rr.Code, rr.Body.String())
 	}
-	got, err := store.QueryLogEntries(context.Background(), storage.LogQuery{ProjectID: 1}, 100)
+	got, err := store.QueryLogEntries(context.Background(), domain.LogQuery{ProjectID: 1}, 100)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,26 +9,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
 // upsertIssue is the ingest write path: it finds-or-creates the issue for an
 // event's fingerprint and applies regression/mute transitions in one tx.
-func (s *core) upsertIssue(ctx context.Context, projectID int64, processed event.ProcessedEvent) (Issue, int64, bool, error) {
+func (s *core) upsertIssue(ctx context.Context, projectID int64, processed event.ProcessedEvent) (domain.Issue, int64, bool, error) {
 	in, err := prepareUpsertInputs(processed)
 	if err != nil {
-		return Issue{}, 0, false, wrapErr(err, "upsertIssue")
+		return domain.Issue{}, 0, false, wrapErr(err, "upsertIssue")
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Issue{}, 0, false, wrapErr(err, "upsertIssue")
+		return domain.Issue{}, 0, false, wrapErr(err, "upsertIssue")
 	}
 	defer tx.Rollback()
 
 	row, existing, err := findExistingIssue(ctx, tx, projectID, in.fingerprintValue)
 	if err != nil {
-		return Issue{}, 0, false, wrapErr(err, "upsertIssue")
+		return domain.Issue{}, 0, false, wrapErr(err, "upsertIssue")
 	}
 
 	if existing {
@@ -126,7 +127,7 @@ func prepareUpsertInputs(processed event.ProcessedEvent) (upsertInputs, error) {
 // scannedIssueRow holds the columns scanned from the find-existing-issue query.
 type scannedIssueRow struct {
 	id                   int64
-	issue                Issue
+	issue                domain.Issue
 	eventCount           int
 	firstSeen            string
 	lastSeen             string
@@ -204,7 +205,7 @@ WHERE project_id = ? AND fingerprint = ?`,
 // applyRegressionTransition decides whether a new event on an existing issue
 // constitutes a regression and mutates the issue's status/mute/regression fields
 // accordingly. It returns whether a regression occurred (which drives the UPDATE).
-func applyRegressionTransition(issue *Issue, muteMode string, seenAt time.Time) bool {
+func applyRegressionTransition(issue *domain.Issue, muteMode string, seenAt time.Time) bool {
 	regressed := issue.Status == "resolved"
 
 	if muteMode == "until_regression" && (issue.Status == "resolved" || issue.Status == "muted") {
@@ -234,7 +235,7 @@ func applyRegressionTransition(issue *Issue, muteMode string, seenAt time.Time) 
 type existingIssueParams struct {
 	projectID            int64
 	id                   int64
-	issue                Issue
+	issue                domain.Issue
 	eventCount           int
 	firstSeen            string
 	lastSeen             string
@@ -257,21 +258,21 @@ type existingIssueParams struct {
 
 // updateExistingIssue computes the regression/mute transition for an existing
 // issue and applies the UPDATE within the open transaction.
-func (s *core) updateExistingIssue(ctx context.Context, tx *sql.Tx, p existingIssueParams) (Issue, int64, bool, error) {
+func (s *core) updateExistingIssue(ctx context.Context, tx *sql.Tx, p existingIssueParams) (domain.Issue, int64, bool, error) {
 	issue, err := hydrateExistingIssue(p)
 	if err != nil {
-		return Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
+		return domain.Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
 	}
 
 	issue.MuteMode = p.muteMode
 	regressed := applyRegressionTransition(&issue, p.muteMode, p.seenAt)
 
 	if err := updateIssueRow(ctx, tx, issue, regressed, p.id, p.projectID); err != nil {
-		return Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
+		return domain.Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
+		return domain.Issue{}, 0, false, wrapErr(err, "updateExistingIssue")
 	}
 	issue.Fingerprint = p.fingerprintValue
 	issue.RepresentativeEvent = p.evt
@@ -289,15 +290,15 @@ func (s *core) updateExistingIssue(ctx context.Context, tx *sql.Tx, p existingIs
 
 // hydrateExistingIssue reconstructs the in-memory Issue from the scanned row
 // columns, parsing timestamps and decoding the stored JSON fields.
-func hydrateExistingIssue(p existingIssueParams) (Issue, error) {
+func hydrateExistingIssue(p existingIssueParams) (domain.Issue, error) {
 	issue := p.issue
 	parsedFirstSeen, err := parseTime(p.firstSeen)
 	if err != nil {
-		return Issue{}, wrapErr(err, "hydrateExistingIssue")
+		return domain.Issue{}, wrapErr(err, "hydrateExistingIssue")
 	}
 	parsedLastSeen, err := parseTime(p.lastSeen)
 	if err != nil {
-		return Issue{}, wrapErr(err, "hydrateExistingIssue")
+		return domain.Issue{}, wrapErr(err, "hydrateExistingIssue")
 	}
 	issue.IssueNumber = p.existingIssueNumber
 	issue.FirstSeen = parsedFirstSeen
@@ -310,10 +311,10 @@ func hydrateExistingIssue(p existingIssueParams) (Issue, error) {
 	issue.ReopenedAt, _ = parseTime(p.reopenedAt)
 	issue.LastRegressedAt, _ = parseTime(p.lastRegressedAt)
 	if err := unmarshalStringSlice(p.storedExplanation, &issue.FingerprintExplanation); err != nil {
-		return Issue{}, wrapErr(err, "hydrateExistingIssue")
+		return domain.Issue{}, wrapErr(err, "hydrateExistingIssue")
 	}
 	if err := json.Unmarshal(p.storedRepresentative, &issue.RepresentativeEvent); err != nil {
-		return Issue{}, wrapErr(err, "hydrateExistingIssue")
+		return domain.Issue{}, wrapErr(err, "hydrateExistingIssue")
 	}
 	if issue.FingerprintMaterial == "" {
 		issue.FingerprintMaterial = p.material
@@ -329,7 +330,7 @@ func hydrateExistingIssue(p existingIssueParams) (Issue, error) {
 
 // updateIssueRow builds the dynamic UPDATE assignments (adding the regression
 // columns when a regression occurred) and applies it within the transaction.
-func updateIssueRow(ctx context.Context, tx *sql.Tx, issue Issue, regressed bool, id, projectID int64) error {
+func updateIssueRow(ctx context.Context, tx *sql.Tx, issue domain.Issue, regressed bool, id, projectID int64) error {
 	assignments := []string{
 		"last_seen = ?",
 		"event_count = event_count + 1",

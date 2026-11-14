@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
 )
@@ -315,7 +316,7 @@ func TestConcurrentReads(t *testing.T) {
 	errs := make(chan error, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			_, err := store.ListIssuesFiltered(ctx, IssueFilter{Status: "open", Limit: 10})
+			_, err := store.ListIssuesFiltered(ctx, domain.IssueFilter{Status: "open", Limit: 10})
 			errs <- err
 		}()
 	}
@@ -368,7 +369,7 @@ func TestRegressedFirstOrdering(t *testing.T) {
 		t.Fatal("expected regression")
 	}
 
-	issues, err := store.ListIssuesFiltered(ctx, IssueFilter{Status: "open", Limit: 10})
+	issues, err := store.ListIssuesFiltered(ctx, domain.IssueFilter{Status: "open", Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

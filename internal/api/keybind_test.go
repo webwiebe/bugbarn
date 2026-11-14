@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // A project-bound key that is not full-scope reaches only its own project
@@ -43,10 +43,10 @@ func TestBoundKeyIsConfinedToItsProject(t *testing.T) {
 		}
 		return plain
 	}
-	alphaRead := addKey("alpha-read", alpha.ID, storage.APIKeyScopeRead)
-	homeRead := addKey("home-read", home.ID, storage.APIKeyScopeRead)
-	alphaFull := addKey("alpha-full", alpha.ID, storage.APIKeyScopeFull)
-	alphaIngest := addKey("alpha-ingest", alpha.ID, storage.APIKeyScopeIngest)
+	alphaRead := addKey("alpha-read", alpha.ID, domain.APIKeyScopeRead)
+	homeRead := addKey("home-read", home.ID, domain.APIKeyScopeRead)
+	alphaFull := addKey("alpha-full", alpha.ID, domain.APIKeyScopeFull)
+	alphaIngest := addKey("alpha-ingest", alpha.ID, domain.APIKeyScopeIngest)
 
 	authorizer := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")

@@ -104,7 +104,7 @@ func TestMergeProjectsMovesRowsAndReportsMissingSides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateAPIKey(ctx, "k", src.ID, "merge-hash", APIKeyScopeIngest); err != nil {
+	if _, err := s.CreateAPIKey(ctx, "k", src.ID, "merge-hash", domain.APIKeyScopeIngest); err != nil {
 		t.Fatal(err)
 	}
 	wantKind(t, s.MergeProjects(ctx, "ghost", "dst"), apperr.ErrNotFound)
@@ -127,23 +127,23 @@ func TestApplyTimingsModes(t *testing.T) {
 	hour, grace := time.Hour, 5*time.Minute
 	cron, tz := "0 2 * * *", "Europe/Amsterdam"
 
-	interval := MonitorCheckIn{Interval: &hour, Grace: &grace}
+	interval := domain.MonitorCheckIn{Interval: &hour, Grace: &grace}
 	m := domain.Monitor{Schedule: "old", Timezone: "UTC"}
 	if err := applyTimings(&m, interval); err != nil || m.Interval != hour || m.Schedule != "" || m.Timezone != "" || m.Grace != grace {
 		t.Fatalf("interval mode = %+v, %v", m, err)
 	}
 	m = domain.Monitor{Timezone: "UTC"}
-	if err := applyTimings(&m, MonitorCheckIn{Schedule: &cron}); err != nil || m.Schedule != cron || m.Timezone != "UTC" || m.Interval != 0 {
+	if err := applyTimings(&m, domain.MonitorCheckIn{Schedule: &cron}); err != nil || m.Schedule != cron || m.Timezone != "UTC" || m.Interval != 0 {
 		t.Fatalf("schedule keeps the old zone = %+v, %v", m, err)
 	}
-	if err := applyTimings(&m, MonitorCheckIn{Schedule: &cron, Timezone: &tz}); err != nil || m.Timezone != tz {
+	if err := applyTimings(&m, domain.MonitorCheckIn{Schedule: &cron, Timezone: &tz}); err != nil || m.Timezone != tz {
 		t.Fatalf("schedule with zone = %+v, %v", m, err)
 	}
-	if err := applyTimings(&m, MonitorCheckIn{Timezone: &tz}); err != nil {
+	if err := applyTimings(&m, domain.MonitorCheckIn{Timezone: &tz}); err != nil {
 		t.Fatalf("zone-only change on a cron monitor: %v", err)
 	}
 	intervalMonitor := domain.Monitor{Interval: hour}
-	wantKind(t, applyTimings(&intervalMonitor, MonitorCheckIn{Timezone: &tz}), apperr.ErrInvalidInput)
+	wantKind(t, applyTimings(&intervalMonitor, domain.MonitorCheckIn{Timezone: &tz}), apperr.ErrInvalidInput)
 	if got := valueOr(nil, "fallback"); got != "fallback" {
 		t.Fatalf("valueOr(nil) = %q", got)
 	}
@@ -152,7 +152,7 @@ func TestApplyTimingsModes(t *testing.T) {
 func TestMonitorCheckInWithoutTimingsOnUnknownMonitorIsNotFound(t *testing.T) {
 	t.Parallel()
 	s := openTemp(t)
-	_, err := s.RecordMonitorCheckIn(context.Background(), MonitorCheckIn{ProjectID: s.DefaultProjectID(), Slug: "nope", Status: "ok", At: time.Now()})
+	_, err := s.RecordMonitorCheckIn(context.Background(), domain.MonitorCheckIn{ProjectID: s.DefaultProjectID(), Slug: "nope", Status: "ok", At: time.Now()})
 	wantKind(t, err, apperr.ErrNotFound)
 }
 

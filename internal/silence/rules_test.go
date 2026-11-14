@@ -34,7 +34,7 @@ func newFixture(t *testing.T) *fixture {
 	return &fixture{t: t, store: store}
 }
 
-func (f *fixture) project(slug string) storage.Project {
+func (f *fixture) project(slug string) domain.Project {
 	f.t.Helper()
 	p, err := f.store.Domains().Projects.CreateProject(context.Background(), slug, slug)
 	if err != nil {

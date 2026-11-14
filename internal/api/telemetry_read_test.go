@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/hostmetrics"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/secnorm"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/telemetrydb"
 )
 
@@ -57,7 +57,7 @@ func newTelemetryReadFixture(t *testing.T) *telemetryReadFixture {
 
 	f := &telemetryReadFixture{
 		server: server,
-		ingest: createKey(t, store, def.ID, storage.APIKeyScopeIngest),
+		ingest: createKey(t, store, def.ID, domain.APIKeyScopeIngest),
 		sec:    sec, met: met,
 		now: time.Now().UTC().Truncate(time.Minute),
 	}

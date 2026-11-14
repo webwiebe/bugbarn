@@ -13,11 +13,11 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/detect"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 type Repository interface {
-	ListDetectionRules(context.Context) ([]storage.StoredDetectionRule, error)
+	ListDetectionRules(context.Context) ([]domain.StoredDetectionRule, error)
 	UpsertDetectionRule(ctx context.Context, id, ruleJSON string) error
 	DeleteDetectionRule(ctx context.Context, id string) error
 }

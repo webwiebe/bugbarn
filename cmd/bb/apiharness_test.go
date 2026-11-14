@@ -15,6 +15,7 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/api"
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -63,7 +64,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	const plaintext = "harness-api-key-0123456789"
 	sum := sha256.Sum256([]byte(plaintext))
-	if _, err := store.CreateAPIKey(ctx, "harness", project.ID, hex.EncodeToString(sum[:]), storage.APIKeyScopeFull); err != nil {
+	if _, err := store.CreateAPIKey(ctx, "harness", project.ID, hex.EncodeToString(sum[:]), domain.APIKeyScopeFull); err != nil {
 		t.Fatalf("create api key: %v", err)
 	}
 	h := &harness{URL: srv.URL, APIKey: plaintext, Store: store}
@@ -107,7 +108,7 @@ func inEmptyDir(t *testing.T) string {
 }
 
 // seedIssue stores one event, which creates its issue, and returns the issue.
-func (h *harness) seedIssue(t *testing.T, message string) storage.Issue {
+func (h *harness) seedIssue(t *testing.T, message string) domain.Issue {
 	t.Helper()
 	now := time.Now().UTC()
 	pe := event.ProcessedEvent{

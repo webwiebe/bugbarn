@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/mail"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // capturedMail is one message a fakeSMTPServer received over the wire.
@@ -142,11 +142,11 @@ func TestEvaluator_AdminEmailFiresOverSMTP(t *testing.T) {
 	bus.Subscribe(evaluator.HandleEvent)
 
 	bus.Publish(domainevents.IssueCreated{
-		Issue:     storage.Issue{ID: "issue-000001", Title: "NewBoom: kaboom in prod", ProjectSlug: "qr"},
+		Issue:     domain.Issue{ID: "issue-000001", Title: "NewBoom: kaboom in prod", ProjectSlug: "qr"},
 		ProjectID: 42,
 	})
 	bus.Publish(domainevents.IssueRegressed{
-		Issue:     storage.Issue{ID: "issue-000002", Title: "RegressBoom: it came back", ProjectSlug: "qr"},
+		Issue:     domain.Issue{ID: "issue-000002", Title: "RegressBoom: it came back", ProjectSlug: "qr"},
 		ProjectID: 42,
 	})
 

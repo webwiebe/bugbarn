@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/logstream"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // The routing characterization table pins what the HTTP surface answers for a
@@ -84,10 +84,10 @@ func newRouteFixture(t *testing.T) *routeFixture {
 		f.keys[label] = plain
 		return k.ID
 	}
-	addKey("full", storage.APIKeyScopeFull)
-	addKey("read", storage.APIKeyScopeRead)
-	addKey("ingestkey", storage.APIKeyScopeIngest)
-	f.placeholders["keyid"] = strconv.FormatInt(addKey("victim", storage.APIKeyScopeRead), 10)
+	addKey("full", domain.APIKeyScopeFull)
+	addKey("read", domain.APIKeyScopeRead)
+	addKey("ingestkey", domain.APIKeyScopeIngest)
+	f.placeholders["keyid"] = strconv.FormatInt(addKey("victim", domain.APIKeyScopeRead), 10)
 
 	issue, ev := mustPersistProcessedEvent(t, store, event.ProcessedEvent{
 		Fingerprint: "routes-characterization",
@@ -99,12 +99,12 @@ func newRouteFixture(t *testing.T) *routeFixture {
 	})
 	f.placeholders["issue"] = issue.ID
 	f.placeholders["event"] = ev.ID
-	rel, err := store.CreateRelease(ctx, storage.Release{Name: "seed", Environment: "prod", ObservedAt: time.Now().UTC()})
+	rel, err := store.CreateRelease(ctx, domain.Release{Name: "seed", Environment: "prod", ObservedAt: time.Now().UTC()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.placeholders["release"] = rel.ID
-	al, err := store.CreateAlert(ctx, storage.Alert{Name: "seed", Enabled: true})
+	al, err := store.CreateAlert(ctx, domain.Alert{Name: "seed", Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}

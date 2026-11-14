@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // usageFetcher is a stand-in for the expensive repository aggregate: it counts
@@ -15,12 +15,12 @@ import (
 type usageFetcher struct {
 	mu    sync.Mutex
 	calls int
-	value map[int64]storage.ProjectUsage
+	value map[int64]domain.ProjectUsage
 	err   error
 	delay time.Duration
 }
 
-func (f *usageFetcher) fetch(context.Context) (map[int64]storage.ProjectUsage, error) {
+func (f *usageFetcher) fetch(context.Context) (map[int64]domain.ProjectUsage, error) {
 	f.mu.Lock()
 	f.calls++
 	err, val, delay := f.err, f.value, f.delay
@@ -40,8 +40,8 @@ func (f *usageFetcher) callCount() int {
 	return f.calls
 }
 
-func usageOf(events int) map[int64]storage.ProjectUsage {
-	return map[int64]storage.ProjectUsage{1: {ProjectID: 1, EventCount: events}}
+func usageOf(events int) map[int64]domain.ProjectUsage {
+	return map[int64]domain.ProjectUsage{1: {ProjectID: 1, EventCount: events}}
 }
 
 func TestUsageCacheServesWithinTTL(t *testing.T) {
@@ -195,7 +195,7 @@ func TestUsageCacheRefreshSurvivesCallerCancellation(t *testing.T) {
 	cancel() // the caller has already given up
 
 	var sawCancellation bool
-	fetch := func(fetchCtx context.Context) (map[int64]storage.ProjectUsage, error) {
+	fetch := func(fetchCtx context.Context) (map[int64]domain.ProjectUsage, error) {
 		if err := fetchCtx.Err(); err != nil {
 			sawCancellation = true
 			return nil, err
@@ -224,7 +224,7 @@ func TestUsageCacheRefreshIsBounded(t *testing.T) {
 	var c usageCache
 
 	var deadlineSet bool
-	fetch := func(fetchCtx context.Context) (map[int64]storage.ProjectUsage, error) {
+	fetch := func(fetchCtx context.Context) (map[int64]domain.ProjectUsage, error) {
 		_, deadlineSet = fetchCtx.Deadline()
 		return usageOf(1), nil
 	}

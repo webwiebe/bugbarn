@@ -3,25 +3,27 @@ package storage
 import (
 	"context"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
-func (s *IssueStore) ResolveIssue(ctx context.Context, issueID string) (Issue, error) {
+func (s *IssueStore) ResolveIssue(ctx context.Context, issueID string) (domain.Issue, error) {
 	return s.setIssueStatus(ctx, issueID, "resolved")
 }
 
-func (s *IssueStore) ReopenIssue(ctx context.Context, issueID string) (Issue, error) {
+func (s *IssueStore) ReopenIssue(ctx context.Context, issueID string) (domain.Issue, error) {
 	return s.setIssueStatus(ctx, issueID, "unresolved")
 }
 
-func (s *IssueStore) setIssueStatus(ctx context.Context, issueID, status string) (Issue, error) {
+func (s *IssueStore) setIssueStatus(ctx context.Context, issueID, status string) (domain.Issue, error) {
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
-		return Issue{}, err
+		return domain.Issue{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Issue{}, err
+		return domain.Issue{}, err
 	}
 	defer tx.Rollback()
 
@@ -34,10 +36,10 @@ SET status = ?,
 	updated_at = CURRENT_TIMESTAMP
 WHERE id = ?`, status, status, now, status, now, rowID)
 	if execErr != nil {
-		return Issue{}, execErr
+		return domain.Issue{}, execErr
 	}
 	if err := tx.Commit(); err != nil {
-		return Issue{}, err
+		return domain.Issue{}, err
 	}
 
 	return s.GetIssue(ctx, issueID)

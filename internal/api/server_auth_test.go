@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 func TestServeHTTPStatefulEndpoints(t *testing.T) {
@@ -70,7 +70,7 @@ func TestServeHTTPStatefulEndpoints(t *testing.T) {
 			t.Fatalf("unexpected release list status: got %d want %d body=%q", rr.Code, http.StatusOK, rr.Body.String())
 		}
 		var response struct {
-			Releases []storage.Release `json:"releases"`
+			Releases []domain.Release `json:"releases"`
 		}
 		decodeResponse(t, rr, &response)
 		if len(response.Releases) == 0 {

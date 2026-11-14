@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -60,9 +61,9 @@ func TestTelemetryIngestEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	infraIngest := createKey(t, store, infra.ID, storage.APIKeyScopeIngest)
-	otherIngest := createKey(t, store, other.ID, storage.APIKeyScopeIngest)
-	full := createKey(t, store, other.ID, storage.APIKeyScopeFull)
+	infraIngest := createKey(t, store, infra.ID, domain.APIKeyScopeIngest)
+	otherIngest := createKey(t, store, other.ID, domain.APIKeyScopeIngest)
+	full := createKey(t, store, other.ID, domain.APIKeyScopeFull)
 
 	authorizer := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")

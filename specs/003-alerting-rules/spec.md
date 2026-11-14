@@ -43,7 +43,7 @@ As a homelab operator, I want to define an alert rule that fires when an issue a
 // regardless of whether the issue is new or regressed. Used to evaluate
 // event_count_exceeds alert conditions.
 type IssueEventRecorded struct {
-    Issue     storage.Issue
+    Issue     domain.Issue
     ProjectID int64
 }
 ```

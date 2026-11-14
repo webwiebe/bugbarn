@@ -154,7 +154,7 @@ func TestConsumerHoldsAndReplaysLog(t *testing.T) {
 	stop := runConsumer(t, c)
 
 	// Wait for the queue to drain into held_events (not log_entries).
-	var proj storage.Project
+	var proj domain.Project
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		n, _ := q.Len(ctx)

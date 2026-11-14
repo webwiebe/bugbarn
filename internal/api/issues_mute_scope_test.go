@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // bb mute sends PATCH /issues/<id>/mute with an API key. Without an
@@ -38,7 +37,7 @@ func TestMuteEndpointReadsBackMutedAcrossProjects(t *testing.T) {
 	grr := httptest.NewRecorder()
 	srv.ServeHTTP(grr, get)
 	var resp struct {
-		Issue storage.Issue `json:"issue"`
+		Issue domain.Issue `json:"issue"`
 	}
 	if err := json.NewDecoder(grr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)

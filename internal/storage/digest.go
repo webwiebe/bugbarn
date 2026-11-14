@@ -4,14 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // WeeklyDigest returns aggregate error stats for the given project since the
 // given time. All queries run under the provided context deadline.
-func (s *DigestStore) WeeklyDigest(ctx context.Context, projectID int64, since time.Time) (DigestData, error) {
+func (s *DigestStore) WeeklyDigest(ctx context.Context, projectID int64, since time.Time) (domain.DigestData, error) {
 	sinceStr := formatTime(since)
 
-	var d DigestData
+	var d domain.DigestData
 
 	// SUM(sample_weight), not COUNT(*): past the sampling threshold one stored
 	// row stands for many events, and a digest that reported stored rows would
@@ -60,7 +62,7 @@ func (s *DigestStore) WeeklyDigest(ctx context.Context, projectID int64, since t
 	defer rows.Close()
 
 	for rows.Next() {
-		var iss DigestIssue
+		var iss domain.DigestIssue
 		if err := rows.Scan(&iss.ID, &iss.Title, &iss.EventCount, &iss.Status); err != nil {
 			return d, err
 		}

@@ -19,7 +19,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // Persist stores one event record; a nil error means the event is in the
@@ -28,7 +27,7 @@ type Persist func(ctx context.Context, rec spool.Record) error
 
 // IssueStore is the part of the store the reporter needs.
 type IssueStore interface {
-	ProjectByID(ctx context.Context, id int64) (storage.Project, error)
+	ProjectByID(ctx context.Context, id int64) (domain.Project, error)
 	IssueByFingerprint(ctx context.Context, projectID int64, fingerprint string) (domain.Issue, error)
 	ResolveIssue(ctx context.Context, issueID string) (domain.Issue, error)
 }

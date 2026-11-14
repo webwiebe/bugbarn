@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func insertIssueSeen(t *testing.T, store *Store, projectID int64, n int, lastSeen time.Time) {
@@ -44,7 +46,7 @@ func TestProjectActivitySplitsRecentFromEarlier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bySlug := map[string]ProjectActivity{}
+	bySlug := map[string]domain.ProjectActivity{}
 	for _, a := range got {
 		bySlug[a.Slug] = a
 	}

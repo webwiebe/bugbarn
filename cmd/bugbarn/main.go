@@ -237,7 +237,7 @@ func run() error {
 	// build them once. The replayer works without Redis — approving a pending
 	// project drains its backlog even if no consumer is running.
 	eventProc := ingestproc.NewProcessor(store, eventPub, logger, cfg.AutoApproveProjects)
-	logService := logsvc.New(store.LogStore, logger)
+	logService := logsvc.New(store.LogStore, logger, logsvc.WithTransient(storage.IsTransient))
 	heldReplayer := ingestproc.NewReplayer(store, eventProc, logService, logger)
 	// Detections persist through the same pipeline as SDK events, so each one
 	// becomes an issue in the telemetry project. Started before the consumer so

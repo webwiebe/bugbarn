@@ -15,7 +15,7 @@ import (
 // evaluator runs from the ingest pipeline rather than from a scoped request.
 
 // ListAlertsForProject returns every alert rule of one project, newest first.
-func (s *AlertStore) ListAlertsForProject(ctx context.Context, projectID int64) ([]Alert, error) {
+func (s *AlertStore) ListAlertsForProject(ctx context.Context, projectID int64) ([]domain.Alert, error) {
 	if projectID <= 0 {
 		return nil, nil
 	}

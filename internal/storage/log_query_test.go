@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 var explorerBase = time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
@@ -16,7 +18,7 @@ func seedExplorer(t *testing.T, store *Store) int64 {
 	t.Helper()
 	pid := store.defaultProjectID
 	at := func(min int) time.Time { return explorerBase.Add(time.Duration(min) * time.Minute) }
-	entries := []LogEntry{
+	entries := []domain.LogEntry{
 		{ProjectID: pid, ReceivedAt: at(1), LevelNum: 30, Level: "info", Message: "boot", Data: map[string]any{"service": "api", "region": "eu"}},
 		{ProjectID: pid, ReceivedAt: at(2), LevelNum: 30, Level: "info", Message: "request ok", Data: map[string]any{"service": "api", "status": float64(200)}},
 		{ProjectID: pid, ReceivedAt: at(3), LevelNum: 40, Level: "warn", Message: "slow request", Data: map[string]any{"service": "api", "status": float64(200)}},
@@ -32,7 +34,7 @@ func seedExplorer(t *testing.T, store *Store) int64 {
 	return pid
 }
 
-func messages(entries []LogEntry) string {
+func messages(entries []domain.LogEntry) string {
 	var m []string
 	for _, e := range entries {
 		m = append(m, e.Message)
@@ -48,17 +50,17 @@ func TestQueryLogEntriesFiltersByAttributesAndRange(t *testing.T) {
 
 	cases := []struct {
 		name string
-		q    LogQuery
+		q    domain.LogQuery
 		want string
 	}{
-		{"one attribute", LogQuery{ProjectID: pid, Attrs: []LogAttrFilter{{"service", "worker"}}}, "job failed,request failed"},
-		{"attributes are ANDed", LogQuery{ProjectID: pid, Attrs: []LogAttrFilter{{"service", "api"}, {"status", "200"}}}, "slow request,request ok"},
-		{"number matches as text", LogQuery{ProjectID: pid, Attrs: []LogAttrFilter{{"status", "500"}}}, "request failed"},
-		{"dotted key", LogQuery{ProjectID: pid, Attrs: []LogAttrFilter{{"http.code", "502"}}}, "job failed"},
-		{"no match", LogQuery{ProjectID: pid, Attrs: []LogAttrFilter{{"service", "missing"}}}, ""},
-		{"time range is half open", LogQuery{ProjectID: pid, From: explorerBase.Add(2 * time.Minute), To: explorerBase.Add(4 * time.Minute)}, "slow request,request ok"},
-		{"range plus level plus text", LogQuery{ProjectID: pid, LevelMin: 40, Q: "request", From: explorerBase, To: explorerBase.Add(time.Hour)}, "request failed,slow request"},
-		{"attribute plus range", LogQuery{ProjectID: pid, Attrs: []LogAttrFilter{{"service", "web"}}, From: explorerBase.Add(time.Hour)}, "late error,second hour"},
+		{"one attribute", domain.LogQuery{ProjectID: pid, Attrs: []domain.LogAttrFilter{{Key: "service", Value: "worker"}}}, "job failed,request failed"},
+		{"attributes are ANDed", domain.LogQuery{ProjectID: pid, Attrs: []domain.LogAttrFilter{{Key: "service", Value: "api"}, {Key: "status", Value: "200"}}}, "slow request,request ok"},
+		{"number matches as text", domain.LogQuery{ProjectID: pid, Attrs: []domain.LogAttrFilter{{Key: "status", Value: "500"}}}, "request failed"},
+		{"dotted key", domain.LogQuery{ProjectID: pid, Attrs: []domain.LogAttrFilter{{Key: "http.code", Value: "502"}}}, "job failed"},
+		{"no match", domain.LogQuery{ProjectID: pid, Attrs: []domain.LogAttrFilter{{Key: "service", Value: "missing"}}}, ""},
+		{"time range is half open", domain.LogQuery{ProjectID: pid, From: explorerBase.Add(2 * time.Minute), To: explorerBase.Add(4 * time.Minute)}, "slow request,request ok"},
+		{"range plus level plus text", domain.LogQuery{ProjectID: pid, LevelMin: 40, Q: "request", From: explorerBase, To: explorerBase.Add(time.Hour)}, "request failed,slow request"},
+		{"attribute plus range", domain.LogQuery{ProjectID: pid, Attrs: []domain.LogAttrFilter{{Key: "service", Value: "web"}}, From: explorerBase.Add(time.Hour)}, "late error,second hour"},
 	}
 	for _, tc := range cases {
 		got, err := store.QueryLogEntries(ctx, tc.q, 100)
@@ -77,21 +79,21 @@ func TestQueryLogEntriesRejectsBadAttributeFilters(t *testing.T) {
 	seedExplorer(t, store)
 	ctx := context.Background()
 
-	tooMany := make([]LogAttrFilter, logAttrMax+1)
+	tooMany := make([]domain.LogAttrFilter, logAttrMax+1)
 	for i := range tooMany {
-		tooMany[i] = LogAttrFilter{Key: fmt.Sprintf("k%d", i), Value: "v"}
+		tooMany[i] = domain.LogAttrFilter{Key: fmt.Sprintf("k%d", i), Value: "v"}
 	}
-	for name, attrs := range map[string][]LogAttrFilter{
-		"empty key": {{"", "v"}},
-		"long key":  {{strings.Repeat("k", logAttrKeyMax+1), "v"}},
+	for name, attrs := range map[string][]domain.LogAttrFilter{
+		"empty key": {{Key: "", Value: "v"}},
+		"long key":  {{Key: strings.Repeat("k", logAttrKeyMax+1), Value: "v"}},
 		"too many":  tooMany,
 	} {
-		if _, err := store.QueryLogEntries(ctx, LogQuery{Attrs: attrs}, 10); err == nil {
+		if _, err := store.QueryLogEntries(ctx, domain.LogQuery{Attrs: attrs}, 10); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	// A key that looks like SQL or a JSON path stays a literal name.
-	got, err := store.QueryLogEntries(ctx, LogQuery{Attrs: []LogAttrFilter{{`a"') OR 1=1 --`, "x"}}}, 10)
+	got, err := store.QueryLogEntries(ctx, domain.LogQuery{Attrs: []domain.LogAttrFilter{{Key: `a"') OR 1=1 --`, Value: "x"}}}, 10)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("hostile key = %v, %v", got, err)
 	}
@@ -102,7 +104,7 @@ func TestLogHistogramCountsPerBucketAndLevel(t *testing.T) {
 	store := openTestStore(t)
 	pid := seedExplorer(t, store)
 
-	h, err := store.LogHistogram(context.Background(), LogQuery{ProjectID: pid, From: explorerBase, To: explorerBase.Add(2 * time.Hour)}, time.Hour)
+	h, err := store.LogHistogram(context.Background(), domain.LogQuery{ProjectID: pid, From: explorerBase, To: explorerBase.Add(2 * time.Hour)}, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +126,7 @@ func TestLogHistogramCountsPerBucketAndLevel(t *testing.T) {
 	}
 
 	// Filters apply, and empty buckets stay in the answer.
-	h, err = store.LogHistogram(context.Background(), LogQuery{ProjectID: pid, Attrs: []LogAttrFilter{{"service", "worker"}}, From: explorerBase, To: explorerBase.Add(2 * time.Hour)}, 30*time.Minute)
+	h, err = store.LogHistogram(context.Background(), domain.LogQuery{ProjectID: pid, Attrs: []domain.LogAttrFilter{{Key: "service", Value: "worker"}}, From: explorerBase, To: explorerBase.Add(2 * time.Hour)}, 30*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +134,7 @@ func TestLogHistogramCountsPerBucketAndLevel(t *testing.T) {
 		t.Errorf("filtered buckets = %+v", h.Buckets)
 	}
 
-	for _, bad := range []LogQuery{{}, {From: explorerBase}, {From: explorerBase, To: explorerBase}} {
+	for _, bad := range []domain.LogQuery{{}, {From: explorerBase}, {From: explorerBase, To: explorerBase}} {
 		if _, err := store.LogHistogram(context.Background(), bad, time.Minute); err == nil {
 			t.Errorf("accepted %+v", bad)
 		}
@@ -144,7 +146,7 @@ func TestLogFacetsListKeysAndTopValues(t *testing.T) {
 	store := openTestStore(t)
 	pid := seedExplorer(t, store)
 	ctx := context.Background()
-	q := LogQuery{ProjectID: pid, From: explorerBase, To: explorerBase.Add(3 * time.Hour)}
+	q := domain.LogQuery{ProjectID: pid, From: explorerBase, To: explorerBase.Add(3 * time.Hour)}
 
 	keys, err := store.LogAttributeKeys(ctx, q)
 	if err != nil {
@@ -165,13 +167,13 @@ func TestLogFacetsListKeysAndTopValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []LogFacetCount{{"api", 3}, {"web", 2}, {"worker", 2}}
+	want := []domain.LogFacetCount{{Value: "api", Count: 3}, {Value: "web", Count: 2}, {Value: "worker", Count: 2}}
 	if fmt.Sprint(vals.Items) != fmt.Sprint(want) {
 		t.Fatalf("values = %+v, want %+v", vals.Items, want)
 	}
 
 	// Values respect the other filters.
-	q.Attrs = []LogAttrFilter{{"status", "200"}}
+	q.Attrs = []domain.LogAttrFilter{{Key: "status", Value: "200"}}
 	vals, _ = store.LogAttributeValues(ctx, q, "service")
 	if len(vals.Items) != 1 || vals.Items[0].Value != "api" || vals.Items[0].Count != 2 {
 		t.Errorf("filtered values = %+v", vals.Items)
@@ -193,16 +195,16 @@ func TestLogFacetValuesCapAtTen(t *testing.T) {
 	t.Parallel()
 	store := openTestStore(t)
 	pid := store.defaultProjectID
-	var entries []LogEntry
+	var entries []domain.LogEntry
 	for i := 0; i < 15; i++ {
 		for n := 0; n <= i; n++ {
-			entries = append(entries, LogEntry{ProjectID: pid, ReceivedAt: explorerBase, LevelNum: 30, Level: "info", Message: "m", Data: map[string]any{"user": fmt.Sprintf("u%02d", i)}})
+			entries = append(entries, domain.LogEntry{ProjectID: pid, ReceivedAt: explorerBase, LevelNum: 30, Level: "info", Message: "m", Data: map[string]any{"user": fmt.Sprintf("u%02d", i)}})
 		}
 	}
 	if err := store.InsertLogEntries(context.Background(), entries); err != nil {
 		t.Fatal(err)
 	}
-	vals, err := store.LogAttributeValues(context.Background(), LogQuery{ProjectID: pid}, "user")
+	vals, err := store.LogAttributeValues(context.Background(), domain.LogQuery{ProjectID: pid}, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +241,7 @@ func TestLogExplorerQueryPlans(t *testing.T) {
 	store := openTestStore(t)
 	seedExplorer(t, store)
 
-	run := func(name string, q LogQuery, minID int64, wantAny ...string) {
+	run := func(name string, q domain.LogQuery, minID int64, wantAny ...string) {
 		where, args := logQueryWhere(q, minID)
 		plan := logPlanOf(t, store, logListSelect+where+` ORDER BY le.id DESC LIMIT ?`, append(args, 10)...)
 		if strings.Contains(plan, "SCAN le") {
@@ -252,9 +254,9 @@ func TestLogExplorerQueryPlans(t *testing.T) {
 		}
 		t.Errorf("%s plan %q uses none of %v", name, plan, wantAny)
 	}
-	run("windowed all-project read", LogQuery{From: explorerBase}, 100, "USING INTEGER PRIMARY KEY")
-	run("project read", LogQuery{ProjectID: 1, From: explorerBase}, 100, "idx_log_entries_project_id")
-	run("project attribute read", LogQuery{ProjectID: 1, Attrs: []LogAttrFilter{{"service", "api"}}}, 100, "idx_log_entries_project_id")
+	run("windowed all-project read", domain.LogQuery{From: explorerBase}, 100, "USING INTEGER PRIMARY KEY")
+	run("project read", domain.LogQuery{ProjectID: 1, From: explorerBase}, 100, "idx_log_entries_project_id")
+	run("project attribute read", domain.LogQuery{ProjectID: 1, Attrs: []domain.LogAttrFilter{{Key: "service", Value: "api"}}}, 100, "idx_log_entries_project_id")
 }
 
 func logPlanOf(t *testing.T, store *Store, query string, args ...any) string {
@@ -284,7 +286,7 @@ func TestQueryLogEntriesAllProjects(t *testing.T) {
 	pid := seedExplorer(t, store)
 	ctx := context.Background()
 
-	got, err := store.QueryLogEntries(ctx, LogQuery{Attrs: []LogAttrFilter{{"service", "worker"}}}, 50)
+	got, err := store.QueryLogEntries(ctx, domain.LogQuery{Attrs: []domain.LogAttrFilter{{Key: "service", Value: "worker"}}}, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +298,7 @@ func TestQueryLogEntriesAllProjects(t *testing.T) {
 			t.Errorf("entry %q has project %d, want %d", e.Message, e.ProjectID, pid)
 		}
 	}
-	h, err := store.LogHistogram(ctx, LogQuery{From: explorerBase, To: explorerBase.Add(2 * time.Hour)}, time.Hour)
+	h, err := store.LogHistogram(ctx, domain.LogQuery{From: explorerBase, To: explorerBase.Add(2 * time.Hour)}, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

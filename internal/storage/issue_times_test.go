@@ -3,6 +3,8 @@ package storage
 import (
 	"testing"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func TestParseIssueTimesRequiresSeenTimesAndToleratesEmpty(t *testing.T) {
@@ -11,7 +13,7 @@ func TestParseIssueTimesRequiresSeenTimesAndToleratesEmpty(t *testing.T) {
 	first := formatTime(time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC))
 	last := formatTime(time.Date(2026, 4, 15, 11, 0, 0, 0, time.UTC))
 
-	var issue Issue
+	var issue domain.Issue
 	if err := parseIssueTimes(&issue, first, last, "", "", ""); err != nil {
 		t.Fatalf("parseIssueTimes: %v", err)
 	}
@@ -23,13 +25,13 @@ func TestParseIssueTimesRequiresSeenTimesAndToleratesEmpty(t *testing.T) {
 		t.Fatalf("empty optional times must stay zero: %+v", issue)
 	}
 
-	if err := parseIssueTimes(&Issue{}, "not a time", last, "", "", ""); err == nil {
+	if err := parseIssueTimes(&domain.Issue{}, "not a time", last, "", "", ""); err == nil {
 		t.Fatal("bad first_seen must fail")
 	}
-	if err := parseIssueTimes(&Issue{}, first, "not a time", "", "", ""); err == nil {
+	if err := parseIssueTimes(&domain.Issue{}, first, "not a time", "", "", ""); err == nil {
 		t.Fatal("bad last_seen must fail")
 	}
-	if err := parseIssueTimes(&Issue{}, first, last, "junk", "junk", "junk"); err != nil {
+	if err := parseIssueTimes(&domain.Issue{}, first, last, "junk", "junk", "junk"); err != nil {
 		t.Fatalf("bad optional times must be ignored: %v", err)
 	}
 }
