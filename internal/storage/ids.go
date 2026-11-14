@@ -1,28 +1,12 @@
 package storage
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
-	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
-
-func formatTime(value time.Time) string {
-	return value.UTC().Format(timeLayout)
-}
-
-func parseTime(value string) (time.Time, error) {
-	if strings.TrimSpace(value) == "" {
-		return time.Time{}, nil
-	}
-	return time.Parse(parseLayout, value)
-}
 
 func formatID(prefix string, value int64) string {
 	return fmt.Sprintf("%s%d", prefix, value)
@@ -109,91 +93,4 @@ func deriveIssuePrefix(slug string) string {
 		}
 	}
 	return strings.ToUpper(b.String())
-}
-
-func sqliteDSN(path string) string {
-	u := url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(path),
-	}
-	// wal_autocheckpoint(0) disables SQLite's built-in autocheckpoint; the
-	// writer's RunPeriodicCheckpoint loop is the SOLE checkpointer instead.
-	// SQLite's automatic checkpoint is PASSIVE, and a PASSIVE checkpoint stops
-	// at the first reader snapshot boundary — with reader pods holding
-	// snapshots on this file continuously there is no quiet window, so it can
-	// never bound WAL growth. RunPeriodicCheckpoint issues TRUNCATE with retry,
-	// which can. Keep exactly one checkpointer: two racing for the write lock
-	// just spam "database is locked".
-	params := strings.Join([]string{
-		"mode=rwc",
-		"_txlock=immediate",
-		"_pragma=busy_timeout(10000)",
-		"_pragma=foreign_keys(1)",
-		"_pragma=journal_mode(wal)",
-		"_pragma=wal_autocheckpoint(0)",
-		"_pragma=synchronous(normal)",
-	}, "&")
-	return u.String() + "?" + params
-}
-
-func sqliteReadOnlyDSN(path string) string {
-	u := url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(path),
-	}
-	return u.String() + "?mode=ro&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)"
-}
-
-func marshalEvent(evt event.Event) ([]byte, error) {
-	return json.Marshal(evt)
-}
-
-func fingerprintFromEvent(evt event.Event) string {
-	exceptionType := strings.TrimSpace(evt.Exception.Type)
-	message := strings.TrimSpace(evt.Exception.Message)
-	if message == "" {
-		message = strings.TrimSpace(evt.Message)
-	}
-
-	var title string
-	switch {
-	case exceptionType != "" && message != "":
-		title = exceptionType + ": " + message
-	case exceptionType != "":
-		title = exceptionType
-	default:
-		title = message
-	}
-
-	return normalizeTitle(title)
-}
-
-func mustMarshalStrings(values []string) string {
-	if len(values) == 0 {
-		return "[]"
-	}
-	payload, err := json.Marshal(values)
-	if err != nil {
-		return "[]"
-	}
-	return string(payload)
-}
-
-func unmarshalStringSlice(raw []byte, dest *[]string) error {
-	if len(raw) == 0 {
-		*dest = nil
-		return nil
-	}
-	if err := json.Unmarshal(raw, dest); err != nil {
-		*dest = nil
-		return err
-	}
-	return nil
-}
-
-func boolToInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }
