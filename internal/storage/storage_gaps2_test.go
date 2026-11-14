@@ -3,8 +3,12 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -179,21 +183,6 @@ func TestStringSliceAndTitleHelpers(t *testing.T) {
 			t.Errorf("fingerprintFromEvent(%+v) = %q, want %q", evt, got, want)
 		}
 	}
-
-	if raw := rawScrubbedFallback(nil); raw != (rawScrubbedData{}) {
-		t.Fatalf("nil payload = %+v", raw)
-	}
-	if raw := rawScrubbedFallback(map[string]any{"name": "N"}); raw.name != "N" || raw.message != "" {
-		t.Fatalf("no properties = %+v", raw)
-	}
-	raw := rawScrubbedFallback(map[string]any{"name": "N", "properties": map[string]any{"message": "M", "url": "U"}})
-	if raw.name != "N" || raw.message != "M" || raw.source != "U" {
-		t.Fatalf("url fallback = %+v", raw)
-	}
-	raw = rawScrubbedFallback(map[string]any{"properties": map[string]any{"source": "S", "url": "U"}})
-	if raw.source != "S" {
-		t.Fatalf("source wins over url: %+v", raw)
-	}
 }
 
 func TestDisplayIssueIDAndIssueSeenAt(t *testing.T) {
@@ -228,6 +217,33 @@ func TestNullIntToPtr(t *testing.T) {
 	}
 	if p := nullIntToPtr(sql.NullInt64{Int64: 9, Valid: true}); p == nil || *p != 9 {
 		t.Fatalf("valid = %v", p)
+	}
+}
+
+// The spool worker classifies busy/locked errors by the driver's result code
+// through the error chain, so wrapping must keep the driver error reachable.
+func TestWrapErrKeepsTheSQLiteErrorInTheChain(t *testing.T) {
+	t.Parallel()
+	s := openTemp(t)
+	ctx := context.Background()
+	if _, err := s.CreateProject(ctx, "Dup", "dup"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.CreateProject(ctx, "Dup", "dup")
+	wantKind(t, err, apperr.ErrConflict)
+	var driverErr *sqlite.Error
+	if !errors.As(err, &driverErr) {
+		t.Fatalf("errors.As lost the modernc error: %v", err)
+	}
+	if c := driverErr.Code(); c != sqlite3.SQLITE_CONSTRAINT_UNIQUE && c != sqlite3.SQLITE_CONSTRAINT {
+		t.Fatalf("result code = %d", c)
+	}
+
+	// Wrapping an already classified error again keeps its kind and its cause.
+	again := wrapErr(err, "outer")
+	wantKind(t, again, apperr.ErrConflict)
+	if !errors.As(again, &driverErr) {
+		t.Fatal("second wrap lost the modernc error")
 	}
 }
 

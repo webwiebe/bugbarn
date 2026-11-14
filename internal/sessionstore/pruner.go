@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/tick"
 )
 
 // pruneInterval is how often expired web sessions are removed. Expiry is also
@@ -19,20 +21,7 @@ type Pruner interface {
 // StartPruner runs the hourly web-session prune loop until ctx is canceled.
 // Writer/single-process only — readers have no write connection.
 func StartPruner(ctx context.Context, db Pruner, logger *slog.Logger, wg *sync.WaitGroup) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		ticker := time.NewTicker(pruneInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				pruneOnce(ctx, db, logger, time.Now().UTC())
-			}
-		}
-	}()
+	tick.Start(ctx, wg, pruneInterval, func(time.Time) { pruneOnce(ctx, db, logger, time.Now().UTC()) })
 }
 
 // pruneOnce removes the sessions that expired before now and logs the outcome.

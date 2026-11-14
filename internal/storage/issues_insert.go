@@ -135,9 +135,9 @@ func issueDetails(evt event.Event) (title, normalizedTitle, exceptionType string
 	// browser errors (promise rejections, cross-origin) that arrive with
 	// exception: {} but have details in rawScrubbed.
 	if exceptionType == "" && message == "" {
-		if raw := rawScrubbedFallback(evt.RawScrubbed); raw.name != "" || raw.message != "" {
-			exceptionType = strings.TrimSpace(raw.name)
-			message = strings.TrimSpace(raw.message)
+		if raw := event.RawScrubbedDetails(evt.RawScrubbed); raw.Name != "" || raw.Message != "" {
+			exceptionType = strings.TrimSpace(raw.Name)
+			message = strings.TrimSpace(raw.Message)
 		}
 	}
 

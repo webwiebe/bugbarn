@@ -16,6 +16,11 @@ func wrapErr(err error, msg string) error {
 	if err == nil {
 		return nil
 	}
+	var classified *apperr.Error
+	if errors.As(err, &classified) {
+		// Already classified by a lower layer: keep its kind.
+		return err
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return apperr.NotFound(msg, err)
 	}

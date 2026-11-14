@@ -4,40 +4,52 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
-func TestRunMetricsJobsRollsUpAndExpiresOnTick(t *testing.T) {
+// metricsPass is the body of one tick: it rolls finished hours up and then
+// drops the minute samples past retention. No timer is involved.
+func TestMetricsPassRollsUpAndExpires(t *testing.T) {
 	d := openTest(t, Metrics, 0)
 	seedHours(t, d, 2)
-	// The 2026 samples are far behind the real clock, so the first pass rolls
-	// both hours up and retention then drops the minute samples.
+	// The 2026 samples are far behind the real clock, so one pass rolls both
+	// hours up and retention then drops the minute samples.
+	d.metricsPass(context.Background(), Retention{Raw: time.Hour, Hourly: 0}, quiet())
+	var rolled, raw int
+	if err := d.Read().QueryRow(`SELECT COUNT(*) FROM samples_1h`).Scan(&rolled); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Read().QueryRow(`SELECT COUNT(*) FROM samples_1m`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if rolled == 0 || raw != 0 {
+		t.Fatalf("%d hourly rows, %d minute rows after one pass", rolled, raw)
+	}
+}
+
+// The loop calls the pass on every tick. A closed write handle makes the pass
+// log a warning, which is the signal the test waits on.
+func TestRunMetricsJobsRunsThePassOnEachTick(t *testing.T) {
+	d := openTest(t, Metrics, 0)
+	if err := d.write.Close(); err != nil {
+		t.Fatal(err)
+	}
+	warned := make(chan struct{}, 1)
+	log := slog.New(signalHandler{warned})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		d.RunMetricsJobs(ctx, time.Millisecond, Retention{Raw: time.Hour, Hourly: 0}, quiet())
+		d.RunMetricsJobs(ctx, time.Millisecond, Retention{Raw: time.Hour}, log)
 		close(done)
 	}()
-
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		var rolled, raw int
-		if err := d.Read().QueryRow(`SELECT COUNT(*) FROM samples_1h`).Scan(&rolled); err != nil {
-			t.Fatal(err)
-		}
-		if err := d.Read().QueryRow(`SELECT COUNT(*) FROM samples_1m`).Scan(&raw); err != nil {
-			t.Fatal(err)
-		}
-		if rolled > 0 && raw == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("after 30s: %d hourly rows, %d minute rows", rolled, raw)
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-warned:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the pass never ran")
 	}
 	cancel()
 	select {
@@ -46,6 +58,22 @@ func TestRunMetricsJobsRollsUpAndExpiresOnTick(t *testing.T) {
 		t.Fatal("RunMetricsJobs did not return after cancel")
 	}
 }
+
+// signalHandler sends on ch when a warning arrives.
+type signalHandler struct{ ch chan struct{} }
+
+func (signalHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h signalHandler) Handle(_ context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelWarn {
+		select {
+		case h.ch <- struct{}{}:
+		default:
+		}
+	}
+	return nil
+}
+func (h signalHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h signalHandler) WithGroup(string) slog.Handler      { return h }
 
 func TestRunMetricsJobsReturnsAtOnceOnAReadOnlyDB(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "metrics.db")
