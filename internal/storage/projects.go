@@ -196,7 +196,7 @@ func deleteInBatches(ctx context.Context, db *sql.DB, table string, projectID in
 func (s *ProjectStore) ApproveProject(ctx context.Context, slug string) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE projects SET status='active' WHERE slug=?`, slug)
 	if err != nil {
-		return err
+		return wrapErr(err, "approve project")
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -355,18 +355,18 @@ func (s *ProjectStore) ListAliases(ctx context.Context) ([]ProjectAlias, error) 
 		JOIN projects p ON pa.project_id = p.id
 		ORDER BY pa.alias_slug ASC`)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "list aliases")
 	}
 	defer rows.Close()
 	var aliases []ProjectAlias
 	for rows.Next() {
 		var a ProjectAlias
 		if err := rows.Scan(&a.AliasSlug, &a.ProjectID, &a.ProjectSlug); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "list aliases")
 		}
 		aliases = append(aliases, a)
 	}
-	return aliases, rows.Err()
+	return aliases, wrapErr(rows.Err(), "list aliases")
 }
 
 // --- Rename and Merge ---

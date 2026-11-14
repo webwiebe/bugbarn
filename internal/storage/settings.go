@@ -20,7 +20,7 @@ WHERE project_id = ?`,
 		projectID,
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "read settings")
 	}
 	defer rows.Close()
 
@@ -28,11 +28,11 @@ WHERE project_id = ?`,
 	for rows.Next() {
 		var key, value string
 		if err := rows.Scan(&key, &value); err != nil {
-			return nil, err
+			return nil, wrapErr(err, "read settings")
 		}
 		out[key] = value
 	}
-	return out, rows.Err()
+	return out, wrapErr(rows.Err(), "read settings")
 }
 
 func (s *SettingsStore) UpdateSettings(ctx context.Context, values map[string]string) error {
@@ -43,7 +43,7 @@ func (s *SettingsStore) UpdateSettings(ctx context.Context, values map[string]st
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return wrapErr(err, "update settings")
 	}
 	defer tx.Rollback()
 
@@ -59,9 +59,9 @@ ON CONFLICT(project_id, key) DO UPDATE SET value = excluded.value, updated_at = 
 			key,
 			value,
 		); err != nil {
-			return err
+			return wrapErr(err, "update settings")
 		}
 	}
 
-	return tx.Commit()
+	return wrapErr(tx.Commit(), "update settings")
 }

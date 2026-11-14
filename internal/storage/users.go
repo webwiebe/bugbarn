@@ -14,5 +14,5 @@ VALUES (?, ?, ?, ?)
 ON CONFLICT(username) DO UPDATE SET password_bcrypt = excluded.password_bcrypt, updated_at = excluded.updated_at`,
 		username, passwordBcrypt, now, now,
 	)
-	return err
+	return wrapErr(err, "upsert user")
 }

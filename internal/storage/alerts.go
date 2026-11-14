@@ -195,7 +195,7 @@ WHERE project_id = ? AND id = ?`,
 		projectID,
 		rowID,
 	); err != nil {
-		return Alert{}, err
+		return Alert{}, wrapErr(err, "update alert")
 	}
 	return s.GetAlert(ctx, alertID)
 }
@@ -210,7 +210,7 @@ func (s *AlertStore) DeleteAlert(ctx context.Context, alertID string) error {
 		projectID = s.defaultProjectID
 	}
 	_, err = s.db.ExecContext(ctx, `DELETE FROM alerts WHERE project_id = ? AND id = ?`, projectID, rowID)
-	return err
+	return wrapErr(err, "delete alert")
 }
 
 func scanAlertWithProject(scanner interface {
