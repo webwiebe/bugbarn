@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -85,7 +86,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 		}
 
 		var response struct {
-			Issues []storage.Issue `json:"issues"`
+			Issues []domain.Issue `json:"issues"`
 		}
 		decodeResponse(t, rr, &response)
 
@@ -111,7 +112,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 		}
 
 		var response struct {
-			Issue storage.Issue `json:"issue"`
+			Issue domain.Issue `json:"issue"`
 		}
 		decodeResponse(t, rr, &response)
 
@@ -134,7 +135,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 		}
 
 		var response struct {
-			Events []storage.Event `json:"events"`
+			Events []domain.Event `json:"events"`
 		}
 		decodeResponse(t, rr, &response)
 
@@ -160,7 +161,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 		}
 
 		var response struct {
-			Event storage.Event `json:"event"`
+			Event domain.Event `json:"event"`
 		}
 		decodeResponse(t, rr, &response)
 
@@ -183,7 +184,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 		}
 
 		var response struct {
-			Events []storage.Event `json:"events"`
+			Events []domain.Event `json:"events"`
 		}
 		decodeResponse(t, rr, &response)
 
@@ -212,7 +213,7 @@ func mustOpenStore(t *testing.T) *storage.Store {
 	return store
 }
 
-func mustPersistProcessedEvent(t *testing.T, store *storage.Store, processed event.ProcessedEvent) (storage.Issue, storage.Event) {
+func mustPersistProcessedEvent(t *testing.T, store *storage.Store, processed event.ProcessedEvent) (domain.Issue, domain.Event) {
 	t.Helper()
 
 	issue, eventRow, _, _, err := store.PersistProcessedEvent(context.Background(), processed)

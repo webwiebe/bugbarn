@@ -9,22 +9,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 type fakeSource struct {
 	mu       sync.Mutex
-	activity []storage.ProjectActivity
+	activity []domain.ProjectActivity
 	err      error
 }
 
-func (f *fakeSource) set(a ...storage.ProjectActivity) {
+func (f *fakeSource) set(a ...domain.ProjectActivity) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.activity = a
 }
 
-func (f *fakeSource) ProjectActivity(context.Context, time.Time, time.Duration, time.Duration) ([]storage.ProjectActivity, error) {
+func (f *fakeSource) ProjectActivity(context.Context, time.Time, time.Duration, time.Duration) ([]domain.ProjectActivity, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.activity, f.err
@@ -54,9 +54,9 @@ func TestCheck_QuietHealthyProjectsDoNotAlert(t *testing.T) {
 	notif := &fakeNotifier{}
 	src.set(
 		// still reporting
-		storage.ProjectActivity{ProjectID: 1, Slug: "busy", Recent: 4, Earlier: 9},
+		domain.ProjectActivity{ProjectID: 1, Slug: "busy", Recent: 4, Earlier: 9},
 		// reports rarely, but did inside the window: below the MinEarlier bar
-		storage.ProjectActivity{ProjectID: 2, Slug: "rare", Recent: 0, Earlier: 2},
+		domain.ProjectActivity{ProjectID: 2, Slug: "rare", Recent: 0, Earlier: 2},
 	)
 
 	newMonitor(src, notif).Check(context.Background())
@@ -73,7 +73,7 @@ func TestCheck_SilentProjectAlertsOnceUntilItReportsAgain(t *testing.T) {
 	m := newMonitor(src, notif)
 	ctx := context.Background()
 
-	src.set(storage.ProjectActivity{ProjectID: 3, Slug: "gone", Recent: 0, Earlier: 5})
+	src.set(domain.ProjectActivity{ProjectID: 3, Slug: "gone", Recent: 0, Earlier: 5})
 	m.Check(ctx)
 	m.Check(ctx)
 	if len(notif.sent) != 1 || notif.sent[0] != "gone" {
@@ -81,9 +81,9 @@ func TestCheck_SilentProjectAlertsOnceUntilItReportsAgain(t *testing.T) {
 	}
 
 	// it reports again, then goes quiet again: a new episode alerts again
-	src.set(storage.ProjectActivity{ProjectID: 3, Slug: "gone", Recent: 1, Earlier: 5})
+	src.set(domain.ProjectActivity{ProjectID: 3, Slug: "gone", Recent: 1, Earlier: 5})
 	m.Check(ctx)
-	src.set(storage.ProjectActivity{ProjectID: 3, Slug: "gone", Recent: 0, Earlier: 5})
+	src.set(domain.ProjectActivity{ProjectID: 3, Slug: "gone", Recent: 0, Earlier: 5})
 	m.Check(ctx)
 	if len(notif.sent) != 2 {
 		t.Fatalf("expected a second alert after recovery, got %v", notif.sent)
@@ -95,7 +95,7 @@ func TestCheck_FailedNotificationIsRetriedAndLoggedAtError(t *testing.T) {
 	src := &fakeSource{}
 	notif := &fakeNotifier{err: errors.New("smtp down")}
 	m := newMonitor(src, notif)
-	src.set(storage.ProjectActivity{ProjectID: 3, Slug: "gone", Recent: 0, Earlier: 5})
+	src.set(domain.ProjectActivity{ProjectID: 3, Slug: "gone", Recent: 0, Earlier: 5})
 
 	m.Check(context.Background())
 	notif.err = nil

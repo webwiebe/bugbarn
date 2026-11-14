@@ -13,12 +13,12 @@ import (
 
 const sourceMapPrefix = "sourcemap-"
 
-func (s *SourceMapStore) UploadSourceMap(ctx context.Context, upload SourceMapUpload) (SourceMap, error) {
+func (s *SourceMapStore) UploadSourceMap(ctx context.Context, upload domain.SourceMapUpload) (domain.SourceMap, error) {
 	if strings.TrimSpace(upload.Release) == "" {
-		return SourceMap{}, apperr.InvalidInput("source map release is required", nil)
+		return domain.SourceMap{}, apperr.InvalidInput("source map release is required", nil)
 	}
 	if strings.TrimSpace(upload.BundleURL) == "" {
-		return SourceMap{}, apperr.InvalidInput("source map bundle URL is required", nil)
+		return domain.SourceMap{}, apperr.InvalidInput("source map bundle URL is required", nil)
 	}
 	now := time.Now().UTC()
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -46,13 +46,13 @@ INSERT INTO source_maps (
 		len(upload.Blob),
 	)
 	if err != nil {
-		return SourceMap{}, err
+		return domain.SourceMap{}, err
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return SourceMap{}, err
+		return domain.SourceMap{}, err
 	}
-	return SourceMap{
+	return domain.SourceMap{
 		ID:          formatID(sourceMapPrefix, id),
 		Release:     upload.Release,
 		Dist:        upload.Dist,
@@ -93,7 +93,7 @@ LIMIT 1`,
 }
 
 // ListSourceMaps returns metadata for all source maps in the project (no blob).
-func (s *SourceMapStore) ListSourceMaps(ctx context.Context) ([]SourceMapMeta, error) {
+func (s *SourceMapStore) ListSourceMaps(ctx context.Context) ([]domain.SourceMapMeta, error) {
 	projectID, ok := domain.ProjectIDFromContext(ctx)
 	if !ok || projectID <= 0 {
 		projectID = s.defaultProjectID
@@ -110,9 +110,9 @@ ORDER BY id DESC`,
 	}
 	defer rows.Close()
 
-	var out []SourceMapMeta
+	var out []domain.SourceMapMeta
 	for rows.Next() {
-		var item SourceMapMeta
+		var item domain.SourceMapMeta
 		var id int64
 		var createdAt string
 		if err := rows.Scan(&id, &item.Release, &item.Dist, &item.BundleURL, &item.Name, &item.SizeBytes, &createdAt); err != nil {

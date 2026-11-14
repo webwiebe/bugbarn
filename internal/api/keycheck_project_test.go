@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // ingestWriteRoutes are the routes that write a project's data with an ingest
@@ -48,8 +48,8 @@ func TestBoundKeyWritesOnlyToItsOwnProject(t *testing.T) {
 		}
 		return plain
 	}
-	alphaIngest := addKey("alpha-ingest", alpha.ID, storage.APIKeyScopeIngest)
-	alphaFull := addKey("alpha-full", alpha.ID, storage.APIKeyScopeFull)
+	alphaIngest := addKey("alpha-ingest", alpha.ID, domain.APIKeyScopeIngest)
+	alphaFull := addKey("alpha-full", alpha.ID, domain.APIKeyScopeFull)
 	const staticKey = "static-unbound-key"
 
 	authorizer := auth.New(staticKey).WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)

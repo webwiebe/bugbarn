@@ -16,7 +16,7 @@ func TestReleaseNotesAreCappedOnARuneBoundary(t *testing.T) {
 	ctx := domain.WithProjectID(context.Background(), proj.ID)
 
 	long := strings.Repeat("é", maxReleaseNotesRunes+50)
-	assertCapped := func(rel Release) {
+	assertCapped := func(rel domain.Release) {
 		t.Helper()
 		got, err := store.GetRelease(ctx, rel.ID)
 		if err != nil {
@@ -30,14 +30,14 @@ func TestReleaseNotesAreCappedOnARuneBoundary(t *testing.T) {
 		}
 	}
 
-	rel, err := store.CreateRelease(ctx, Release{Name: "v1", Notes: long})
+	rel, err := store.CreateRelease(ctx, domain.Release{Name: "v1", Notes: long})
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertCapped(rel)
 
 	short := "deploy v2"
-	rel, err = store.CreateRelease(ctx, Release{Name: "v2", Notes: short})
+	rel, err = store.CreateRelease(ctx, domain.Release{Name: "v2", Notes: short})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestReleaseNotesAreCappedOnARuneBoundary(t *testing.T) {
 		t.Fatalf("notes=%q err=%v, want them unchanged", got.Notes, err)
 	}
 
-	if _, err := store.UpdateRelease(ctx, rel.ID, Release{Name: "v2", Notes: long}); err != nil {
+	if _, err := store.UpdateRelease(ctx, rel.ID, domain.Release{Name: "v2", Notes: long}); err != nil {
 		t.Fatal(err)
 	}
 	assertCapped(rel)

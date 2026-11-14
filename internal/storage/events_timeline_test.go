@@ -43,7 +43,7 @@ type hourKey struct {
 	hour string
 }
 
-func timelineCounts(rows []TimelineRow) map[hourKey]int64 {
+func timelineCounts(rows []domain.TimelineRow) map[hourKey]int64 {
 	out := map[hourKey]int64{}
 	for _, r := range rows {
 		out[hourKey{r.ProjectSlug, r.Hour.Format("2006-01-02T15")}] += r.Count
@@ -98,7 +98,7 @@ func TestErrorTimelineRowsHonoursProjectScope(t *testing.T) {
 	beta, _ := s.EnsureProject(ctx, "beta")
 	gamma, _ := s.EnsureProject(ctx, "gamma")
 	at := time.Date(2026, 10, 14, 10, 5, 0, 0, time.UTC)
-	for _, p := range []Project{alpha, beta, gamma} {
+	for _, p := range []domain.Project{alpha, beta, gamma} {
 		seedTimelineEvent(t, s, p.ID, "ERROR", at, 1)
 	}
 	since := at.Add(-time.Hour)

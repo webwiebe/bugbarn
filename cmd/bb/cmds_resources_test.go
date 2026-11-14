@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func TestProjectsListAndCreate(t *testing.T) {
@@ -94,7 +94,7 @@ func TestMonitorsListAndDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	every := time.Hour
-	if _, err := h.Store.RecordMonitorCheckIn(t.Context(), storage.MonitorCheckIn{
+	if _, err := h.Store.RecordMonitorCheckIn(t.Context(), domain.MonitorCheckIn{
 		ProjectID: proj.ID, Slug: "nightly", Status: "ok", Interval: &every, At: time.Now().UTC(),
 	}); err != nil {
 		t.Fatal(err)

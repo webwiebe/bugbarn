@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // A key lookup that fails under load (a busy read pool, a locked database, a
@@ -33,7 +33,7 @@ func TestValidKeyIsNeverUnauthorizedWhenTheLookupFailsUnderLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte("geo-key"))
-	if _, err := store.CreateAPIKey(ctx, "geo-ingest", proj.ID, hex.EncodeToString(sum[:]), storage.APIKeyScopeIngest); err != nil {
+	if _, err := store.CreateAPIKey(ctx, "geo-ingest", proj.ID, hex.EncodeToString(sum[:]), domain.APIKeyScopeIngest); err != nil {
 		t.Fatal(err)
 	}
 

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func TestSubscribeAndPublish(t *testing.T) {
@@ -14,7 +14,7 @@ func TestSubscribeAndPublish(t *testing.T) {
 	ch, cancel := hub.Subscribe(1)
 	defer cancel()
 
-	entry := storage.LogEntry{
+	entry := domain.LogEntry{
 		ID:         1,
 		ProjectID:  1,
 		ReceivedAt: time.Now().UTC(),
@@ -42,7 +42,7 @@ func TestPublishToOtherProjectDoesNotDeliver(t *testing.T) {
 	ch, cancel := hub.Subscribe(1)
 	defer cancel()
 
-	entry := storage.LogEntry{ProjectID: 2, Message: "for project 2"}
+	entry := domain.LogEntry{ProjectID: 2, Message: "for project 2"}
 	hub.Publish(2, entry)
 
 	select {
@@ -77,7 +77,7 @@ func TestNonBlockingPublishDropsOnSlowConsumer(t *testing.T) {
 	defer cancel()
 
 	// Fill the buffer (size 64) without reading.
-	entry := storage.LogEntry{ProjectID: 1, Message: "fill"}
+	entry := domain.LogEntry{ProjectID: 1, Message: "fill"}
 	for i := 0; i < 128; i++ {
 		hub.Publish(1, entry) // must not block or panic
 	}

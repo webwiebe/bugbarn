@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 func TestIngestOnlyKeyScope(t *testing.T) {
@@ -35,7 +35,7 @@ func TestIngestOnlyKeyScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CreateAPIKey(context.Background(), "test-ingest-key", proj.ID, keySHA256, storage.APIKeyScopeIngest); err != nil {
+	if _, err := store.CreateAPIKey(context.Background(), "test-ingest-key", proj.ID, keySHA256, domain.APIKeyScopeIngest); err != nil {
 		t.Fatal(err)
 	}
 
@@ -64,7 +64,7 @@ func TestIngestOnlyKeyScope(t *testing.T) {
 		}
 		fullPlain := hex.EncodeToString(rawFull[:])
 		sumFull := sha256.Sum256([]byte(fullPlain))
-		if _, err := store.CreateAPIKey(context.Background(), "full-key", proj.ID, hex.EncodeToString(sumFull[:]), storage.APIKeyScopeFull); err != nil {
+		if _, err := store.CreateAPIKey(context.Background(), "full-key", proj.ID, hex.EncodeToString(sumFull[:]), domain.APIKeyScopeFull); err != nil {
 			t.Fatal(err)
 		}
 		rr := httptest.NewRecorder()
@@ -96,7 +96,7 @@ func TestReadOnlyKeyScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CreateAPIKey(context.Background(), "test-read-key", proj.ID, keySHA256, storage.APIKeyScopeRead); err != nil {
+	if _, err := store.CreateAPIKey(context.Background(), "test-read-key", proj.ID, keySHA256, domain.APIKeyScopeRead); err != nil {
 		t.Fatal(err)
 	}
 

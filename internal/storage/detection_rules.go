@@ -6,27 +6,19 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
-// StoredDetectionRule is one row of detection_rules: the rule JSON as the API
-// accepted it. The storage layer does not parse it; internal/detect owns the
-// format.
-type StoredDetectionRule struct {
-	ID        string
-	JSON      string
-	UpdatedAt time.Time
-}
-
 // ListDetectionRules returns every stored rule override and custom rule, by id.
-func (s *DetectionRuleStore) ListDetectionRules(ctx context.Context) ([]StoredDetectionRule, error) {
+func (s *DetectionRuleStore) ListDetectionRules(ctx context.Context) ([]domain.StoredDetectionRule, error) {
 	rows, err := s.readDB().QueryContext(ctx, `SELECT id, rule_json, updated_at FROM detection_rules ORDER BY id`)
 	if err != nil {
 		return nil, wrapErr(err, "list detection rules")
 	}
 	defer rows.Close()
-	var out []StoredDetectionRule
+	var out []domain.StoredDetectionRule
 	for rows.Next() {
-		var r StoredDetectionRule
+		var r domain.StoredDetectionRule
 		var updated string
 		if err := rows.Scan(&r.ID, &r.JSON, &updated); err != nil {
 			return nil, wrapErr(err, "scan detection rule")

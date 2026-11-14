@@ -14,7 +14,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // Persist stores one event record; a nil error means the event is in the
@@ -23,7 +22,7 @@ type Persist func(ctx context.Context, rec spool.Record) error
 
 // IssueStore is the part of the store the reporter needs.
 type IssueStore interface {
-	ProjectBySlug(ctx context.Context, slug string) (storage.Project, error)
+	ProjectBySlug(ctx context.Context, slug string) (domain.Project, error)
 	IssueByFingerprint(ctx context.Context, projectID int64, fingerprint string) (domain.Issue, error)
 	ResolveIssue(ctx context.Context, issueID string) (domain.Issue, error)
 }
@@ -141,12 +140,12 @@ func randomID() string {
 
 // LogInserter stores log entries.
 type LogInserter interface {
-	InsertLogEntries(ctx context.Context, entries []storage.LogEntry) error
+	InsertLogEntries(ctx context.Context, entries []domain.LogEntry) error
 }
 
 // ProjectLookup resolves a project slug.
 type ProjectLookup interface {
-	ProjectBySlug(ctx context.Context, slug string) (storage.Project, error)
+	ProjectBySlug(ctx context.Context, slug string) (domain.Project, error)
 }
 
 // LogShipper writes the "silence rule would fire" line as a log entry of
@@ -180,7 +179,7 @@ func (s *LogShipper) Ship(ctx context.Context, f Finding, mode Mode) {
 	attrs := findingAttrs(f)
 	attrs["mode"] = string(mode)
 	attrs["component"] = "silence-rules"
-	entry := storage.LogEntry{
+	entry := domain.LogEntry{
 		ProjectID:  p.ID,
 		ReceivedAt: s.now().UTC(),
 		LevelNum:   30,
@@ -188,7 +187,7 @@ func (s *LogShipper) Ship(ctx context.Context, f Finding, mode Mode) {
 		Message:    "silence rule would fire",
 		Data:       attrs,
 	}
-	if err := s.logs.InsertLogEntries(ctx, []storage.LogEntry{entry}); err != nil {
+	if err := s.logs.InsertLogEntries(ctx, []domain.LogEntry{entry}); err != nil {
 		s.log.Warn("silence rules: ship line: insert", "project", s.project, "error", err)
 	}
 }
@@ -206,7 +205,7 @@ func (s *LogShipper) ShipSweep(ctx context.Context, mode Mode, projects, wouldFi
 		s.log.Warn("silence rules: ship sweep: project", "project", s.project, "error", err)
 		return
 	}
-	entry := storage.LogEntry{
+	entry := domain.LogEntry{
 		ProjectID:  p.ID,
 		ReceivedAt: s.now().UTC(),
 		LevelNum:   30,
@@ -216,7 +215,7 @@ func (s *LogShipper) ShipSweep(ctx context.Context, mode Mode, projects, wouldFi
 			"mode": string(mode), "projects": projects, "would_fire": wouldFire, "component": "silence-rules",
 		},
 	}
-	if err := s.logs.InsertLogEntries(ctx, []storage.LogEntry{entry}); err != nil {
+	if err := s.logs.InsertLogEntries(ctx, []domain.LogEntry{entry}); err != nil {
 		s.log.Warn("silence rules: ship sweep: insert", "project", s.project, "error", err)
 	}
 }

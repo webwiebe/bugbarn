@@ -28,7 +28,7 @@ type harness struct {
 	svc      *monitorsvc.Service
 	detector *Detector
 	clock    time.Time
-	project  storage.Project
+	project  domain.Project
 	failNext bool
 }
 

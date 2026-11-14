@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // A bound read key sees one project and one project's events (#235). The list of
@@ -46,9 +46,9 @@ func TestBoundReadKeySeesOnlyItsProject(t *testing.T) {
 		}
 		return plain
 	}
-	alphaRead := addKey("alpha-read", alpha.ID, storage.APIKeyScopeRead)
-	homeRead := addKey("home-read", home.ID, storage.APIKeyScopeRead)
-	fullKey := addKey("home-full", home.ID, storage.APIKeyScopeFull)
+	alphaRead := addKey("alpha-read", alpha.ID, domain.APIKeyScopeRead)
+	homeRead := addKey("home-read", home.ID, domain.APIKeyScopeRead)
+	fullKey := addKey("home-full", home.ID, domain.APIKeyScopeFull)
 
 	authorizer := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")

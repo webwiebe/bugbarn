@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
@@ -49,7 +50,7 @@ func TestUserIDIsAFacetAndNotInTheFingerprint(t *testing.T) {
 	}
 
 	for uid, want := range map[string]int{"u-123": 1, "u-456": 1, "u-nobody": 0} {
-		got, err := store.ListIssuesFiltered(ctx, IssueFilter{Facets: map[string]string{"user.id": uid}})
+		got, err := store.ListIssuesFiltered(ctx, domain.IssueFilter{Facets: map[string]string{"user.id": uid}})
 		if err != nil {
 			t.Fatal(err)
 		}

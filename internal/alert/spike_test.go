@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 func TestIsSpikeMilestone(t *testing.T) {
@@ -33,7 +33,7 @@ func TestEvaluator_AdminNotifiedWhenEventCountCrossesMilestone(t *testing.T) {
 	var bus domainevents.Bus
 	bus.Subscribe(evaluator.HandleEvent)
 	for _, count := range []int{1, 99, 100, 101, 500} {
-		bus.Publish(domainevents.IssueEventRecorded{Issue: storage.Issue{ID: "issue-1", EventCount: count}, ProjectID: 7})
+		bus.Publish(domainevents.IssueEventRecorded{Issue: domain.Issue{ID: "issue-1", EventCount: count}, ProjectID: 7})
 	}
 
 	calls := waitForCalls(notif, 1)
@@ -51,7 +51,7 @@ func TestEvaluator_NoSpikeNotificationWithoutAdminEmail(t *testing.T) {
 	notif := &fakeNotifier{configured: true}
 	evaluator := NewEvaluator(newFakeRepo(nil), notif, "http://example.com", "", slog.Default())
 
-	evaluator.HandleEvent(domainevents.IssueEventRecorded{Issue: storage.Issue{ID: "issue-1", EventCount: 100}, ProjectID: 7})
+	evaluator.HandleEvent(domainevents.IssueEventRecorded{Issue: domain.Issue{ID: "issue-1", EventCount: 100}, ProjectID: 7})
 
 	if c := waitForCalls(notif, 1); len(c) != 0 {
 		t.Errorf("expected no notification without admin email, got %d", len(c))
@@ -62,7 +62,7 @@ func TestSpikeSubjectAndLabelCarryTheCount(t *testing.T) {
 	t.Parallel()
 
 	rule := Rule{ID: AdminRuleIDPrefix + "event_spike", Condition: "event_spike"}
-	subject := alertSubject("production", rule, storage.Issue{Title: "boom", ProjectSlug: "demo", EventCount: 1000})
+	subject := alertSubject("production", rule, domain.Issue{Title: "boom", ProjectSlug: "demo", EventCount: 1000})
 
 	if !strings.Contains(subject, "1000 events") || !strings.HasPrefix(subject, "demo: ") {
 		t.Errorf("subject does not show the spike: %q", subject)
@@ -70,7 +70,7 @@ func TestSpikeSubjectAndLabelCarryTheCount(t *testing.T) {
 	if got := conditionLabel("event_spike"); got != "Error spike" {
 		t.Errorf("condition label = %q", got)
 	}
-	if got := alertSubject("production", Rule{ID: AdminRuleIDPrefix + "new_issue", Condition: "new_issue"}, storage.Issue{Title: "boom", ProjectSlug: "demo", EventCount: 1000}); strings.Contains(got, "events") {
+	if got := alertSubject("production", Rule{ID: AdminRuleIDPrefix + "new_issue", Condition: "new_issue"}, domain.Issue{Title: "boom", ProjectSlug: "demo", EventCount: 1000}); strings.Contains(got, "events") {
 		t.Errorf("plain issue subject changed: %q", got)
 	}
 }

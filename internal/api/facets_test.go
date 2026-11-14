@@ -12,7 +12,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 // The facets endpoints are what the dashboard's environment switcher is built
@@ -27,9 +26,9 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 	// Fingerprint the events the way the pipeline does. A hand-written
 	// fingerprint would be rewritten under the test by the store's own
 	// fingerprint migration, splitting one issue in two.
-	persist := func(environment string, n int) storage.Issue {
+	persist := func(environment string, n int) domain.Issue {
 		t.Helper()
-		var issue storage.Issue
+		var issue domain.Issue
 		for i := 0; i < n; i++ {
 			evt := event.Event{
 				ObservedAt: time.Now().UTC(),

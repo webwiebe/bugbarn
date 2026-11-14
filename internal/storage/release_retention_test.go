@@ -17,7 +17,7 @@ func addReleases(t *testing.T, store *Store, projectID int64, prefix string, n i
 	ctx := domain.WithProjectID(context.Background(), projectID)
 	at := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	for i := range n {
-		if _, err := store.CreateRelease(ctx, Release{
+		if _, err := store.CreateRelease(ctx, domain.Release{
 			Name: fmt.Sprintf("%s-%d", prefix, i), ObservedAt: at.Add(-time.Duration(i) * time.Hour),
 		}); err != nil {
 			t.Fatal(err)

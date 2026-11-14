@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
@@ -37,7 +38,7 @@ func newMonitorHarness(t *testing.T) *monitorHarness {
 	}
 	mint := func(name, plaintext string, projectID int64) {
 		sum := sha256.Sum256([]byte(plaintext))
-		if _, err := store.CreateAPIKey(ctx, name, projectID, hex.EncodeToString(sum[:]), storage.APIKeyScopeIngest); err != nil {
+		if _, err := store.CreateAPIKey(ctx, name, projectID, hex.EncodeToString(sum[:]), domain.APIKeyScopeIngest); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -3,18 +3,9 @@ package storage
 import (
 	"context"
 	"time"
-)
 
-// ProjectActivity counts, per active project, the issues last seen recently and
-// earlier in the lookback window.
-type ProjectActivity struct {
-	ProjectID int64
-	Slug      string
-	// Recent counts issues last seen within silentFor of now.
-	Recent int
-	// Earlier counts issues last seen between lookback+silentFor and silentFor ago.
-	Earlier int
-}
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
+)
 
 // ProjectActivity reports issue activity per project so a caller can tell a
 // project that went quiet from one that never reported. Only projects with an
@@ -22,7 +13,7 @@ type ProjectActivity struct {
 // table, never events, so it stays cheap on a large database.
 func (s *ProjectStore) ProjectActivity(
 	ctx context.Context, now time.Time, silentFor, lookback time.Duration,
-) ([]ProjectActivity, error) {
+) ([]domain.ProjectActivity, error) {
 	recentFrom := formatTime(now.Add(-silentFor))
 	earlierFrom := formatTime(now.Add(-silentFor - lookback))
 
@@ -39,9 +30,9 @@ func (s *ProjectStore) ProjectActivity(
 	}
 	defer rows.Close()
 
-	var out []ProjectActivity
+	var out []domain.ProjectActivity
 	for rows.Next() {
-		var a ProjectActivity
+		var a domain.ProjectActivity
 		if err := rows.Scan(&a.ProjectID, &a.Slug, &a.Recent, &a.Earlier); err != nil {
 			return nil, wrapErr(err, "scan project activity")
 		}

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
-func (h *harness) seedLogs(t *testing.T, entries ...storage.LogEntry) {
+func (h *harness) seedLogs(t *testing.T, entries ...domain.LogEntry) {
 	t.Helper()
 	proj, err := h.Store.ProjectBySlug(t.Context(), "default")
 	if err != nil {
@@ -32,9 +32,9 @@ func TestLogsFetchAgainstRealAPI(t *testing.T) {
 	h := newHarness(t)
 	inEmptyDir(t)
 	h.seedLogs(t,
-		storage.LogEntry{Level: "info", LevelNum: 30, Message: "service started"},
-		storage.LogEntry{Level: "error", LevelNum: 50, Message: "disk full", Data: map[string]any{"disk": "/dev/sda1"}},
-		storage.LogEntry{Level: "warn", LevelNum: 40, Message: "slow query"},
+		domain.LogEntry{Level: "info", LevelNum: 30, Message: "service started"},
+		domain.LogEntry{Level: "error", LevelNum: 50, Message: "disk full", Data: map[string]any{"disk": "/dev/sda1"}},
+		domain.LogEntry{Level: "warn", LevelNum: 40, Message: "slow query"},
 	)
 
 	t.Run("raw json with --no-color", func(t *testing.T) {

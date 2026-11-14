@@ -77,8 +77,8 @@ SELECT slug, revoked_at FROM setup_key_revocations ORDER BY revoked_at DESC, slu
 }
 
 // APIKeyByID returns the API key row with this id, or apperr.NotFound.
-func (s *APIKeyStore) APIKeyByID(ctx context.Context, id int64) (APIKey, error) {
-	var k APIKey
+func (s *APIKeyStore) APIKeyByID(ctx context.Context, id int64) (domain.APIKey, error) {
+	var k domain.APIKey
 	var createdAt string
 	var lastUsedAt sql.NullString
 	err := s.readDB().QueryRowContext(ctx, `
@@ -86,7 +86,7 @@ SELECT id, name, project_id, key_sha256, scope, created_at, last_used_at
 FROM api_keys WHERE id = ?`, id).
 		Scan(&k.ID, &k.Name, &k.ProjectID, &k.KeySHA256, &k.Scope, &createdAt, &lastUsedAt)
 	if err != nil {
-		return APIKey{}, wrapNotFound(err, "api key not found")
+		return domain.APIKey{}, wrapNotFound(err, "api key not found")
 	}
 	k.CreatedAt, _ = parseTime(createdAt)
 	if lastUsedAt.Valid {

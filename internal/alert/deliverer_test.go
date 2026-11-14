@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/mail"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
-func testIssue() storage.Issue {
-	return storage.Issue{
+func testIssue() domain.Issue {
+	return domain.Issue{
 		ID:            "issue-000001",
 		Title:         "TypeError: cannot read property of undefined",
 		ExceptionType: "TypeError",

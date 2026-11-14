@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // logRetentionCap is the soft per-project cap on retained log entries.
@@ -27,7 +29,7 @@ const logTrimInterval = 32
 // shared with event ingestion, so if a client disconnects we must abandon the
 // insert promptly rather than hold the connection. A short ceiling also bounds
 // how long any one batch can occupy the writer.
-func (s *LogStore) InsertLogEntries(ctx context.Context, entries []LogEntry) error {
+func (s *LogStore) InsertLogEntries(ctx context.Context, entries []domain.LogEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -67,7 +69,7 @@ func (s *LogStore) InsertLogEntries(ctx context.Context, entries []LogEntry) err
 
 // insertLogChunk writes one multi-row INSERT for a slice of log entries that is
 // already sized within the bound-parameter limit.
-func insertLogChunk(ctx context.Context, tx *sql.Tx, chunk []LogEntry) error {
+func insertLogChunk(ctx context.Context, tx *sql.Tx, chunk []domain.LogEntry) error {
 	var sb strings.Builder
 	sb.WriteString(`INSERT INTO log_entries (project_id, received_at, level_num, level, message, data_json) VALUES `)
 	args := make([]any, 0, len(chunk)*6)
@@ -118,12 +120,12 @@ func trimLogRetention(ctx context.Context, tx *sql.Tx, projectID int64) error {
 
 // scanLogEntry reads one log row. A received_at that does not parse leaves the
 // time zero, and data_json that does not decode leaves Data nil.
-func scanLogEntry(rows *sql.Rows) (LogEntry, error) {
-	var e LogEntry
+func scanLogEntry(rows *sql.Rows) (domain.LogEntry, error) {
+	var e domain.LogEntry
 	var receivedAt string
 	var dataJSON string
 	if err := rows.Scan(&e.ID, &e.ProjectID, &receivedAt, &e.LevelNum, &e.Level, &e.Message, &dataJSON, &e.ProjectSlug); err != nil {
-		return LogEntry{}, wrapErr(err, "scan log entry")
+		return domain.LogEntry{}, wrapErr(err, "scan log entry")
 	}
 	if t, err := time.Parse(time.RFC3339Nano, receivedAt); err == nil {
 		e.ReceivedAt = t
@@ -144,6 +146,6 @@ func scanLogEntry(rows *sql.Rows) (LogEntry, error) {
 // beforeID (cursor, 0 = no cursor).
 func (s *LogStore) ListLogEntries(
 	ctx context.Context, projectID int64, levelMin int, q string, limit int, beforeID int64,
-) ([]LogEntry, error) {
-	return s.QueryLogEntries(ctx, LogQuery{ProjectID: projectID, LevelMin: levelMin, Q: q, BeforeID: beforeID}, limit)
+) ([]domain.LogEntry, error) {
+	return s.QueryLogEntries(ctx, domain.LogQuery{ProjectID: projectID, LevelMin: levelMin, Q: q, BeforeID: beforeID}, limit)
 }

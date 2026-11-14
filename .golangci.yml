@@ -80,6 +80,13 @@ linters:
           deny:
             - pkg: github.com/wiebe-xyz/bugbarn/internal/storage
               desc: "the API layer must go through internal/service, not reach into internal/storage"
+        service-storage-boundary:
+          files:
+            - "**/internal/service/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/wiebe-xyz/bugbarn/internal/storage
+              desc: "a service declares the port it needs and takes value types from internal/domain; the composition root wires the store"
         sql-outside-storage:
           files:
             - "**/internal/**"

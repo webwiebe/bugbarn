@@ -86,27 +86,27 @@ func seedScopedRows(t *testing.T, store *storage.Store, home domain.Project) {
 	ctx := domain.WithProjectID(context.Background(), home.ID)
 	now := time.Now().UTC()
 
-	if err := store.InsertLogEntries(ctx, []storage.LogEntry{{
+	if err := store.InsertLogEntries(ctx, []domain.LogEntry{{
 		ProjectID: home.ID, ReceivedAt: now, LevelNum: 30, Level: "info", Message: "homemark-log",
 	}}); err != nil {
 		t.Fatalf("seed log: %v", err)
 	}
-	if _, err := store.CreateRelease(ctx, storage.Release{Name: "homemark-release", ObservedAt: now}); err != nil {
+	if _, err := store.CreateRelease(ctx, domain.Release{Name: "homemark-release", ObservedAt: now}); err != nil {
 		t.Fatalf("seed release: %v", err)
 	}
-	if _, err := store.CreateAlert(ctx, storage.Alert{Name: "homemark-alert", Severity: "error", Enabled: true}); err != nil {
+	if _, err := store.CreateAlert(ctx, domain.Alert{Name: "homemark-alert", Severity: "error", Enabled: true}); err != nil {
 		t.Fatalf("seed alert: %v", err)
 	}
 	if err := store.CreateAlias(ctx, "homemark-alias", home.ID); err != nil {
 		t.Fatalf("seed alias: %v", err)
 	}
-	if _, err := store.UploadSourceMap(ctx, storage.SourceMapUpload{
+	if _, err := store.UploadSourceMap(ctx, domain.SourceMapUpload{
 		Release: "r1", BundleURL: "homemark-bundle.js", Blob: []byte("{}"),
 	}); err != nil {
 		t.Fatalf("seed source map: %v", err)
 	}
 	interval := time.Hour
-	if _, err := store.RecordMonitorCheckIn(ctx, storage.MonitorCheckIn{
+	if _, err := store.RecordMonitorCheckIn(ctx, domain.MonitorCheckIn{
 		ProjectID: home.ID, Slug: "homemark-monitor", Status: "ok", Interval: &interval, At: now,
 	}); err != nil {
 		t.Fatalf("seed monitor: %v", err)
@@ -165,8 +165,8 @@ func TestBoundReadKeyRoutesCarryNoOtherProjectData(t *testing.T) {
 		}
 		return plain
 	}
-	alphaRead := addKey("alpha-read", alpha.ID, storage.APIKeyScopeRead)
-	fullKey := addKey("home-full", home.ID, storage.APIKeyScopeFull)
+	alphaRead := addKey("alpha-read", alpha.ID, domain.APIKeyScopeRead)
+	fullKey := addKey("home-full", home.ID, domain.APIKeyScopeFull)
 
 	authorizer := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pass", "")

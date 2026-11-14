@@ -12,7 +12,7 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 )
 
-func persistIssue(t *testing.T, store *Store, ctx context.Context, msg string, at time.Time) Issue {
+func persistIssue(t *testing.T, store *Store, ctx context.Context, msg string, at time.Time) domain.Issue {
 	t.Helper()
 	pe := processedEventFrom(event.Event{
 		ObservedAt: at,
@@ -129,7 +129,7 @@ func TestIssueStatusCountsMatchTheOpenFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, status := range []string{"open", "regressed", "resolved", "muted", ""} {
-		listed, err := store.ListIssuesFiltered(ctx, IssueFilter{Status: status})
+		listed, err := store.ListIssuesFiltered(ctx, domain.IssueFilter{Status: status})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -10,15 +10,15 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/detect"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 type fakeRepo struct{ rows map[string]string }
 
-func (f *fakeRepo) ListDetectionRules(context.Context) ([]storage.StoredDetectionRule, error) {
-	out := make([]storage.StoredDetectionRule, 0, len(f.rows))
+func (f *fakeRepo) ListDetectionRules(context.Context) ([]domain.StoredDetectionRule, error) {
+	out := make([]domain.StoredDetectionRule, 0, len(f.rows))
 	for id, j := range f.rows {
-		out = append(out, storage.StoredDetectionRule{ID: id, JSON: j, UpdatedAt: time.Now()})
+		out = append(out, domain.StoredDetectionRule{ID: id, JSON: j, UpdatedAt: time.Now()})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil

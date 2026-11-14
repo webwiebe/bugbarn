@@ -32,7 +32,7 @@ func newKeyTouchWriter(t *testing.T) (*storage.Store, *httptest.Server, domain.A
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := store.CreateAPIKey(context.Background(), "k", proj.ID, "hash-k", storage.APIKeyScopeIngest)
+	key, err := store.CreateAPIKey(context.Background(), "k", proj.ID, "hash-k", domain.APIKeyScopeIngest)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -53,7 +52,7 @@ type Repository interface {
 	RemoveProjectFromGroup(ctx context.Context, projectSlug string) error
 	ListGroupProjects(ctx context.Context, groupSlug string) ([]domain.Project, error)
 
-	ProjectUsageAll(ctx context.Context) (map[int64]storage.ProjectUsage, error)
+	ProjectUsageAll(ctx context.Context) (map[int64]domain.ProjectUsage, error)
 
 	ListAPIKeys(context.Context) ([]domain.APIKey, error)
 	CreateAPIKey(ctx context.Context, name string, projectID int64, keySHA256, scope string) (domain.APIKey, error)

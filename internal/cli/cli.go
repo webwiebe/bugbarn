@@ -18,6 +18,7 @@ import (
 	funnelbarn "github.com/webwiebe/funnelbarn/sdks/go"
 
 	"github.com/wiebe-xyz/bugbarn/internal/config"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -152,7 +153,7 @@ func createAPIKey(cfg config.Config, args []string) error {
 	fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
 	projectSlug := fs.String("project", "default", "project slug")
 	name := fs.String("name", "", "key name/label")
-	scope := fs.String("scope", storage.APIKeyScopeFull, "key scope: full, ingest, or read")
+	scope := fs.String("scope", domain.APIKeyScopeFull, "key scope: full, ingest, or read")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -160,8 +161,8 @@ func createAPIKey(cfg config.Config, args []string) error {
 	if *name == "" {
 		return fmt.Errorf("--name is required")
 	}
-	if *scope != storage.APIKeyScopeFull && *scope != storage.APIKeyScopeIngest && *scope != storage.APIKeyScopeRead {
-		return fmt.Errorf("--scope must be %q, %q, or %q", storage.APIKeyScopeFull, storage.APIKeyScopeIngest, storage.APIKeyScopeRead)
+	if *scope != domain.APIKeyScopeFull && *scope != domain.APIKeyScopeIngest && *scope != domain.APIKeyScopeRead {
+		return fmt.Errorf("--scope must be %q, %q, or %q", domain.APIKeyScopeFull, domain.APIKeyScopeIngest, domain.APIKeyScopeRead)
 	}
 	store, err := storage.Open(cfg.DBPath)
 	if err != nil {

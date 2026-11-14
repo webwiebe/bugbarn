@@ -44,7 +44,7 @@ const (
 type Result struct {
 	Outcome   Outcome
 	Err       error
-	Issue     storage.Issue
+	Issue     domain.Issue
 	IsNew     bool
 	Regressed bool
 	ProjectID int64
@@ -173,13 +173,13 @@ func failed(res Result, err error) Result {
 }
 
 // resolveWithSpan is ResolveProject inside the resolve-project span.
-func (p *Processor) resolveWithSpan(ctx context.Context, slug string) (storage.Project, error) {
+func (p *Processor) resolveWithSpan(ctx context.Context, slug string) (domain.Project, error) {
 	rctx, rspan := p.startSpan(ctx, spanResolveProject, attribute.String("project_slug", slug))
 	defer rspan.End()
 	proj, err := p.ResolveProject(rctx, slug)
 	if err != nil {
 		rspan.SetStatus(codes.Error, "project not resolved")
-		return storage.Project{}, err
+		return domain.Project{}, err
 	}
 	rspan.SetAttributes(attribute.Int64("project_id", proj.ID))
 	return proj, nil
@@ -188,7 +188,7 @@ func (p *Processor) resolveWithSpan(ctx context.Context, slug string) (storage.P
 // holdEvent parks the record of a pending project. A hold that fails on lock
 // contention is transient; any other hold failure is permanent for this record,
 // so a caller with an unbounded retry is not stuck on it.
-func (p *Processor) holdEvent(ctx context.Context, res Result, proj storage.Project, record spool.Record) Result {
+func (p *Processor) holdEvent(ctx context.Context, res Result, proj domain.Project, record spool.Record) Result {
 	held := storage.HeldRecord{
 		ProjectID:   proj.ID,
 		Slug:        record.ProjectSlug,
@@ -210,8 +210,8 @@ func (p *Processor) holdEvent(ctx context.Context, res Result, proj storage.Proj
 // created pending (or active when autoApprove is set). Callers must check
 // proj.Status == "pending" and hold the payload rather than persist it. The
 // error is logged here (services are the log boundary) and returned.
-func (p *Processor) ResolveProject(ctx context.Context, slug string) (storage.Project, error) {
-	var proj storage.Project
+func (p *Processor) ResolveProject(ctx context.Context, slug string) (domain.Project, error) {
+	var proj domain.Project
 	var err error
 	if p.autoApprove {
 		proj, err = p.store.EnsureProject(ctx, slug)
@@ -220,7 +220,7 @@ func (p *Processor) ResolveProject(ctx context.Context, slug string) (storage.Pr
 	}
 	if err != nil {
 		p.logger.Error("ensure project", "project_slug", slug, "error", err)
-		return storage.Project{}, err
+		return domain.Project{}, err
 	}
 	return proj, nil
 }
@@ -228,9 +228,9 @@ func (p *Processor) ResolveProject(ctx context.Context, slug string) (storage.Pr
 // EnsureProjectForIngest is ResolveProject for callers that only need to know
 // whether it worked: ok is false when slug is empty or the project cannot be
 // resolved.
-func (p *Processor) EnsureProjectForIngest(ctx context.Context, slug string) (storage.Project, bool) {
+func (p *Processor) EnsureProjectForIngest(ctx context.Context, slug string) (domain.Project, bool) {
 	if slug == "" {
-		return storage.Project{}, false
+		return domain.Project{}, false
 	}
 	proj, err := p.ResolveProject(ctx, slug)
 	return proj, err == nil

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func openAutoReleaseStore(t *testing.T) *Store {
@@ -67,10 +69,10 @@ func TestAutoReleaseReusesManuallyPostedRelease(t *testing.T) {
 	t.Parallel()
 	store := openAutoReleaseStore(t)
 	ctx := context.Background()
-	if _, err := store.CreateRelease(ctx, Release{Name: "v2.0", Version: "2.0.0", CreatedBy: "ci"}); err != nil {
+	if _, err := store.CreateRelease(ctx, domain.Release{Name: "v2.0", Version: "2.0.0", CreatedBy: "ci"}); err != nil {
 		t.Fatalf("CreateRelease: %v", err)
 	}
-	if _, err := store.CreateRelease(ctx, Release{Name: "3.0.0", CreatedBy: "ci"}); err != nil {
+	if _, err := store.CreateRelease(ctx, domain.Release{Name: "3.0.0", CreatedBy: "ci"}); err != nil {
 		t.Fatalf("CreateRelease: %v", err)
 	}
 	for _, v := range []string{"2.0.0", "3.0.0"} {

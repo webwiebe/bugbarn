@@ -15,7 +15,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/cronexpr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
 const (
@@ -32,7 +31,7 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // Repository is the storage the service needs; *storage.MonitorStore satisfies it.
 type Repository interface {
-	RecordMonitorCheckIn(ctx context.Context, in storage.MonitorCheckIn) (storage.MonitorCheckInResult, error)
+	RecordMonitorCheckIn(ctx context.Context, in domain.MonitorCheckIn) (domain.MonitorCheckInResult, error)
 	GetMonitor(ctx context.Context, projectID int64, slug string) (domain.Monitor, error)
 	ListMonitors(ctx context.Context, projectID int64) ([]domain.Monitor, error)
 	MarkMonitorEmitted(ctx context.Context, id int64, now time.Time) error
@@ -103,7 +102,7 @@ func (s *Service) CheckIn(ctx context.Context, projectID int64, in CheckInInput)
 	if err := validateTimings(in); err != nil {
 		return CheckInResult{}, err
 	}
-	rec := storage.MonitorCheckIn{
+	rec := domain.MonitorCheckIn{
 		ProjectID: projectID, Slug: in.Slug, Status: in.Status,
 		Interval: in.Interval, Grace: in.Grace, At: s.now().UTC(),
 	}

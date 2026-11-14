@@ -52,7 +52,7 @@ func TestDeleteAPIKeyReturnsNotFoundForUnknownID(t *testing.T) {
 	ctx := context.Background()
 	wantKind(t, s.DeleteAPIKey(ctx, 424242), apperr.ErrNotFound)
 
-	k, err := s.CreateAPIKey(ctx, "k", s.DefaultProjectID(), "hash-del", APIKeyScopeIngest)
+	k, err := s.CreateAPIKey(ctx, "k", s.DefaultProjectID(), "hash-del", domain.APIKeyScopeIngest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,12 +66,12 @@ func TestAPIKeyByIDReturnsRow(t *testing.T) {
 	t.Parallel()
 	s := openTemp(t)
 	ctx := context.Background()
-	k, err := s.CreateAPIKey(ctx, "named", s.DefaultProjectID(), "hash-byid", APIKeyScopeRead)
+	k, err := s.CreateAPIKey(ctx, "named", s.DefaultProjectID(), "hash-byid", domain.APIKeyScopeRead)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.APIKeyByID(ctx, k.ID)
-	if err != nil || got.Name != "named" || got.Scope != APIKeyScopeRead {
+	if err != nil || got.Name != "named" || got.Scope != domain.APIKeyScopeRead {
 		t.Fatalf("APIKeyByID = %+v, %v", got, err)
 	}
 }
@@ -133,14 +133,14 @@ func TestSourceMapUploadFindList(t *testing.T) {
 	t.Parallel()
 	s := openTemp(t)
 	ctx := context.Background()
-	wantKind(t, errOf(s.UploadSourceMap(ctx, SourceMapUpload{BundleURL: "b"})), apperr.ErrInvalidInput)
-	wantKind(t, errOf(s.UploadSourceMap(ctx, SourceMapUpload{Release: "r"})), apperr.ErrInvalidInput)
+	wantKind(t, errOf(s.UploadSourceMap(ctx, domain.SourceMapUpload{BundleURL: "b"})), apperr.ErrInvalidInput)
+	wantKind(t, errOf(s.UploadSourceMap(ctx, domain.SourceMapUpload{Release: "r"})), apperr.ErrInvalidInput)
 
-	up, err := s.UploadSourceMap(ctx, SourceMapUpload{Release: "1.0", Dist: "d", BundleURL: "app.js", Name: "app.js.map", Blob: []byte("one")})
+	up, err := s.UploadSourceMap(ctx, domain.SourceMapUpload{Release: "1.0", Dist: "d", BundleURL: "app.js", Name: "app.js.map", Blob: []byte("one")})
 	if err != nil || up.SizeBytes != 3 || up.ID == "" {
 		t.Fatalf("upload = %+v, %v", up, err)
 	}
-	if _, err := s.UploadSourceMap(ctx, SourceMapUpload{Release: "1.0", Dist: "d", BundleURL: "app.js", Blob: []byte("newer")}); err != nil {
+	if _, err := s.UploadSourceMap(ctx, domain.SourceMapUpload{Release: "1.0", Dist: "d", BundleURL: "app.js", Blob: []byte("newer")}); err != nil {
 		t.Fatal(err)
 	}
 	blob, err := s.FindSourceMap(ctx, "1.0", "d", "app.js")

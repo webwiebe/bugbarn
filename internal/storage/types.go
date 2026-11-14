@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"sync"
 	"sync/atomic"
-
-	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 // core holds the shared database state and the cross-domain write kernel
@@ -184,33 +182,6 @@ func (s *Store) Domains() Stores {
 		Monitors:       s.MonitorStore,
 	}
 }
-
-// Domain type aliases — storage consumers can keep using storage.Issue etc.
-// while the canonical definitions live in the domain package.
-type Issue = domain.Issue
-type IssueFilter = domain.IssueFilter
-type Event = domain.Event
-type Project = domain.Project
-type APIKey = domain.APIKey
-type Release = domain.Release
-type Alert = domain.Alert
-type LogEntry = domain.LogEntry
-type Setting = domain.Setting
-type User = domain.User
-type SourceMap = domain.SourceMap
-type SourceMapMeta = domain.SourceMapMeta
-type SourceMapUpload = domain.SourceMapUpload
-type DigestIssue = domain.DigestIssue
-type DigestData = domain.DigestData
-type ProjectGroup = domain.ProjectGroup
-type ProjectAlias = domain.ProjectAlias
-
-// Scope constants for API keys.
-const (
-	APIKeyScopeFull   = domain.APIKeyScopeFull
-	APIKeyScopeIngest = domain.APIKeyScopeIngest
-	APIKeyScopeRead   = domain.APIKeyScopeRead
-)
 
 // IssueHourlyCounts holds per-issue 24-hour event frequency data.
 type IssueHourlyCounts struct {

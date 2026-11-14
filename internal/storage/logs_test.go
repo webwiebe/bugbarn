@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -25,7 +27,7 @@ func TestInsertLogEntriesAndListLogEntries(t *testing.T) {
 	projectID := store.defaultProjectID
 	now := time.Now().UTC().Truncate(time.Second)
 
-	entries := []LogEntry{
+	entries := []domain.LogEntry{
 		{ProjectID: projectID, ReceivedAt: now.Add(-3 * time.Minute), LevelNum: 30, Level: "info", Message: "hello info"},
 		{ProjectID: projectID, ReceivedAt: now.Add(-2 * time.Minute), LevelNum: 40, Level: "warn", Message: "hello warn"},
 		{ProjectID: projectID, ReceivedAt: now.Add(-1 * time.Minute), LevelNum: 50, Level: "error", Message: "hello error", Data: map[string]any{"code": float64(500)}},
@@ -96,9 +98,9 @@ func TestInsertLogEntriesCapEnforcement(t *testing.T) {
 
 	// Insert 10,005 entries in two batches to trigger cap enforcement.
 	const total = 10005
-	batch := make([]LogEntry, total)
+	batch := make([]domain.LogEntry, total)
 	for i := range batch {
-		batch[i] = LogEntry{
+		batch[i] = domain.LogEntry{
 			ProjectID:  projectID,
 			ReceivedAt: time.Now().UTC(),
 			LevelNum:   30,

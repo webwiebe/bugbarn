@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/storage"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
 func TestDefaultConfigValues(t *testing.T) {
@@ -38,7 +38,7 @@ type signalSource struct {
 	calls chan struct{}
 }
 
-func (s signalSource) ProjectActivity(context.Context, time.Time, time.Duration, time.Duration) ([]storage.ProjectActivity, error) {
+func (s signalSource) ProjectActivity(context.Context, time.Time, time.Duration, time.Duration) ([]domain.ProjectActivity, error) {
 	select {
 	case s.calls <- struct{}{}:
 	default:
@@ -134,7 +134,7 @@ func TestRulesStartDefaultsAZeroIntervalToAnHour(t *testing.T) {
 
 type failingLogs struct{}
 
-func (failingLogs) InsertLogEntries(context.Context, []storage.LogEntry) error {
+func (failingLogs) InsertLogEntries(context.Context, []domain.LogEntry) error {
 	return errors.New("disk full")
 }
 
@@ -145,7 +145,7 @@ func TestShipSweepWarnsWhenTheProjectOrTheInsertFails(t *testing.T) {
 	missing := NewLogShipper(&fakeLogs{}, &fakeIssues{targetEr: errors.New("no project")}, "bugbarn-service", log)
 	missing.ShipSweep(context.Background(), ModeDryRun, 1, 0)
 
-	failing := NewLogShipper(failingLogs{}, &fakeIssues{target: storage.Project{ID: 5}}, "bugbarn-service", log)
+	failing := NewLogShipper(failingLogs{}, &fakeIssues{target: domain.Project{ID: 5}}, "bugbarn-service", log)
 	failing.ShipSweep(context.Background(), ModeDryRun, 1, 0)
 	failing.Ship(context.Background(), Finding{Slug: "a", Rule: RuleLogs}, ModeDryRun)
 	missing.Ship(context.Background(), Finding{Slug: "a", Rule: RuleLogs}, ModeDryRun)
