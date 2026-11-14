@@ -26,10 +26,10 @@ help:
 		'  lint         run available linters and static checks' \
 		'  lint-go      golangci-lint: full-tree ratchet + diff-scoped run' \
 		'  check-file-length  fail on any source file over 500 lines' \
-		'  check-typed-boundaries  count raw DB errors and error-text matching outside their layer (report-only until 2026-10-31)' \
+		'  check-typed-boundaries  count raw DB errors and error-text matching outside their layer (enforcing since 2026-10-31)' \
 		'  coverage     measure Go coverage and ratchet against baseline' \
 		'  ts-budget    TypeScript size/complexity soak (needs web/node_modules)' \
-		'  secret-scan  gitleaks scan of the full git history (report-only until 2026-10-31)' \
+		'  secret-scan  gitleaks scan of the full git history (report-only, see #280)' \
 		'  test-gates   run the tests for the gate scripts themselves' \
 		'  dup          scan the repo for cross-file duplication (jscpd)' \
 		'  quality      run every code-quality gate (needs `make setup` first)' \

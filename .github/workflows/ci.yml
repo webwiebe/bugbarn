@@ -304,14 +304,14 @@ jobs:
       - name: Go coverage ratchet
         shell: bash
         run: sh scripts/check-coverage.sh
-      # Changed-line coverage, report only until 2026-10-24 (then add
-      # --enforce). sdks/go is profiled too. Same step in .woodpecker/ci.yaml.
-      - name: Diff coverage (report only)
+      # Changed-line coverage, enforcing since the soak ended on 2026-10-24.
+      # sdks/go is profiled too. Same step in .woodpecker/ci.yaml.
+      - name: Diff coverage
         if: github.event_name == 'pull_request'
         shell: bash
         run: |
           sh scripts/diff-coverage-profile.sh
-          sh scripts/diff-coverage.sh coverage/diff.out "origin/${GITHUB_BASE_REF}"
+          sh scripts/diff-coverage.sh --enforce coverage/diff.out "origin/${GITHUB_BASE_REF}"
       - name: Duplication scan (jscpd)
         shell: bash
         run: |

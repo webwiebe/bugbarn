@@ -138,13 +138,13 @@ steps:
         # oxlint is the linter (eslint cannot load against TS 7); `pnpm run
         # lint` is the tsc type check.
         node scripts/oxlint-ratchet.mjs
-        # Layer boundaries (web/.dependency-cruiser.cjs), report only until
-        # 2026-10-31 (then add --enforce).
-        pnpm run boundaries
-        # Dead code (knip). The ratchet's own test blocks; the gate itself is
-        # report-only while it soaks. Baseline: web/knip-baseline.json.
+        # Layer boundaries (web/.dependency-cruiser.cjs), enforcing since the
+        # soak ended on 2026-10-31.
+        pnpm run boundaries --enforce
+        # Dead code (knip). The ratchet's own test runs first; the gate
+        # enforces against web/knip-baseline.json, which is empty.
         node scripts/knip-ratchet.test.mjs
-        node scripts/knip-ratchet.mjs --report-only
+        node scripts/knip-ratchet.mjs
         pnpm run lint
         pnpm run test
         pnpm run build
@@ -296,8 +296,8 @@ steps:
         # Blocking vulnerability scan (#274), pinned govulncheck, live advisory db.
         sh scripts/check-govulncheck.sh
         sh scripts/check-coverage.sh
-        # Changed-line coverage, report only until 2026-10-24 (then add
-        # --enforce). 80% of the coverable Go lines a PR adds must be executed;
+        # Changed-line coverage, enforcing since the soak ended on 2026-10-24.
+        # 80% of the coverable Go lines a PR adds must be executed;
         # diffs under 10 coverable lines are exempt. sdks/go is profiled too.
         # A measurement that cannot be made fails in report mode as well: a
         # missing profile, an unknown base, a profile listing fewer than 210
@@ -305,7 +305,7 @@ steps:
         # function but have no block in the profile. Same step in ci.yml.
         if [ "${CI_PIPELINE_EVENT:-}" = pull_request ]; then
           sh scripts/diff-coverage-profile.sh
-          sh scripts/diff-coverage.sh coverage/diff.out "origin/$CI_COMMIT_TARGET_BRANCH"
+          sh scripts/diff-coverage.sh --enforce coverage/diff.out "origin/$CI_COMMIT_TARGET_BRANCH"
         fi
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
         pnpm dlx jscpd@latest .
