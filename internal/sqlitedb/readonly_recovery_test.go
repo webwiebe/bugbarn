@@ -1,9 +1,8 @@
-package storage
+package sqlitedb
 
 import (
 	"context"
 	"errors"
-	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"testing"
 )
 
@@ -73,13 +72,6 @@ func TestRetryReadonlyRecoveryRetriesCantInit(t *testing.T) {
 	}
 }
 
-func TestWrapErrMapsCantInitToUnavailable(t *testing.T) {
-	err := wrapNotFound(errors.New("attempt to write a readonly database (1288)"), "project not found")
-	if !errors.Is(err, apperr.ErrUnavailable) {
-		t.Fatalf("err = %v, want Unavailable", err)
-	}
-}
-
 // A reader that cannot take a wal-index lock while the writer rewrites the index
 // fails with SQLITE_PROTOCOL (15, "locking protocol"). It cleared on retry in
 // production and answered 503 on the telemetry ingest path (#275).
@@ -98,12 +90,5 @@ func TestRetryReadonlyRecoveryRetriesLockingProtocol(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("calls = %d, want 2", calls)
-	}
-}
-
-func TestWrapErrMapsLockingProtocolToUnavailable(t *testing.T) {
-	err := wrapNotFound(errors.New("locking protocol (15)"), "api key lookup")
-	if !errors.Is(err, apperr.ErrUnavailable) {
-		t.Fatalf("err = %v, want Unavailable", err)
 	}
 }

@@ -1,4 +1,4 @@
-package storage
+package sqlitedb
 
 import (
 	"context"
@@ -29,10 +29,20 @@ const checkpointRetryInterval = 5 * time.Second
 // letting the next tick retry costs only a slightly larger WAL for one interval.
 const checkpointTickBudget = 10 * time.Second
 
-// RunPeriodicCheckpoint blocks until ctx is canceled, issuing a TRUNCATE WAL
-// checkpoint on every tick.
+// RunCheckpointLoop is RunPolicyLoop for any WAL-mode database opened
+// with wal_autocheckpoint(0) on a single write connection. The telemetry
+// databases (internal/telemetrydb) use it so each file keeps exactly one
+// TRUNCATE checkpointer with the same bounded retry as the main database. They
+// keep the legacy policy (TRUNCATE on every tick, 10s busy wait): their writers
+// are not behind the check-in path, and their WAL has no tuning knob.
+func RunCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, log *slog.Logger) {
+	RunPolicyLoop(ctx, db, interval, LegacyCheckpointPolicy(), log, 0)
+}
+
+// RunPolicyLoop blocks until ctx is canceled, checkpointing the WAL of db on every
+// tick. storage.Store.RunPeriodicCheckpoint runs it for bugbarn.db.
 //
-// This loop is the SOLE checkpointer. sqliteDSN sets wal_autocheckpoint(0), so
+// This loop is the SOLE checkpointer. storage.sqliteDSN sets wal_autocheckpoint(0), so
 // without it nothing ever truncates the WAL and it grows without bound.
 //
 // It must reach TRUNCATE regularly (CheckpointPolicy), not only PASSIVE. A PASSIVE checkpoint gives up at the first
@@ -52,7 +62,7 @@ const checkpointTickBudget = 10 * time.Second
 // resilience (#166).
 //
 // Note the budget is not a precise cap. A blocked attempt can sit in SQLite's
-// busy handler for up to busy_timeout (10s, see sqliteDSN) and is NOT
+// busy handler for up to busy_timeout (10s, see storage.sqliteDSN) and is NOT
 // interruptible by the Go context, so a deadline only takes effect at the next
 // retry decision, never mid-pragma. TestCheckpointGivesUpWhenPersistentlyBusy
 // measures this: a 300ms deadline still returned after ~10s. Treat the budget
@@ -74,28 +84,11 @@ const checkpointTickBudget = 10 * time.Second
 //
 // policy decides how hard each tick pushes (see CheckpointPolicy). The zero
 // value means DefaultCheckpointPolicy.
-func (s *core) RunPeriodicCheckpoint(ctx context.Context, interval time.Duration, policy CheckpointPolicy, log *slog.Logger) {
-	if s == nil || s.db == nil {
-		return // read-only store: nothing to checkpoint.
-	}
-	runCheckpointLoop(ctx, s.db, interval, policy, log, checkpointVacuumPages)
-}
-
-// RunCheckpointLoop is RunPeriodicCheckpoint for any WAL-mode database opened
-// with wal_autocheckpoint(0) on a single write connection. The telemetry
-// databases (internal/telemetrydb) use it so each file keeps exactly one
-// TRUNCATE checkpointer with the same bounded retry as the main database. They
-// keep the legacy policy (TRUNCATE on every tick, 10s busy wait): their writers
-// are not behind the check-in path, and their WAL has no tuning knob.
-func RunCheckpointLoop(ctx context.Context, db *sql.DB, interval time.Duration, log *slog.Logger) {
-	runCheckpointLoop(ctx, db, interval, LegacyCheckpointPolicy(), log, 0)
-}
-
-// runCheckpointLoop is RunCheckpointLoop that also returns up to vacuumPages
-// freelist pages to the filesystem after each checkpoint. The main database
-// passes checkpointVacuumPages; the telemetry databases pass 0 because
-// internal/telemetrydb paces its own incremental vacuum.
-func runCheckpointLoop(
+//
+// It also returns up to vacuumPages freelist pages to the filesystem after each
+// checkpoint. The main database passes its checkpointVacuumPages; the telemetry
+// databases pass 0 because internal/telemetrydb paces its own incremental vacuum.
+func RunPolicyLoop(
 	ctx context.Context, db *sql.DB, interval time.Duration, policy CheckpointPolicy, log *slog.Logger, vacuumPages int,
 ) {
 	if interval <= 0 {
@@ -122,7 +115,7 @@ func runCheckpointLoop(
 			checkpointTick(tickCtx, db, tick, st, policy, log)
 			reportWALSize(policy, log)
 			if vacuumPages > 0 {
-				incrementalVacuum(tickCtx, db, vacuumPages, log)
+				IncrementalVacuum(tickCtx, db, vacuumPages, log)
 			}
 			cancel()
 		}
@@ -390,34 +383,11 @@ func checkpointAttempt(
 	return busy, walFrames, checkpointed, err
 }
 
-// FinalCheckpoint runs a single checkpoint on a fresh context. Call it after all
-// writers have stopped and before Close, so the WAL is merged into the main
-// database on a clean shutdown. With wal_autocheckpoint(0), Close does not
-// checkpoint on its own.
-func (s *core) FinalCheckpoint(log *slog.Logger) {
-	if s == nil || s.db == nil {
-		return
-	}
-	if log == nil {
-		log = slog.Default()
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	// retryInterval 0: on shutdown take one attempt and move on rather than
-	// blocking the process exit behind a reader that may outlive us.
-	s.checkpoint(ctx, 0, log.With("component", "wal-checkpoint"))
-}
-
-// checkpoint runs one PRAGMA wal_checkpoint(TRUNCATE) and returns the WAL size
-// in frames after the attempt (the pragma's `log` column), or -1 on error.
-// When retryInterval > 0 it retries while the pragma reports busy, so the WAL is
-// actually reset once the blocking reader releases its snapshot.
-func (s *core) checkpoint(ctx context.Context, retryInterval time.Duration, log *slog.Logger) int {
-	return CheckpointDB(ctx, s.db, retryInterval, log)
-}
-
 // CheckpointDB is one TRUNCATE checkpoint of db's main schema with the retry
-// semantics described on checkpoint.
+// semantics of a periodic tick: when retryInterval is above zero it retries while
+// the pragma reports busy, so the WAL is reset once the blocking reader releases
+// its snapshot. It returns the WAL size in frames after the attempt, or -1 on
+// error. With retryInterval 0 it takes one attempt.
 func CheckpointDB(ctx context.Context, db *sql.DB, retryInterval time.Duration, log *slog.Logger) int {
 	for {
 		// wal_checkpoint returns (busy, log, checkpointed): busy=1 means a
@@ -447,5 +417,14 @@ func CheckpointDB(ctx context.Context, db *sql.DB, retryInterval time.Duration, 
 			return walFrames
 		case <-time.After(retryInterval):
 		}
+	}
+}
+
+// IncrementalVacuum returns up to pages freelist pages of db's main schema to
+// the filesystem. It does nothing on a database that is not in
+// auto_vacuum=INCREMENTAL mode.
+func IncrementalVacuum(ctx context.Context, db *sql.DB, pages int, log *slog.Logger) {
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA main.incremental_vacuum(%d)`, pages)); err != nil && ctx.Err() == nil {
+		log.Warn("incremental vacuum error", "error", err)
 	}
 }

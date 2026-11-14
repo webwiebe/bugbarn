@@ -1,4 +1,4 @@
-package storage
+package sqlitedb
 
 import (
 	"bytes"
@@ -13,18 +13,15 @@ import (
 )
 
 // pinSnapshot opens a reader on dbPath, starts a read transaction that pins a WAL
-// snapshot, then moves the WAL past it with writes through store. That is the
+// snapshot, then moves the WAL past it with writes through db. That is the
 // production shape (reader pods holding snapshots) that makes a TRUNCATE
 // checkpoint wait in SQLite's busy handler. The transaction is the only thing
 // that blocks: nothing here loops or generates load. release ends the snapshot.
-func pinSnapshot(t *testing.T, store *Store, dbPath string) (release func()) {
+func pinSnapshot(t *testing.T, db *sql.DB, dbPath string) (release func()) {
 	t.Helper()
-	growWAL(t, store)
-	reader, err := OpenReadOnly(dbPath)
-	if err != nil {
-		t.Fatalf("open reader: %v", err)
-	}
-	tx, err := reader.readDB().BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	growWAL(t, db)
+	reader := openReader(t, dbPath)
+	tx, err := reader.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("begin read tx: %v", err)
 	}
@@ -33,7 +30,7 @@ func pinSnapshot(t *testing.T, store *Store, dbPath string) (release func()) {
 		t.Fatalf("reader query: %v", err)
 	}
 	for i := 0; i < 50; i++ {
-		if _, err := store.db.Exec(
+		if _, err := db.Exec(
 			`INSERT INTO projects (slug, name, status, issue_prefix) VALUES (?, ?, 'active', 'Q')`,
 			fmt.Sprintf("post-snap-%d", i), fmt.Sprintf("Post Snapshot %d", i),
 		); err != nil {
@@ -57,12 +54,8 @@ func pinSnapshot(t *testing.T, store *Store, dbPath string) (release func()) {
 // bound intact (2.2s against 2s, Woodpecker pipeline 894).
 func TestCheckpointAttemptStallIsBoundedByPolicyBusyTimeout(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bugbarn.db")
-	store, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer store.Close()
-	release := pinSnapshot(t, store, dbPath)
+	db := openWriter(t, dbPath)
+	release := pinSnapshot(t, db, dbPath)
 	defer release()
 
 	wait := DefaultCheckpointPolicy().TruncateBusyTimeout
@@ -74,7 +67,7 @@ func TestCheckpointAttemptStallIsBoundedByPolicyBusyTimeout(t *testing.T) {
 	}
 	defer func() { beforeCheckpointPragma = nil }()
 
-	busy, _, _, err := checkpointAttempt(context.Background(), store.db, "TRUNCATE", wait)
+	busy, _, _, err := checkpointAttempt(context.Background(), db, "TRUNCATE", wait)
 	if err != nil {
 		t.Fatalf("checkpoint attempt: %v", err)
 	}
@@ -88,9 +81,9 @@ func TestCheckpointAttemptStallIsBoundedByPolicyBusyTimeout(t *testing.T) {
 	}
 
 	// The shortened wait must not leak into the pooled connection: every other
-	// writer relies on the 10s busy_timeout from sqliteDSN.
+	// writer relies on the 10s busy_timeout from storage.sqliteDSN.
 	var got int
-	if err := store.db.QueryRow(`PRAGMA busy_timeout`).Scan(&got); err != nil {
+	if err := db.QueryRow(`PRAGMA busy_timeout`).Scan(&got); err != nil {
 		t.Fatalf("read busy_timeout: %v", err)
 	}
 	if got != 10000 {
@@ -103,12 +96,8 @@ func TestCheckpointAttemptStallIsBoundedByPolicyBusyTimeout(t *testing.T) {
 // blocked it is gone. This is the 377MB case from 2026-07-16.
 func TestWALTruncatesWithinNTicksAfterSnapshotReleased(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bugbarn.db")
-	store, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer store.Close()
-	release := pinSnapshot(t, store, dbPath)
+	db := openWriter(t, dbPath)
+	release := pinSnapshot(t, db, dbPath)
 
 	policy := CheckpointPolicy{TruncateEvery: 3, TruncateBusyTimeout: 100 * time.Millisecond}
 	runTick := func(tick int) {
@@ -116,7 +105,7 @@ func TestWALTruncatesWithinNTicksAfterSnapshotReleased(t *testing.T) {
 		// 500ms: one 100ms attempt, then the 5s retry wait is cut by the deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
-		checkpointTick(ctx, store.db, tick, &checkpointState{}, policy, quietLogger())
+		checkpointTick(ctx, db, tick, &checkpointState{}, policy, quietLogger())
 	}
 
 	// Ticks 1 and 2 are PASSIVE, tick 3 is TRUNCATE and the snapshot blocks it.
@@ -146,14 +135,10 @@ func TestWALTruncatesWithinNTicksAfterSnapshotReleased(t *testing.T) {
 // env knobs can restore it: TRUNCATE on every tick.
 func TestLegacyPolicyTruncatesEveryTick(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bugbarn.db")
-	store, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer store.Close()
-	growWAL(t, store)
+	db := openWriter(t, dbPath)
+	growWAL(t, db)
 
-	checkpointTick(context.Background(), store.db, 1, &checkpointState{}, LegacyCheckpointPolicy(), quietLogger())
+	checkpointTick(context.Background(), db, 1, &checkpointState{}, LegacyCheckpointPolicy(), quietLogger())
 	if got := walSize(t, dbPath); got != 0 {
 		t.Errorf("WAL is %d bytes after one legacy tick, want 0", got)
 	}

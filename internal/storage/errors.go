@@ -9,6 +9,7 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/sqlitedb"
 )
 
 func wrapErr(err error, msg string) error {
@@ -21,7 +22,7 @@ func wrapErr(err error, msg string) error {
 	if isUniqueViolation(err) {
 		return apperr.Conflict(msg, err)
 	}
-	if IsReadonlyRecovery(err) {
+	if sqlitedb.IsReadonlyRecovery(err) {
 		return apperr.Unavailable(msg, err)
 	}
 	return apperr.Internal(msg, err)
@@ -34,7 +35,7 @@ func wrapNotFound(err error, msg string) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		return apperr.NotFound(msg, err)
 	}
-	if IsReadonlyRecovery(err) {
+	if sqlitedb.IsReadonlyRecovery(err) {
 		return apperr.Unavailable(msg, err)
 	}
 	return apperr.Internal(msg, err)

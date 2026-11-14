@@ -182,8 +182,8 @@ A single `*sync.Mutex` (or a small `writelock` type) passed to: the Redis consum
 | Phase 5 cutover is pending production validation | Header, phase plan | The Redis path runs in production and staging (`deploy/k8s/production/writer-deployment.yaml`); `internal/ingest/CLAUDE.md` says the HTTP drain and the legacy file-spool worker still exist until phase 5 |
 | Rollout is staged by the pipeline, "prod manual" | Phase 4 | Production deploys automatically after staging (`.woodpecker/deploy-production.yaml`) |
 | Retention and the WAL checkpoint run under the shared write mutex | Architecture | The consumer passes a nil mutex; writes serialise through the single write connection (`internal/storage/CLAUDE.md`) |
-| The WAL checkpoint is re-introduced with phase 5 | Decisions | The writer runs `RunPeriodicCheckpoint` (`internal/storage/checkpoint.go`) since Litestream was removed |
-| The periodic `wal_checkpoint(TRUNCATE)` gets clean windows | Header, Architecture | It does not: readers pin snapshots, and a TRUNCATE held the write connection for 12 to 28s (bugbarn#236). Ticks are now PASSIVE except every `BUGBARN_WAL_TRUNCATE_EVERY`-th (default 10), whose reader wait is `BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS` (default 1000) (`internal/storage/checkpoint.go`) |
+| The WAL checkpoint is re-introduced with phase 5 | Decisions | The writer runs `RunPeriodicCheckpoint` (`internal/sqlitedb/checkpoint.go`) since Litestream was removed |
+| The periodic `wal_checkpoint(TRUNCATE)` gets clean windows | Header, Architecture | It does not: readers pin snapshots, and a TRUNCATE held the write connection for 12 to 28s (bugbarn#236). Ticks are now PASSIVE except every `BUGBARN_WAL_TRUNCATE_EVERY`-th (default 10), whose reader wait is `BUGBARN_WAL_TRUNCATE_BUSY_TIMEOUT_MS` (default 1000) (`internal/sqlitedb/checkpoint.go`) |
 | The queue is the only reader-to-writer ingest path | Solution | With no spool dir the reader proxies synchronously; with a spool dir and no Redis URL it POSTs to the writer |
 | `[project_wal_checkpoint]` link | Last line | Points at a private memory note; not established |
 

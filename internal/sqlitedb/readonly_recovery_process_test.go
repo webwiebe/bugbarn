@@ -1,10 +1,9 @@
-package storage
+package sqlitedb
 
 import (
 	"bufio"
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,8 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
 
 // These tests force SQLITE_READONLY_RECOVERY (264) the way a reader pod meets
@@ -38,30 +35,30 @@ func zeroWalIndexHeader(t *testing.T, dbPath string) {
 	}
 }
 
-// TestReadonlyRecoveryReaderHelper is the child process: a reader Store opened
-// as OpenReadOnly opens it, plus readonly_shm=1, so its -shm is read-only as
-// on a reader pod, whose volume is mounted read-only. Each
-// stdin line is a command and gets one RESULT line back:
+// TestReadonlyRecoveryReaderHelper is the child process: a reader pool on the
+// read-only recovery driver, opened the way storage.OpenReadOnly opens it, plus
+// readonly_shm=1, so its -shm is read-only as on a reader pod, whose volume is
+// mounted read-only. Each stdin line is a command and gets one RESULT line back:
 //
 //	plain  one lookup on a connection without the retry driver
-//	store  one ProjectBySlug through the reader Store; on the first 264 it
-//	       prints RETRYING and waits for a "go" line before retrying
+//	retry  one lookup through the retry driver; on the first 264 it prints
+//	       RETRYING and waits for a "go" line before retrying
 func TestReadonlyRecoveryReaderHelper(t *testing.T) {
 	path := os.Getenv(readerHelperEnv)
 	if path == "" {
 		t.Skip("child process of TestReaderRetriesReadonlyRecovery")
 	}
-	dsn := sqliteReadOnlyDSN(path) + "&readonly_shm=1"
-	st, err := openReadOnlyDSN(dsn)
+	dsn := readDSN(path) + "&readonly_shm=1"
+	retrying, err := sql.Open(ReadOnlyDriverName(), dsn)
 	if err != nil {
 		fmt.Println("RESULT open", err)
 		return
 	}
-	defer func() { _ = st.Close() }()
+	defer func() { _ = retrying.Close() }()
 	// One connection per pool, so each read reuses the connection that was
 	// open before the header was zeroed, as a long-lived reader pod does.
-	st.roDB.SetMaxOpenConns(1)
-	plain, err := sql.Open(baseDriverName, dsn)
+	retrying.SetMaxOpenConns(1)
+	plain, err := sql.Open(BaseDriverName, dsn)
 	if err != nil {
 		fmt.Println("RESULT open plain", err)
 		return
@@ -81,10 +78,10 @@ func TestReadonlyRecoveryReaderHelper(t *testing.T) {
 			var id int64
 			err := plain.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, "profotograaf").Scan(&id)
 			fmt.Printf("RESULT recovery=%v err=%v\n", IsReadonlyRecovery(err), err)
-		case "store":
-			p, err := st.ProjectBySlug(ctx, "profotograaf")
-			fmt.Printf("RESULT recovery=%v unavailable=%v slug=%s err=%v\n",
-				IsReadonlyRecovery(err), errors.Is(err, apperr.ErrUnavailable), p.Slug, err)
+		case "retry":
+			var id int64
+			err := retrying.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, "profotograaf").Scan(&id)
+			fmt.Printf("RESULT recovery=%v slug=profotograaf err=%v\n", IsReadonlyRecovery(err), err)
 		}
 	}
 }
@@ -135,19 +132,15 @@ func (r *readerProcess) next(t *testing.T) string {
 
 // openReaderFixture opens a writer with one project and starts a reader that
 // has read once, so its connections are open.
-func openReaderFixture(t *testing.T) (*Store, string, *readerProcess) {
+func openReaderFixture(t *testing.T) (*sql.DB, string, *readerProcess) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "bugbarn.db")
-	w, err := Open(path)
-	if err != nil {
-		t.Fatalf("open writer: %v", err)
-	}
-	t.Cleanup(func() { _ = w.Close() })
-	if _, err := w.EnsureProject(context.Background(), "profotograaf"); err != nil {
-		t.Fatalf("ensure project: %v", err)
+	w := openWriter(t, path)
+	if _, err := w.Exec(`INSERT INTO projects (slug, name, status, issue_prefix) VALUES ('profotograaf', 'P', 'active', 'P')`); err != nil {
+		t.Fatalf("insert project: %v", err)
 	}
 	r := startReaderProcess(t, path)
-	for _, cmd := range []string{"plain", "store"} {
+	for _, cmd := range []string{"plain", "retry"} {
 		r.send(t, cmd)
 		if got := r.next(t); !strings.Contains(got, "err=<nil>") {
 			t.Fatalf("%s read before the header was zeroed: %s", cmd, got)
@@ -166,18 +159,19 @@ func TestReaderRetriesReadonlyRecovery(t *testing.T) {
 		t.Fatalf("plain read with a zeroed header: want 264, got %s", got)
 	}
 
-	// The reader Store hits the same 264 and retries. The writer writes while it
+	// The reader pool hits the same 264 and retries. The writer writes while it
 	// waits, which rebuilds the header, and the retry then succeeds.
-	r.send(t, "store")
+	r.send(t, "retry")
 	if got := r.next(t); got != "RETRYING" {
-		t.Fatalf("store read with a zeroed header: want a retry, got %s", got)
+		t.Fatalf("retry read with a zeroed header: want a retry, got %s", got)
 	}
-	if _, err := w.EnsureProject(context.Background(), "after-swap"); err != nil {
+	if _, err := w.ExecContext(context.Background(),
+		`INSERT INTO projects (slug, name, status, issue_prefix) VALUES ('after-swap', 'A', 'active', 'A')`); err != nil {
 		t.Fatalf("writer write: %v", err)
 	}
 	r.send(t, "go")
 	if got := r.next(t); !strings.Contains(got, "slug=profotograaf err=<nil>") {
-		t.Fatalf("store read after the writer wrote: want the project, got %s", got)
+		t.Fatalf("retry read after the writer wrote: want the project, got %s", got)
 	}
 }
 
@@ -185,27 +179,15 @@ func TestReaderReadonlyRecoveryThatPersistsIsUnavailable(t *testing.T) {
 	_, path, r := openReaderFixture(t)
 	zeroWalIndexHeader(t, path)
 
-	// No writer write this time: every retry fails, and the caller gets
-	// Unavailable (503) instead of an internal error.
-	r.send(t, "store")
+	// No writer write this time: every retry fails and the final error names
+	// the retry count. storage maps it to Unavailable (503).
+	r.send(t, "retry")
 	if got := r.next(t); got != "RETRYING" {
-		t.Fatalf("store read with a zeroed header: want a retry, got %s", got)
+		t.Fatalf("retry read with a zeroed header: want a retry, got %s", got)
 	}
 	r.send(t, "go")
 	got := r.next(t)
-	if !strings.Contains(got, "recovery=true unavailable=true") || !strings.Contains(got, "after 3 retries") {
-		t.Fatalf("store read with no writer write: want Unavailable with 264 after 3 retries, got %s", got)
-	}
-}
-
-func TestWrapErrMapsReadonlyRecoveryToUnavailable(t *testing.T) {
-	err := fmt.Errorf("after 3 retries: %w", errReadonlyRecovery)
-	for name, wrapped := range map[string]error{
-		"wrapErr":      wrapErr(err, "x"),
-		"wrapNotFound": wrapNotFound(err, "x"),
-	} {
-		if !errors.Is(wrapped, apperr.ErrUnavailable) {
-			t.Errorf("%s: want apperr.ErrUnavailable, got %v", name, wrapped)
-		}
+	if !strings.Contains(got, "recovery=true") || !strings.Contains(got, "after 3 retries") {
+		t.Fatalf("retry read with no writer write: want 264 after 3 retries, got %s", got)
 	}
 }

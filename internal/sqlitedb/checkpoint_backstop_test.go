@@ -1,4 +1,4 @@
-package storage
+package sqlitedb
 
 import (
 	"bytes"
@@ -24,12 +24,8 @@ func TestCheckpointBackstopFiresAfterRepeatedFailures(t *testing.T) {
 	defer func() { backstopAfterTicks, backstopBytes, backstopWait = oldTicks, oldBytes, oldWait }()
 
 	dbPath := filepath.Join(t.TempDir(), "bugbarn.db")
-	store, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer store.Close()
-	release := pinSnapshot(t, store, dbPath)
+	db := openWriter(t, dbPath)
+	release := pinSnapshot(t, db, dbPath)
 	defer release()
 
 	log, buf := capturingLogger()
@@ -41,7 +37,7 @@ func TestCheckpointBackstopFiresAfterRepeatedFailures(t *testing.T) {
 		// A 1s budget ends before the 5s retry interval: one attempt per tick.
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		checkpointTick(ctx, store.db, 1, st, policy, log)
+		checkpointTick(ctx, db, 1, st, policy, log)
 	}
 
 	tick()
@@ -78,16 +74,12 @@ func TestCheckpointBackstopFiresAfterRepeatedFailures(t *testing.T) {
 // Every TRUNCATE tick logs its result.
 func TestCheckpointTickLogsResult(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bugbarn.db")
-	store, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer store.Close()
-	growWAL(t, store)
+	db := openWriter(t, dbPath)
+	growWAL(t, db)
 
 	log, buf := capturingLogger()
 	st := &checkpointState{failedTruncates: 2}
-	checkpointTick(context.Background(), store.db, 1, st, LegacyCheckpointPolicy(), log)
+	checkpointTick(context.Background(), db, 1, st, LegacyCheckpointPolicy(), log)
 
 	out := buf.String()
 	for _, want := range []string{"mode=TRUNCATE", "result=truncated", "failed_truncate_ticks=0"} {
