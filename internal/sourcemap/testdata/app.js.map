@@ -1,0 +1,1 @@
+{"version":3,"file":"app.min.js","sources":["src/app.ts"],"sourcesContent":["line one\nfunction greet() {\n  return 1;\n}\nlast"],"names":["greet"],"mappings":"AAAA,SAASA;AACA;AACA"}
