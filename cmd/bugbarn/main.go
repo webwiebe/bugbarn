@@ -54,6 +54,10 @@ var (
 // value — every bugbarn deployment reports under the same project.
 const funnelbarnProjectName = "bugbarn"
 
+// notifyContext returns the context a role runs under until the process is
+// told to stop. Tests replace it to drive the shutdown path without a signal.
+var notifyContext = signal.NotifyContext
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("bugbarn stopped", "error", err)
@@ -134,7 +138,7 @@ func run() error {
 	}
 	defer mutQueue.Close()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Nothing else checkpoints the WAL: sqliteDSN sets wal_autocheckpoint(0),

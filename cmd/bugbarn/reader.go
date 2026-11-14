@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -61,7 +60,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	}
 	defer store.Close()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	forwarder := api.NewWriteForwarder(cfg.WriterURL)
