@@ -40,19 +40,22 @@ internal/
     normalize/        SDK payload to event.Event mapping, Validate
     privacy/          Scrubbing of sensitive keys and values
     sourcemap/        Source map resolution for JS frames
-    event/            Canonical ingest event type
-    issues/           In-memory issue store used by the spool worker
+    event/            Canonical ingest event type and its processed form (ProcessedEvent)
   Storage ★ internal/storage/CLAUDE.md
-    storage/          SQLite layer (single Store of domain stores), migrations, WAL checkpoint
+    storage/          SQLite layer for bugbarn.db (single Store of domain stores), migrations
+    sqlitedb/         SQLite drivers, read-only recovery driver and WAL checkpoint, shared by storage and telemetrydb
     retention/        Writer-only sweep that expires events past their retention window
   Domain and services
     domain/           Domain types (Issue, Project, Event, Alert, ...)
-    domainevents/     In-process bus: issue created / regressed / event recorded
-    service/          Domain services (issues, projects, alerts, releases, logs, analytics)
+    domainevents/     In-process bus: issue created / regressed / event recorded, and IssuePublisher
+    service/          Domain services, one subpackage each (issues, projects, alerts, releases, logs, ...)
     alert/            Alert evaluation and delivery (webhook, email)
     digest/           Periodic project summaries (mail, webhook)
     analytics/        Analytics types, queries and the rollup worker
     logstream/        SSE fan-out for live log tailing
+    silence/          Writer-only rules that alert when a project that reported errors goes quiet
+    monitorwatch/     Writer-only detector that turns missed or failed monitor check-ins into issues
+    cronexpr/         5-field cron parsing and next-run times for monitor schedules
   Infrastructure telemetry (Vector agents, deploy/vector)
     telemetry/        Writer-side ingester: normalize, observe (detections), store
     telemetrydb/      Size-capped security.db and metrics.db next to the main DB
@@ -65,9 +68,11 @@ internal/
     apperr/           Shared error types (NotFound, Conflict, InvalidInput, Internal)
     auth/             Local login and the opt-in OIDC adapter
     sessionstore/     Server-side web sessions; readers delegate writes to the writer
+    keytouch/         Readers batch API key last-use touches and send them to the writer
     oidctest/         In-process fake OIDC provider for tests
   Platform
     config/           Env-var configuration (BUGBARN_*)
+    mail/             SMTP delivery with retries, used by digest, alert and ingesthealth
     selflog/          ★ slog handler that reports errors to BugBarn itself
     tracing/          OpenTelemetry setup, HTTP middleware, tail sampler
     cli/              `bugbarn user|project` admin subcommands

@@ -290,6 +290,31 @@ printf 'package service\n' >"$TB/internal/service/f0.go"
 rm -f "$TB/scripts/typed-boundaries-baseline.txt"
 expect 1 "typed-boundaries: a missing baseline fails" -- sh "$TBS" "$TB" 2026-10-17
 
+# ----------------------------------------------------- check-claude-layout.sh
+CL="$WORK/claudelayout"
+mkdir -p "$CL/internal/alpha" "$CL/internal/beta/sub"
+(
+	cd "$CL"
+	git init -q .
+	printf '# X\n\n## Project Layout\n\n```\ninternal/\n    alpha/   A\n    beta/    B\n```\n\n## Next\n\n    gamma/   outside the block\n' >CLAUDE.md
+	printf 'package alpha\n' >internal/alpha/a.go
+	printf 'package sub\n' >internal/beta/sub/s.go
+	git add -A
+) >/dev/null 2>&1
+expect 0 "claude-layout: every package has a row" -- sh "$REPO/scripts/check-claude-layout.sh" "$CL"
+(
+	cd "$CL"
+	mkdir -p internal/gamma
+	printf 'package gamma\n' >internal/gamma/g.go
+	git add -A
+) >/dev/null 2>&1
+expect 1 "claude-layout: a package with a row only outside the block fails" -- sh "$REPO/scripts/check-claude-layout.sh" "$CL"
+(
+	cd "$CL"
+	sed '/^## Project Layout/,$d' CLAUDE.md >C2 && mv C2 CLAUDE.md
+) >/dev/null 2>&1
+expect 1 "claude-layout: a missing layout section fails" -- sh "$REPO/scripts/check-claude-layout.sh" "$CL"
+
 echo
 echo "gates_test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

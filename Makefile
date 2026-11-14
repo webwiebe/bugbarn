@@ -15,7 +15,7 @@ export PATH := $(COREPACK_BIN):$(PATH)
 PNPM := $(COREPACK_BIN)/pnpm
 
 .PHONY: help setup test lint build dev docker-build spec-check vulncheck \
-	lint-go check-file-length check-typed-boundaries coverage dup quality test-gates ts-budget secret-scan \
+	lint-go check-file-length check-claude-layout check-typed-boundaries coverage dup quality test-gates ts-budget secret-scan \
 	woodpecker-secrets-edit woodpecker-secrets-sync
 
 help:
@@ -193,6 +193,9 @@ secret-scan:
 check-file-length:
 	@sh scripts/check-file-length.sh
 
+check-claude-layout:
+	@sh scripts/check-claude-layout.sh
+
 check-typed-boundaries:
 	@sh scripts/check-typed-boundaries.sh
 
@@ -211,7 +214,7 @@ $(PNPM):
 # Umbrella gate used by CI: every code-quality check in one target. The gate
 # scripts' own tests run first, so a gate that has stopped failing is reported
 # before the gates it protects are trusted.
-quality: test-gates check-file-length check-typed-boundaries lint-go vulncheck coverage ts-budget dup
+quality: test-gates check-file-length check-claude-layout check-typed-boundaries lint-go vulncheck coverage ts-budget dup
 
 build: $(PNPM)
 	@set -eu; \
