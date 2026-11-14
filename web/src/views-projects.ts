@@ -1,7 +1,7 @@
 // Project scope: project list loading, the desktop project picker dropdown,
 // the mobile scope bottom-sheet, the environment switcher, and the pending
 // projects banner/badge.
-import { normalizeList } from "./data.js";
+import { normalizeList } from "./records.js";
 import { escapeHtml } from "./format.js";
 import type { ApiProject, ApiProjectGroup } from "./types.js";
 import {

@@ -1,6 +1,6 @@
 // Releases view: list/detail loading, rendering, and the release-marker form.
 import { renderReleaseDetailMarkup, renderReleasesViewMarkup } from "./components.js";
-import { normalizeList } from "./data.js";
+import { normalizeList } from "./records.js";
 import { errorMessage, escapeHtml } from "./format.js";
 import type { ApiIssue, ApiRelease } from "./types.js";
 import { elements, setActiveView, setStatus, state, toTimestampMs } from "./core.js";

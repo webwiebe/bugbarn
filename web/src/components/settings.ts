@@ -1,8 +1,8 @@
-import { readFirst } from "../data.js";
+import { readFirst } from "../records.js";
 import { escapeAttr, escapeHtml, errorMessage } from "../format.js";
 import type { ApiApiKey, ApiKeyRequest, ApiProject, ApiSettings } from "../types.js";
 import { renderKeyRequests } from "./key-requests.js";
-import { renderField } from "./shared.js";
+import { renderField } from "./event-detail.js";
 
 export function renderSettingsViewMarkup(
   settings: ApiSettings | null,

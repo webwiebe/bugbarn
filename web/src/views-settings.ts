@@ -2,7 +2,8 @@
 // rendering, action wiring, and all the project/group/alias mutations.
 import { restoreProjectList, snapshotProjectList, wireProjectList, type ProjectListSnapshot } from "./project-filter.js";
 import { renderSettingsViewMarkup } from "./components.js";
-import { fetchSystemHealth, normalizeList, normalizeObject } from "./data.js";
+import { fetchSystemHealth } from "./health-api.js";
+import { normalizeList, normalizeObject } from "./records.js";
 import { errorMessage, escapeHtml } from "./format.js";
 import type { ApiAlias, ApiApiKey, ApiKeyRequest, ApiProject, ApiProjectGroup, ApiSettings } from "./types.js";
 import { elements, liveWindowMinutes, setActiveView, setStatus, showFlash, state } from "./core.js";

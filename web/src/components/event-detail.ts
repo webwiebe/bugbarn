@@ -1,4 +1,4 @@
-import { hasKeys, isRecord, readFirst, readString } from "../data.js";
+import { hasKeys, isRecord, readFirst, readString } from "../records.js";
 import { eventTimestamp, eventTitle, firstIdentifier } from "../domain.js";
 import { escapeAttr, escapeHtml, formatTime } from "../format.js";
 import type { ApiEvent, RawRecord } from "../types.js";

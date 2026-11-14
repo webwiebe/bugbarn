@@ -1,6 +1,6 @@
 // HTTP layer: authenticated fetch helpers (CSRF retry, project/group headers),
 // session bootstrap, login/logout, and the login screen / OIDC redirect flow.
-import { normalizeObject, readString } from "./data.js";
+import { normalizeObject, readString } from "./records.js";
 import { errorMessage } from "./format.js";
 import type { RawRecord } from "./types.js";
 import {

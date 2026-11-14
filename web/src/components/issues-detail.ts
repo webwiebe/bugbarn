@@ -1,4 +1,4 @@
-import { collectKeyValues, hasKeys, isRecord, readFirst, readString } from "../data.js";
+import { collectKeyValues, hasKeys, isRecord, readFirst, readString } from "../records.js";
 import { httpUrl } from "../surfaces.js";
 import {
   eventContext,
@@ -37,7 +37,7 @@ import {
   renderRecord,
   renderStacktrace,
   toTimestampMs,
-} from "./shared.js";
+} from "./event-detail.js";
 
 const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;

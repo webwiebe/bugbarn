@@ -1,7 +1,7 @@
 // Issues list view: list loading/pagination, sparklines, and the overview
 // rendering + wiring. Issue/event detail rendering lives in views-issue-detail.
 import { renderEmptyIssues, renderIssueListMarkup, renderSetupGuide } from "./components.js";
-import { normalizeList } from "./data.js";
+import { normalizeList } from "./records.js";
 import { errorMessage, escapeHtml } from "./format.js";
 import { issueHeading, renderIssueStatusTabs, renderIssueSummaryStrip } from "./components/issue-summary.js";
 import type { ApiIssue, IssueCounts, IssueSort, IssueStatus } from "./types.js";

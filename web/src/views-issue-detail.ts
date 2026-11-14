@@ -1,7 +1,7 @@
 // Issue / event detail views: loading, rendering, action wiring (copy, resolve,
 // mute, navigation), and the issue status mutations.
 import { renderErrorDetailMarkup, renderEventDetailMarkup, renderIssueDetailMarkup } from "./components.js";
-import { normalizeList, normalizeObject } from "./data.js";
+import { normalizeList, normalizeObject } from "./records.js";
 import { eventIssueId, eventTitle, firstIdentifier, issueTitle } from "./domain.js";
 import { errorMessage } from "./format.js";
 import type { ApiEvent, ApiIssue } from "./types.js";

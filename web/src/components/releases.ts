@@ -1,9 +1,9 @@
-import { readFirst, readNumber, readString } from "../data.js";
+import { readFirst, readNumber, readString } from "../records.js";
 import { issueTitle } from "../domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatTime } from "../format.js";
 import { httpUrl } from "../surfaces.js";
 import type { ApiIssue, ApiRelease } from "../types.js";
-import { renderField } from "./shared.js";
+import { renderField } from "./event-detail.js";
 
 export function renderReleasesViewMarkup(releases: ApiRelease[], error: unknown = null, envFilter = ""): string {
   const envs = Array.from(new Set(releases.map(r => readString(r, ["environment", "Environment"]) || "").filter(Boolean))).sort();

@@ -1,4 +1,4 @@
-import { isRecord, readFirst, readNumber, readRecord, readString } from "./data.js";
+import { isRecord, readFirst, readNumber, readRecord, readString } from "./records.js";
 import type { ApiEvent, ApiIssue, RawRecord } from "./types.js";
 
 export function firstIdentifier(source: ApiIssue | ApiEvent | RawRecord, extraOmitKeys: string[] = []): string {
