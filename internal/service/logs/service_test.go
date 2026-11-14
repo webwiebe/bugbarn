@@ -242,3 +242,29 @@ func TestExplorerReads_PassThroughAndFail(t *testing.T) {
 		t.Error("Facets: want error")
 	}
 }
+
+// The composition root can widen the retry rule. An error the default rule treats
+// as permanent is retried once the injected rule accepts it, and a nil rule keeps
+// the default.
+func TestInsert_WithTransientWidensRetryRule(t *testing.T) {
+	t.Parallel()
+
+	raw := errors.New("raw driver busy")
+	repo := &fakeRepo{err: raw, failures: 1}
+	svc := New(repo, nil, WithTransient(func(err error) bool { return errors.Is(err, raw) }))
+	if err := svc.Insert(context.Background(), []domain.LogEntry{{Message: "x"}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.calls != 2 {
+		t.Errorf("insert attempts: got %d, want 2", repo.calls)
+	}
+
+	permanent := &fakeRepo{err: raw}
+	kept := New(permanent, nil, WithTransient(nil))
+	if err := kept.Insert(context.Background(), []domain.LogEntry{{Message: "x"}}); !errors.Is(err, raw) {
+		t.Fatalf("expected the raw error, got %v", err)
+	}
+	if permanent.calls != 1 {
+		t.Errorf("default rule retried a permanent error: %d attempts", permanent.calls)
+	}
+}
