@@ -128,6 +128,13 @@ func TestNewUserAuthenticatorRejectsAnInvalidAdminConfig(t *testing.T) {
 	}
 }
 
+func TestNewUserAuthenticatorRejectsAMalformedAdminBcryptHash(t *testing.T) {
+	_, err := newUserAuthenticator(config.Config{AdminUsername: "admin", AdminPasswordBcrypt: "not-a-bcrypt-hash"})
+	if err == nil || !strings.Contains(err.Error(), "BUGBARN_ADMIN_PASSWORD_BCRYPT") {
+		t.Fatalf("err = %v, want startup to fail naming the variable", err)
+	}
+}
+
 func TestNewAPIAuthorizerRejectsAnInvalidKeyHash(t *testing.T) {
 	_, err := newAPIAuthorizer(config.Config{APIKeySHA256: "zz"}, openTestStore(t), nil)
 	if err == nil {
