@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
+	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -42,7 +43,7 @@ func newSegmentWorker(t *testing.T, dir string) (*spoolWorker, *spool.Spool, *st
 		eventSpool:  sp,
 		spoolDir:    dir,
 		store:       store,
-		svc:         domainevents.NewIssuePublisher(&domainevents.Bus{}),
+		proc:        ingestproc.NewProcessor(store, domainevents.NewIssuePublisher(&domainevents.Bus{}), nil, true),
 		ws:          worker.NewStatus(),
 		mq:          mq,
 		tracer:      tracing.Tracer(),

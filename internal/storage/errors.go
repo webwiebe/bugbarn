@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"strings"
@@ -25,6 +26,9 @@ func wrapErr(err error, msg string) error {
 	if sqlitedb.IsReadonlyRecovery(err) {
 		return apperr.Unavailable(msg, err)
 	}
+	if sqlitedb.IsBusy(err) {
+		return apperr.Busy(msg, err)
+	}
 	return apperr.Internal(msg, err)
 }
 
@@ -37,6 +41,9 @@ func wrapNotFound(err error, msg string) error {
 	}
 	if sqlitedb.IsReadonlyRecovery(err) {
 		return apperr.Unavailable(msg, err)
+	}
+	if sqlitedb.IsBusy(err) {
+		return apperr.Busy(msg, err)
 	}
 	return apperr.Internal(msg, err)
 }
@@ -53,14 +60,17 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
-// IsDatabaseLocked returns true when SQLite reports the database or a table is
-// locked (SQLITE_BUSY or SQLITE_LOCKED). Used for retry logic on write contention.
+// IsDatabaseLocked reports whether err is SQLite lock contention (SQLITE_BUSY
+// or SQLITE_LOCKED). It matches an error storage already wrapped as
+// apperr.ErrBusy and a raw driver error, by result code.
 func IsDatabaseLocked(err error) bool {
-	var sqliteErr *sqlite.Error
-	if errors.As(err, &sqliteErr) {
-		c := sqliteErr.Code()
-		return c == sqlite3.SQLITE_BUSY || c == sqlite3.SQLITE_LOCKED
-	}
-	// Fallback for wrapped errors.
-	return strings.Contains(err.Error(), "database is locked")
+	return errors.Is(err, apperr.ErrBusy) || sqlitedb.IsBusy(err)
+}
+
+// IsTransient reports whether a failed write is worth retrying: lock contention
+// or a deadline. Storage caps batches with its own deadline and SQLite's busy
+// handler ignores the context, so contention that outlasts the cap arrives as
+// context.DeadlineExceeded. Every writer-side retry decision uses this one rule.
+func IsTransient(err error) bool {
+	return err != nil && (errors.Is(err, context.DeadlineExceeded) || IsDatabaseLocked(err))
 }

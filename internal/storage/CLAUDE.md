@@ -11,11 +11,15 @@ Wrap every DB error before it leaves this package, with `wrapErr` / `wrapNotFoun
 
 - `sql.ErrNoRows` becomes `apperr.NotFound`
 - a UNIQUE violation becomes `apperr.Conflict`
+- SQLITE_BUSY and SQLITE_LOCKED (including extended codes) become `apperr.Busy`, which the
+  API answers with 503 and Retry-After
 - anything else becomes `apperr.Internal`
 
 Never return `sql.ErrNoRows`, a `*sqlite.Error` or a raw driver error. Services and the API
-map on `apperr` codes; a raw error surfaces as a 500. `IsDatabaseLocked` is the one
-exported check on driver errors, for retry decisions in the ingest consumers.
+map on `apperr` codes; a raw error surfaces as a 500. `IsDatabaseLocked` and
+`IsTransient` (busy, locked or an expired deadline) are the exported checks for retry
+decisions in the ingest consumers and the log service. They match on `apperr.ErrBusy` or
+the driver result code through `sqlitedb.IsBusy`, never on error text.
 
 This package does not log as a rule. The existing `slog` calls are best-effort side paths
 (driver registration, the background fingerprint migration, regression bookkeeping). Do

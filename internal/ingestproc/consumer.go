@@ -424,7 +424,7 @@ func (c *Consumer) insertLogs(ctx context.Context, slug string, entries []domain
 		if err == nil {
 			return "success"
 		}
-		if !isTransientPersistError(err) {
+		if !storage.IsTransient(err) {
 			c.logger.Error("drop logs after insert error", "project", slug, "count", len(entries), "error", err)
 			return "insert_error"
 		}

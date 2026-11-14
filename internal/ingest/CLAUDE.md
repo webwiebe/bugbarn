@@ -41,14 +41,19 @@ dropped with a warning.
 
 ## Writer side
 
-Two consumers persist events, and both go through `worker.ProcessRecord`
-(normalize, scrub, fingerprint), symbolication and `storage.PersistProcessedEvent`:
+Two consumers persist events. Both call `ingestproc.Processor.PersistRecord`: parse
+(`worker.ProcessRecordCtx`), project resolution, holding for a pending project,
+symbolication, `storage.PersistProcessedEvent` and the domain event. Each rule exists once
+there. The consumers keep only their delivery policy:
 
 - **Legacy file-spool worker** (`cmd/bugbarn/worker.go`, 1s tick). Drains
   `internal/mutqueue` first, then `ingest.ndjson` from its cursor. Used by direct writer
-  ingest, HTTP-mode reader replays, Alertmanager and `POST /api/v1/releases`. Transient
-  lock errors retry forever; other failures retry 3 times, then go to
-  `deadletter.ndjson`. It creates projects with `EnsureProject` and never holds events.
+  ingest, HTTP-mode reader replays, Alertmanager and `POST /api/v1/releases`. A transient
+  outcome (database busy or locked, or an expired deadline) stops the batch and retries on
+  the next tick without spending the retry budget; other failures retry 3 times, then go
+  to `deadletter.ndjson`. A held outcome advances the cursor like a success. Retries log at
+  WARN and only the dead letter logs at ERROR. It opens spans (`worker.ResolveProject`,
+  `worker.Symbolicate`, `worker.Persist`) through `Processor.SetTracer`; the Redis consumer sets none.
 - **Redis consumer** (`internal/ingestproc`, spec 007). `BLMOVE`s each entry into the
   writer's processing list (`bugbarn:write-queue:processing:writer`), runs `PersistRecord`
   with up to 5 retries on transient errors, and acks with `LREM` once every item has a
@@ -63,10 +68,11 @@ Two consumers persist events, and both go through `worker.ProcessRecord`
   `BUGBARN_AUTO_APPROVE_PROJECTS` off, events for an unapproved project are stored via
   `HoldEvent` and replayed by `ingestproc.Replayer` on approval.
 
-The two copies of the pipeline differ (project creation, held events, transient-error
-detection). They are meant to converge in spec 007 phase 5; until then a pipeline change
-usually has to land in both. The pipeline lives in `ingestproc` because `storage` imports
-`worker`, so `worker` cannot hold anything that needs `storage`.
+A change to what happens to a record belongs in `Processor.PersistRecord` and reaches both
+consumers. A change to retries, acks, the cursor or the dead letter belongs to one consumer.
+The pipeline lives in `ingestproc` because `storage` imports `worker`, so `worker` cannot
+hold anything that needs `storage`. `storage.IsTransient` is the one rule for a retryable
+write failure, by SQLite result code and not by error text.
 
 Direct log ingest on the writer skips the spool and inserts synchronously.
 `internal/logparse` parses pino-style bodies for both the HTTP endpoint and the consumer.
