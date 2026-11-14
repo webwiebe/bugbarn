@@ -28,12 +28,20 @@ func formatID(prefix string, value int64) string {
 	return fmt.Sprintf("%s%d", prefix, value)
 }
 
+// parseID reads the row id out of a prefixed public id such as "alert-7". An id
+// that does not parse is invalid input (400), the same answer a malformed issue
+// id gets, so no handler needs its own check.
 func parseID(prefix, value string) (int64, error) {
 	value = strings.TrimSpace(value)
+	kind := strings.TrimSuffix(prefix, "-")
 	if !strings.HasPrefix(value, prefix) {
-		return 0, fmt.Errorf("invalid id %q", value)
+		return 0, apperr.InvalidInput(fmt.Sprintf("invalid %s id %q", kind, value), nil)
 	}
-	return strconv.ParseInt(strings.TrimPrefix(value, prefix), 10, 64)
+	n, err := strconv.ParseInt(strings.TrimPrefix(value, prefix), 10, 64)
+	if err != nil {
+		return 0, apperr.InvalidInput(fmt.Sprintf("invalid %s id %q", kind, value), err)
+	}
+	return n, nil
 }
 
 func formatIssueID(prefix string, number int) string {

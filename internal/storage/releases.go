@@ -69,7 +69,7 @@ LIMIT ?`,
 func (s *ReleaseStore) GetRelease(ctx context.Context, releaseID string) (Release, error) {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
-		return Release{}, apperr.InvalidInput("invalid release ID", err)
+		return Release{}, err
 	}
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -171,7 +171,7 @@ INSERT INTO releases (
 func (s *ReleaseStore) UpdateRelease(ctx context.Context, releaseID string, release Release) (Release, error) {
 	rowID, err := parseID(releaseIDPrefix, releaseID)
 	if err != nil {
-		return Release{}, apperr.InvalidInput("invalid release ID", err)
+		return Release{}, err
 	}
 	if strings.TrimSpace(release.Name) == "" {
 		return Release{}, apperr.InvalidInput("release name is required", nil)

@@ -74,7 +74,7 @@ LIMIT 1`,
 func (s *AlertStore) UpdateAlertLastFired(ctx context.Context, alertID string, firedAt time.Time) error {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
-		return apperr.InvalidInput("invalid alert ID", err)
+		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
 UPDATE alerts SET last_fired_at = ? WHERE id = ?`,

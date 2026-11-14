@@ -164,7 +164,7 @@ INSERT INTO alerts (
 func (s *AlertStore) UpdateAlert(ctx context.Context, alertID string, alert Alert) (Alert, error) {
 	rowID, err := parseID(alertIDPrefix, alertID)
 	if err != nil {
-		return Alert{}, apperr.InvalidInput("invalid alert ID", err)
+		return Alert{}, err
 	}
 	if strings.TrimSpace(alert.Name) == "" {
 		return Alert{}, apperr.InvalidInput("alert name is required", nil)
