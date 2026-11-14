@@ -1,14 +1,19 @@
-// Package ingestproc holds the writer-side persistence pipeline shared by the
-// Redis write-queue consumer (spec 007). It lives apart from internal/worker,
-// which holds the storage-free decode and fingerprint step; this package ties
-// that step to storage. The legacy file-spool worker in cmd/bugbarn still has
-// its own inline copy of this pipeline; the two converge in spec 007 phase 5.
+// Package ingestproc holds the writer-side persistence pipeline. It is the one
+// place that turns a decoded ingest record into a stored event: project
+// resolution, held payloads for unapproved projects, symbolication, persist,
+// and the domain event. Both writers call it, the Redis write-queue consumer
+// (spec 007) and the file-spool worker in cmd/bugbarn, and each keeps only its
+// own delivery policy (retries, cursor, dead letter, ack). It lives apart from
+// internal/worker, which holds the storage-free decode and fingerprint step.
 package ingestproc
 
 import (
 	"context"
-	"errors"
 	"log/slog"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
@@ -24,11 +29,11 @@ type Outcome int
 const (
 	// OutcomeSuccess: the event was persisted and its domain event published.
 	OutcomeSuccess Outcome = iota
-	// OutcomeParseError: the body could not be parsed — permanent, do not retry.
+	// OutcomeParseError: the body could not be parsed, permanent, do not retry.
 	OutcomeParseError
 	// OutcomeTransient: a retryable persist failure (locked DB, deadline).
 	OutcomeTransient
-	// OutcomePersistError: a non-retryable persist failure — dead-letter.
+	// OutcomePersistError: a non-retryable persist failure.
 	OutcomePersistError
 	// OutcomeHeld: the project is pending approval, so the raw payload was parked
 	// in held_events instead of persisted. It will be replayed on approval.
@@ -43,11 +48,23 @@ type Result struct {
 	IsNew     bool
 	Regressed bool
 	ProjectID int64
+	// Fingerprint and Severity come from the decoded event and are set once the
+	// record parsed, whatever happened after.
+	Fingerprint string
+	Severity    string
 }
 
+// Span names the persist pipeline emits when a tracer is set. They keep the
+// names the spool worker has always used.
+const (
+	spanResolveProject = "worker.ResolveProject"
+	spanSymbolicate    = "worker.Symbolicate"
+	spanPersist        = "worker.Persist"
+)
+
 // Processor runs the full persist pipeline for one ingest record:
-// parse → resolve project → symbolicate → persist → publish domain event.
-// It owns no retry/cursor/dead-letter policy — callers do.
+// parse, resolve project, symbolicate, persist, publish domain event.
+// It owns no retry, cursor or dead-letter policy; callers do.
 type Processor struct {
 	store     *storage.Store
 	publisher *domainevents.IssuePublisher
@@ -56,6 +73,8 @@ type Processor struct {
 	// ingest: active (true) or pending admin approval (false). When pending, the
 	// payload is held instead of persisted.
 	autoApprove bool
+	// tracer, when set, wraps the pipeline steps in spans. Nil emits none.
+	tracer trace.Tracer
 }
 
 // NewProcessor wires the pipeline against a writer store and event publisher.
@@ -68,50 +87,74 @@ func NewProcessor(store *storage.Store, publisher *domainevents.IssuePublisher, 
 	return &Processor{store: store, publisher: publisher, logger: logger.With("component", "ingestproc"), autoApprove: autoApprove}
 }
 
-// PersistRecord parses and persists a single ingest record. Mirrors the inline
-// pipeline in cmd/bugbarn's runBackgroundWorker so behavior is identical.
+// SetTracer makes PersistRecord emit the worker.ResolveProject,
+// worker.Symbolicate and worker.Persist spans under the caller's context. The
+// spool worker sets it; the queue consumer runs without spans.
+func (p *Processor) SetTracer(t trace.Tracer) { p.tracer = t }
+
+// startSpan starts a child span, or returns the context unchanged with a no-op
+// span when no tracer is set.
+func (p *Processor) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
+	if p.tracer == nil {
+		return ctx, trace.SpanFromContext(context.Background())
+	}
+	return p.tracer.Start(ctx, name, trace.WithAttributes(attrs...))
+}
+
+// PersistRecord parses and persists a single ingest record. Both writers call
+// it, so a rule about what happens to a record exists once.
 func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Result {
-	processed, err := worker.ProcessRecord(record)
+	processed, err := worker.ProcessRecordCtx(ctx, record)
 	if err != nil {
 		return Result{Outcome: OutcomeParseError, Err: err}
 	}
+	res := Result{Fingerprint: processed.Fingerprint, Severity: processed.Event.Severity}
 
 	// Resolve the project from the slug stored on the record. A failure here is
 	// non-fatal: we fall through with no project context (default project).
 	persistCtx := ctx
 	if record.ProjectSlug != "" {
-		if proj, ok := p.EnsureProjectForIngest(ctx, record.ProjectSlug); ok {
+		rctx, rspan := p.startSpan(ctx, spanResolveProject, attribute.String("project_slug", record.ProjectSlug))
+		proj, ok := p.EnsureProjectForIngest(rctx, record.ProjectSlug)
+		if ok {
+			rspan.SetAttributes(attribute.Int64("project_id", proj.ID))
+		} else {
+			rspan.SetStatus(codes.Error, "project not resolved")
+		}
+		rspan.End()
+		if ok {
 			// Project pending admin approval: park the raw payload and stop. It
 			// replays through this same path once the project is approved.
 			if proj.Status == "pending" {
-				held := storage.HeldRecord{
-					ProjectID:   proj.ID,
-					Slug:        record.ProjectSlug,
-					Kind:        storage.HeldKindEvent,
-					IngestID:    record.IngestID,
-					ReceivedAt:  record.ReceivedAt,
-					ContentType: record.ContentType,
-					BodyBase64:  record.BodyBase64,
-				}
-				if herr := p.Hold(ctx, held); herr != nil {
-					return Result{Outcome: OutcomeTransient, Err: herr}
-				}
-				return Result{Outcome: OutcomeHeld, ProjectID: proj.ID}
+				return p.holdEvent(ctx, res, proj, record)
 			}
 			persistCtx = domain.WithProjectID(ctx, proj.ID)
 		}
 	}
 
 	// Annotate JS stack frames with original positions from stored source maps.
-	processed.Event = worker.SymbolicateEvent(persistCtx, processed.Event, p.store)
+	symCtx, symSpan := p.startSpan(persistCtx, spanSymbolicate)
+	processed.Event = worker.SymbolicateEvent(symCtx, processed.Event, p.store)
+	symSpan.End()
 
-	issue, _, isNew, isRegressed, perr := p.store.PersistProcessedEvent(persistCtx, processed)
+	pctx, persistSpan := p.startSpan(persistCtx, spanPersist)
+	issue, _, isNew, isRegressed, perr := p.store.PersistProcessedEvent(pctx, processed)
 	if perr != nil {
-		if isTransientPersistError(perr) {
-			return Result{Outcome: OutcomeTransient, Err: perr}
+		persistSpan.SetStatus(codes.Error, perr.Error())
+		persistSpan.End()
+		res.Err = perr
+		res.Outcome = OutcomePersistError
+		if storage.IsTransient(perr) {
+			res.Outcome = OutcomeTransient
 		}
-		return Result{Outcome: OutcomePersistError, Err: perr}
+		return res
 	}
+	persistSpan.SetAttributes(
+		attribute.Bool("is_new", isNew),
+		attribute.Bool("is_regressed", isRegressed),
+		attribute.String("issue_id", issue.ID),
+	)
+	persistSpan.End()
 
 	var projectID int64
 	if pid, ok := domain.ProjectIDFromContext(persistCtx); ok {
@@ -119,13 +162,38 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 	}
 	p.publisher.PublishIssueEvent(issue, projectID, isNew, isRegressed)
 
-	return Result{
-		Outcome:   OutcomeSuccess,
-		Issue:     issue,
-		IsNew:     isNew,
-		Regressed: isRegressed,
-		ProjectID: projectID,
+	res.Outcome = OutcomeSuccess
+	res.Issue = issue
+	res.IsNew = isNew
+	res.Regressed = isRegressed
+	res.ProjectID = projectID
+	return res
+}
+
+// holdEvent parks the record of a pending project. A hold that fails on lock
+// contention is transient; any other hold failure is permanent for this record,
+// so a caller with an unbounded retry is not stuck on it.
+func (p *Processor) holdEvent(ctx context.Context, res Result, proj storage.Project, record spool.Record) Result {
+	held := storage.HeldRecord{
+		ProjectID:   proj.ID,
+		Slug:        record.ProjectSlug,
+		Kind:        storage.HeldKindEvent,
+		IngestID:    record.IngestID,
+		ReceivedAt:  record.ReceivedAt,
+		ContentType: record.ContentType,
+		BodyBase64:  record.BodyBase64,
 	}
+	res.ProjectID = proj.ID
+	if herr := p.Hold(ctx, held); herr != nil {
+		res.Err = herr
+		res.Outcome = OutcomePersistError
+		if storage.IsTransient(herr) {
+			res.Outcome = OutcomeTransient
+		}
+		return res
+	}
+	res.Outcome = OutcomeHeld
+	return res
 }
 
 // EnsureProjectForIngest resolves (creating if needed) the project for slug,
@@ -160,16 +228,4 @@ func (p *Processor) Hold(ctx context.Context, h storage.HeldRecord) error {
 		return err
 	}
 	return nil
-}
-
-// isTransientPersistError mirrors cmd/bugbarn.isTransientPersistError: a locked
-// database or a deadline is worth retrying; anything else is permanent.
-func isTransientPersistError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	return storage.IsDatabaseLocked(err)
 }

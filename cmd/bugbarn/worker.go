@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -18,15 +16,24 @@ import (
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/config"
-	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
+	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
+
+// replaySummary is what worker-once reports after one pass over the spool.
+type replaySummary struct {
+	Records  int `json:"records"`
+	Events   int `json:"events"`
+	Releases int `json:"releases"`
+	Held     int `json:"held"`
+	Issues   int `json:"issues"`
+}
 
 func runWorkerOnce(cfg config.Config) error {
 	persistentStore, err := storage.Open(cfg.DBPath)
@@ -41,104 +48,49 @@ func runWorkerOnce(cfg config.Config) error {
 		return err
 	}
 
-	// Release markers share the spool with events but take a different path.
-	eventRecords := make([]spool.Record, 0, len(records))
-	releaseCount := 0
-	for _, record := range records {
-		if record.Kind == ingest.RecordKindRelease {
-			if err := persistReleaseRecord(context.Background(), persistentStore, record); err != nil {
-				return err
-			}
-			releaseCount++
-			continue
-		}
-		eventRecords = append(eventRecords, record)
-	}
-
-	processed, err := worker.ProcessRecords(eventRecords)
+	// No alert subscribers: a maintenance replay stores events and sends no mail.
+	publisher := domainevents.NewIssuePublisher(&domainevents.Bus{})
+	proc := ingestproc.NewProcessor(persistentStore, publisher, slog.Default(), cfg.AutoApproveProjects)
+	summary, err := replayRecords(context.Background(), proc, records)
 	if err != nil {
 		return err
 	}
+	return json.NewEncoder(os.Stdout).Encode(summary)
+}
 
-	issueKeys := make(map[string]struct{})
-	for _, item := range processed {
-		issueKeys[issueKey(item)] = struct{}{}
-		if _, _, _, _, err := persistentStore.PersistProcessedEvent(context.Background(), item); err != nil {
-			return err
+// replayRecords persists every record through the shared pipeline and stops at
+// the first failure. Release markers share the spool with events but take the
+// release path.
+func replayRecords(ctx context.Context, proc *ingestproc.Processor, records []spool.Record) (replaySummary, error) {
+	summary := replaySummary{Records: len(records)}
+	issues := make(map[string]struct{})
+	for _, record := range records {
+		if record.Kind == ingest.RecordKindRelease {
+			if err := proc.PersistRelease(ctx, record); err != nil {
+				return summary, err
+			}
+			summary.Releases++
+			continue
+		}
+		res := proc.PersistRecord(ctx, record)
+		switch res.Outcome {
+		case ingestproc.OutcomeSuccess:
+			summary.Events++
+			issues[res.Fingerprint] = struct{}{}
+		case ingestproc.OutcomeHeld:
+			summary.Held++
+		default:
+			return summary, res.Err
 		}
 	}
-
-	return json.NewEncoder(os.Stdout).Encode(map[string]any{
-		"records":  len(records),
-		"events":   len(processed),
-		"releases": releaseCount,
-		"issues":   len(issueKeys),
-	})
+	summary.Issues = len(issues)
+	return summary, nil
 }
 
 const (
 	workerMaxRetries      = 3
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
-
-// isTransientPersistError reports whether a persist failure should be retried
-// forever instead of counting toward the dead-letter budget. SQLite lock
-// contention (SQLITE_BUSY/BUSY_SNAPSHOT, "database is locked") is environmental
-// — Litestream checkpointing, slow disk — and resolves on its own.
-func isTransientPersistError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "SQLITE_BUSY") ||
-		strings.Contains(msg, "database is locked") ||
-		strings.Contains(msg, "database table is locked")
-}
-
-// persistReleaseRecord decodes a spooled release marker and creates it. Release
-// markers are enqueued by POST /api/v1/releases so the create stays off the
-// request path — the worker owns the single SQLite writer connection. The body
-// mirrors the JSON the API handler accepted; the resolved project is carried on
-// the record so it need not be re-resolved here.
-func persistReleaseRecord(ctx context.Context, store *storage.Store, record spool.Record) error {
-	body, err := base64.StdEncoding.DecodeString(record.BodyBase64)
-	if err != nil {
-		return fmt.Errorf("decode release body: %w", err)
-	}
-	var req struct {
-		Name        string `json:"name"`
-		Environment string `json:"environment"`
-		ObservedAt  string `json:"observedAt"`
-		Version     string `json:"version"`
-		CommitSHA   string `json:"commitSha"`
-		URL         string `json:"url"`
-		Notes       string `json:"notes"`
-		CreatedBy   string `json:"createdBy"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		return fmt.Errorf("unmarshal release: %w", err)
-	}
-	release := domain.Release{
-		Name:        req.Name,
-		Environment: req.Environment,
-		Version:     req.Version,
-		CommitSHA:   req.CommitSHA,
-		URL:         req.URL,
-		Notes:       req.Notes,
-		CreatedBy:   req.CreatedBy,
-	}
-	if parsed, err := time.Parse(time.RFC3339Nano, req.ObservedAt); err == nil {
-		release.ObservedAt = parsed
-	}
-	if record.ProjectID > 0 {
-		ctx = domain.WithProjectID(ctx, record.ProjectID)
-	}
-	_, err = store.CreateRelease(ctx, release)
-	return err
-}
 
 // workerMetrics holds the OTel instruments for the background spool worker.
 // Built once per worker (see newWorkerMetrics) and reused across ticks rather
@@ -173,8 +125,8 @@ func newWorkerMetrics() *workerMetrics {
 type spoolWorker struct {
 	eventSpool    *spool.Spool
 	spoolDir      string
-	store         *storage.Store
-	svc           *domainevents.IssuePublisher
+	store         *storage.Store // admin mutations from the mutation queue
+	proc          *ingestproc.Processor
 	selfReporting bool
 	ws            *worker.Status
 	mq            *mutqueue.Queue
@@ -188,12 +140,12 @@ type spoolWorker struct {
 	rotateThreshold int64
 }
 
-func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *domainevents.IssuePublisher, selfReporting bool, ws *worker.Status, mq *mutqueue.Queue) {
+func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, proc *ingestproc.Processor, selfReporting bool, ws *worker.Status, mq *mutqueue.Queue) {
 	w := &spoolWorker{
 		eventSpool:    eventSpool,
 		spoolDir:      spoolDir,
 		store:         store,
-		svc:           svc,
+		proc:          proc,
 		selfReporting: selfReporting,
 		ws:            ws,
 		mq:            mq,
@@ -281,7 +233,7 @@ func (w *spoolWorker) processEntry(ctx context.Context, entry spool.RecordAtOffs
 
 func (w *spoolWorker) processReleaseEntry(ctx context.Context, span trace.Span, entry spool.RecordAtOffset) (stop bool) {
 	record := entry.Record
-	if err := persistReleaseRecord(ctx, w.store, record); err != nil {
+	if err := w.proc.PersistRelease(ctx, record); err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		span.End()
 		// Release dead-letters are not self-reported (they predate self-reporting).
@@ -293,89 +245,55 @@ func (w *spoolWorker) processReleaseEntry(ctx context.Context, span trace.Span, 
 	return false
 }
 
+// processEventEntry persists one event record through the shared ingestproc
+// pipeline and applies the spool's delivery policy to the outcome: advance the
+// cursor on success or hold, retry a lock failure forever, and count anything
+// else toward the dead-letter budget.
 func (w *spoolWorker) processEventEntry(ctx context.Context, span trace.Span, entry spool.RecordAtOffset) (stop bool) {
 	record := entry.Record
-
-	processed, err := worker.ProcessRecord(record)
-	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
-		span.End()
-		w.failRecord(record, entry.EndOffset, "process record", err, true)
-		return true
+	res := w.proc.PersistRecord(ctx, record)
+	if res.Fingerprint != "" {
+		span.SetAttributes(
+			attribute.String("fingerprint", res.Fingerprint),
+			attribute.String("event.severity", res.Severity),
+		)
 	}
 
-	span.SetAttributes(
-		attribute.String("fingerprint", processed.Fingerprint),
-		attribute.String("event.severity", processed.Event.Severity),
-	)
-
-	persistCtx := w.resolveProject(ctx, record)
-
-	// Annotate JS stack frames with original positions from stored source maps.
-	_, symSpan := w.tracer.Start(persistCtx, "worker.Symbolicate")
-	processed.Event = worker.SymbolicateEvent(persistCtx, processed.Event, w.store)
-	symSpan.End()
-
-	_, persistSpan := w.tracer.Start(persistCtx, "worker.Persist")
-	issue, _, isNew, isRegressed, persistErr := w.store.PersistProcessedEvent(persistCtx, processed)
-	if persistErr != nil {
-		persistSpan.SetStatus(codes.Error, persistErr.Error())
-		persistSpan.End()
-		span.SetStatus(codes.Error, persistErr.Error())
+	switch res.Outcome {
+	case ingestproc.OutcomeSuccess:
 		span.End()
-		if isTransientPersistError(persistErr) {
-			// Environmental (lock contention); retry forever, don't burn the budget.
-			slog.Warn("worker transient persist failure, will retry", "ingest_id", record.IngestID, "error", persistErr)
-			if w.metrics != nil {
-				w.metrics.eventsProcessed.Add(ctx, 1, metric.WithAttributes(
-					attribute.String("outcome", "transient_error"),
-				))
-			}
-			return true
+		w.markProcessed(record, entry.EndOffset,
+			attribute.Bool("is_new", res.IsNew),
+			attribute.Bool("is_regressed", res.Regressed),
+		)
+		return false
+	case ingestproc.OutcomeHeld:
+		// The payload is parked for replay on approval; the record is handled.
+		span.End()
+		w.markHandled(record, entry.EndOffset, "held")
+		return false
+	case ingestproc.OutcomeTransient:
+		span.SetStatus(codes.Error, res.Err.Error())
+		span.End()
+		// Environmental (lock contention); retry forever, don't burn the budget.
+		slog.Warn("worker transient persist failure, will retry", "ingest_id", record.IngestID, "error", res.Err)
+		if w.metrics != nil {
+			w.metrics.eventsProcessed.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("outcome", "transient_error"),
+			))
 		}
-		w.failRecord(record, entry.EndOffset, "persist record", persistErr, true)
+		return true
+	case ingestproc.OutcomeParseError:
+		span.SetStatus(codes.Error, res.Err.Error())
+		span.End()
+		w.failRecord(record, entry.EndOffset, "process record", res.Err, true)
+		return true
+	default:
+		span.SetStatus(codes.Error, res.Err.Error())
+		span.End()
+		w.failRecord(record, entry.EndOffset, "persist record", res.Err, true)
 		return true
 	}
-	persistSpan.SetAttributes(
-		attribute.Bool("is_new", isNew),
-		attribute.Bool("is_regressed", isRegressed),
-		attribute.String("issue_id", issue.ID),
-	)
-	persistSpan.End()
-
-	// Publish domain events after successful persistence.
-	var projectID int64
-	if pid, ok := domain.ProjectIDFromContext(persistCtx); ok {
-		projectID = pid
-	}
-	w.svc.PublishIssueEvent(issue, projectID, isNew, isRegressed)
-
-	span.End()
-	w.markProcessed(record, entry.EndOffset,
-		attribute.Bool("is_new", isNew),
-		attribute.Bool("is_regressed", isRegressed),
-	)
-	return false
-}
-
-// resolveProject resolves the record's project slug to a project-scoped context,
-// falling back to ctx unchanged when there's no slug or resolution fails.
-func (w *spoolWorker) resolveProject(ctx context.Context, record spool.Record) context.Context {
-	if record.ProjectSlug == "" {
-		return ctx
-	}
-	_, resolveSpan := w.tracer.Start(ctx, "worker.ResolveProject",
-		trace.WithAttributes(attribute.String("project_slug", record.ProjectSlug)),
-	)
-	defer resolveSpan.End()
-	proj, err := w.store.EnsureProject(ctx, record.ProjectSlug)
-	if err != nil {
-		slog.Error("worker failed to ensure project", "project_slug", record.ProjectSlug, "error", err)
-		resolveSpan.SetStatus(codes.Error, err.Error())
-		return ctx
-	}
-	resolveSpan.SetAttributes(attribute.Int64("project_id", proj.ID))
-	return domain.WithProjectID(ctx, proj.ID)
 }
 
 // markProcessed clears retry state and advances the cursor past a record that was
@@ -386,13 +304,19 @@ func (w *spoolWorker) resolveProject(ctx context.Context, record spool.Record) c
 // span context: this keeps the signature (and its test call sites) stable and
 // exemplar correlation isn't required for these counters.
 func (w *spoolWorker) markProcessed(record spool.Record, endOffset int64, extraAttrs ...attribute.KeyValue) {
+	w.markHandled(record, endOffset, "success", extraAttrs...)
+}
+
+// markHandled is markProcessed for any final disposition, labeled with the
+// outcome the events_processed metric reports.
+func (w *spoolWorker) markHandled(record spool.Record, endOffset int64, outcome string, extraAttrs ...attribute.KeyValue) {
 	delete(w.retryCounts, record.IngestID)
 	w.advanceCursor(endOffset)
 	if w.ws != nil {
 		w.ws.RecordProcessed(1)
 	}
 	if w.metrics != nil {
-		attrs := append([]attribute.KeyValue{attribute.String("outcome", "success")}, extraAttrs...)
+		attrs := append([]attribute.KeyValue{attribute.String("outcome", outcome)}, extraAttrs...)
 		w.metrics.eventsProcessed.Add(context.Background(), 1, metric.WithAttributes(attrs...))
 	}
 }
@@ -425,12 +349,14 @@ func (w *spoolWorker) failRecord(record spool.Record, endOffset int64, stage str
 	}
 	w.retryCounts[record.IngestID]++
 	attempt := w.retryCounts[record.IngestID]
-	slog.Error("worker failed to "+stage, "ingest_id", record.IngestID, "attempt", attempt, "error", cause)
+	// ERROR means a record was lost, as in the queue consumer: BugBarn reports
+	// its own ERROR logs as bugs. An attempt that will be retried is a WARN.
 	if attempt < workerMaxRetries {
+		slog.Warn("worker failed to "+stage+", will retry", "ingest_id", record.IngestID, "attempt", attempt, "error", cause)
 		return
 	}
 
-	slog.Error("worker dead-lettering record", "stage", stage, "ingest_id", record.IngestID, "attempts", attempt)
+	slog.Error("worker dead-lettering record", "stage", stage, "ingest_id", record.IngestID, "attempts", attempt, "error", cause)
 	if dlErr := spool.AppendDeadLetter(w.spoolDir, record); dlErr != nil {
 		slog.Error("worker failed to write dead letter", "ingest_id", record.IngestID, "error", dlErr)
 	}

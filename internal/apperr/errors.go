@@ -70,6 +70,10 @@ var (
 	// ErrUnavailable marks a dependency that is not ready yet (for example a
 	// file another process has still to create). The API answers 503.
 	ErrUnavailable = &Error{Code: "unavailable"}
+	// ErrBusy marks lock contention in the database (SQLite busy or locked).
+	// It clears on its own, so callers retry; the API answers 503 with
+	// Retry-After.
+	ErrBusy = &Error{Code: "busy"}
 )
 
 func NotFound(msg string, cause error) *Error {
@@ -86,6 +90,12 @@ func InvalidInput(msg string, cause error) *Error {
 
 func Internal(msg string, cause error) *Error {
 	return &Error{Code: "internal", Message: msg, Err: cause}
+}
+
+// Busy wraps database lock contention. Storage maps SQLITE_BUSY and
+// SQLITE_LOCKED to it; callers test it with errors.Is(err, apperr.ErrBusy).
+func Busy(msg string, cause error) *Error {
+	return &Error{Code: "busy", Message: msg, Err: cause}
 }
 
 func Unavailable(msg string, cause error) *Error {

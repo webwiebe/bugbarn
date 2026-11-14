@@ -402,10 +402,13 @@ func TestDeleteMonitorMissingIsNotFound(t *testing.T) {
 	wantKind(t, s.DeleteMonitor(context.Background(), s.DefaultProjectID(), "nope"), apperr.ErrNotFound)
 }
 
-func TestIsDatabaseLockedStringFallback(t *testing.T) {
+func TestIsDatabaseLockedIgnoresErrorText(t *testing.T) {
 	t.Parallel()
-	if !IsDatabaseLocked(errors.New("database is locked")) || IsDatabaseLocked(errors.New("other")) {
-		t.Fatal("IsDatabaseLocked string fallback wrong")
+	if IsDatabaseLocked(errors.New("database is locked")) || IsDatabaseLocked(errors.New("other")) {
+		t.Fatal("IsDatabaseLocked must classify by result code, not by text")
+	}
+	if !IsDatabaseLocked(apperr.Busy("persist", errors.New("locked"))) {
+		t.Fatal("apperr.Busy is a locked database")
 	}
 }
 

@@ -187,9 +187,13 @@ func run() error {
 	workerStatus := worker.NewStatus()
 	var bgWg sync.WaitGroup
 	bgWg.Add(1)
+	// The spool worker persists through the same pipeline as the queue consumer
+	// below. It gets its own Processor only to switch on the per-step spans.
+	spoolProc := ingestproc.NewProcessor(store, eventPub, logger, cfg.AutoApproveProjects)
+	spoolProc.SetTracer(tracing.Tracer())
 	go func() {
 		defer bgWg.Done()
-		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, eventPub, selfReporting, workerStatus, mutQueue)
+		runBackgroundWorker(ctx, eventSpool, cfg.SpoolDir, store, spoolProc, selfReporting, workerStatus, mutQueue)
 	}()
 
 	digest.StartScheduler(ctx, cfg.Digest, store, logger, &bgWg)
@@ -345,13 +349,7 @@ func run() error {
 		shutdownErr := server.Shutdown(shutdownCtx)
 		// Wait for the worker to finish its current batch (and write its cursor)
 		// before exiting, so a deploy doesn't strand in-flight records.
-		drained := make(chan struct{})
-		go func() { bgWg.Wait(); close(drained) }()
-		select {
-		case <-drained:
-		case <-shutdownCtx.Done():
-			slog.Warn("worker did not drain before shutdown deadline")
-		}
+		waitForBackground(shutdownCtx, &bgWg)
 		if selfReporting {
 			bb.Shutdown(2 * time.Second)
 		}
@@ -362,10 +360,28 @@ func run() error {
 		}
 		return shutdownErr
 	case err := <-errCh:
+		// The listener stopped on its own. Stop the background loops and let
+		// them finish before the deferred closes run on the store they write to.
+		stop()
+		drainCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		waitForBackground(drainCtx, &bgWg)
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
+	}
+}
+
+// waitForBackground blocks until every goroutine on wg has returned or ctx is
+// done, whichever comes first.
+func waitForBackground(ctx context.Context, wg *sync.WaitGroup) {
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+	select {
+	case <-drained:
+	case <-ctx.Done():
+		slog.Warn("background workers did not stop before the deadline")
 	}
 }
 

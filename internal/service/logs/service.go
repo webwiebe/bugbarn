@@ -65,10 +65,10 @@ const insertRetryBudget = 20 * time.Second
 // arrives here as context.DeadlineExceeded rather than SQLITE_BUSY: the same
 // condition wearing a different error, and just as retryable. Matching only
 // SQLITE_BUSY made this retry loop give up on the first attempt for the very
-// case it exists to ride out. Mirrors ingestproc.isTransientPersistError, which
-// the callers already classify by.
+// case it exists to ride out. It is storage.IsTransient, the rule every writer-side
+// retry shares.
 func contended(err error) bool {
-	return storage.IsDatabaseLocked(err) || errors.Is(err, context.DeadlineExceeded)
+	return storage.IsTransient(err)
 }
 
 func (s *Service) Insert(ctx context.Context, entries []domain.LogEntry) error {
