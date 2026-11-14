@@ -104,7 +104,15 @@ func (n *EmailNotifier) Send(ctx context.Context, report Report) error {
 	if !n.Cfg.Active() {
 		return nil
 	}
+	subject, plain, html, err := renderMail(report)
+	if err != nil {
+		return err
+	}
+	return mail.Send(ctx, n.Cfg, n.Cfg.To, subject, plain, html)
+}
 
+// renderMail builds the subject and both bodies for a report.
+func renderMail(report Report) (subject, plain, html string, err error) {
 	since, _ := time.Parse(time.RFC3339, report.PeriodStart)
 	end, _ := time.Parse(time.RFC3339, report.PeriodEnd)
 
@@ -121,15 +129,14 @@ func (n *EmailNotifier) Send(ctx context.Context, report Report) error {
 		d.Regressions += sec.Stats.Regressions
 	}
 
-	subject := fmt.Sprintf("BugBarn weekly digest: %s - %s", since.Format("Jan 2"), end.Format("Jan 2, 2006"))
+	subject = fmt.Sprintf("BugBarn weekly digest: %s - %s", since.Format("Jan 2"), end.Format("Jan 2, 2006"))
 
-	var plain, html bytes.Buffer
-	if err := plainTmpl.Execute(&plain, d); err != nil {
-		return fmt.Errorf("render plain: %w", err)
+	var plainBuf, htmlBuf bytes.Buffer
+	if err := plainTmpl.Execute(&plainBuf, d); err != nil {
+		return "", "", "", fmt.Errorf("render plain: %w", err)
 	}
-	if err := htmlTmpl.Execute(&html, d); err != nil {
-		return fmt.Errorf("render html: %w", err)
+	if err := htmlTmpl.Execute(&htmlBuf, d); err != nil {
+		return "", "", "", fmt.Errorf("render html: %w", err)
 	}
-
-	return mail.Send(ctx, n.Cfg, n.Cfg.To, subject, plain.String(), html.String())
+	return subject, plainBuf.String(), htmlBuf.String(), nil
 }
