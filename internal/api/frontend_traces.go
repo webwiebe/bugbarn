@@ -10,10 +10,6 @@ import (
 )
 
 const (
-	// frontendTracesBase is the endpoint the SPA hands to the SpanBarn SDK. The
-	// SDK appends /api/v1/spans, which is the path served here.
-	frontendTracesBase = "/api/v1/frontend-traces"
-	frontendTracesPath = frontendTracesBase + "/api/v1/spans"
 	// frontendTracesMaxBody bounds one batch of spans from a browser.
 	frontendTracesMaxBody = 256 << 10
 )

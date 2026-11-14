@@ -363,3 +363,10 @@ func (s *Server) serveFrontendTraces(w http.ResponseWriter, r *http.Request) boo
 	s.relayFrontendTraces(w, r)
 	return true
 }
+
+const (
+	// frontendTracesBase is the endpoint the SPA hands to the SpanBarn SDK. The
+	// SDK appends /api/v1/spans, which is the path served here.
+	frontendTracesBase = "/api/v1/frontend-traces"
+	frontendTracesPath = frontendTracesBase + "/api/v1/spans"
+)
