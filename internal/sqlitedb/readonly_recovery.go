@@ -26,6 +26,11 @@ var readonlyRecoveryBackoffs = []time.Duration{25 * time.Millisecond, 50 * time.
 // writer write while the reader waits.
 var readonlyRecoveryHook func()
 
+// SetReadonlyRecoveryHook installs the hook described on readonlyRecoveryHook.
+// It exists for tests in other packages that drive a reader through the retry;
+// production code never calls it. Pass nil to remove the hook.
+func SetReadonlyRecoveryHook(fn func()) { readonlyRecoveryHook = fn }
+
 var readonlyRecoveryCounter, _ = tracing.Meter().Int64Counter(
 	"bugbarn.storage.readonly_recovery",
 	metric.WithDescription("Reads that hit SQLITE_READONLY_RECOVERY on a reader, by outcome (recovered or failed)."),
