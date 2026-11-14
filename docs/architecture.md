@@ -18,7 +18,7 @@ SDK/client -> ingest API -> durable spool -> background worker -> normalization/
 
 - `cmd/bugbarn`: process entrypoint. It loads config, opens storage, opens the spool, starts the HTTP server, and runs the background worker. `worker-once` is the maintenance path for processing the current spool one time.
 - `internal/ingest`: request-path ingest handler. It owns API key validation, size checks, and durable enqueue into the spool.
-- `internal/api`: HTTP server and route dispatch. It owns request/response handling and delegates use cases to `internal/service`.
+- `internal/api`: HTTP server and routing (ServeMux patterns, registered in `routes*.go`). It owns request/response handling and delegates use cases to `internal/service`.
 - `internal/service`: business use cases and error boundary between HTTP handlers and repositories.
 - `internal/worker`: spool record processing. It owns decoding, normalization, privacy scrubbing, and fingerprint generation before persistence.
 - `internal/storage`: SQLite repository implementation, schema setup, migrations, inserts, issue grouping, event persistence, facet storage, and read queries.
