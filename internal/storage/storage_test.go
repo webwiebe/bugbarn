@@ -9,7 +9,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestPersistProcessedEventGroupsByFingerprintAndKeepsEventsQueryable(t *testing.T) {
@@ -255,13 +254,13 @@ func TestResolveIssueReopensOnRegressionAndLiveEventsAreWindowed(t *testing.T) {
 	}
 }
 
-func processedEventFrom(evt event.Event) worker.ProcessedEvent {
+func processedEventFrom(evt event.Event) event.ProcessedEvent {
 	snapshot := fingerprint.SnapshotFor(evt)
 	fp := fingerprint.Fingerprint(evt)
 	evt.Fingerprint = fp
 	evt.FingerprintMaterial = snapshot.Material
 	evt.FingerprintExplanation = snapshot.Explanation
-	return worker.ProcessedEvent{
+	return event.ProcessedEvent{
 		Event:                  evt,
 		Fingerprint:            fp,
 		FingerprintMaterial:    snapshot.Material,
@@ -269,7 +268,7 @@ func processedEventFrom(evt event.Event) worker.ProcessedEvent {
 	}
 }
 
-func processedEventForIssue(observed time.Time, message string) worker.ProcessedEvent {
+func processedEventForIssue(observed time.Time, message string) event.ProcessedEvent {
 	evt := event.Event{
 		ObservedAt: observed,
 		ReceivedAt: observed.Add(1 * time.Second),

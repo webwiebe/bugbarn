@@ -15,7 +15,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 type recordingFiler struct {
@@ -55,7 +54,7 @@ func (f *fixture) eventWithFingerprint(projectID int64, fp string, at time.Time)
 		ReceivedAt: at, ObservedAt: at, Severity: "ERROR", Message: "self filed",
 		Exception: event.Exception{Type: "monitor", Message: "self filed"},
 	}
-	if _, _, _, _, err := f.store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+	if _, _, _, _, err := f.store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 		Event: evt, Fingerprint: fp, FingerprintMaterial: fp,
 	}); err != nil {
 		f.t.Fatal(err)

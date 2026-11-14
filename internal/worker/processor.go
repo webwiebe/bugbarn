@@ -17,18 +17,11 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
-type ProcessedEvent struct {
-	Event                  event.Event `json:"event"`
-	Fingerprint            string      `json:"fingerprint"`
-	FingerprintMaterial    string      `json:"fingerprintMaterial"`
-	FingerprintExplanation []string    `json:"fingerprintExplanation"`
-}
-
-func ProcessRecord(record spool.Record) (ProcessedEvent, error) {
+func ProcessRecord(record spool.Record) (event.ProcessedEvent, error) {
 	return ProcessRecordCtx(context.Background(), record)
 }
 
-func ProcessRecordCtx(ctx context.Context, record spool.Record) (ProcessedEvent, error) {
+func ProcessRecordCtx(ctx context.Context, record spool.Record) (event.ProcessedEvent, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "worker.Process",
 		trace.WithAttributes(attribute.String("ingest_id", record.IngestID)),
 	)
@@ -40,7 +33,7 @@ func ProcessRecordCtx(ctx context.Context, record spool.Record) (ProcessedEvent,
 		decodeSpan.SetStatus(codes.Error, err.Error())
 		decodeSpan.End()
 		span.SetStatus(codes.Error, err.Error())
-		return ProcessedEvent{}, fmt.Errorf("decode spool body: %w", err)
+		return event.ProcessedEvent{}, fmt.Errorf("decode spool body: %w", err)
 	}
 	decodeSpan.SetAttributes(attribute.Int("body_size", len(body)))
 	decodeSpan.End()
@@ -51,7 +44,7 @@ func ProcessRecordCtx(ctx context.Context, record spool.Record) (ProcessedEvent,
 		normalizeSpan.SetStatus(codes.Error, err.Error())
 		normalizeSpan.End()
 		span.SetStatus(codes.Error, err.Error())
-		return ProcessedEvent{}, fmt.Errorf("normalize event: %w", err)
+		return event.ProcessedEvent{}, fmt.Errorf("normalize event: %w", err)
 	}
 	normalizeSpan.End()
 
@@ -73,7 +66,7 @@ func ProcessRecordCtx(ctx context.Context, record spool.Record) (ProcessedEvent,
 		attribute.String("event.severity", evt.Severity),
 	)
 
-	return ProcessedEvent{
+	return event.ProcessedEvent{
 		Event:                  evt,
 		Fingerprint:            fp,
 		FingerprintMaterial:    material,
@@ -81,8 +74,8 @@ func ProcessRecordCtx(ctx context.Context, record spool.Record) (ProcessedEvent,
 	}, nil
 }
 
-func ProcessRecords(records []spool.Record) ([]ProcessedEvent, error) {
-	processed := make([]ProcessedEvent, 0, len(records))
+func ProcessRecords(records []spool.Record) ([]event.ProcessedEvent, error) {
+	processed := make([]event.ProcessedEvent, 0, len(records))
 	for _, record := range records {
 		evt, err := ProcessRecord(record)
 		if err != nil {

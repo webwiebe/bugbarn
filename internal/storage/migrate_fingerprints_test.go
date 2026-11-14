@@ -10,7 +10,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 // openForMigration opens a store with the background migration off, so each
@@ -38,7 +37,7 @@ func migrationEvent(observed time.Time) event.Event {
 // withFingerprint builds the ProcessedEvent the ingest path produces when the
 // event carries fp: the material and explanation are still derived from the
 // event, exactly as worker.ProcessRecord does for an SDK override.
-func withFingerprint(evt event.Event, fp, material string) worker.ProcessedEvent {
+func withFingerprint(evt event.Event, fp, material string) event.ProcessedEvent {
 	snapshot := fingerprint.SnapshotFor(evt)
 	if material == "" {
 		material = snapshot.Material
@@ -46,7 +45,7 @@ func withFingerprint(evt event.Event, fp, material string) worker.ProcessedEvent
 	evt.Fingerprint = fp
 	evt.FingerprintMaterial = material
 	evt.FingerprintExplanation = snapshot.Explanation
-	return worker.ProcessedEvent{
+	return event.ProcessedEvent{
 		Event:                  evt,
 		Fingerprint:            fp,
 		FingerprintMaterial:    material,

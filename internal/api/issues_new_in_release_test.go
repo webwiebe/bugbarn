@@ -12,7 +12,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestListIssuesNewInRelease(t *testing.T) {
@@ -31,7 +30,7 @@ func TestListIssuesNewInRelease(t *testing.T) {
 	ids := map[string]string{}
 	for name, offset := range firstSeen {
 		at := base.Add(offset)
-		issue, _, _, _, err := store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+		issue, _, _, _, err := store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 			Event: event.Event{
 				ObservedAt: at, ReceivedAt: at, Severity: "ERROR", Message: name,
 				Exception: event.Exception{Type: "E" + name, Message: name},

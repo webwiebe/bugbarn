@@ -1,8 +1,8 @@
 // Package ingestproc holds the writer-side persistence pipeline shared by the
-// Redis write-queue consumer (spec 007). It is a separate package because
-// storage imports worker, so the pipeline (which needs both) cannot live in
-// worker. The legacy file-spool worker in cmd/bugbarn still has its own inline
-// copy of this pipeline; the two converge in spec 007 phase 5.
+// Redis write-queue consumer (spec 007). It lives apart from internal/worker,
+// which holds the storage-free decode and fingerprint step; this package ties
+// that step to storage. The legacy file-spool worker in cmd/bugbarn still has
+// its own inline copy of this pipeline; the two converge in spec 007 phase 5.
 package ingestproc
 
 import (
@@ -11,7 +11,7 @@ import (
 	"log/slog"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
-	"github.com/wiebe-xyz/bugbarn/internal/service"
+	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
@@ -50,7 +50,7 @@ type Result struct {
 // It owns no retry/cursor/dead-letter policy — callers do.
 type Processor struct {
 	store     *storage.Store
-	publisher *service.EventPublisher
+	publisher *domainevents.IssuePublisher
 	logger    *slog.Logger
 	// autoApprove controls how a not-yet-existing project is created on first
 	// ingest: active (true) or pending admin approval (false). When pending, the
@@ -61,7 +61,7 @@ type Processor struct {
 // NewProcessor wires the pipeline against a writer store and event publisher.
 // When autoApprove is false, brand-new projects are created pending and their
 // ingest is held until approved.
-func NewProcessor(store *storage.Store, publisher *service.EventPublisher, logger *slog.Logger, autoApprove bool) *Processor {
+func NewProcessor(store *storage.Store, publisher *domainevents.IssuePublisher, logger *slog.Logger, autoApprove bool) *Processor {
 	if logger == nil {
 		logger = slog.Default()
 	}

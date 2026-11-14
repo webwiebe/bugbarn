@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestOpenReadOnlyReadsExistingData(t *testing.T) {
@@ -76,9 +75,9 @@ func TestOpenReadOnly_PersistProcessedEventFails(t *testing.T) {
 	}
 }
 
-func dummyProcessedEvent(fp string) worker.ProcessedEvent {
+func dummyProcessedEvent(fp string) event.ProcessedEvent {
 	now := time.Now()
-	return worker.ProcessedEvent{
+	return event.ProcessedEvent{
 		Fingerprint: fp,
 		Event: event.Event{
 			ReceivedAt: now,

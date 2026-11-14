@@ -13,7 +13,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
-	"github.com/wiebe-xyz/bugbarn/internal/service"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -28,7 +27,7 @@ func pendingProcessor(t *testing.T) (*Processor, *storage.Store) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	pub := service.NewEventPublisher(&domainevents.Bus{})
+	pub := domainevents.NewIssuePublisher(&domainevents.Bus{})
 	return NewProcessor(store, pub, nil, false), store
 }
 

@@ -20,7 +20,6 @@ import (
 	projectsvc "github.com/wiebe-xyz/bugbarn/internal/service/projects"
 	releasesvc "github.com/wiebe-xyz/bugbarn/internal/service/releases"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func setupTestServer(t *testing.T) (*Server, *storage.Store) {
@@ -42,7 +41,7 @@ func setupTestServer(t *testing.T) (*Server, *storage.Store) {
 
 func persistTestIssue(t *testing.T, store *storage.Store) storage.Issue {
 	t.Helper()
-	pe := worker.ProcessedEvent{
+	pe := event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: time.Now().UTC(),
 			ReceivedAt: time.Now().UTC().Add(time.Second),
@@ -175,7 +174,7 @@ func TestListIssuesIncludesHourlyCounts(t *testing.T) {
 
 func persistTestIssueWithFingerprint(t *testing.T, store *storage.Store, fp, message string) storage.Issue {
 	t.Helper()
-	pe := worker.ProcessedEvent{
+	pe := event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: time.Now().UTC(),
 			ReceivedAt: time.Now().UTC().Add(time.Second),
@@ -260,7 +259,7 @@ func TestListIssuesRegressedFirst(t *testing.T) {
 	}
 	fpB := fingerprint.Fingerprint(evtB)
 	snapB := fingerprint.SnapshotFor(evtB)
-	issueB, _, _, _, err := store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+	issueB, _, _, _, err := store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 		Event:               evtB,
 		Fingerprint:         fpB,
 		FingerprintMaterial: snapB.Material,
@@ -280,7 +279,7 @@ func TestListIssuesRegressedFirst(t *testing.T) {
 		Message:    "will regress error",
 		Exception:  event.Exception{Type: "TestError", Message: "will regress error"},
 	}
-	regressedIssue, _, _, regressed, err := store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+	regressedIssue, _, _, regressed, err := store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 		Event:               regressEvt,
 		Fingerprint:         fpB,
 		FingerprintMaterial: snapB.Material,
@@ -332,7 +331,7 @@ func TestResolveIssueInNonDefaultProject(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	pe := worker.ProcessedEvent{
+	pe := event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: time.Now().UTC(),
 			ReceivedAt: time.Now().UTC().Add(time.Second),
