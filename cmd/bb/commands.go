@@ -303,12 +303,9 @@ func cmdResolve(args []string) error {
 	if len(remaining) < 1 {
 		return fmt.Errorf("usage: bb resolve <issue-id> [--project SLUG]")
 	}
-	client, err := newClient()
+	client, err := newProjectClient(*project)
 	if err != nil {
 		return err
-	}
-	if p := resolveProject(*project, client); p != "" {
-		client.project = p
 	}
 	data, err := client.post("/api/v1/issues/"+remaining[0]+"/resolve", nil)
 	if err != nil {
@@ -327,12 +324,9 @@ func cmdReopen(args []string) error {
 	if len(remaining) < 1 {
 		return fmt.Errorf("usage: bb reopen <issue-id> [--project SLUG]")
 	}
-	client, err := newClient()
+	client, err := newProjectClient(*project)
 	if err != nil {
 		return err
-	}
-	if p := resolveProject(*project, client); p != "" {
-		client.project = p
 	}
 	data, err := client.post("/api/v1/issues/"+remaining[0]+"/reopen", nil)
 	if err != nil {
@@ -353,12 +347,9 @@ func cmdMute(args []string) error {
 		return fmt.Errorf("usage: bb mute <issue-id> [--mode until_regression|forever] [--project SLUG]")
 	}
 
-	client, err := newClient()
+	client, err := newProjectClient(*project)
 	if err != nil {
 		return err
-	}
-	if p := resolveProject(*project, client); p != "" {
-		client.project = p
 	}
 	data, err := client.patch("/api/v1/issues/"+remaining[0]+"/mute", map[string]string{"mute_mode": *mode})
 	if err != nil {
@@ -380,12 +371,9 @@ func cmdUnmute(args []string) error {
 	if len(remaining) < 1 {
 		return fmt.Errorf("usage: bb unmute <issue-id> [--project SLUG]")
 	}
-	client, err := newClient()
+	client, err := newProjectClient(*project)
 	if err != nil {
 		return err
-	}
-	if p := resolveProject(*project, client); p != "" {
-		client.project = p
 	}
 	data, err := client.patch("/api/v1/issues/"+remaining[0]+"/unmute", nil)
 	if err != nil {
@@ -395,6 +383,19 @@ func cmdUnmute(args []string) error {
 		return err
 	}
 	return requireIssueStatus(data, remaining[0], "unresolved")
+}
+
+// newProjectClient builds a client scoped to the project named by the flag, the
+// directory's .bugbarn.json or the global config, in that order.
+func newProjectClient(flagValue string) (*Client, error) {
+	client, err := newClient()
+	if err != nil {
+		return nil, err
+	}
+	if p := resolveProject(flagValue, client); p != "" {
+		client.project = p
+	}
+	return client, nil
 }
 
 func resolveProject(flag string, c *Client) string {
