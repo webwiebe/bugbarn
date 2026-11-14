@@ -298,4 +298,3 @@ func TestRoutesCharacterization(t *testing.T) {
 		}
 	}
 }
-

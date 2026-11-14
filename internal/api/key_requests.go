@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,36 +13,34 @@ import (
 // access logs and URLs.
 const pollSecretHeader = "X-BugBarn-Poll-Secret"
 
-// handleKeyRequest serves the public side of agent key requests: an empty id
-// opens a request, a set id polls one (and claims the key once approved). The
-// routing (paths and methods) is serveKeyRequestEndpoint in routes_public.go.
-//
-// Both write (the poll claims the key), so a reader forwards them to the writer.
-func (s *Server) handleKeyRequest(w http.ResponseWriter, r *http.Request, slug, id string) {
+// admitKeyRequest runs what both public key request endpoints share: the
+// per-IP rate limit, the hand-off to the writer (open and poll both write) and
+// the availability check. It reports whether the handler should go on.
+func (s *Server) admitKeyRequest(w http.ResponseWriter, r *http.Request) bool {
 	ip := s.clientIP(r)
 	if s.overRateLimit(&s.setupLimiter, ip, setupRateLimit) {
-		s.logger.Warn("setup: key request rate-limited", "ip", ip, "slug", slug)
+		s.logger.Warn("setup: key request rate-limited", "ip", ip, "slug", r.PathValue("slug"))
 		w.Header().Set("Retry-After", "60")
 		http.Error(w, "too many setup requests", http.StatusTooManyRequests)
-		return
+		return false
 	}
 	if s.writeForwarder != nil {
 		s.writeForwarder.Forward(w, r)
-		return
+		return false
 	}
 	if s.keyRequests == nil {
 		http.Error(w, "key requests are not available", http.StatusServiceUnavailable)
-		return
+		return false
 	}
-
-	if id == "" {
-		s.createKeyRequest(w, r, slug)
-	} else {
-		s.pollKeyRequest(w, r, slug, id)
-	}
+	return true
 }
 
-func (s *Server) createKeyRequest(w http.ResponseWriter, r *http.Request, slug string) {
+// createKeyRequest handles POST /api/v1/setup/{slug}/key-requests.
+func (s *Server) createKeyRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.admitKeyRequest(w, r) {
+		return
+	}
+	slug := r.PathValue("slug")
 	proj, err := s.projects.BySlug(r.Context(), slug)
 	// Only an existing, active project can get a key this way. New slugs
 	// onboard through the setup page and need no request.
@@ -69,13 +68,17 @@ func (s *Server) createKeyRequest(w http.ResponseWriter, r *http.Request, slug s
 	})
 }
 
-func (s *Server) pollKeyRequest(w http.ResponseWriter, r *http.Request, slug, id string) {
+// pollKeyRequest handles GET /api/v1/setup/{slug}/key-requests/{id}.
+func (s *Server) pollKeyRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.admitKeyRequest(w, r) {
+		return
+	}
 	secret := r.Header.Get(pollSecretHeader)
 	if secret == "" {
 		http.Error(w, "missing "+pollSecretHeader, http.StatusUnauthorized)
 		return
 	}
-	res, err := s.keyRequests.Poll(r.Context(), slug, id, secret)
+	res, err := s.keyRequests.Poll(r.Context(), r.PathValue("slug"), r.PathValue("id"), secret)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -143,7 +146,15 @@ func (s *Server) listKeyRequests(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"keyRequests": list})
 }
 
-func (s *Server) resolveKeyRequest(w http.ResponseWriter, r *http.Request, id, action string) {
+func (s *Server) approveKeyRequest(w http.ResponseWriter, r *http.Request) {
+	s.decideKeyRequest(w, r, s.keyRequests.Approve)
+}
+
+func (s *Server) denyKeyRequest(w http.ResponseWriter, r *http.Request) {
+	s.decideKeyRequest(w, r, s.keyRequests.Deny)
+}
+
+func (s *Server) decideKeyRequest(w http.ResponseWriter, r *http.Request, decide func(ctx context.Context, id, actor string) error) {
 	// Approving mints a new key, so it takes a signed-in admin. An API key of any
 	// scope is refused here.
 	actor, ok := s.sessionUser(r)
@@ -152,13 +163,7 @@ func (s *Server) resolveKeyRequest(w http.ResponseWriter, r *http.Request, id, a
 		http.Error(w, "forbidden: deciding a key request requires an admin session", http.StatusForbidden)
 		return
 	}
-	var err error
-	if action == "approve" {
-		err = s.keyRequests.Approve(r.Context(), id, actor)
-	} else {
-		err = s.keyRequests.Deny(r.Context(), id, actor)
-	}
-	if err != nil {
+	if err := decide(r.Context(), r.PathValue("id"), actor); err != nil {
 		writeServiceError(w, err)
 		return
 	}

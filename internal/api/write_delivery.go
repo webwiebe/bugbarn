@@ -27,11 +27,10 @@ func (s *Server) forwardWrite(w http.ResponseWriter, r *http.Request, local http
 	local(w, r)
 }
 
-// handleLogsIngestPost serves a POST to the log-ingest endpoint: it sets CORS,
-// validates the API key, forwards to the spool/writer when configured, and
+// handleLogsIngestPost serves a POST to the log-ingest endpoint: it validates
+// the API key (the route group set the CORS headers), forwards to the spool/writer when configured, and
 // otherwise resolves the project and persists the batch locally.
 func (s *Server) handleLogsIngestPost(w http.ResponseWriter, r *http.Request) {
-	setWildcardCORS(w, "POST, OPTIONS", ingestCORSHeaders)
 	if !s.requireIngestKey(w, r) {
 		return
 	}

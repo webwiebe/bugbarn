@@ -53,7 +53,7 @@ func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 // deleteAPIKey removes a key. A setup key is derived, so removing only its row
 // would leave it working through the setup fallback: it gets revoked instead.
 func (s *Server) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/api/v1/apikeys/")
+	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
 		http.Error(w, "invalid api key id", http.StatusBadRequest)

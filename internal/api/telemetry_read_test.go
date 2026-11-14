@@ -218,7 +218,7 @@ func TestTelemetryHostsAndSeries(t *testing.T) {
 		"/api/v1/telemetry/hosts/k3s1/series?metric=load1&from=1&to=" + fmt.Sprint(f.now.UnixMilli()): http.StatusBadRequest,
 		"/api/v1/telemetry/hosts/k3s1/other":         http.StatusNotFound,
 		"/api/v1/telemetry/hosts/k3s1/metrics/extra": http.StatusNotFound,
-		"/api/v1/telemetry/hosts//metrics":           http.StatusNotFound,
+		"/api/v1/telemetry/hosts//metrics":           http.StatusTemporaryRedirect, // ServeMux cleans the double slash
 	} {
 		if code := f.get(t, path, nil); code != want {
 			t.Errorf("%s: status %d, want %d", path, code, want)

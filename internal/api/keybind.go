@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
@@ -110,13 +109,4 @@ func projectsInScope(ctx context.Context, projects []domain.Project) []domain.Pr
 		}
 	}
 	return own
-}
-
-// issueIDFromPath extracts the display ID from /api/v1/issues/{id}[/suffix].
-func issueIDFromPath(path string) string {
-	rest := strings.TrimPrefix(path, "/api/v1/issues/")
-	if i := strings.Index(rest, "/"); i >= 0 {
-		rest = rest[:i]
-	}
-	return rest
 }

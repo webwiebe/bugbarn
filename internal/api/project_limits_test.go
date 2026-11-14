@@ -14,7 +14,7 @@ func putLimits(t *testing.T, srv *Server, slug, body string) *httptest.ResponseR
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+slug+"/limits", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	srv.updateProjectLimits(rr, req)
+	srv.ServeHTTP(rr, req)
 	return rr
 }
 

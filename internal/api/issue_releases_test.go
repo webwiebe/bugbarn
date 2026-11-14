@@ -38,7 +38,7 @@ func TestIssueReleasesEndpoint(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	srv.serveIssueRoute(rr, httptest.NewRequest(http.MethodGet, "/api/v1/issues/"+issueID+"/releases", nil))
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/issues/"+issueID+"/releases", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d (body: %s)", rr.Code, rr.Body.String())
 	}
@@ -55,7 +55,7 @@ func TestIssueReleasesEndpoint(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	srv.serveIssueRoute(rr, httptest.NewRequest(http.MethodGet, "/api/v1/issues/NOPE-999/releases", nil))
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/issues/NOPE-999/releases", nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("unknown issue: status = %d, want 404", rr.Code)
 	}
@@ -67,7 +67,7 @@ func TestIssueReleasesEndpointEmptyList(t *testing.T) {
 	srv, store := setupTestServer(t)
 	issue := persistTestIssue(t, store)
 	rr := httptest.NewRecorder()
-	srv.serveIssueRoute(rr, httptest.NewRequest(http.MethodGet, "/api/v1/issues/"+issue.ID+"/releases", nil))
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/issues/"+issue.ID+"/releases", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d", rr.Code)
 	}

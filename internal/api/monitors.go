@@ -26,14 +26,14 @@ const (
 )
 
 // handleMonitorCheckIn serves POST /api/v1/monitors/<slug>/check-ins, already
-// routed by serveMonitorCheckInEndpoint in routes_ingest.go. A scheduled job
+// routed in routes_ingest.go. A scheduled job
 // calls it with a project key to report "ok" or "error".
 //
 //	{"status":"ok","message":"...","interval":"1h","grace":"5m"}
 //
 // interval and grace are optional; sent, they create or update the monitor.
 // Readers forward the write to the writer, which owns the database.
-func (s *Server) handleMonitorCheckIn(w http.ResponseWriter, r *http.Request, slug string) {
+func (s *Server) handleMonitorCheckIn(w http.ResponseWriter, r *http.Request) {
 	if s.ingestHandler == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -52,7 +52,7 @@ func (s *Server) handleMonitorCheckIn(w http.ResponseWriter, r *http.Request, sl
 		http.Error(w, "monitors unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	s.recordCheckIn(w, r, slug)
+	s.recordCheckIn(w, r, r.PathValue("slug"))
 }
 
 type checkInBody struct {
@@ -214,9 +214,9 @@ func monitorJSON(m domain.Monitor) map[string]any {
 // deleteMonitor handles DELETE /api/v1/monitors/<slug> in the scoped project.
 // The monitor's issues stay.
 func (s *Server) deleteMonitor(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimPrefix(r.URL.Path, monitorsPathPrefix)
+	slug := r.PathValue("slug")
 	pid, ok := domain.ProjectIDFromContext(r.Context())
-	if !ok || pid <= 0 || slug == "" || strings.Contains(slug, "/") {
+	if !ok || pid <= 0 || strings.Contains(slug, "/") {
 		writeServiceError(w, apperr.InvalidInput("delete a monitor inside a project: send X-BugBarn-Project", nil))
 		return
 	}

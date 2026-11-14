@@ -122,20 +122,16 @@ func (s *Server) listTelemetryHosts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"hosts": hosts})
 }
 
-// serveTelemetryHostAction serves GET /api/v1/telemetry/hosts/{host}/metrics and
-// /api/v1/telemetry/hosts/{host}/series, already matched by routeTelemetryHost
-// in routes_protected.go. A nil action is an unknown sub-route and answers 404
-// once the telemetry views are known to be configured.
-func (s *Server) serveTelemetryHostAction(w http.ResponseWriter, r *http.Request, host string, action telemetryHostAction) {
-	view := s.telemetryViewOrUnavailable(w)
-	if view == nil {
-		return
+// hostAction serves one GET /api/v1/telemetry/hosts/{host}/<action> route once
+// the telemetry views are known to be configured.
+func (s *Server) hostAction(action telemetryHostAction) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		view := s.telemetryViewOrUnavailable(w)
+		if view == nil {
+			return
+		}
+		action(s, w, r, view, r.PathValue("host"))
 	}
-	if action == nil {
-		http.NotFound(w, r)
-		return
-	}
-	action(s, w, r, view, host)
 }
 
 // telemetryHostAction is one handler under /api/v1/telemetry/hosts/{host}/.

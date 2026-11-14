@@ -47,26 +47,6 @@ func tryMutate(
 	}
 }
 
-// serveIssueRoute handles /api/v1/issues/{id} and sub-paths.
-func (s *Server) serveIssueRoute(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case strings.HasSuffix(r.URL.Path, "/resolve") && r.Method == http.MethodPost:
-		s.resolveIssue(w, r)
-	case strings.HasSuffix(r.URL.Path, "/reopen") && r.Method == http.MethodPost:
-		s.reopenIssue(w, r)
-	case strings.HasSuffix(r.URL.Path, "/mute") && r.Method == http.MethodPatch:
-		s.muteIssue(w, r)
-	case strings.HasSuffix(r.URL.Path, "/unmute") && r.Method == http.MethodPatch:
-		s.unmuteIssue(w, r)
-	case strings.HasSuffix(r.URL.Path, "/events"):
-		s.listIssueEvents(w, r)
-	case strings.HasSuffix(r.URL.Path, "/releases") && r.Method == http.MethodGet:
-		s.listIssueReleases(w, r)
-	default:
-		s.getIssue(w, r)
-	}
-}
-
 func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -216,7 +196,7 @@ func (s *Server) issueSparklines(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getIssue(w http.ResponseWriter, r *http.Request) {
-	issueID := strings.TrimPrefix(r.URL.Path, "/api/v1/issues/")
+	issueID := r.PathValue("id")
 	issue, err := s.issues.Get(r.Context(), issueID)
 	if err != nil {
 		writeServiceError(w, err)
@@ -244,24 +224,20 @@ func (s *Server) mutateIssue(
 	writeJSON(w, map[string]any{"issue": issue})
 }
 
-func issueIDFor(r *http.Request, action string) string {
-	return strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/issues/"), "/"+action)
-}
-
 func (s *Server) resolveIssue(w http.ResponseWriter, r *http.Request) {
-	issueID := issueIDFor(r, "resolve")
+	issueID := r.PathValue("id")
 	s.mutateIssue(w, r, mutqueue.Record{Op: mutqueue.OpResolve, IssueID: issueID},
 		func(ctx context.Context) (domain.Issue, error) { return s.issues.Resolve(ctx, issueID) })
 }
 
 func (s *Server) reopenIssue(w http.ResponseWriter, r *http.Request) {
-	issueID := issueIDFor(r, "reopen")
+	issueID := r.PathValue("id")
 	s.mutateIssue(w, r, mutqueue.Record{Op: mutqueue.OpReopen, IssueID: issueID},
 		func(ctx context.Context) (domain.Issue, error) { return s.issues.Reopen(ctx, issueID) })
 }
 
 func (s *Server) muteIssue(w http.ResponseWriter, r *http.Request) {
-	issueID := issueIDFor(r, "mute")
+	issueID := r.PathValue("id")
 	var body struct {
 		MuteMode string `json:"mute_mode"`
 	}
@@ -274,7 +250,7 @@ func (s *Server) muteIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) unmuteIssue(w http.ResponseWriter, r *http.Request) {
-	issueID := issueIDFor(r, "unmute")
+	issueID := r.PathValue("id")
 	s.mutateIssue(w, r, mutqueue.Record{Op: mutqueue.OpUnmute, IssueID: issueID},
 		func(ctx context.Context) (domain.Issue, error) { return s.issues.Unmute(ctx, issueID) })
 }

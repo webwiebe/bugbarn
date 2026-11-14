@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"io"
 	"net/http"
 	"time"
@@ -35,10 +36,6 @@ func (s *Server) serveInternalKeyTouch(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<20))
 	if err != nil {
 		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
@@ -65,7 +62,7 @@ func (s *Server) serveInternalKeyTouch(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), keyTouchApplyTimeout)
 	defer cancel()
 	if err := s.keyToucher.TouchAPIKeysAt(ctx, batch.Touches); err != nil {
-		if !clientGone(err) {
+		if !apperr.IsContextError(err) {
 			s.logger.Error("internal api key touch: apply failed", "error", err)
 		}
 		http.Error(w, "touch failed", http.StatusInternalServerError)

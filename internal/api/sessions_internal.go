@@ -2,9 +2,9 @@ package api
 
 import (
 	"errors"
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"encoding/json"
@@ -22,10 +22,6 @@ import (
 func (s *Server) serveInternalSessions(w http.ResponseWriter, r *http.Request) {
 	if len(s.internalSessionSecret) == 0 || s.sessionStore == nil {
 		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
@@ -48,7 +44,7 @@ func (s *Server) serveInternalSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	op := strings.TrimPrefix(r.URL.Path, sessionstore.InternalPathPrefix)
+	op := r.PathValue("op")
 	s.dispatchInternalSessionOp(w, r, op, req)
 }
 
@@ -63,7 +59,7 @@ func (s *Server) dispatchInternalSessionOp(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if err := s.sessionStore.Create(ctx, *req.Session); err != nil {
-			if !clientGone(err) {
+			if !apperr.IsContextError(err) {
 				s.logger.Error("internal sessions: create failed", "error", err)
 			}
 			http.Error(w, "create failed", http.StatusInternalServerError)
@@ -74,7 +70,7 @@ func (s *Server) dispatchInternalSessionOp(w http.ResponseWriter, r *http.Reques
 		s.internalGetOrRefresh(w, r, req.IDHash)
 	case "delete":
 		if err := s.sessionStore.Delete(ctx, req.IDHash); err != nil {
-			if !clientGone(err) {
+			if !apperr.IsContextError(err) {
 				s.logger.Error("internal sessions: delete failed", "error", err)
 			}
 			http.Error(w, "delete failed", http.StatusInternalServerError)

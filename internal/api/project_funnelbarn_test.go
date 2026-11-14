@@ -9,16 +9,14 @@ import (
 	"testing"
 )
 
-// putFunnelBarn goes through the route table, because the bare PUT case there
-// (rename) would swallow the path if the suffix case were ordered after it.
+// putFunnelBarn goes through the route table, so it covers the pattern that
+// separates this path from the bare PUT (rename).
 func putFunnelBarn(t *testing.T, srv *Server, slug, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+slug+"/funnelbarn", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	if !srv.dispatchProjectItemRoutes(rr, req) {
-		t.Fatal("route not handled")
-	}
+	srv.ServeHTTP(rr, req)
 	return rr
 }
 

@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimPrefix(r.URL.Path, "/api/v1/projects/")
+	slug := r.PathValue("slug")
 	if err := s.projects.Delete(r.Context(), slug); err != nil {
 		writeServiceError(w, err)
 		return
@@ -17,7 +17,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) approveProject(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/approve")
+	slug := r.PathValue("slug")
 	if err := s.projects.Approve(r.Context(), slug); err != nil {
 		writeServiceError(w, err)
 		return
@@ -71,24 +71,17 @@ type projectWithUsage struct {
 	FunnelBarnURL string `json:"funnelbarn_url"`
 }
 
-func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.listProjects(w, r)
-	case http.MethodPost:
-		name, slug, ok := decodeNameAndSlug(w, r, "invalid project payload")
-		if !ok {
-			return
-		}
-		p, err := s.projects.Create(r.Context(), name, slug)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSONStatus(w, http.StatusCreated, map[string]any{"project": p})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	name, slug, ok := decodeNameAndSlug(w, r, "invalid project payload")
+	if !ok {
+		return
 	}
+	p, err := s.projects.Create(r.Context(), name, slug)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, map[string]any{"project": p})
 }
 
 // updateProjectLimits handles PUT /api/v1/projects/:slug/limits — a project's
@@ -99,11 +92,7 @@ func (s *Server) serveProjectsRoot(w http.ResponseWriter, r *http.Request) {
 // longer value would be promising data we will not have. sampling_mode is "",
 // "on" or "off"; the storage layer rejects anything else as invalid input.
 func (s *Server) updateProjectLimits(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/limits")
-	if slug == "" {
-		http.Error(w, "project slug is required", http.StatusBadRequest)
-		return
-	}
+	slug := r.PathValue("slug")
 
 	var req struct {
 		RetentionDays *int   `json:"retention_days"`
@@ -143,11 +132,7 @@ func (s *Server) updateProjectLimits(w http.ResponseWriter, r *http.Request) {
 // FunnelBarn page the project's By surface rows link to. An empty funnelbarn_url
 // clears it.
 func (s *Server) updateProjectFunnelBarnURL(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/funnelbarn")
-	if slug == "" {
-		http.Error(w, "project slug is required", http.StatusBadRequest)
-		return
-	}
+	slug := r.PathValue("slug")
 	var req struct {
 		FunnelBarnURL string `json:"funnelbarn_url"`
 	}
@@ -165,7 +150,7 @@ func (s *Server) updateProjectFunnelBarnURL(w http.ResponseWriter, r *http.Reque
 
 // renameProject handles PUT /api/v1/projects/:slug
 func (s *Server) renameProject(w http.ResponseWriter, r *http.Request) {
-	oldSlug := strings.TrimPrefix(r.URL.Path, "/api/v1/projects/")
+	oldSlug := r.PathValue("slug")
 	var req struct {
 		Name string `json:"name"`
 		Slug string `json:"slug"`
@@ -189,7 +174,7 @@ func (s *Server) renameProject(w http.ResponseWriter, r *http.Request) {
 
 // mergeProject handles POST /api/v1/projects/:slug/merge
 func (s *Server) mergeProject(w http.ResponseWriter, r *http.Request) {
-	sourceSlug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/merge")
+	sourceSlug := r.PathValue("slug")
 	var req struct {
 		Target string `json:"target"`
 	}
@@ -211,37 +196,34 @@ func (s *Server) mergeProject(w http.ResponseWriter, r *http.Request) {
 
 // --- Group endpoints ---
 
-func (s *Server) serveGroupsRoot(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		groups, err := s.projects.ListGroups(r.Context())
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		// Groups span projects, so a confined key sees none of them.
-		if _, confined := boundProject(r.Context()); confined {
-			groups = nil
-		}
-		writeJSON(w, map[string]any{"groups": groups})
-	case http.MethodPost:
-		name, slug, ok := decodeNameAndSlug(w, r, "invalid payload")
-		if !ok {
-			return
-		}
-		g, err := s.projects.CreateGroup(r.Context(), name, slug)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSONStatus(w, http.StatusCreated, map[string]any{"group": g})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (s *Server) listGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := s.projects.ListGroups(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
 	}
+	// Groups span projects, so a confined key sees none of them.
+	if _, confined := boundProject(r.Context()); confined {
+		groups = nil
+	}
+	writeJSON(w, map[string]any{"groups": groups})
+}
+
+func (s *Server) createGroup(w http.ResponseWriter, r *http.Request) {
+	name, slug, ok := decodeNameAndSlug(w, r, "invalid payload")
+	if !ok {
+		return
+	}
+	g, err := s.projects.CreateGroup(r.Context(), name, slug)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, map[string]any{"group": g})
 }
 
 func (s *Server) deleteGroup(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimPrefix(r.URL.Path, "/api/v1/groups/")
+	slug := r.PathValue("slug")
 	if err := s.projects.DeleteGroup(r.Context(), slug); err != nil {
 		writeServiceError(w, err)
 		return
@@ -250,9 +232,7 @@ func (s *Server) deleteGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) assignProjectToGroup(w http.ResponseWriter, r *http.Request) {
-	// Path: /api/v1/groups/:slug/projects
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/groups/")
-	groupSlug := strings.TrimSuffix(path, "/projects")
+	groupSlug := r.PathValue("slug")
 	var req struct {
 		Project string `json:"project"`
 	}
@@ -273,91 +253,49 @@ func (s *Server) assignProjectToGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) removeProjectFromGroup(w http.ResponseWriter, r *http.Request) {
-	// Path: /api/v1/groups/:slug/projects/:project
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/groups/")
-	parts := strings.Split(path, "/projects/")
-	if len(parts) != 2 {
-		http.NotFound(w, r)
-		return
-	}
-	projectSlug := parts[1]
-	if err := s.projects.RemoveProjectFromGroup(r.Context(), projectSlug); err != nil {
+	if err := s.projects.RemoveProjectFromGroup(r.Context(), r.PathValue("project")); err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 
-func (s *Server) serveGroupRoute(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/groups/")
-
-	// DELETE /api/v1/groups/:slug/projects/:project
-	if strings.Contains(path, "/projects/") && r.Method == http.MethodDelete {
-		s.removeProjectFromGroup(w, r)
+func (s *Server) listGroupProjects(w http.ResponseWriter, r *http.Request) {
+	projects, err := s.projects.ListGroupProjects(r.Context(), r.PathValue("slug"))
+	if err != nil {
+		writeServiceError(w, err)
 		return
 	}
-
-	// GET /api/v1/groups/:slug/projects
-	if strings.HasSuffix(path, "/projects") && r.Method == http.MethodGet {
-		groupSlug := strings.TrimSuffix(path, "/projects")
-		projects, err := s.projects.ListGroupProjects(r.Context(), groupSlug)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{"projects": projects})
-		return
-	}
-
-	// POST /api/v1/groups/:slug/projects
-	if strings.HasSuffix(path, "/projects") && r.Method == http.MethodPost {
-		s.assignProjectToGroup(w, r)
-		return
-	}
-
-	// DELETE /api/v1/groups/:slug
-	if r.Method == http.MethodDelete && !strings.Contains(path, "/") {
-		s.deleteGroup(w, r)
-		return
-	}
-
-	http.NotFound(w, r)
+	writeJSON(w, map[string]any{"projects": projects})
 }
 
 // --- Alias endpoints ---
 
-func (s *Server) serveAliasesRoot(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.listAliases(w, r)
-	case http.MethodPost:
-		var req struct {
-			Alias   string `json:"alias"`
-			Project string `json:"project"`
-		}
-		if err := decodeJSON(w, r, &req); err != nil {
-			http.Error(w, "invalid payload", http.StatusBadRequest)
-			return
-		}
-		req.Alias = strings.TrimSpace(req.Alias)
-		req.Project = strings.TrimSpace(req.Project)
-		if req.Alias == "" || req.Project == "" {
-			http.Error(w, "alias and project are required", http.StatusBadRequest)
-			return
-		}
-		p, err := s.projects.BySlug(r.Context(), req.Project)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		if err := s.projects.CreateAlias(r.Context(), req.Alias, p.ID); err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSONStatus(w, http.StatusCreated, map[string]any{"ok": true})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (s *Server) createAlias(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Alias   string `json:"alias"`
+		Project string `json:"project"`
 	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		http.Error(w, "invalid payload", http.StatusBadRequest)
+		return
+	}
+	req.Alias = strings.TrimSpace(req.Alias)
+	req.Project = strings.TrimSpace(req.Project)
+	if req.Alias == "" || req.Project == "" {
+		http.Error(w, "alias and project are required", http.StatusBadRequest)
+		return
+	}
+	p, err := s.projects.BySlug(r.Context(), req.Project)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if err := s.projects.CreateAlias(r.Context(), req.Alias, p.ID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, map[string]any{"ok": true})
 }
 
 // listAliases handles GET /api/v1/aliases; a confined caller sees its own project's aliases only.
@@ -383,7 +321,7 @@ func (s *Server) listAliases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteAlias(w http.ResponseWriter, r *http.Request) {
-	aliasSlug := strings.TrimPrefix(r.URL.Path, "/api/v1/aliases/")
+	aliasSlug := r.PathValue("slug")
 	if err := s.projects.DeleteAlias(r.Context(), aliasSlug); err != nil {
 		writeServiceError(w, err)
 		return
