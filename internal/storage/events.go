@@ -49,7 +49,7 @@ func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit 
 	span.SetAttributes(attribute.String("issue_id", issueID), attribute.Int("limit", limit))
 	rowID, err := s.IssueRowIDByDisplayID(ctx, issueID)
 	if err != nil {
-		return nil, false, err
+		return nil, false, wrapErr(err, "ListIssueEvents")
 	}
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -68,7 +68,7 @@ func (s *EventStore) ListIssueEvents(ctx context.Context, issueID string, limit 
 	rows, err := s.readDB().QueryContext(ctx, `SELECT `+issueEventCols+issueEventJoin+where+`
 ORDER BY e.id DESC LIMIT ?`, append(args, fetch)...)
 	if err != nil {
-		return nil, false, err
+		return nil, false, wrapErr(err, "ListIssueEvents")
 	}
 	defer rows.Close()
 
@@ -76,12 +76,12 @@ ORDER BY e.id DESC LIMIT ?`, append(args, fetch)...)
 	for rows.Next() {
 		entry, err := scanEvent(rows)
 		if err != nil {
-			return nil, false, err
+			return nil, false, wrapErr(err, "ListIssueEvents")
 		}
 		events = append(events, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, err
+		return nil, false, wrapErr(err, "ListIssueEvents")
 	}
 
 	hasMore := len(events) > limit
@@ -124,7 +124,7 @@ func (s *EventStore) GetEvent(ctx context.Context, eventID string) (Event, error
 	span.SetAttributes(attribute.String("event_id", eventID))
 	rowID, err := parseID(eventIDPrefix, eventID)
 	if err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "GetEvent")
 	}
 
 	projectID, ok := domain.ProjectIDFromContext(ctx)
@@ -199,7 +199,7 @@ ORDER BY e.received_at DESC, e.id DESC
 LIMIT ?`, sinceStr, limit)
 	}
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "ListRecentEvents")
 	}
 	defer rows.Close()
 
@@ -207,12 +207,12 @@ LIMIT ?`, sinceStr, limit)
 	for rows.Next() {
 		entry, err := scanEvent(rows)
 		if err != nil {
-			return nil, err
+			return nil, wrapErr(err, "ListRecentEvents")
 		}
 		events = append(events, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "ListRecentEvents")
 	}
 	return events, nil
 }
@@ -240,14 +240,14 @@ func (s *core) insertEvent(
 ) (Event, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "insertEvent")
 	}
 
 	receivedAt, observedAt := eventTimestamps(processed.Event)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "insertEvent")
 	}
 	defer tx.Rollback()
 
@@ -266,16 +266,16 @@ func (s *core) insertEvent(
 		sampleWeight,
 	)
 	if err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "insertEvent")
 	}
 
 	eventRowID, err := res.LastInsertId()
 	if err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "insertEvent")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "insertEvent")
 	}
 
 	return Event{
@@ -300,7 +300,7 @@ func (s *core) insertEvent(
 func (s *core) insertFacets(ctx context.Context, projectID int64, issueID int64, processed event.Event) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return wrapErr(err, "insertFacets")
 	}
 	defer tx.Rollback()
 
@@ -322,7 +322,7 @@ func (s *core) insertFacets(ctx context.Context, projectID int64, issueID int64,
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, insertIssueFacetSQL, projectID, issueID, row.key, row.value); err != nil {
-			return err
+			return wrapErr(err, "insertFacets")
 		}
 	}
 
@@ -407,21 +407,21 @@ func scanEvent(scanner interface {
 		&issueNumber,
 		&issuePrefix,
 	); err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "scanEvent")
 	}
 	if err := unmarshalStringSlice(explanationRaw, &entry.FingerprintExplanation); err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "scanEvent")
 	}
 	if err := json.Unmarshal(payload, &entry.Payload); err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "scanEvent")
 	}
 	parsedReceivedAt, err := parseTime(receivedAt)
 	if err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "scanEvent")
 	}
 	parsedObservedAt, err := parseTime(observedAt)
 	if err != nil {
-		return Event{}, err
+		return Event{}, wrapErr(err, "scanEvent")
 	}
 	entry.ReceivedAt = parsedReceivedAt
 	entry.ObservedAt = parsedObservedAt

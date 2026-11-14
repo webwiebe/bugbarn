@@ -137,11 +137,11 @@ const logListSelect = `
 // QueryLogEntries returns up to limit entries matching q, newest first.
 func (s *LogStore) QueryLogEntries(ctx context.Context, q LogQuery, limit int) ([]LogEntry, error) {
 	if err := validLogAttrs(q.Attrs); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "QueryLogEntries")
 	}
 	minID, err := s.scanWindowMinID(ctx, q)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "QueryLogEntries")
 	}
 	where, args := logQueryWhere(q, minID)
 	args = append(args, limit)
@@ -156,7 +156,7 @@ func (s *LogStore) QueryLogEntries(ctx context.Context, q LogQuery, limit int) (
 	for rows.Next() {
 		e, err := scanLogEntry(rows)
 		if err != nil {
-			return nil, err
+			return nil, wrapErr(err, "QueryLogEntries")
 		}
 		entries = append(entries, e)
 	}
@@ -183,7 +183,7 @@ type LogHistogram struct {
 // bounds are required. Empty buckets are present so the chart has no holes.
 func (s *LogStore) LogHistogram(ctx context.Context, q LogQuery, bucket time.Duration) (LogHistogram, error) {
 	if err := validLogAttrs(q.Attrs); err != nil {
-		return LogHistogram{}, err
+		return LogHistogram{}, wrapErr(err, "LogHistogram")
 	}
 	if q.From.IsZero() || q.To.IsZero() || !q.To.After(q.From) || bucket < time.Second {
 		return LogHistogram{}, invalidLogQuery("histogram needs from < to and a bucket of at least one second")
@@ -191,7 +191,7 @@ func (s *LogStore) LogHistogram(ctx context.Context, q LogQuery, bucket time.Dur
 	q.BeforeID = 0
 	minID, err := s.windowFloor(ctx)
 	if err != nil {
-		return LogHistogram{}, err
+		return LogHistogram{}, wrapErr(err, "LogHistogram")
 	}
 	where, args := logQueryWhere(q, minID)
 	secs := int64(bucket / time.Second)
@@ -212,10 +212,10 @@ func (s *LogStore) LogHistogram(ctx context.Context, q LogQuery, bucket time.Dur
 		out.Buckets[i] = LogHistogramBucket{Start: q.From.UTC().Add(time.Duration(i) * bucket), Counts: map[string]int{}}
 	}
 	if err := fillHistogramBuckets(rows, out.Buckets); err != nil {
-		return LogHistogram{}, err
+		return LogHistogram{}, wrapErr(err, "LogHistogram")
 	}
 	out.Truncated, err = s.windowTruncated(ctx, minID, q.From)
-	return out, err
+	return out, wrapErr(err, "LogHistogram")
 }
 
 // fillHistogramBuckets adds the (bucket index, level, count) rows to buckets.
@@ -306,12 +306,12 @@ type facetSQL struct {
 
 func (s *LogStore) logFacets(ctx context.Context, q LogQuery, key string, f facetSQL) (LogFacets, error) {
 	if err := validLogAttrs(q.Attrs); err != nil {
-		return LogFacets{}, err
+		return LogFacets{}, wrapErr(err, "logFacets")
 	}
 	q.BeforeID = 0
 	minID, err := s.windowFloor(ctx)
 	if err != nil {
-		return LogFacets{}, err
+		return LogFacets{}, wrapErr(err, "logFacets")
 	}
 	where, whereArgs := logQueryWhere(q, minID)
 	if where == "" {
@@ -337,5 +337,5 @@ func (s *LogStore) logFacets(ctx context.Context, q LogQuery, key string, f face
 		return LogFacets{}, wrapErr(err, "log facets")
 	}
 	out.Truncated, err = s.windowTruncated(ctx, minID, q.From)
-	return out, err
+	return out, wrapErr(err, "logFacets")
 }

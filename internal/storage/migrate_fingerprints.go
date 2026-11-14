@@ -61,7 +61,7 @@ func (s *core) migrateFingerprints(ctx context.Context) error {
 		FROM issues
 		WHERE fingerprint_material != ''`)
 	if err != nil {
-		return err
+		return wrapErr(err, "migrateFingerprints")
 	}
 
 	var issues []fingerprintIssueRow
@@ -69,13 +69,13 @@ func (s *core) migrateFingerprints(ctx context.Context) error {
 		var r fingerprintIssueRow
 		if err := rows.Scan(&r.id, &r.projectID, &r.fingerprint, &r.material, &r.eventJSON); err != nil {
 			rows.Close()
-			return err
+			return wrapErr(err, "migrateFingerprints")
 		}
 		issues = append(issues, r)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return err
+		return wrapErr(err, "migrateFingerprints")
 	}
 
 	var updates []fingerprintUpdate
@@ -98,7 +98,7 @@ func (s *core) migrateFingerprints(ctx context.Context) error {
 			end = len(updates)
 		}
 		if err := s.applyFingerprintBatch(ctx, updates[start:end]); err != nil {
-			return err
+			return wrapErr(err, "migrateFingerprints")
 		}
 	}
 	return nil
@@ -122,7 +122,7 @@ func isComputedFingerprint(fp, material string) bool {
 func (s *core) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpdate) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return wrapErr(err, "applyFingerprintBatch")
 	}
 	defer tx.Rollback()
 
@@ -143,11 +143,11 @@ func (s *core) applyFingerprintBatch(ctx context.Context, batch []fingerprintUpd
 				continue
 			}
 			if err := mergeIntoKeeper(ctx, tx, u, keeperID); err != nil {
-				return err
+				return wrapErr(err, "applyFingerprintBatch")
 			}
 		} else {
 			if err := rewriteFingerprint(ctx, tx, u, string(explanationJSON)); err != nil {
-				return err
+				return wrapErr(err, "applyFingerprintBatch")
 			}
 		}
 	}
@@ -161,7 +161,7 @@ func mergeIntoKeeper(ctx context.Context, tx *sql.Tx, u fingerprintUpdate, keepe
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE events SET issue_id = ? WHERE issue_id = ?`,
 		keeperID, u.id); err != nil {
-		return err
+		return wrapErr(err, "mergeIntoKeeper")
 	}
 	// Fold the facet set into the keeper's rather than reassigning it: both
 	// issues can already carry the same (key, value), and issue_facets is a
@@ -170,10 +170,10 @@ func mergeIntoKeeper(ctx context.Context, tx *sql.Tx, u fingerprintUpdate, keepe
 		INSERT OR IGNORE INTO issue_facets (project_id, issue_id, facet_key, facet_value)
 		SELECT project_id, ?, facet_key, facet_value FROM issue_facets WHERE issue_id = ?`,
 		keeperID, u.id); err != nil {
-		return err
+		return wrapErr(err, "mergeIntoKeeper")
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM issue_facets WHERE issue_id = ?`, u.id); err != nil {
-		return err
+		return wrapErr(err, "mergeIntoKeeper")
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE issues SET
@@ -183,10 +183,10 @@ func mergeIntoKeeper(ctx context.Context, tx *sql.Tx, u fingerprintUpdate, keepe
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		keeperID, keeperID, keeperID, keeperID); err != nil {
-		return err
+		return wrapErr(err, "mergeIntoKeeper")
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM issues WHERE id = ?`, u.id); err != nil {
-		return err
+		return wrapErr(err, "mergeIntoKeeper")
 	}
 	slog.Info("merged issue", "from_id", u.id, "into_id", keeperID, "fingerprint", u.newFingerprint)
 	return nil
@@ -199,13 +199,13 @@ func rewriteFingerprint(ctx context.Context, tx *sql.Tx, u fingerprintUpdate, ex
 		UPDATE issues SET fingerprint = ?, fingerprint_material = ?, fingerprint_explanation_json = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		u.newFingerprint, u.newMaterial, explanationJSON, u.id); err != nil {
-		return err
+		return wrapErr(err, "rewriteFingerprint")
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE events SET fingerprint = ?, fingerprint_material = ?
 		WHERE issue_id = ?`,
 		u.newFingerprint, u.newMaterial, u.id); err != nil {
-		return err
+		return wrapErr(err, "rewriteFingerprint")
 	}
 	return nil
 }

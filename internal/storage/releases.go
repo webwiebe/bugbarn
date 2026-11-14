@@ -217,7 +217,7 @@ func (s *ReleaseStore) DeleteRelease(ctx context.Context, releaseID string) erro
 		projectID = s.defaultProjectID
 	}
 	_, err = s.db.ExecContext(ctx, `DELETE FROM releases WHERE project_id = ? AND id = ?`, projectID, rowID)
-	return err
+	return wrapErr(err, "delete release")
 }
 
 func scanRelease(scanner interface {

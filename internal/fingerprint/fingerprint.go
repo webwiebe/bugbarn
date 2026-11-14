@@ -131,14 +131,14 @@ func headline(evt event.Event) (exceptionType, message string) {
 	if exceptionType != "" || message != "" || len(evt.Exception.Stacktrace) != 0 {
 		return exceptionType, message
 	}
-	raw := rawScrubbedFallback(evt.RawScrubbed)
-	if raw.name == "" && raw.message == "" {
+	raw := event.RawScrubbedDetails(evt.RawScrubbed)
+	if raw.Name == "" && raw.Message == "" {
 		return exceptionType, message
 	}
-	exceptionType = normalize(raw.name)
-	message = normalizeMessage(raw.message)
+	exceptionType = normalize(raw.Name)
+	message = normalizeMessage(raw.Message)
 	if message == "" {
-		message = normalizeMessage(raw.source)
+		message = normalizeMessage(raw.Source)
 	}
 	return exceptionType, message
 }
@@ -256,29 +256,6 @@ func normalizePath(value string) string {
 	value = strings.ReplaceAll(value, "\\", "/")
 	value = pathNumberSegment.ReplaceAllString(value, "/:num")
 	return normalize(value)
-}
-
-type rawScrubbedData struct {
-	name    string
-	message string
-	source  string
-}
-
-func rawScrubbedFallback(rawScrubbed map[string]any) rawScrubbedData {
-	if rawScrubbed == nil {
-		return rawScrubbedData{}
-	}
-	name, _ := rawScrubbed["name"].(string)
-	props, _ := rawScrubbed["properties"].(map[string]any)
-	if props == nil {
-		return rawScrubbedData{name: name}
-	}
-	message, _ := props["message"].(string)
-	source, _ := props["source"].(string)
-	if source == "" {
-		source, _ = props["url"].(string)
-	}
-	return rawScrubbedData{name: name, message: message, source: source}
 }
 
 // normalizeMessage is normalize for free text that may carry a URL: the path

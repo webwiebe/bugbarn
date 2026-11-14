@@ -151,7 +151,7 @@ export function eventRawScrubbed(event: ApiEvent): RawRecord {
   return readRecord(eventPayload(event), ["rawScrubbed", "raw_scrubbed", "RawScrubbed"]);
 }
 
-export function eventSdkName(event: ApiEvent): string {
+function eventSdkName(event: ApiEvent): string {
   const payload = eventPayload(event);
   const sender = readRecord(eventRawScrubbed(event), ["sender", "Sender"]);
   const sdk = readRecord(sender, ["sdk", "SDK"]);

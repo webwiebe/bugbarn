@@ -62,14 +62,14 @@ FROM api_keys ORDER BY id ASC`)
 func (s *APIKeyStore) DeleteAPIKey(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id)
 	if err != nil {
-		return err
+		return wrapErr(err, "delete api key")
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return wrapErr(err, "delete api key")
 	}
 	if n == 0 {
-		return sql.ErrNoRows
+		return wrapNotFound(sql.ErrNoRows, "api key not found")
 	}
 	return nil
 }

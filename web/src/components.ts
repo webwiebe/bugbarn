@@ -9,4 +9,3 @@ export * from "./components/alerts.js";
 export * from "./components/settings.js";
 export * from "./components/volume.js";
 export * from "./components/logs.js";
-export * from "./components/analytics.js";

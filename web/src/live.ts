@@ -14,7 +14,7 @@ export async function loadLiveEvents(): Promise<void> {
   startLiveStream();
 }
 
-export function startLiveStream(): void {
+function startLiveStream(): void {
   stopLiveStream();
 
   const since = new Date(Date.now() - liveWindowMinutes * 60 * 1000).toISOString();
@@ -77,6 +77,16 @@ export function stopLiveStream(): void {
   state.liveConnected = false;
 }
 
+/** Records issueId as notified; false when it already was. Keeps the newest 200. */
+function markRegressionNotified(issueId: string): boolean {
+  const notified: string[] = JSON.parse(localStorage.getItem(notifiedRegressionKey) || "[]");
+  if (notified.includes(issueId)) return false;
+  notified.push(issueId);
+  if (notified.length > 200) notified.splice(0, notified.length - 200);
+  localStorage.setItem(notifiedRegressionKey, JSON.stringify(notified));
+  return true;
+}
+
 function notifyRegression(event: ApiEvent): void {
   const regressed = (event as Record<string, unknown>)["Regressed"] ?? (event as Record<string, unknown>)["regressed"];
   if (!regressed) return;
@@ -85,14 +95,13 @@ function notifyRegression(event: ApiEvent): void {
   const issueId = String(event.IssueID ?? event.issueId ?? event.issue_id ?? "");
   if (!issueId) return;
 
-  const notified: string[] = JSON.parse(localStorage.getItem(notifiedRegressionKey) || "[]");
-  if (notified.includes(issueId)) return;
-
-  notified.push(issueId);
-  if (notified.length > 200) notified.splice(0, notified.length - 200);
-  localStorage.setItem(notifiedRegressionKey, JSON.stringify(notified));
+  if (!markRegressionNotified(issueId)) return;
 
   const title = String(event.Message ?? event.message ?? event.Title ?? event.title ?? "Issue regressed");
+  showRegressionNotification(issueId, title);
+}
+
+function showRegressionNotification(issueId: string, title: string): void {
   if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
     navigator.serviceWorker.ready.then((reg) => {
       reg.showNotification("BugBarn: Issue Regressed", {
@@ -117,7 +126,7 @@ export function requestNotificationPermission(): void {
   Notification.requestPermission();
 }
 
-export function renderLiveList(): void {
+function renderLiveList(): void {
   elements.liveList.innerHTML = renderLiveListMarkup(state.liveEvents, state.liveError, state.releases);
   elements.liveList.querySelectorAll("[data-live-event-id]").forEach((button) => {
     button.addEventListener("click", () => {

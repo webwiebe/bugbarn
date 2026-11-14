@@ -105,7 +105,7 @@ func OpenReadOnly(path string) (*Store, error) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "OpenReadOnly")
 	}
 	return openReadOnlyDSN(sqliteReadOnlyDSN(absPath))
 }
@@ -115,7 +115,7 @@ func OpenReadOnly(path string) (*Store, error) {
 func openReadOnlyDSN(dsn string) (*Store, error) {
 	roDB, err := sql.Open(sqlitedb.ReadOnlyDriverName(), dsn)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "openReadOnlyDSN")
 	}
 	roDB.SetMaxOpenConns(4)
 	registerDBStats(roDB, "read")
@@ -124,7 +124,7 @@ func openReadOnlyDSN(dsn string) (*Store, error) {
 	if err := roDB.Ping(); err != nil {
 		unregisterDBStats(roDB)
 		_ = roDB.Close()
-		return nil, err
+		return nil, wrapErr(err, "openReadOnlyDSN")
 	}
 
 	return newStore(&core{db: nil, roDB: roDB}), nil
@@ -145,16 +145,16 @@ func open(path string, autoMigrate bool) (*Store, error) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 
 	db, err := sql.Open(sqlitedb.DriverName(), sqliteDSN(absPath))
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 	db.SetMaxOpenConns(1)
 	registerDBStats(db, "write")
@@ -163,7 +163,7 @@ func open(path string, autoMigrate bool) (*Store, error) {
 	if err != nil {
 		unregisterDBStats(db)
 		_ = db.Close()
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 	roDB.SetMaxOpenConns(4)
 	registerDBStats(roDB, "read")
@@ -178,7 +178,7 @@ func open(path string, autoMigrate bool) (*Store, error) {
 		unregisterDBStats(db)
 		_ = roDB.Close()
 		_ = db.Close()
-		return nil, err
+		return nil, wrapErr(err, "open")
 	}
 	if autoMigrate {
 		go func() {
@@ -250,7 +250,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed event.Proces
 	issue, issueID, regressed, err := s.upsertIssueTraced(ctx, projectID, processed)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, err
+		return Issue{}, Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 
 	// The upsert works entirely from the numeric project id, so the returned
@@ -278,7 +278,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed event.Proces
 		span.SetAttributes(attribute.Bool("sampled_out", true))
 		if err := s.persistFacetsFor(ctx, projectID, issueID, processed.Event); err != nil {
 			span.SetStatus(codes.Error, err.Error())
-			return Issue{}, Event{}, false, false, err
+			return Issue{}, Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 		}
 		span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
 		return issue, Event{}, isNew, regressed, nil
@@ -290,13 +290,13 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed event.Proces
 		insertSpan.SetStatus(codes.Error, err.Error())
 		insertSpan.End()
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, err
+		return Issue{}, Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 	insertSpan.End()
 
 	if err := s.persistFacetsFor(ctx, projectID, issueID, processed.Event); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, Event{}, false, false, err
+		return Issue{}, Event{}, false, false, wrapErr(err, "PersistProcessedEvent")
 	}
 
 	span.SetAttributes(attribute.Bool("is_new", isNew), attribute.Bool("regressed", regressed))
@@ -310,7 +310,7 @@ func (s *core) upsertIssueTraced(ctx context.Context, projectID int64, processed
 	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		return Issue{}, 0, false, err
+		return Issue{}, 0, false, wrapErr(err, "upsertIssueTraced")
 	}
 	span.SetAttributes(attribute.String("issue_id", issue.ID), attribute.Bool("regressed", regressed))
 	return issue, issueID, regressed, nil
@@ -338,11 +338,11 @@ func (s *core) persistFacetsFor(ctx context.Context, projectID, issueID int64, e
 
 	if err := s.insertFacets(ctx, projectID, issueID, evt); err != nil {
 		facetSpan.SetStatus(codes.Error, err.Error())
-		return err
+		return wrapErr(err, "persistFacetsFor")
 	}
 	if err := s.PersistFacets(ctx, issueID, extractFacets(evt)); err != nil {
 		facetSpan.SetStatus(codes.Error, err.Error())
-		return err
+		return wrapErr(err, "persistFacetsFor")
 	}
 	s.ensureRelease(ctx, projectID, evt)
 	return nil

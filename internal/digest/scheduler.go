@@ -49,21 +49,31 @@ func StartScheduler(ctx context.Context, cfg Config, store Store, wg *sync.WaitG
 }
 
 func run(ctx context.Context, cfg Config, store Store, notifiers []Notifier) {
-	var lastFired time.Time
-
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
+	runTicks(ctx, cfg, store, notifiers, ticker.C)
+}
 
+// due reports whether the digest should fire at now: the weekday and hour match
+// the configuration (UTC) and the last run was at least 23 hours ago.
+func due(cfg Config, now, lastFired time.Time) bool {
+	now = now.UTC()
+	if int(now.Weekday()) != cfg.Day || now.Hour() != cfg.Hour {
+		return false
+	}
+	return lastFired.IsZero() || now.Sub(lastFired) >= 23*time.Hour
+}
+
+// runTicks fires the digest on each tick that is due, until ctx is canceled.
+func runTicks(ctx context.Context, cfg Config, store Store, notifiers []Notifier, ticks <-chan time.Time) {
+	var lastFired time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-ticker.C:
+		case now := <-ticks:
 			now = now.UTC()
-			if int(now.Weekday()) != cfg.Day || now.Hour() != cfg.Hour {
-				continue
-			}
-			if !lastFired.IsZero() && now.Sub(lastFired) < 23*time.Hour {
+			if !due(cfg, now, lastFired) {
 				continue
 			}
 			lastFired = now

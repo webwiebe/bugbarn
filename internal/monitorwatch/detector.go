@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/tick"
 )
 
 // Config sets how the detector runs.
@@ -61,20 +62,7 @@ func (d *Detector) SetClock(now func() time.Time) {
 
 // Start runs the scan loop until ctx ends.
 func (d *Detector) Start(ctx context.Context, wg *sync.WaitGroup) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		t := time.NewTicker(d.cfg.Interval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				d.Check(ctx)
-			}
-		}
-	}()
+	tick.Start(ctx, wg, d.cfg.Interval, func(time.Time) { d.Check(ctx) })
 }
 
 // Check scans every enabled monitor once. An ok monitor past its due time

@@ -2,10 +2,11 @@ package analytics
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
 
 // Store is the subset of storage.Store used by the analytics worker.
@@ -49,17 +50,10 @@ func StartWorker(ctx context.Context, store Store, retentionDays int, wg *sync.W
 	}()
 }
 
-// shuttingDown reports whether err is just the process stopping. A rollup
-// interrupted by shutdown is expected, not a fault: logging it at ERROR made
-// every deploy self-report one bug per project per date.
-func shuttingDown(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-}
-
 func runRollup(ctx context.Context, store Store, retentionDays int) {
 	projectIDs, err := store.ListProjectIDs(ctx)
 	if err != nil {
-		if !shuttingDown(err) {
+		if !apperr.IsContextError(err) {
 			slog.Error("analytics rollup: failed to list projects", "error", err)
 		}
 		return
@@ -80,7 +74,7 @@ func runRollup(ctx context.Context, store Store, retentionDays int) {
 			return
 		}
 		for _, date := range dates {
-			if err := store.RollupDailyAnalytics(ctx, pid, date); err != nil && !shuttingDown(err) {
+			if err := store.RollupDailyAnalytics(ctx, pid, date); err != nil && !apperr.IsContextError(err) {
 				slog.Error("analytics rollup: failed to roll up project",
 					"project_id", pid, "date", date.Format("2006-01-02"), "error", err)
 			}
@@ -88,7 +82,7 @@ func runRollup(ctx context.Context, store Store, retentionDays int) {
 	}
 
 	cutoff := now.AddDate(0, 0, -retentionDays)
-	if err := store.DeleteOldPageviews(ctx, cutoff); err != nil && !shuttingDown(err) {
+	if err := store.DeleteOldPageviews(ctx, cutoff); err != nil && !apperr.IsContextError(err) {
 		slog.Error("analytics retention: failed to delete old pageviews", "error", err)
 	}
 }

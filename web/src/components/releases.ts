@@ -89,6 +89,22 @@ function renderReleaseList(releases: ApiRelease[]): string {
   `;
 }
 
+function renderIssueRow(issue: ApiIssue): string {
+  const id = readString(issue, ["id", "ID"]) || "";
+  const title = issueTitle(issue);
+  const count = readNumber(issue, ["event_count", "EventCount"]);
+  const slug = issue.project_slug ? String(issue.project_slug) : "";
+  return `
+    <button class="item" type="button" data-issue-id="${escapeAttr(id)}" style="width:100%;text-align:left">
+      <div class="item-title">${escapeHtml(title)}</div>
+      <div class="item-meta">
+        ${slug ? `<span class="chip" style="font-size:0.65rem;opacity:.7">${escapeHtml(slug)}</span>` : ""}
+        <span>${escapeHtml(String(count))} events</span>
+        <span>${escapeHtml(id)}</span>
+      </div>
+    </button>`;
+}
+
 export function renderReleaseDetailMarkup(
   release: ApiRelease,
   newIssues: ApiIssue[],
@@ -104,22 +120,6 @@ export function renderReleaseDetailMarkup(
   const notes = readString(release, ["notes", "Notes"]);
   const createdBy = readString(release, ["createdBy", "created_by", "CreatedBy"]);
   const nextTitle = nextRelease ? readString(nextRelease, ["name", "Name"]) : null;
-
-  const renderIssueRow = (issue: ApiIssue) => {
-    const id = readString(issue, ["id", "ID"]) || "";
-    const title = issueTitle(issue);
-    const count = readNumber(issue, ["event_count", "EventCount"]);
-    const slug = issue.project_slug ? String(issue.project_slug) : "";
-    return `
-      <button class="item" type="button" data-issue-id="${escapeAttr(id)}" style="width:100%;text-align:left">
-        <div class="item-title">${escapeHtml(title)}</div>
-        <div class="item-meta">
-          ${slug ? `<span class="chip" style="font-size:0.65rem;opacity:.7">${escapeHtml(slug)}</span>` : ""}
-          <span>${escapeHtml(String(count))} events</span>
-          <span>${escapeHtml(id)}</span>
-        </div>
-      </button>`;
-  };
 
   return `
     <div class="detail-section">

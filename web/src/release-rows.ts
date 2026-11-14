@@ -8,7 +8,7 @@ export interface IssueRelease extends Record<string, unknown> {
   last_seen: string;
 }
 
-export interface ReleaseRow {
+interface ReleaseRow {
   release: string;
   events: number;
   /** Share of the sampled events, 0 to 100, rounded to a whole number. */
