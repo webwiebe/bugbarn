@@ -158,6 +158,13 @@ jobs:
             fi
           fi
           pnpm run build
+      - name: Frontend coverage gate (web only)
+        if: ${{ matrix.dir == 'web' }}
+        working-directory: web
+        shell: bash
+        run: |
+          . "$GITHUB_WORKSPACE/scripts/use-pnpm.sh"
+          node scripts/coverage-ratchet.mjs
       - name: Frontend duplication (web only)
         if: ${{ matrix.dir == 'web' }}
         working-directory: web

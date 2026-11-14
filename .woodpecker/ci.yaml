@@ -147,6 +147,9 @@ steps:
         node scripts/knip-ratchet.mjs
         pnpm run lint
         pnpm run test
+        # Line coverage over all of web/src against web/coverage-baseline.txt
+        # (floor, drift band, fixed 80% minimum). Runs every scripts/*.test.mjs.
+        node scripts/coverage-ratchet.mjs
         pnpm run build
         pnpm dlx jscpd@latest .
         cd ..
