@@ -106,9 +106,6 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureProductionAPIKeyAuth(cfg, apiAuthorizer); err != nil {
-		return err
-	}
 	// A project-scoped ingest key identifies its project without the caller
 	// sending X-BugBarn-Project. The spool only carries the header into the
 	// queue, so resolve the key here at ingest time. Read-only SELECTs, safe on

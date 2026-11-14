@@ -110,26 +110,22 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 	}
 	res := Result{Fingerprint: processed.Fingerprint, Severity: processed.Event.Severity}
 
-	// Resolve the project from the slug stored on the record. A failure here is
-	// non-fatal: we fall through with no project context (default project).
+	// A record without a slug belongs to the default project (documented for
+	// SDKs that send no project header). A slug that cannot be resolved is a
+	// failure: storing the event under the default project would file it
+	// against the wrong project.
 	persistCtx := ctx
 	if record.ProjectSlug != "" {
-		rctx, rspan := p.startSpan(ctx, spanResolveProject, attribute.String("project_slug", record.ProjectSlug))
-		proj, ok := p.EnsureProjectForIngest(rctx, record.ProjectSlug)
-		if ok {
-			rspan.SetAttributes(attribute.Int64("project_id", proj.ID))
-		} else {
-			rspan.SetStatus(codes.Error, "project not resolved")
+		proj, err := p.resolveWithSpan(ctx, record.ProjectSlug)
+		if err != nil {
+			return failed(res, err)
 		}
-		rspan.End()
-		if ok {
-			// Project pending admin approval: park the raw payload and stop. It
-			// replays through this same path once the project is approved.
-			if proj.Status == "pending" {
-				return p.holdEvent(ctx, res, proj, record)
-			}
-			persistCtx = domain.WithProjectID(ctx, proj.ID)
+		// Project pending admin approval: park the raw payload and stop. It
+		// replays through this same path once the project is approved.
+		if proj.Status == "pending" {
+			return p.holdEvent(ctx, res, proj, record)
 		}
+		persistCtx = domain.WithProjectID(ctx, proj.ID)
 	}
 
 	// Annotate JS stack frames with original positions from stored source maps.
@@ -142,12 +138,7 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 	if perr != nil {
 		persistSpan.SetStatus(codes.Error, perr.Error())
 		persistSpan.End()
-		res.Err = perr
-		res.Outcome = OutcomePersistError
-		if storage.IsTransient(perr) {
-			res.Outcome = OutcomeTransient
-		}
-		return res
+		return failed(res, perr)
 	}
 	persistSpan.SetAttributes(
 		attribute.Bool("is_new", isNew),
@@ -170,6 +161,30 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 	return res
 }
 
+// failed records err on res: Transient when a retry can succeed, PersistError
+// otherwise.
+func failed(res Result, err error) Result {
+	res.Err = err
+	res.Outcome = OutcomePersistError
+	if storage.IsTransient(err) {
+		res.Outcome = OutcomeTransient
+	}
+	return res
+}
+
+// resolveWithSpan is ResolveProject inside the resolve-project span.
+func (p *Processor) resolveWithSpan(ctx context.Context, slug string) (storage.Project, error) {
+	rctx, rspan := p.startSpan(ctx, spanResolveProject, attribute.String("project_slug", slug))
+	defer rspan.End()
+	proj, err := p.ResolveProject(rctx, slug)
+	if err != nil {
+		rspan.SetStatus(codes.Error, "project not resolved")
+		return storage.Project{}, err
+	}
+	rspan.SetAttributes(attribute.Int64("project_id", proj.ID))
+	return proj, nil
+}
+
 // holdEvent parks the record of a pending project. A hold that fails on lock
 // contention is transient; any other hold failure is permanent for this record,
 // so a caller with an unbounded retry is not stuck on it.
@@ -185,26 +200,17 @@ func (p *Processor) holdEvent(ctx context.Context, res Result, proj storage.Proj
 	}
 	res.ProjectID = proj.ID
 	if herr := p.Hold(ctx, held); herr != nil {
-		res.Err = herr
-		res.Outcome = OutcomePersistError
-		if storage.IsTransient(herr) {
-			res.Outcome = OutcomeTransient
-		}
-		return res
+		return failed(res, herr)
 	}
 	res.Outcome = OutcomeHeld
 	return res
 }
 
-// EnsureProjectForIngest resolves (creating if needed) the project for slug,
-// returning the project and ok=false when slug is empty or the project cannot be
-// resolved. A brand-new project is created pending (or active when autoApprove is
-// set). Callers must check proj.Status == "pending" and hold the payload rather
-// than persist it.
-func (p *Processor) EnsureProjectForIngest(ctx context.Context, slug string) (storage.Project, bool) {
-	if slug == "" {
-		return storage.Project{}, false
-	}
+// ResolveProject finds or creates the project for slug. A brand-new project is
+// created pending (or active when autoApprove is set). Callers must check
+// proj.Status == "pending" and hold the payload rather than persist it. The
+// error is logged here (services are the log boundary) and returned.
+func (p *Processor) ResolveProject(ctx context.Context, slug string) (storage.Project, error) {
 	var proj storage.Project
 	var err error
 	if p.autoApprove {
@@ -214,9 +220,20 @@ func (p *Processor) EnsureProjectForIngest(ctx context.Context, slug string) (st
 	}
 	if err != nil {
 		p.logger.Error("ensure project", "project_slug", slug, "error", err)
+		return storage.Project{}, err
+	}
+	return proj, nil
+}
+
+// EnsureProjectForIngest is ResolveProject for callers that only need to know
+// whether it worked: ok is false when slug is empty or the project cannot be
+// resolved.
+func (p *Processor) EnsureProjectForIngest(ctx context.Context, slug string) (storage.Project, bool) {
+	if slug == "" {
 		return storage.Project{}, false
 	}
-	return proj, true
+	proj, err := p.ResolveProject(ctx, slug)
+	return proj, err == nil
 }
 
 // Hold parks a raw ingest payload for a project pending admin approval. The

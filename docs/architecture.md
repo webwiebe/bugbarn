@@ -16,7 +16,7 @@ SDK/client -> ingest API -> durable spool -> background worker -> normalization/
 
 ## Repository Layout
 
-- `cmd/bugbarn`: process entrypoint. It loads config, opens storage, opens the spool, starts the HTTP server, and runs the background worker. `worker-once` is the maintenance path for processing the current spool one time.
+- `cmd/bugbarn`: process entrypoint. It loads config, opens storage, opens the spool, starts the HTTP server, and runs the background worker. `worker-once` is the maintenance path for draining the pending spool (from the worker's cursor) one time.
 - `internal/ingest`: request-path ingest handler. It owns API key validation, size checks, and durable enqueue into the spool.
 - `internal/api`: HTTP server and routing (ServeMux patterns, registered in `routes*.go`). It owns request/response handling and delegates use cases to `internal/service`.
 - `internal/service`: business use cases and error boundary between HTTP handlers and repositories.
