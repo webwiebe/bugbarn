@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -34,7 +34,7 @@ func TestDeliverer_GenericPayload(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	d := NewDeliverer(digest.MailConfig{})
+	d := NewDeliverer(mail.Config{})
 	rule := Rule{
 		ID:         "alert-000001",
 		Name:       "Test Alert",
@@ -111,7 +111,7 @@ func TestDeliverer_SlackPayload(t *testing.T) {
 func TestDeliverer_DiscordPayload(t *testing.T) {
 	t.Parallel()
 
-	d := NewDeliverer(digest.MailConfig{})
+	d := NewDeliverer(mail.Config{})
 	issue := testIssue()
 	payload, err := d.discordPayload(Rule{Name: "Discord Alert"}, issue, "https://bugbarn.example.com/issues/"+issue.ID)
 	if err != nil {
@@ -196,7 +196,7 @@ func TestDeliverer_SlackDetection(t *testing.T) {
 		tc := tc
 		t.Run(tc.wantType, func(t *testing.T) {
 			t.Parallel()
-			d := NewDeliverer(digest.MailConfig{})
+			d := NewDeliverer(mail.Config{})
 			rule := Rule{Name: "test", WebhookURL: tc.url}
 			issue := testIssue()
 			switch tc.wantType {

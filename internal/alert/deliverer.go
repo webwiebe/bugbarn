@@ -17,8 +17,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -43,13 +43,13 @@ type EventVolumeSource interface {
 // Deliverer sends alert notifications (webhook or email) with retry logic.
 type Deliverer struct {
 	client  *http.Client
-	mailCfg digest.MailConfig
+	mailCfg mail.Config
 	vol     EventVolumeSource
 	env     string // this BugBarn instance's environment (production/staging/testing), labels emails
 
 	// Email sends are bounded (see mail_limit.go): mailSlots caps concurrent
 	// SMTP sends, mailQueue caps how many more may wait.
-	sendEmail    func(ctx context.Context, mc digest.MailConfig, to, subject, plain, html string) error
+	sendEmail    func(ctx context.Context, mc mail.Config, to, subject, plain, html string) error
 	mailSlots    chan struct{}
 	mailQueue    int64
 	emailWaiting atomic.Int64
@@ -57,11 +57,11 @@ type Deliverer struct {
 }
 
 // NewDeliverer creates a new Deliverer with a 5-second HTTP timeout.
-func NewDeliverer(mailCfg digest.MailConfig) *Deliverer {
+func NewDeliverer(mailCfg mail.Config) *Deliverer {
 	d := &Deliverer{
 		client:    &http.Client{Timeout: 5 * time.Second},
 		mailCfg:   mailCfg,
-		sendEmail: digest.DeliverEmail,
+		sendEmail: mail.Send,
 	}
 	d.setMailLimits(defaultMailConcurrency, defaultMailQueue)
 	return d

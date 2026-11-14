@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/digest"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 )
 
 // Config holds all runtime configuration for the BugBarn server.
@@ -244,7 +245,7 @@ func parseDigestConfig(publicURL, environment string) digest.Config {
 			"BUGBARN_DIGEST_GATHER_BUDGET_SECONDS", digest.DefaultGatherBudget),
 		ProjectBudget: envDurationSeconds(
 			"BUGBARN_DIGEST_PROJECT_BUDGET_SECONDS", digest.DefaultProjectBudget),
-		Mail: digest.MailConfig{
+		Mail: mail.Config{
 			Enabled:  os.Getenv("BUGBARN_DIGEST_ENABLED") == "true",
 			Host:     os.Getenv("SMTP_HOST"),
 			Port:     envIntPositive("SMTP_PORT", 587),

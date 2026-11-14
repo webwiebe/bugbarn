@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/bugbarn/internal/digest"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
+	"github.com/wiebe-xyz/bugbarn/internal/mail"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -59,7 +59,7 @@ func TestEvaluator_ConditionMatching(t *testing.T) {
 		{ID: "alert-000002", Name: "Regressions", Enabled: true, Condition: "regression", WebhookURL: srv.URL},
 	}
 	repo := newFakeRepo(rules)
-	deliverer := NewDeliverer(digest.MailConfig{})
+	deliverer := NewDeliverer(mail.Config{})
 	evaluator := NewEvaluator(repo, deliverer, "http://example.com", "", slog.Default())
 
 	issue := storage.Issue{ID: "issue-000001", Title: "Test"}
@@ -92,7 +92,7 @@ func TestEvaluator_DisabledRuleSkipped(t *testing.T) {
 		{ID: "alert-000001", Name: "Disabled", Enabled: false, Condition: "new_issue", WebhookURL: srv.URL},
 	}
 	repo := newFakeRepo(rules)
-	evaluator := NewEvaluator(repo, NewDeliverer(digest.MailConfig{}), "http://example.com", "", slog.Default())
+	evaluator := NewEvaluator(repo, NewDeliverer(mail.Config{}), "http://example.com", "", slog.Default())
 
 	evaluator.evaluate(context.Background(), 1, storage.Issue{ID: "issue-000001"}, "new_issue")
 	time.Sleep(100 * time.Millisecond)
@@ -126,7 +126,7 @@ func TestEvaluator_CooldownPreventsDoubleFire(t *testing.T) {
 	// Pre-seed a recent firing so cooldown is still active.
 	repo.firings["alert-000001/issue-000001"] = time.Now().UTC().Add(-5 * time.Minute)
 
-	evaluator := NewEvaluator(repo, NewDeliverer(digest.MailConfig{}), "http://example.com", "", slog.Default())
+	evaluator := NewEvaluator(repo, NewDeliverer(mail.Config{}), "http://example.com", "", slog.Default())
 	evaluator.evaluate(context.Background(), 1, storage.Issue{ID: "issue-000001"}, "new_issue")
 	time.Sleep(100 * time.Millisecond)
 
@@ -159,7 +159,7 @@ func TestEvaluator_CooldownExpiredAllowsFire(t *testing.T) {
 	// Pre-seed an old firing (2 minutes ago > 1 minute cooldown).
 	repo.firings["alert-000001/issue-000001"] = time.Now().UTC().Add(-2 * time.Minute)
 
-	evaluator := NewEvaluator(repo, NewDeliverer(digest.MailConfig{}), "http://example.com", "", slog.Default())
+	evaluator := NewEvaluator(repo, NewDeliverer(mail.Config{}), "http://example.com", "", slog.Default())
 	evaluator.evaluate(context.Background(), 1, storage.Issue{ID: "issue-000001"}, "new_issue")
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -185,7 +185,7 @@ func TestEvaluator_HandleEvent(t *testing.T) {
 	rules := []Rule{
 		{ID: "alert-000001", Name: "Test", Enabled: true, Condition: "new_issue", WebhookURL: srv.URL},
 	}
-	evaluator := NewEvaluator(newFakeRepo(rules), NewDeliverer(digest.MailConfig{}), "http://example.com", "", slog.Default())
+	evaluator := NewEvaluator(newFakeRepo(rules), NewDeliverer(mail.Config{}), "http://example.com", "", slog.Default())
 
 	// Subscribe via bus and publish.
 	var bus domainevents.Bus

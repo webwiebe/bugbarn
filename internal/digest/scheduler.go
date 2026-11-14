@@ -13,7 +13,7 @@ func BuildNotifiers(cfg Config) []Notifier {
 	if cfg.WebhookURL != "" {
 		notifiers = append(notifiers, &WebhookNotifier{URL: cfg.WebhookURL})
 	}
-	if cfg.Mail.active() {
+	if cfg.Mail.Active() {
 		notifiers = append(notifiers, &EmailNotifier{Cfg: cfg.Mail})
 	}
 	return notifiers
