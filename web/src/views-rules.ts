@@ -72,7 +72,7 @@ function renderIfActive(): void {
 }
 
 /** ruleCondition summarises when a rule fires, in one line. */
-export function ruleCondition(r: Rule): string {
+function ruleCondition(r: Rule): string {
   if (r.track === "heartbeat") return `no metrics for ${r.window ?? "?"}`;
   if (r.track === "metrics") {
     const limit = r.per_core ? `${r.threshold} × cores` : String(r.threshold);
@@ -152,7 +152,7 @@ export function renderRulesView(): void {
 }
 
 /** editable strips the read-only fields the API adds to a listed rule. */
-export function editable(r: Rule): Record<string, unknown> {
+function editable(r: Rule): Record<string, unknown> {
   const { builtin: _b, overridden: _o, updated_at: _u, ...rule } = r;
   return rule;
 }

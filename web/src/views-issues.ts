@@ -118,7 +118,7 @@ async function loadMoreIssues(): Promise<void> {
   }
 }
 
-export async function loadSparklines(): Promise<void> {
+async function loadSparklines(): Promise<void> {
   const generation = issueLoadGeneration;
   if (state.issues.length === 0) return;
   const ids = state.issues

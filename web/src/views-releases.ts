@@ -17,6 +17,15 @@ export async function loadReleases(): Promise<void> {
   }
 }
 
+function releaseTimestampMs(r: ApiRelease): number {
+  return toTimestampMs(r.ObservedAt ?? r.observedAt ?? r.observed_at ?? r.createdAt ?? r.created_at ?? r.CreatedAt);
+}
+
+function regressedWithin(issue: ApiIssue, start: number, end: number): boolean {
+  const lr = toTimestampMs(issue.LastRegressedAt ?? (issue as Record<string, unknown>)["last_regressed_at"]);
+  return lr > 0 && lr >= start && (end === 0 || lr < end);
+}
+
 export async function loadReleaseDetail(releaseId: string): Promise<void> {
   const release = state.releases.find((r) => String(r.id ?? r.ID ?? "") === releaseId);
   if (!release) {
@@ -30,10 +39,8 @@ export async function loadReleaseDetail(releaseId: string): Promise<void> {
   // releases are newest-first; the next release chronologically is the one before this in the array
   const nextRelease = idx > 0 ? state.releases[idx - 1] : null;
 
-  const releaseStart = toTimestampMs(release.ObservedAt ?? release.observedAt ?? release.observed_at ?? release.createdAt ?? release.created_at ?? release.CreatedAt);
-  const releaseEnd = nextRelease
-    ? toTimestampMs(nextRelease.ObservedAt ?? nextRelease.observedAt ?? nextRelease.observed_at ?? nextRelease.createdAt ?? nextRelease.created_at ?? nextRelease.CreatedAt)
-    : Date.now();
+  const releaseStart = releaseTimestampMs(release);
+  const releaseEnd = nextRelease ? releaseTimestampMs(nextRelease) : Date.now();
 
   let allIssues = state.issues;
   // If issues list is empty or wasn't loaded yet, fetch without project filter to get all
@@ -48,10 +55,7 @@ export async function loadReleaseDetail(releaseId: string): Promise<void> {
 
   const newIssues = await loadNewIssues(releaseId, allIssues, releaseStart, releaseEnd);
 
-  const regressions = allIssues.filter((issue) => {
-    const lr = toTimestampMs(issue.LastRegressedAt ?? (issue as Record<string, unknown>)["last_regressed_at"]);
-    return lr > 0 && lr >= releaseStart && (releaseEnd === 0 || lr < releaseEnd);
-  });
+  const regressions = allIssues.filter((issue) => regressedWithin(issue, releaseStart, releaseEnd));
 
   setActiveView("detail");
   elements.detailTitle.textContent = String(release.Name ?? release.name ?? "Release");

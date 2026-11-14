@@ -55,8 +55,7 @@ function renderProjectPicker(): void {
   if (pickerDropdown && !pickerDropdown.hidden) renderPickerList(pickerFilter?.value ?? "");
 }
 
-function updatePickerBtn(): void {
-  if (!pickerBtn) return;
+function scopeLabelHtml(): string {
   let label: string;
   if (state.currentGroup) {
     const g = state.groups.find(g => g.slug === state.currentGroup);
@@ -66,7 +65,12 @@ function updatePickerBtn(): void {
     label = proj ? String(proj.name ?? proj.Name ?? state.currentProject) : "All projects";
   }
   if (state.currentEnv) label += ` / ${state.currentEnv}`;
-  pickerBtn.innerHTML = `${escapeHtml(label)} <span class="scope-chevron">▾</span>`;
+  return `${escapeHtml(label)} <span class="scope-chevron">▾</span>`;
+}
+
+function updatePickerBtn(): void {
+  if (!pickerBtn) return;
+  pickerBtn.innerHTML = scopeLabelHtml();
 }
 
 export function renderPickerList(filter: string): void {
@@ -152,18 +156,8 @@ document.addEventListener("bugbarn:select-project", (ev) => {
 function updateScopeBtn(): void {
   const btn = document.getElementById("scope-btn");
   if (!btn) return;
-  // Reuse the same label logic as the desktop picker
   updatePickerBtn();
-  let label: string;
-  if (state.currentGroup) {
-    const g = state.groups.find(g => g.slug === state.currentGroup);
-    label = g ? g.name : state.currentGroup;
-  } else {
-    const proj = state.projects.find(p => String(p.slug ?? p.Slug ?? "") === state.currentProject);
-    label = proj ? String(proj.name ?? proj.Name ?? state.currentProject) : "All projects";
-  }
-  if (state.currentEnv) label += ` / ${state.currentEnv}`;
-  btn.innerHTML = `${escapeHtml(label)} <span class="scope-chevron">▾</span>`;
+  btn.innerHTML = scopeLabelHtml();
 }
 
 export async function checkPendingProjects(): Promise<void> {

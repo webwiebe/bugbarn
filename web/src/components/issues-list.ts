@@ -89,10 +89,6 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
   `;
 }
 
-export function filteredIssueCount(issues: ApiIssue[], query: string): number {
-  return filterIssues(issues, query).length;
-}
-
 export function renderEmptyIssues(setupGuide: string): string {
   return `
     <div class="empty">

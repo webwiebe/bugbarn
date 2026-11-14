@@ -76,7 +76,11 @@ export function renderStacktrace(stacktrace: unknown[]): string {
   `;
 }
 
-export function renderFrame(frame: unknown, index: number): string {
+function joinLocation(file: string, line: string, column: string): string {
+  return [file, line ? `:${line}` : "", column ? `:${column}` : ""].join("");
+}
+
+function renderFrame(frame: unknown, index: number): string {
   if (!isRecord(frame)) {
     return `<div class="frame"><span>#${index + 1}</span><code>${escapeHtml(String(frame))}</code></div>`;
   }
@@ -85,7 +89,7 @@ export function renderFrame(frame: unknown, index: number): string {
   const file = readString(frame, ["file", "File", "filename", "Filename", "path", "Path"]);
   const line = readString(frame, ["line", "Line", "lineno", "Lineno"]);
   const column = readString(frame, ["column", "Column", "colno", "Colno"]);
-  const location = [file, line ? `:${line}` : "", column ? `:${column}` : ""].join("");
+  const location = joinLocation(file, line, column);
   const snippet = readFrameSnippet(frame);
 
   // Original (symbolicated) position fields — try all common naming variants
@@ -96,9 +100,7 @@ export function renderFrame(frame: unknown, index: number): string {
 
   const hasOriginal = Boolean(origFn ?? origFile ?? origLine);
   const displayFn = origFn ?? fn;
-  const origLocation = origFile
-    ? [origFile, origLine ? `:${origLine}` : "", origColumn ? `:${origColumn}` : ""].join("")
-    : "";
+  const origLocation = origFile ? joinLocation(origFile, origLine, origColumn) : "";
 
   return `
     <article class="frame${hasOriginal ? " symbolicated" : ""}">
@@ -117,7 +119,7 @@ export function renderFrame(frame: unknown, index: number): string {
   `;
 }
 
-export function readFrameSnippet(frame: RawRecord): string {
+function readFrameSnippet(frame: RawRecord): string {
   const direct = readFirst(frame, [
     "snippet",
     "Snippet",
@@ -147,7 +149,7 @@ export function readFrameSnippet(frame: RawRecord): string {
   return lines.join("\n");
 }
 
-export function toLines(value: unknown): string[] {
+function toLines(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
