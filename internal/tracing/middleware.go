@@ -110,7 +110,7 @@ func Middleware(next http.Handler) http.Handler {
 // routeLabel is the metric label for a request: the ServeMux pattern the router
 // matched, without its method, so path ids do not create a series each. The
 // router records the pattern on the request it was given; a request no pattern
-// matched is labelled "unmatched".
+// matched is labeled "unmatched".
 func routeLabel(r *http.Request) string {
 	_, path, found := strings.Cut(r.Pattern, " ")
 	if !found {
