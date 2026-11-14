@@ -29,11 +29,19 @@ func IsClientError(err error) bool {
 // unless err is a client error, because internal/selflog turns every ERROR
 // record into a BugBarn issue against ourselves. args are extra slog
 // attributes; the error is appended as "error".
+//
+// When ctx has already ended (the client hung up or the process is stopping)
+// the failure follows from that, so it logs at WARN: the record stays visible
+// and files no bug against ourselves.
 func LogFailure(ctx context.Context, log *slog.Logger, msg string, err error, args ...any) {
 	if IsClientError(err) {
 		return
 	}
-	log.ErrorContext(ctx, msg, append(args, "error", err)...)
+	level := slog.LevelError
+	if ctx.Err() != nil {
+		level = slog.LevelWarn
+	}
+	log.Log(ctx, level, msg, append(args, "error", err)...)
 }
 
 type Error struct {

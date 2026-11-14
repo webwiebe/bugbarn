@@ -24,11 +24,20 @@ func New() (*slog.Logger, *Recorder) {
 
 // Errors returns the records written at ERROR or above.
 func (r *Recorder) Errors() []slog.Record {
+	return r.atLevel(func(l slog.Level) bool { return l >= slog.LevelError })
+}
+
+// Warnings returns the records written at WARN, below ERROR.
+func (r *Recorder) Warnings() []slog.Record {
+	return r.atLevel(func(l slog.Level) bool { return l >= slog.LevelWarn && l < slog.LevelError })
+}
+
+func (r *Recorder) atLevel(match func(slog.Level) bool) []slog.Record {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []slog.Record
 	for _, rec := range r.records {
-		if rec.Level >= slog.LevelError {
+		if match(rec.Level) {
 			out = append(out, rec)
 		}
 	}

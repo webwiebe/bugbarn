@@ -114,15 +114,11 @@ func (s *Service) CheckIn(ctx context.Context, projectID int64, in CheckInInput)
 	}
 	res, err := s.repo.RecordMonitorCheckIn(ctx, rec)
 	if err != nil {
+		// A busy store answers 503 and the job retries, so only an internal
+		// failure is reported. A canceled request loses one beat of a job that
+		// sends the next one on schedule; LogFailure keeps that at WARN.
 		if errors.Is(err, apperr.ErrInternal) {
-			// A canceled request (the client hung up, or the pod is shutting
-			// down) loses one beat of a job that sends the next one on schedule,
-			// so it stays out of the error stream that files bugs against us.
-			level := slog.LevelError
-			if ctx.Err() != nil {
-				level = slog.LevelWarn
-			}
-			s.logger.Log(ctx, level, "monitor check-in lost", "project_id", projectID, "monitor", in.Slug, "error", err)
+			apperr.LogFailure(ctx, s.logger, "monitor check-in lost", err, "project_id", projectID, "monitor", in.Slug)
 		}
 		return CheckInResult{}, err
 	}

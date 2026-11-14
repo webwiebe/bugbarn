@@ -56,3 +56,18 @@ func TestLogFailureWritesOneErrorForInternalFailuresOnly(t *testing.T) {
 		t.Errorf("attrs = %v, want slug and error", got)
 	}
 }
+
+func TestLogFailureWarnsWhenTheContextHasEnded(t *testing.T) {
+	log, rec := logtest.New()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	apperr.LogFailure(ctx, log, "op", apperr.Internal("x", errors.New("database is closed")))
+
+	if n := len(rec.Errors()); n != 0 {
+		t.Fatalf("failure after the context ended wrote %d ERROR records, want 0", n)
+	}
+	if n := len(rec.Warnings()); n != 1 {
+		t.Fatalf("failure after the context ended wrote %d WARN records, want 1", n)
+	}
+}
