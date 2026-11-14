@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/hex"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -53,10 +52,8 @@ func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 // deleteAPIKey removes a key. A setup key is derived, so removing only its row
 // would leave it working through the setup fallback: it gets revoked instead.
 func (s *Server) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id <= 0 {
-		http.Error(w, "invalid api key id", http.StatusBadRequest)
+	id, ok := positiveIDParam(w, r, "id", "api key")
+	if !ok {
 		return
 	}
 	key, err := s.projects.APIKey(r.Context(), id)

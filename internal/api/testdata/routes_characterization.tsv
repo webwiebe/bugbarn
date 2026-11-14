@@ -852,7 +852,7 @@ full	PATCH	/api/v1/releases		=>	405	allow=GET, HEAD, POST	acam=GET, POST, PUT, P
 full	DELETE	/api/v1/releases		=>	405	allow=GET, HEAD, POST	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
 none	DELETE	/api/v1/releases		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	GET	/api/v1/releases/		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
-full	GET	/api/v1/releases/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+full	GET	/api/v1/releases/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "zzz"
 none	OPTIONS	/api/v1/releases		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	OPTIONS	/api/v1/releases		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	POST	/api/v1/releases	{"name":"v9","environment":"prod"}	=>	503	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=release enqueue failed
@@ -878,22 +878,22 @@ session	GET	/api/v1/releases/{release}		=>	200	acam=GET, POST, PUT, PATCH, DELET
 full	POST	/api/v1/releases/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
 full	PUT	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release payload
 full	PATCH	/api/v1/releases/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
-full	DELETE	/api/v1/releases/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	DELETE	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 none	DELETE	/api/v1/releases/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	GET	/api/v1/releases/nope/		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
 full	GET	/api/v1/releases/nope/zzz		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
 none	OPTIONS	/api/v1/releases/nope		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	OPTIONS	/api/v1/releases/nope		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
-full	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+full	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 none	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 read	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: read-only key cannot modify data
 ingestkey	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: ingest-only key cannot access this endpoint
-session	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+session	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 session-nocsrf	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid or missing CSRF token
-full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 full	POST	/api/v1/releases/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
 full	PATCH	/api/v1/releases/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
-full	DELETE	/api/v1/releases/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	DELETE	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 none	DELETE	/api/v1/releases/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	PUT	/api/v1/releases/nope/	{"name":"v9b"}	=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
 full	PUT	/api/v1/releases/nope/zzz	{"name":"v9b"}	=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
@@ -902,9 +902,9 @@ full	OPTIONS	/api/v1/releases/nope		=>	204	acam=GET, POST, PUT, PATCH, DELETE, O
 none	DELETE	/api/v1/releases/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 read	DELETE	/api/v1/releases/nope		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: read-only key cannot modify data
 ingestkey	DELETE	/api/v1/releases/nope		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: ingest-only key cannot access this endpoint
-session	DELETE	/api/v1/releases/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+session	DELETE	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 session-nocsrf	DELETE	/api/v1/releases/nope		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid or missing CSRF token
-full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 full	POST	/api/v1/releases/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
 full	PUT	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release payload
 full	PATCH	/api/v1/releases/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
@@ -924,7 +924,7 @@ full	PATCH	/api/v1/alerts		=>	405	allow=GET, HEAD, POST	acam=GET, POST, PUT, PAT
 full	DELETE	/api/v1/alerts		=>	405	allow=GET, HEAD, POST	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
 none	DELETE	/api/v1/alerts		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	GET	/api/v1/alerts/		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
-full	GET	/api/v1/alerts/zzz		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/alerts/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "zzz"
 none	OPTIONS	/api/v1/alerts		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	OPTIONS	/api/v1/alerts		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	POST	/api/v1/alerts	{"name":"a","enabled":true}	=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=alert
@@ -950,22 +950,22 @@ session	GET	/api/v1/alerts/{alert}		=>	200	acam=GET, POST, PUT, PATCH, DELETE, O
 full	POST	/api/v1/alerts/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
 full	PUT	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert payload
 full	PATCH	/api/v1/alerts/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
-full	DELETE	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	DELETE	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 none	DELETE	/api/v1/alerts/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	GET	/api/v1/alerts/nope/		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
 full	GET	/api/v1/alerts/nope/zzz		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
 none	OPTIONS	/api/v1/alerts/nope		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	OPTIONS	/api/v1/alerts/nope		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
-full	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert ID
+full	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 none	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 read	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: read-only key cannot modify data
 ingestkey	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: ingest-only key cannot access this endpoint
-session	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert ID
+session	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 session-nocsrf	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid or missing CSRF token
-full	GET	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 full	POST	/api/v1/alerts/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
 full	PATCH	/api/v1/alerts/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
-full	DELETE	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	DELETE	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 none	DELETE	/api/v1/alerts/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	PUT	/api/v1/alerts/nope/	{"name":"b","enabled":true}	=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
 full	PUT	/api/v1/alerts/nope/zzz	{"name":"b","enabled":true}	=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
@@ -974,9 +974,9 @@ full	OPTIONS	/api/v1/alerts/nope		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPT
 none	DELETE	/api/v1/alerts/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 read	DELETE	/api/v1/alerts/nope		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: read-only key cannot modify data
 ingestkey	DELETE	/api/v1/alerts/nope		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: ingest-only key cannot access this endpoint
-session	DELETE	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+session	DELETE	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 session-nocsrf	DELETE	/api/v1/alerts/nope		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid or missing CSRF token
-full	GET	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 full	POST	/api/v1/alerts/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
 full	PUT	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert payload
 full	PATCH	/api/v1/alerts/nope		=>	405	allow=GET, HEAD, PUT, DELETE	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
@@ -1778,8 +1778,8 @@ full	POST	/api/v1/projects/nope/merge	{"target":"default"}	=>	404	acam=GET, POST
 full	DELETE	/api/v1/groups/nope		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=not found
 full	DELETE	/api/v1/groups/nope/projects/nope		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=not found
 full	DELETE	/api/v1/aliases/nope		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=not found
-full	DELETE	/api/v1/releases/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
-full	DELETE	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	DELETE	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
+full	DELETE	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 full	DELETE	/api/v1/apikeys/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid api key id
 full	POST	/api/v1/key-requests/nope/approve		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: deciding a key request requires an admin session
 full	POST	/api/v1/key-requests/nope/deny		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: deciding a key request requires an admin session
@@ -1938,10 +1938,10 @@ full	PATCH	/api/v1/issues/nope/unmute		=>	202	acam=GET, POST, PUT, PATCH, DELETE
 none	PATCH	/api/v1/issues/nope/unmute		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/issues/nope/unmute		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/issues/nope/unmute
 full	GET	/api/v1/issues/nope/unmute		=>	405	allow=PATCH	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
-full	GET	/api/v1/events/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/events/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid event id "nope"
 none	GET	/api/v1/events/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/events/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/events/nope
-full	GET	/api/v1/events/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/events/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid event id "nope"
 full	GET	/api/v1/events/stream		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/event-stream
 none	GET	/api/v1/events/stream		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/events/stream		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/events/stream
@@ -2058,18 +2058,18 @@ full	POST	/api/v1/releases	{"name":"v9","environment":"prod"}	=>	202	acam=GET, P
 none	POST	/api/v1/releases	{"name":"v9","environment":"prod"}	=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/releases		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/releases
 full	GET	/api/v1/releases		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=releases
-full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 none	GET	/api/v1/releases/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/releases/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/releases/nope
-full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 full	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=PUT /api/v1/releases/nope
 none	PUT	/api/v1/releases/nope	{"name":"v9b"}	=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/releases/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/releases/nope
-full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 full	DELETE	/api/v1/releases/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/releases/nope
 none	DELETE	/api/v1/releases/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	PUT	/api/v1/releases/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=PUT /api/v1/releases/nope
-full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release ID
+full	GET	/api/v1/releases/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "nope"
 full	GET	/api/v1/alerts		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=alerts
 none	GET	/api/v1/alerts		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/alerts		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/alerts
@@ -2078,18 +2078,18 @@ full	POST	/api/v1/alerts	{"name":"a","enabled":true}	=>	202	acam=GET, POST, PUT,
 none	POST	/api/v1/alerts	{"name":"a","enabled":true}	=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/alerts		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/alerts
 full	GET	/api/v1/alerts		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=alerts
-full	GET	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 none	GET	/api/v1/alerts/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/alerts/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/alerts/nope
-full	GET	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 full	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=PUT /api/v1/alerts/nope
 none	PUT	/api/v1/alerts/nope	{"name":"b","enabled":true}	=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/alerts/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/alerts/nope
-full	GET	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 full	DELETE	/api/v1/alerts/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/alerts/nope
 none	DELETE	/api/v1/alerts/nope		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	PUT	/api/v1/alerts/nope		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=PUT /api/v1/alerts/nope
-full	GET	/api/v1/alerts/nope		=>	500	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=internal error
+full	GET	/api/v1/alerts/nope		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "nope"
 full	GET	/api/v1/settings		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=settings
 none	GET	/api/v1/settings		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/settings		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/settings
@@ -2242,3 +2242,17 @@ none	DELETE	/api/v1/nonexistent		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTI
 full	GET	/api/v1/nonexistent		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
 full	POST	/api/v1/nonexistent		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=POST /api/v1/nonexistent
 full	DELETE	/api/v1/nonexistent		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/nonexistent
+
+@mode writer
+# Non-numeric ids answer 400 on every id wildcard.
+full	GET	/api/v1/events/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid event id "zzz"
+full	GET	/api/v1/events/event-zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid event id "event-zzz"
+full	GET	/api/v1/alerts/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "zzz"
+full	PUT	/api/v1/alerts/zzz	{"name":"b","enabled":true}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "zzz"
+full	DELETE	/api/v1/alerts/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid alert id "zzz"
+full	GET	/api/v1/releases/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "zzz"
+full	PUT	/api/v1/releases/zzz	{"name":"r"}	=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "zzz"
+full	DELETE	/api/v1/releases/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid release id "zzz"
+full	DELETE	/api/v1/apikeys/zzz		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid api key id
+full	GET	/api/v1/issues/zzz/events		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid issue id "zzz"
+full	POST	/api/v1/issues/zzz/resolve		=>	400	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=invalid issue id "zzz"

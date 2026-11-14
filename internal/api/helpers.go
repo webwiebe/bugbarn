@@ -12,6 +12,18 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 )
 
+// positiveIDParam reads a bare numeric id wildcard. A value that is not a
+// positive integer is answered with 400 and reported as !ok. Prefixed ids
+// ("alert-7") are parsed by the storage layer, which answers the same 400.
+func positiveIDParam(w http.ResponseWriter, r *http.Request, name, kind string) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid "+kind+" id", http.StatusBadRequest)
+		return 0, false
+	}
+	return id, true
+}
+
 func writeJSON(w http.ResponseWriter, value any) {
 	writeJSONStatus(w, http.StatusOK, value)
 }

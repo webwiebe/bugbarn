@@ -30,7 +30,32 @@ func (s *Server) registerProtectedRoutes(rt *router) {
 	s.registerAlertRoutes(prot)
 	s.registerLogAndAnalyticsRoutes(prot)
 	s.registerTelemetryRoutes(prot)
+	s.registerAdminRoutes(admin)
+	s.registerCatalogRoutes(prot)
 
+	prot.handle("POST /api/v1/telemetry", s.serveTelemetry)
+	prot.handle("POST /api/v1/client-errors", s.serveClientError)
+	prot.handle("POST /api/v1/admin/digest", s.serveDigestTrigger)
+	prot.handle("GET /internal/v1/db-backup", s.serveDBBackup)
+
+	traces.handle("POST "+frontendTracesPath, s.serveFrontendTraces)
+	prot.fallback("/", s.unmatched)
+}
+
+// registerAdminRoutes registers the settings and API key endpoints, which a
+// read-scope key never reaches, even for a GET.
+func (s *Server) registerAdminRoutes(g group) {
+	g.handle("GET /api/v1/settings", s.getSettings)
+	g.handle("PUT /api/v1/settings", s.updateSettings)
+	g.handle("POST /api/v1/settings", s.updateSettings)
+	g.handle("GET /api/v1/apikeys", s.listAPIKeys)
+	g.handle("POST /api/v1/apikeys/revoke-setup", s.revokeSetupKey)
+	g.handle("DELETE /api/v1/apikeys/{id}", s.deleteAPIKey)
+}
+
+// registerCatalogRoutes registers source maps, releases, key requests, monitors,
+// groups, aliases and facets.
+func (s *Server) registerCatalogRoutes(prot group) {
 	prot.handle("GET /api/v1/source-maps", s.listSourceMaps)
 	prot.handle("POST /api/v1/source-maps", s.uploadSourceMap)
 
@@ -39,13 +64,6 @@ func (s *Server) registerProtectedRoutes(rt *router) {
 	prot.handle("GET /api/v1/releases/{id}", s.getRelease)
 	prot.handle("PUT /api/v1/releases/{id}", s.updateRelease)
 	prot.handle("DELETE /api/v1/releases/{id}", s.deleteRelease)
-
-	admin.handle("GET /api/v1/settings", s.getSettings)
-	admin.handle("PUT /api/v1/settings", s.updateSettings)
-	admin.handle("POST /api/v1/settings", s.updateSettings)
-	admin.handle("GET /api/v1/apikeys", s.listAPIKeys)
-	admin.handle("POST /api/v1/apikeys/revoke-setup", s.revokeSetupKey)
-	admin.handle("DELETE /api/v1/apikeys/{id}", s.deleteAPIKey)
 
 	// The admin side of agent key requests: list the open requests and decide one.
 	prot.handle("GET /api/v1/key-requests", s.listKeyRequests)
@@ -70,14 +88,6 @@ func (s *Server) registerProtectedRoutes(rt *router) {
 	prot.handle("GET /api/v1/facets", s.listFacetKeys)
 	prot.fallback("GET /api/v1/facets/{$}", s.listFacetKeys)
 	prot.handle("GET /api/v1/facets/{key}", s.listFacetValues)
-
-	prot.handle("POST /api/v1/telemetry", s.serveTelemetry)
-	prot.handle("POST /api/v1/client-errors", s.serveClientError)
-	prot.handle("POST /api/v1/admin/digest", s.serveDigestTrigger)
-	prot.handle("GET /internal/v1/db-backup", s.serveDBBackup)
-
-	traces.handle("POST "+frontendTracesPath, s.serveFrontendTraces)
-	prot.fallback("/", s.unmatched)
 }
 
 func (s *Server) registerIssueRoutes(g group) {
