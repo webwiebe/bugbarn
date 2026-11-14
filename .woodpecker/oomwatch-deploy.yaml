@@ -81,6 +81,13 @@ steps:
       - |
         set -euo pipefail
         . ./.digests
+        # No ingest key committed for this overlay yet (bugbarn#267): skip the
+        # deploy instead of failing every release. The step goes live in the
+        # first tag after the SOPS secret.yaml lands.
+        if [ ! -f "deploy/oomwatch/k8s/$OVERLAY/secret.yaml" ]; then
+          echo "oomwatch deploy skipped on $OVERLAY: deploy/oomwatch/k8s/$OVERLAY/secret.yaml is not committed (waiting on the ingest key, bugbarn#267)"
+          exit 0
+        fi
         SSH="ssh -o StrictHostKeyChecking=no"
         # Pin the release digest so the pod never runs the :local placeholder.
         sed -i.bak "s/newTag: local/digest: $SERVICE_DIGEST/" deploy/oomwatch/k8s/base/kustomization.yaml

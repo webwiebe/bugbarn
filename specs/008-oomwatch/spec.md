@@ -19,7 +19,7 @@ A small in-cluster watcher lists pods through the Kubernetes API and reports eve
 - **FR-002**: Each termination is reported once, keyed by pod UID, container and finish time. Terminations older than the start-up lookback (10 minutes) are skipped. A failed report is retried on the next scan. Test: tracker and retry tests.
 - **FR-003**: The event carries the fingerprint `oomkilled:<namespace>/<container>`, so repeats group into one issue. Attributes: cluster, namespace, pod, container, memory limit, restart count, exit code, terminated time.
 - **FR-004**: Events go to the `cluster` project (`OOMWATCH_DEFAULT_PROJECT`) with a project-bound ingest key from `bb key-request`. `OOMWATCH_PROJECTS` can map namespaces to other projects but needs a full-scope key, so the overlays leave it unset. The namespace is in the fingerprint and attributes.
-- **FR-005**: Each cluster deploys through `.woodpecker/oomwatch-deploy.yaml` on a version tag after `release`, by image digest.
+- **FR-005**: Each cluster deploys through `.woodpecker/oomwatch-deploy.yaml` on a version tag after `release`, by image digest. A cluster whose `deploy/oomwatch/k8s/<overlay>/secret.yaml` is not committed is skipped with a log line, so no release fails while the ingest key is pending.
 - **FR-006**: The watcher holds no write verbs on the cluster. `.woodpecker/oomwatch.yaml` rejects write verbs in the ClusterRole.
 
 ## Open items
