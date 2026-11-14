@@ -29,7 +29,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/retention"
 	"github.com/wiebe-xyz/bugbarn/internal/selflog"
-	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/service/detectionrules"
 	logsvc "github.com/wiebe-xyz/bugbarn/internal/service/logs"
 	"github.com/wiebe-xyz/bugbarn/internal/sessionstore"
@@ -158,7 +157,7 @@ func run() error {
 	evaluator := alert.NewEvaluator(alertRepo, deliverer, cfg.PublicURL, cfg.AdminAlertEmail, logger.With("component", "alert-evaluator"))
 	bus.Subscribe(evaluator.HandleEvent)
 
-	eventPub := service.NewEventPublisher(bus)
+	eventPub := domainevents.NewIssuePublisher(bus)
 
 	// FunnelBarn product-event tracking is opt-in, same gate as the frontend's
 	// runtime-config block: only enabled when an API key is configured.

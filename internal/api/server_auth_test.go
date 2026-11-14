@@ -12,7 +12,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestServeHTTPStatefulEndpoints(t *testing.T) {
@@ -22,7 +21,7 @@ func TestServeHTTPStatefulEndpoints(t *testing.T) {
 	defer store.Close()
 
 	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
-	issue, _ := mustPersistProcessedEvent(t, store, worker.ProcessedEvent{
+	issue, _ := mustPersistProcessedEvent(t, store, event.ProcessedEvent{
 		Fingerprint: "fingerprint-stateful",
 		Event: event.Event{
 			ReceivedAt: base,

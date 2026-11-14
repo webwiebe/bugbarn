@@ -13,7 +13,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestproc"
-	"github.com/wiebe-xyz/bugbarn/internal/service"
 	monitorsvc "github.com/wiebe-xyz/bugbarn/internal/service/monitors"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
@@ -42,7 +41,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	proc := ingestproc.NewProcessor(store, service.NewEventPublisher(&domainevents.Bus{}), quiet, true)
+	proc := ingestproc.NewProcessor(store, domainevents.NewIssuePublisher(&domainevents.Bus{}), quiet, true)
 	h := &harness{t: t, store: store, clock: time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)}
 	proj, err := store.CreateProject(context.Background(), "geo", "geo")
 	if err != nil {

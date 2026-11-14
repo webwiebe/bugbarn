@@ -10,7 +10,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestIssueReleasesEndpoint(t *testing.T) {
@@ -25,7 +24,7 @@ func TestIssueReleasesEndpoint(t *testing.T) {
 			attrs["release"] = release
 		}
 		at := base.Add(time.Duration(i) * time.Minute)
-		issue, _, _, _, err := store.PersistProcessedEvent(context.Background(), worker.ProcessedEvent{
+		issue, _, _, _, err := store.PersistProcessedEvent(context.Background(), event.ProcessedEvent{
 			Event: event.Event{
 				ObservedAt: at, ReceivedAt: at.Add(time.Second), Severity: "ERROR",
 				Message: "boom", Exception: event.Exception{Type: "Boom", Message: "boom"}, Attributes: attrs,

@@ -8,11 +8,10 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
-func releaseEvent(at time.Time, attrs, resource map[string]any) worker.ProcessedEvent {
-	return worker.ProcessedEvent{
+func releaseEvent(at time.Time, attrs, resource map[string]any) event.ProcessedEvent {
+	return event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: at,
 			ReceivedAt: at.Add(time.Second),

@@ -119,5 +119,6 @@ Use a real database in `t.TempDir()`; there are no storage mocks. Tests that wri
 explicit fingerprints use `open(path, false)` so the background migration does not
 rewrite them.
 
-`storage` imports `internal/worker`, so `worker` cannot import `storage`. That is why the
-Redis consumer pipeline lives in `internal/ingestproc`.
+`storage` takes `event.ProcessedEvent` from the leaf package `internal/event` and does not
+import `internal/worker`. The Redis consumer pipeline lives in `internal/ingestproc`, which
+ties the worker's decode and fingerprint step to storage.

@@ -11,7 +11,6 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestServeHTTPQueryEndpoints(t *testing.T) {
@@ -21,7 +20,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 	defer store.Close()
 
 	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
-	issueA1, eventA1 := mustPersistProcessedEvent(t, store, worker.ProcessedEvent{
+	issueA1, eventA1 := mustPersistProcessedEvent(t, store, event.ProcessedEvent{
 		Fingerprint: "fingerprint-a",
 		Event: event.Event{
 			ReceivedAt: base,
@@ -37,7 +36,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 			},
 		},
 	})
-	issueA2, eventA2 := mustPersistProcessedEvent(t, store, worker.ProcessedEvent{
+	issueA2, eventA2 := mustPersistProcessedEvent(t, store, event.ProcessedEvent{
 		Fingerprint: "fingerprint-a",
 		Event: event.Event{
 			ReceivedAt: base.Add(5 * time.Minute),
@@ -56,7 +55,7 @@ func TestServeHTTPQueryEndpoints(t *testing.T) {
 	if issueA2.ID != issueA1.ID {
 		t.Fatalf("expected repeated fingerprint to reuse the same issue, got %q and %q", issueA1.ID, issueA2.ID)
 	}
-	issueB, eventB := mustPersistProcessedEvent(t, store, worker.ProcessedEvent{
+	issueB, eventB := mustPersistProcessedEvent(t, store, event.ProcessedEvent{
 		Fingerprint: "fingerprint-b",
 		Event: event.Event{
 			ReceivedAt: base.Add(10 * time.Minute),
@@ -213,7 +212,7 @@ func mustOpenStore(t *testing.T) *storage.Store {
 	return store
 }
 
-func mustPersistProcessedEvent(t *testing.T, store *storage.Store, processed worker.ProcessedEvent) (storage.Issue, storage.Event) {
+func mustPersistProcessedEvent(t *testing.T, store *storage.Store, processed event.ProcessedEvent) (storage.Issue, storage.Event) {
 	t.Helper()
 
 	issue, eventRow, _, _, err := store.PersistProcessedEvent(context.Background(), processed)

@@ -10,12 +10,11 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 // upsertIssue is the ingest write path: it finds-or-creates the issue for an
 // event's fingerprint and applies regression/mute transitions in one tx.
-func (s *core) upsertIssue(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
+func (s *core) upsertIssue(ctx context.Context, projectID int64, processed event.ProcessedEvent) (Issue, int64, bool, error) {
 	in, err := prepareUpsertInputs(processed)
 	if err != nil {
 		return Issue{}, 0, false, err
@@ -89,7 +88,7 @@ type upsertInputs struct {
 // prepareUpsertInputs derives the fingerprint, material, explanation, title and
 // representative-event blob from the processed event, applying the same
 // fallbacks the ingest path relied on.
-func prepareUpsertInputs(processed worker.ProcessedEvent) (upsertInputs, error) {
+func prepareUpsertInputs(processed event.ProcessedEvent) (upsertInputs, error) {
 	evt := processed.Event
 	fingerprintValue := strings.TrimSpace(processed.Fingerprint)
 	if fingerprintValue == "" {

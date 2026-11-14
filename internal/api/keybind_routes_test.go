@@ -18,7 +18,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 // scopedReadRoute is a protected GET route that returns project data. mark is
@@ -123,7 +122,7 @@ func seedScopedRows(t *testing.T, store *storage.Store, home domain.Project) {
 	}); err != nil {
 		t.Fatalf("seed page view: %v", err)
 	}
-	pe := worker.ProcessedEvent{
+	pe := event.ProcessedEvent{
 		Event: event.Event{
 			ObservedAt: now, ReceivedAt: now.Add(time.Second), Severity: "ERROR", Message: "surface error",
 			Exception:  event.Exception{Type: "TestError", Message: "surface error"},

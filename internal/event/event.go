@@ -58,3 +58,12 @@ type StackFrame struct {
 	OriginalColumn   int    `json:"originalColumn,omitempty"`
 	Snippet          string `json:"snippet,omitempty"`
 }
+
+// ProcessedEvent is an ingest event after normalization and fingerprinting,
+// ready for storage.
+type ProcessedEvent struct {
+	Event                  Event    `json:"event"`
+	Fingerprint            string   `json:"fingerprint"`
+	FingerprintMaterial    string   `json:"fingerprintMaterial"`
+	FingerprintExplanation []string `json:"fingerprintExplanation"`
+}

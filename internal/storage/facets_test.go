@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/event"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 func TestExtractFacets(t *testing.T) {
@@ -402,6 +401,3 @@ func indexedKey(i int) string {
 	// Generate keys like "facet.key.aa", "facet.key.ab", ...
 	return "facet.key." + string(rune('a'+i%26)) + string(rune('a'+i/26))
 }
-
-// ensure the worker package is referenced.
-var _ = worker.ProcessedEvent{}

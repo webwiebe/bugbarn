@@ -14,7 +14,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 const issueEventCols = `e.id, e.issue_id, e.fingerprint, e.fingerprint_material, e.fingerprint_explanation_json,
@@ -237,7 +236,7 @@ INSERT INTO events (
 
 func (s *core) insertEvent(
 	ctx context.Context, projectID int64, issueID int64, issueDisplayID string,
-	regressed bool, sampleWeight int64, processed worker.ProcessedEvent,
+	regressed bool, sampleWeight int64, processed event.ProcessedEvent,
 ) (Event, error) {
 	payload, err := marshalEvent(processed.Event)
 	if err != nil {

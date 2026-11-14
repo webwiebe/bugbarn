@@ -19,10 +19,9 @@ import (
 	bb "github.com/wiebe-xyz/bugbarn-go"
 	"github.com/wiebe-xyz/bugbarn/internal/config"
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
+	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
 	"github.com/wiebe-xyz/bugbarn/internal/ingest"
-	"github.com/wiebe-xyz/bugbarn/internal/issues"
 	"github.com/wiebe-xyz/bugbarn/internal/mutqueue"
-	"github.com/wiebe-xyz/bugbarn/internal/service"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
@@ -61,9 +60,9 @@ func runWorkerOnce(cfg config.Config) error {
 		return err
 	}
 
-	store := issues.NewStore()
+	issueKeys := make(map[string]struct{})
 	for _, item := range processed {
-		store.AddWithFingerprint(item.Event, item.Fingerprint)
+		issueKeys[issueKey(item)] = struct{}{}
 		if _, _, _, _, err := persistentStore.PersistProcessedEvent(context.Background(), item); err != nil {
 			return err
 		}
@@ -73,7 +72,7 @@ func runWorkerOnce(cfg config.Config) error {
 		"records":  len(records),
 		"events":   len(processed),
 		"releases": releaseCount,
-		"issues":   store.Len(),
+		"issues":   len(issueKeys),
 	})
 }
 
@@ -175,7 +174,7 @@ type spoolWorker struct {
 	eventSpool    *spool.Spool
 	spoolDir      string
 	store         *storage.Store
-	svc           *service.EventPublisher
+	svc           *domainevents.IssuePublisher
 	selfReporting bool
 	ws            *worker.Status
 	mq            *mutqueue.Queue
@@ -189,7 +188,7 @@ type spoolWorker struct {
 	rotateThreshold int64
 }
 
-func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *service.EventPublisher, selfReporting bool, ws *worker.Status, mq *mutqueue.Queue) {
+func runBackgroundWorker(ctx context.Context, eventSpool *spool.Spool, spoolDir string, store *storage.Store, svc *domainevents.IssuePublisher, selfReporting bool, ws *worker.Status, mq *mutqueue.Queue) {
 	w := &spoolWorker{
 		eventSpool:    eventSpool,
 		spoolDir:      spoolDir,

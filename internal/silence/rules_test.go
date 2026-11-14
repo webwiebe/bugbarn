@@ -13,7 +13,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 const sortableLayout = "2006-01-02T15:04:05.000000000Z07:00"
@@ -69,7 +68,7 @@ func (f *fixture) events(projectID int64, times []time.Time) {
 		snap := fingerprint.SnapshotFor(evt)
 		fp := fingerprint.Fingerprint(evt)
 		evt.Fingerprint, evt.FingerprintMaterial, evt.FingerprintExplanation = fp, snap.Material, snap.Explanation
-		if _, _, _, _, err := f.store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+		if _, _, _, _, err := f.store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 			Event: evt, Fingerprint: fp, FingerprintMaterial: snap.Material, FingerprintExplanation: snap.Explanation,
 		}); err != nil {
 			f.t.Fatal(err)

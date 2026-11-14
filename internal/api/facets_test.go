@@ -13,7 +13,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/fingerprint"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 // The facets endpoints are what the dashboard's environment switcher is built
@@ -48,7 +47,7 @@ func TestFacetsEndpointsAndIssueFilter(t *testing.T) {
 			evt.FingerprintExplanation = snapshot.Explanation
 
 			var err error
-			issue, _, _, _, err = store.PersistProcessedEvent(ctx, worker.ProcessedEvent{
+			issue, _, _, _, err = store.PersistProcessedEvent(ctx, event.ProcessedEvent{
 				Event:                  evt,
 				Fingerprint:            evt.Fingerprint,
 				FingerprintMaterial:    snapshot.Material,

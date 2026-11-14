@@ -24,7 +24,6 @@ import (
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
-	"github.com/wiebe-xyz/bugbarn/internal/worker"
 )
 
 const (
@@ -290,7 +289,7 @@ func (s *core) DB() *sql.DB {
 // PersistProcessedEvent stores a processed event and upserts the related issue.
 // It returns the upserted issue, the stored event, a flag indicating whether this
 // was a brand-new issue, a flag indicating whether the issue regressed, and any error.
-func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.ProcessedEvent) (Issue, Event, bool, bool, error) {
+func (s *core) PersistProcessedEvent(ctx context.Context, processed event.ProcessedEvent) (Issue, Event, bool, bool, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "storage.PersistProcessedEvent",
 		trace.WithAttributes(attribute.String("fingerprint", processed.Fingerprint)),
 	)
@@ -364,7 +363,7 @@ func (s *core) PersistProcessedEvent(ctx context.Context, processed worker.Proce
 }
 
 // upsertIssueTraced runs upsertIssue under its own span.
-func (s *core) upsertIssueTraced(ctx context.Context, projectID int64, processed worker.ProcessedEvent) (Issue, int64, bool, error) {
+func (s *core) upsertIssueTraced(ctx context.Context, projectID int64, processed event.ProcessedEvent) (Issue, int64, bool, error) {
 	_, span := tracing.Tracer().Start(ctx, "storage.UpsertIssue")
 	defer span.End()
 	issue, issueID, regressed, err := s.upsertIssue(ctx, projectID, processed)
