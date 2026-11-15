@@ -23,7 +23,7 @@ info:
   version: 1.0.0
   contact:
     name: BugBarn
-    url: https://bugbarn.dev
+    url: https://webwiebe.github.io/bugbarn
 
 servers:
   - url: https://bugbarn.wiebe.xyz
