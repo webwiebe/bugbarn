@@ -29,7 +29,7 @@ test("FunnelBarn loads its SDK script from the configured endpoint, then initial
   assert.ok(script, "the SDK script is injected");
   script.onload();
   await settleAll();
-  assert.deepEqual(fb.inits, [{ apiKey: "fb-key", endpoint: "https://fb.test" }]);
+  assert.deepEqual(fb.inits, [{ apiKey: "fb-key", endpoint: "https://fb.test", recording: true }]);
   assert.equal(fb.pages, 1);
   win.location.hash = "#/alerts";
   await settleAll();
