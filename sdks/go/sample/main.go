@@ -12,11 +12,15 @@ import (
 	bugbarn "github.com/wiebe-xyz/bugbarn-go"
 )
 
-func main() {
-	if err := run(os.Getenv, os.Stdout); err != nil {
+func main() { os.Exit(exitCode(run(os.Getenv, os.Stdout))) }
+
+// exitCode logs a failed run and turns it into the process exit status.
+func exitCode(err error) int {
+	if err != nil {
 		slog.Error(err.Error())
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // run is the whole sample, with its environment and output injected so a test

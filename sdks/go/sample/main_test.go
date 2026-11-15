@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,15 @@ func TestRunRequiresEndpointAndKey(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("output before configuration = %q", out.String())
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	if got := exitCode(nil); got != 0 {
+		t.Fatalf("exitCode(nil) = %d, want 0", got)
+	}
+	if got := exitCode(errors.New("unset")); got != 1 {
+		t.Fatalf("exitCode(err) = %d, want 1", got)
 	}
 }
 

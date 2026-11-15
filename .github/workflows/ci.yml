@@ -172,12 +172,6 @@ jobs:
         run: |
           . "$GITHUB_WORKSPACE/scripts/use-pnpm.sh"
           pnpm dlx jscpd@latest .
-      # TypeScript size/complexity soak. Runs here, not in the quality job,
-      # because it needs the web/node_modules this job just installed.
-      - name: TypeScript budget soak (web only)
-        if: ${{ matrix.dir == 'web' }}
-        shell: bash
-        run: sh scripts/check-ts-budget.sh
 
   python:
     runs-on: [self-hosted, build]

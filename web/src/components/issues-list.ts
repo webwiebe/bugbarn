@@ -21,6 +21,54 @@ import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "../
 import type { ApiEvent, ApiIssue, ApiRelease } from "../types.js";
 import { toTimestampMs } from "./event-detail.js";
 
+function severityChipClass(severity: string): string {
+  if (severity === "error" || severity === "fatal") return "bad";
+  return severity === "warning" ? "warn" : "";
+}
+
+// Only these statuses get a chip; any other status renders without one.
+function issueStatusClass(status: string): string {
+  return status === "resolved" || status === "muted" || status === "regressed" ? status : "";
+}
+
+function issueStatusLabel(statusClass: string): string {
+  return statusClass ? statusClass.charAt(0).toUpperCase() + statusClass.slice(1) : "";
+}
+
+function renderIssueRow(issue: ApiIssue, sectionHeader: string, selectedIssueId: string | null, maxEvents: number): string {
+  const id = firstIdentifier(issue);
+  const rawTitle = issueTitle(issue);
+  const title = rawTitle.length > 300 ? rawTitle.slice(0, 300) + "…" : rawTitle;
+  const count = issueEventCount(issue);
+  const lastSeen = formatTime(issueLastSeen(issue));
+  const firstSeen = formatTime(issueFirstSeen(issue));
+  const active = id && String(id) === String(selectedIssueId) ? "active" : "";
+  const severity = issueSeverity(issue);
+  const severityClass = severityChipClass(severity);
+  const projectSlug = issue.project_slug ? String(issue.project_slug) : "";
+  const status = issueStatus(issue);
+  const statusClass = issueStatusClass(status);
+  const statusLabel = issueStatusLabel(statusClass);
+  return `${sectionHeader}
+          <button class="item issue-row ${active} ${statusClass}" type="button" data-issue-id="${escapeAttr(id)}">
+            <div class="item-title"><span class="status-dot ${statusClass}"></span><a href="#/issues/${escapeAttr(id)}" class="issue-link" onclick="event.stopPropagation()">${escapeHtml(title)}</a></div>
+            <span class="issue-cell"><span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity || "n/a")}</span></span>
+            <span class="issue-cell">${escapeHtml(lastSeen || "No timestamp")}</span>
+            <span class="issue-cell">${escapeHtml(firstSeen || "n/a")}</span>
+            <span class="issue-cell">${renderIssueCountMeter(count, maxEvents)}</span>
+            <span class="issue-cell">${escapeHtml(String(count))}</span>
+            <span class="issue-cell">${renderSparkline(issue.hourly_counts)}</span>
+            <div class="item-meta">
+              <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
+              ${statusLabel ? `<span class="chip issue-status-chip ${statusClass}" style="font-size:0.65rem">${escapeHtml(statusLabel)}</span>` : ""}
+              ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
+              ${sampledChipMarkup(issueSampleRate(issue))}
+              <span>${escapeHtml(id)}</span>
+            </div>
+          </button>
+        `;
+}
+
 export function renderIssueListMarkup(issues: ApiIssue[], query: string, selectedIssueId: string | null, error: unknown = null): string {
   if (error) {
     return `<div class="error">Issues unavailable. ${escapeHtml(errorMessage(error))}</div>`;
@@ -48,42 +96,11 @@ export function renderIssueListMarkup(issues: ApiIssue[], query: string, selecte
     ${filtered
       .map((issue) => {
         let sectionHeader = "";
-        const st = issueStatus(issue);
-        if (hasRegressed && !passedRegressed && st !== "regressed") {
+        if (hasRegressed && !passedRegressed && issueStatus(issue) !== "regressed") {
           passedRegressed = true;
           sectionHeader = `<div class="issue-section-divider"></div>`;
         }
-        const id = firstIdentifier(issue);
-        const rawTitle = issueTitle(issue);
-        const title = rawTitle.length > 300 ? rawTitle.slice(0, 300) + "…" : rawTitle;
-        const count = issueEventCount(issue);
-        const lastSeen = formatTime(issueLastSeen(issue));
-        const firstSeen = formatTime(issueFirstSeen(issue));
-        const active = id && String(id) === String(selectedIssueId) ? "active" : "";
-        const severity = issueSeverity(issue);
-        const severityClass = severity === "error" || severity === "fatal" ? "bad" : severity === "warning" ? "warn" : "";
-        const projectSlug = issue.project_slug ? String(issue.project_slug) : "";
-        const status = issueStatus(issue);
-        const statusClass = status === "resolved" ? "resolved" : status === "muted" ? "muted" : status === "regressed" ? "regressed" : "";
-        const statusLabel = status === "resolved" ? "Resolved" : status === "muted" ? "Muted" : status === "regressed" ? "Regressed" : "";
-        return `${sectionHeader}
-          <button class="item issue-row ${active} ${statusClass}" type="button" data-issue-id="${escapeAttr(id)}">
-            <div class="item-title"><span class="status-dot ${statusClass}"></span><a href="#/issues/${escapeAttr(id)}" class="issue-link" onclick="event.stopPropagation()">${escapeHtml(title)}</a></div>
-            <span class="issue-cell"><span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity || "n/a")}</span></span>
-            <span class="issue-cell">${escapeHtml(lastSeen || "No timestamp")}</span>
-            <span class="issue-cell">${escapeHtml(firstSeen || "n/a")}</span>
-            <span class="issue-cell">${renderIssueCountMeter(count, maxEvents)}</span>
-            <span class="issue-cell">${escapeHtml(String(count))}</span>
-            <span class="issue-cell">${renderSparkline(issue.hourly_counts)}</span>
-            <div class="item-meta">
-              <span>${escapeHtml(issueExceptionType(issue) || "Error")}</span>
-              ${statusLabel ? `<span class="chip issue-status-chip ${statusClass}" style="font-size:0.65rem">${escapeHtml(statusLabel)}</span>` : ""}
-              ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
-              ${sampledChipMarkup(issueSampleRate(issue))}
-              <span>${escapeHtml(id)}</span>
-            </div>
-          </button>
-        `;
+        return renderIssueRow(issue, sectionHeader, selectedIssueId, maxEvents);
       })
       .join("")}
   `;
@@ -182,15 +199,24 @@ export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null
     const event = events[i];
     const eventTs = toTimestampMs(eventTimestamp(event));
     const nextEventTs = i + 1 < events.length ? toTimestampMs(eventTimestamp(events[i + 1])) : 0;
+    rows.push(renderLiveEventRow(event));
+    // After this event, insert release dividers that fall between this event and the next
+    if (nextEventTs > 0 && eventTs > 0) {
+      rows.push(...releaseDividersBetween(sortedReleases, emittedRelease, eventTs, nextEventTs));
+    }
+  }
 
-    const id = firstIdentifier(event);
-    const issueId = eventIssueId(event);
-    const title = eventTitle(event);
-    const timestamp = formatTime(eventTimestamp(event));
-    const severity = eventSeverity(event) || "info";
-    const severityClass = severity === "error" || severity === "fatal" ? "bad" : severity === "warning" ? "warn" : "";
+  return rows.join("");
+}
 
-    rows.push(`
+function renderLiveEventRow(event: ApiEvent): string {
+  const id = firstIdentifier(event);
+  const issueId = eventIssueId(event);
+  const title = eventTitle(event);
+  const timestamp = formatTime(eventTimestamp(event));
+  const severity = eventSeverity(event) || "info";
+  const severityClass = severityChipClass(severity);
+  return `
       <button class="item" type="button" data-live-event-id="${escapeAttr(id)}">
         <div class="item-title">
           <span class="chip ${severityClass}" style="font-size:0.7rem">${escapeHtml(severity)}</span>
@@ -201,23 +227,28 @@ export function renderLiveListMarkup(events: ApiEvent[], liveError: Error | null
           <span>${escapeHtml(timestamp || "No timestamp")}</span>
         </div>
       </button>
-    `);
+    `;
+}
 
-    // After this event, insert release dividers that fall between this event and the next
-    if (nextEventTs > 0 && eventTs > 0) {
-      for (const { release, ts } of sortedReleases) {
-        if (emittedRelease.has(ts)) {
-          continue;
-        }
-        if (ts <= eventTs && ts > nextEventTs) {
-          emittedRelease.add(ts);
-          rows.push(renderReleaseDivider(release, ts));
-        }
-      }
+// releaseDividersBetween renders the releases deployed after the next event and
+// at or before this one, each at most once across the whole list.
+function releaseDividersBetween(
+  sortedReleases: { release: ApiRelease; ts: number }[],
+  emittedRelease: Set<number>,
+  eventTs: number,
+  nextEventTs: number,
+): string[] {
+  const dividers: string[] = [];
+  for (const { release, ts } of sortedReleases) {
+    if (emittedRelease.has(ts)) {
+      continue;
+    }
+    if (ts <= eventTs && ts > nextEventTs) {
+      emittedRelease.add(ts);
+      dividers.push(renderReleaseDivider(release, ts));
     }
   }
-
-  return rows.join("");
+  return dividers;
 }
 
 function renderReleaseDivider(release: ApiRelease, ts: number): string {

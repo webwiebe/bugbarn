@@ -153,9 +153,6 @@ steps:
         pnpm run build
         pnpm dlx jscpd@latest .
         cd ..
-        # TypeScript size/complexity soak. Lives here, not in the quality step,
-        # because it needs the node_modules this step just installed.
-        sh scripts/check-ts-budget.sh
 
   - name: node-site
     image: bash

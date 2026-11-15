@@ -8,7 +8,6 @@ import {
   eventRawScrubbed,
   eventSeverity,
   eventSpanId,
-  eventSpans,
   eventStacktrace,
   eventTimestamp,
   eventTitle,
@@ -43,49 +42,74 @@ const nearbyReleaseWindowMs = 72 * 60 * 60 * 1000; // 72 hours
 const maxNearbyReleases = 5;
 const occurrenceBucketCount = 24;
 
-export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], releases: ApiRelease[] = [], hasMore = false, issueReleasesHtml = ""): string {
-  const id = firstIdentifier(issue);
+// Keys the raw issue and event field tables leave out because the page already
+// shows them elsewhere.
+const issueFieldKeys = [
+  "id",
+  "ID",
+  "issueId",
+  "IssueID",
+  "issue_id",
+  "title",
+  "Title",
+  "normalizedTitle",
+  "NormalizedTitle",
+  "normalized_title",
+  "exceptionType",
+  "ExceptionType",
+  "exception_type",
+  "fingerprint",
+  "Fingerprint",
+  "firstSeen",
+  "FirstSeen",
+  "first_seen",
+  "lastSeen",
+  "LastSeen",
+  "last_seen",
+  "eventCount",
+  "EventCount",
+  "event_count",
+  "status",
+  "Status",
+];
+
+const eventFieldKeys = [
+  "id",
+  "ID",
+  "eventId",
+  "EventID",
+  "event_id",
+  "issueId",
+  "IssueID",
+  "issue_id",
+  "title",
+  "Title",
+  "body",
+  "Body",
+  "message",
+  "Message",
+  "timestamp",
+  "Timestamp",
+  "createdAt",
+  "CreatedAt",
+  "created_at",
+  "receivedAt",
+  "ReceivedAt",
+  "observedAt",
+  "ObservedAt",
+  "traceId",
+  "trace_id",
+  "TraceID",
+  "spanId",
+  "span_id",
+  "SpanID",
+];
+
+function renderIssueHero(issue: ApiIssue, id: string, fingerprint: string, status: string): string {
   const rawTitle = issueTitle(issue);
   const exceptionType = issueExceptionType(issue);
   const title = exceptionType && rawTitle.startsWith(exceptionType + ": ") ? rawTitle.slice(exceptionType.length + 2) : rawTitle;
-  const fingerprint = issueFingerprint(issue);
-  const firstSeen = formatTime(issueFirstSeen(issue));
-  const lastSeen = formatTime(issueLastSeen(issue));
-  const status = issueStatus(issue);
-  const eventCount = issueEventCount(issue, events.length);
-  const lastEvent = events[0] || null;
-  const fingerprintMaterial = buildFingerprintMaterial(issue, lastEvent);
-  const fields = collectKeyValues(issue, [
-    "id",
-    "ID",
-    "issueId",
-    "IssueID",
-    "issue_id",
-    "title",
-    "Title",
-    "normalizedTitle",
-    "NormalizedTitle",
-    "normalized_title",
-    "exceptionType",
-    "ExceptionType",
-    "exception_type",
-    "fingerprint",
-    "Fingerprint",
-    "firstSeen",
-    "FirstSeen",
-    "first_seen",
-    "lastSeen",
-    "LastSeen",
-    "last_seen",
-    "eventCount",
-    "EventCount",
-    "event_count",
-    "status",
-    "Status",
-  ]);
-
-  return `
-    <div class="issue-hero">
+  return `<div class="issue-hero">
       <div>
         <p class="eyebrow">${escapeHtml(exceptionType || "Error")}</p>
         <h3>${escapeHtml(title)}</h3>
@@ -96,8 +120,13 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
         ${status === "resolved" ? `<button type="button" data-reopen-issue="${escapeAttr(id)}" ${id ? "" : "disabled"}>Reopen issue</button>` : `<button type="button" data-resolve-issue="${escapeAttr(id)}" ${id ? "" : "disabled"}>Resolve issue</button>`}
         ${renderMuteButton(issue)}
       </div>
-    </div>
-    <div class="issue-stats">
+    </div>`;
+}
+
+function renderIssueStats(issue: ApiIssue, eventCount: number, status: string): string {
+  const firstSeen = formatTime(issueFirstSeen(issue));
+  const lastSeen = formatTime(issueLastSeen(issue));
+  return `<div class="issue-stats">
       <div>
         <span>Events</span>
         <strong>${escapeHtml(String(eventCount))} ${sampledChipMarkup(issueSampleRate(issue), "0.6rem")}</strong>
@@ -105,8 +134,22 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       <div><span>First seen</span><strong>${escapeHtml(firstSeen || "n/a")}</strong></div>
       <div><span>Last seen</span><strong>${escapeHtml(lastSeen || "n/a")}</strong></div>
       <div><span>Status</span><strong>${escapeHtml(status)}</strong></div>
-    </div>
-    <div class="detail-main">
+    </div>`;
+}
+
+function renderIssueMain(
+  issue: ApiIssue,
+  events: ApiEvent[],
+  releases: ApiRelease[],
+  hasMore: boolean,
+  issueReleasesHtml: string,
+  eventCount: number,
+): string {
+  const fingerprint = issueFingerprint(issue);
+  const lastEvent = events[0] || null;
+  const fingerprintMaterial = buildFingerprintMaterial(issue, lastEvent);
+  const fields = collectKeyValues(issue, issueFieldKeys);
+  return `<div class="detail-main">
       ${renderOccurrenceTimeline(events, releases, "", eventCount, hasMore)}
       ${renderFingerprintSection(fingerprint, fingerprintMaterial)}
       ${lastEvent ? renderDataSection("Exception", eventException(lastEvent)) : renderEmptySection("Exception", "No exception data returned.")}
@@ -121,55 +164,24 @@ export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], rel
       ${lastEvent ? renderDataSection("Latest event payload", eventPayload(lastEvent)) : ""}
       ${lastEvent ? renderDataSection("Scrubbed payload", eventRawScrubbed(lastEvent)) : ""}
       ${renderDataSection("Issue data", fields)}
-    </div>
+    </div>`;
+}
+
+export function renderIssueDetailMarkup(issue: ApiIssue, events: ApiEvent[], releases: ApiRelease[] = [], hasMore = false, issueReleasesHtml = ""): string {
+  const id = firstIdentifier(issue);
+  const fingerprint = issueFingerprint(issue);
+  const status = issueStatus(issue);
+  const eventCount = issueEventCount(issue, events.length);
+  return `
+    ${renderIssueHero(issue, id, fingerprint, status)}
+    ${renderIssueStats(issue, eventCount, status)}
+    ${renderIssueMain(issue, events, releases, hasMore, issueReleasesHtml, eventCount)}
   `;
 }
 
-export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[], hasMore = false, releases: ApiRelease[] = []): string {
-  const id = firstIdentifier(event);
-  const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
+function renderEventHero(event: ApiEvent, issueId: string, id: string, issueEvents: ApiEvent[]): string {
   const title = eventTitle(event);
-  const timestamp = formatTime(eventTimestamp(event));
-  const payload = eventPayload(event);
-  const exception = eventException(event);
-  const rawScrubbed = eventRawScrubbed(event);
-  const context = eventContext(event);
-  const stacktrace = eventStacktrace(event);
-  const _spans = eventSpans(event);
-  const fields = collectKeyValues(event, [
-    "id",
-    "ID",
-    "eventId",
-    "EventID",
-    "event_id",
-    "issueId",
-    "IssueID",
-    "issue_id",
-    "title",
-    "Title",
-    "body",
-    "Body",
-    "message",
-    "Message",
-    "timestamp",
-    "Timestamp",
-    "createdAt",
-    "CreatedAt",
-    "created_at",
-    "receivedAt",
-    "ReceivedAt",
-    "observedAt",
-    "ObservedAt",
-    "traceId",
-    "trace_id",
-    "TraceID",
-    "spanId",
-    "span_id",
-    "SpanID",
-  ]);
-
-  return `
-    <div class="issue-hero">
+  return `<div class="issue-hero">
       <div>
         <p class="eyebrow">${escapeHtml(eventSeverity(event) || "event")}</p>
         <h3>${escapeHtml(title)}</h3>
@@ -180,14 +192,27 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
         <button type="button" data-copy-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>Copy event id</button>
         ${renderEventNavigation(issueEvents, id)}
       </div>
-    </div>
-    <div class="issue-stats">
+    </div>`;
+}
+
+function renderEventStats(event: ApiEvent, issueId: string, id: string): string {
+  const timestamp = formatTime(eventTimestamp(event));
+  return `<div class="issue-stats">
       <div><span>Event id</span><strong>${escapeHtml(String(id || "n/a"))}</strong></div>
       <div><span>Issue id</span><strong>${escapeHtml(String(issueId || "n/a"))}</strong></div>
       <div><span>Timestamp</span><strong>${escapeHtml(timestamp || "n/a")}</strong></div>
       <div><span>Severity</span><strong>${escapeHtml(eventSeverity(event) || "n/a")}</strong></div>
-    </div>
-    <div class="detail-main">
+    </div>`;
+}
+
+function renderEventMain(event: ApiEvent, id: string, issueEvents: ApiEvent[], hasMore: boolean, releases: ApiRelease[]): string {
+  const payload = eventPayload(event);
+  const exception = eventException(event);
+  const rawScrubbed = eventRawScrubbed(event);
+  const context = eventContext(event);
+  const stacktrace = eventStacktrace(event);
+  const fields = collectKeyValues(event, eventFieldKeys);
+  return `<div class="detail-main">
       ${renderOccurrenceTimeline(issueEvents, releases, id, issueEvents.length, hasMore)}
       ${renderDataSection("Exception", exception)}
       ${renderDataSection("Context", context)}
@@ -202,7 +227,16 @@ export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null,
       ${renderDataSection("Scrubbed payload", rawScrubbed)}
       ${renderDataSection("Normalized payload", payload)}
       ${renderDataSection("Event data", fields)}
-    </div>
+    </div>`;
+}
+
+export function renderEventDetailMarkup(event: ApiEvent, issue: ApiIssue | null, issueEvents: ApiEvent[], hasMore = false, releases: ApiRelease[] = []): string {
+  const id = firstIdentifier(event);
+  const issueId = issue ? firstIdentifier(issue) : eventIssueId(event);
+  return `
+    ${renderEventHero(event, issueId, id, issueEvents)}
+    ${renderEventStats(event, issueId, id)}
+    ${renderEventMain(event, id, issueEvents, hasMore, releases)}
   `;
 }
 
@@ -279,12 +313,16 @@ function renderMuteButton(issue: ApiIssue): string {
     </span>`;
 }
 
+function readUserField(event: ApiEvent, pascal: "ID" | "Email" | "Username", camel: "id" | "email" | "username"): string | undefined {
+  return (event.User?.[pascal] ?? event.User?.[camel]) || event.user?.[camel];
+}
+
 function renderUserSection(event: ApiEvent): string {
   const user = event.User || event.user;
   if (!user) return '';
-  const id = (event.User?.ID ?? event.User?.id) || event.user?.id;
-  const email = (event.User?.Email ?? event.User?.email) || event.user?.email;
-  const username = (event.User?.Username ?? event.User?.username) || event.user?.username;
+  const id = readUserField(event, "ID", "id");
+  const email = readUserField(event, "Email", "email");
+  const username = readUserField(event, "Username", "username");
   if (!id && !email && !username) return '';
   return `
     <section class="detail-section">

@@ -105,22 +105,34 @@ function renderIssueRow(issue: ApiIssue): string {
     </button>`;
 }
 
-export function renderReleaseDetailMarkup(
-  release: ApiRelease,
-  newIssues: ApiIssue[],
-  regressions: ApiIssue[],
-  nextRelease: ApiRelease | null,
-): string {
-  const title = readString(release, ["name", "Name"]) || "Untitled release";
-  const environment = readString(release, ["environment", "Environment"]);
-  const observedAt = formatTime(readFirst(release, ["observedAt", "observed_at", "ObservedAt"]));
-  const version = readString(release, ["version", "Version"]);
-  const commitSha = readString(release, ["commitSha", "commit_sha", "CommitSHA"]);
-  const url = httpUrl(readString(release, ["url", "URL"]));
-  const notes = readString(release, ["notes", "Notes"]);
-  const createdBy = readString(release, ["createdBy", "created_by", "CreatedBy"]);
-  const nextTitle = nextRelease ? readString(nextRelease, ["name", "Name"]) : null;
+type ReleaseFacts = {
+  title: string;
+  environment: string;
+  observedAt: string;
+  version: string;
+  commitSha: string;
+  url: string | null;
+  notes: string;
+  createdBy: string;
+  nextTitle: string | null;
+};
 
+function readReleaseFacts(release: ApiRelease, nextRelease: ApiRelease | null): ReleaseFacts {
+  return {
+    title: readString(release, ["name", "Name"]) || "Untitled release",
+    environment: readString(release, ["environment", "Environment"]),
+    observedAt: formatTime(readFirst(release, ["observedAt", "observed_at", "ObservedAt"])),
+    version: readString(release, ["version", "Version"]),
+    commitSha: readString(release, ["commitSha", "commit_sha", "CommitSHA"]),
+    url: httpUrl(readString(release, ["url", "URL"])),
+    notes: readString(release, ["notes", "Notes"]),
+    createdBy: readString(release, ["createdBy", "created_by", "CreatedBy"]),
+    nextTitle: nextRelease ? readString(nextRelease, ["name", "Name"]) : null,
+  };
+}
+
+function renderReleaseSummary(facts: ReleaseFacts): string {
+  const { title, environment, observedAt, version, commitSha, url, notes, createdBy, nextTitle } = facts;
   return `
     <div class="detail-section">
       <div class="route-item-head" style="margin-bottom:12px">
@@ -137,23 +149,31 @@ export function renderReleaseDetailMarkup(
       ${notes ? `<p style="margin:12px 0;color:#8b949e">${escapeHtml(notes)}</p>` : ""}
       ${url ? `<p style="margin:8px 0"><a href="${escapeAttr(url)}" target="_blank" rel="noreferrer">View release on GitHub →</a></p>` : ""}
     </div>
+`;
+}
 
+function renderReleaseIssueSection(heading: string, empty: string, issues: ApiIssue[], nextTitle: string | null): string {
+  return `
     <div class="detail-section" style="margin-top:20px">
       <h3 style="margin:0 0 8px;font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:#8b949e">
-        New issues in this release ${newIssues.length ? `<span class="chip bad" style="font-size:11px">${newIssues.length}</span>` : ""}
+        ${heading} in this release ${issues.length ? `<span class="chip bad" style="font-size:11px">${issues.length}</span>` : ""}
       </h3>
-      ${newIssues.length
-        ? `<div class="list">${newIssues.map(renderIssueRow).join("")}</div>`
-        : `<p class="muted">No new issues ${nextTitle ? `before ${escapeHtml(nextTitle)}` : "yet"}</p>`}
+      ${issues.length
+        ? `<div class="list">${issues.map(renderIssueRow).join("")}</div>`
+        : `<p class="muted">No ${empty} ${nextTitle ? `before ${escapeHtml(nextTitle)}` : "yet"}</p>`}
     </div>
+`;
+}
 
-    <div class="detail-section" style="margin-top:20px">
-      <h3 style="margin:0 0 8px;font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:#8b949e">
-        Regressions in this release ${regressions.length ? `<span class="chip bad" style="font-size:11px">${regressions.length}</span>` : ""}
-      </h3>
-      ${regressions.length
-        ? `<div class="list">${regressions.map(renderIssueRow).join("")}</div>`
-        : `<p class="muted">No regressions ${nextTitle ? `before ${escapeHtml(nextTitle)}` : "yet"}</p>`}
-    </div>
-  `;
+export function renderReleaseDetailMarkup(
+  release: ApiRelease,
+  newIssues: ApiIssue[],
+  regressions: ApiIssue[],
+  nextRelease: ApiRelease | null,
+): string {
+  const facts = readReleaseFacts(release, nextRelease);
+  return renderReleaseSummary(facts) +
+    renderReleaseIssueSection("New issues", "new issues", newIssues, facts.nextTitle) +
+    renderReleaseIssueSection("Regressions", "regressions", regressions, facts.nextTitle) +
+    "  ";
 }

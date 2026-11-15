@@ -3,6 +3,7 @@ import { escapeAttr, escapeHtml, errorMessage } from "../format.js";
 import type { ApiApiKey, ApiKeyRequest, ApiProject, ApiSettings, IngestHealth } from "../types.js";
 import { renderKeyRequests } from "./key-requests.js";
 import { renderField } from "./event-detail.js";
+import { renderSettingsProjects } from "./settings-projects.js";
 
 export function renderSettingsViewMarkup(
   settings: ApiSettings | null,
@@ -18,12 +19,7 @@ export function renderSettingsViewMarkup(
 ): string {
   const pendingProjects = projects.filter(p => (p.status ?? p.Status) === "pending");
   const activeProjects = projects.filter(p => (p.status ?? p.Status) !== "pending");
-
-  const subPageTitles: Record<string, string> = { projects: "Projects", volume: "Volume", preferences: "Preferences", keys: "API Keys", system: "System" };
-  const subTitle = subPageTitles[tab] ?? "";
-  const headContent = subTitle
-    ? `<a href="#/settings/overview" class="back-link">← Settings</a><h2>${escapeHtml(subTitle)}${tab === "projects" && pendingProjects.length > 0 ? ` <span class="nav-badge">${pendingProjects.length}</span>` : ""}</h2>`
-    : `<h2>Settings</h2><span class="chip">${escapeHtml(username || "signed in")}</span>`;
+  const headContent = renderSettingsHead(tab, username, pendingProjects.length);
 
   let content: string;
   if (tab === "overview") {
@@ -44,6 +40,14 @@ export function renderSettingsViewMarkup(
     </div>
     <div class="detail-main">${content}</div>
   `;
+}
+
+function renderSettingsHead(tab: string, username: string, pendingCount: number): string {
+  const subPageTitles: Record<string, string> = { projects: "Projects", volume: "Volume", preferences: "Preferences", keys: "API Keys", system: "System" };
+  const subTitle = subPageTitles[tab] ?? "";
+  return subTitle
+    ? `<a href="#/settings/overview" class="back-link">← Settings</a><h2>${escapeHtml(subTitle)}${tab === "projects" && pendingCount > 0 ? ` <span class="nav-badge">${pendingCount}</span>` : ""}</h2>`
+    : `<h2>Settings</h2><span class="chip">${escapeHtml(username || "signed in")}</span>`;
 }
 
 function renderSettingsOverview(
@@ -141,171 +145,36 @@ function renderSettingsNav(username: string, pendingCount: number): string {
     </div>`;
 }
 
-// usageCount formats a per-project count for display. An absent count means the
-// server could not produce the usage aggregate, which must not be shown as "0"
-// — that would read as "this project has no data" when the truth is "we don't
-// know right now".
-function usageCount(n: number | undefined): string {
-  return n === undefined ? "—" : String(n);
+function readTextPreferences(settings: ApiSettings | null): { displayName: string; timezone: string; defaultEnvironment: string } {
+  return {
+    displayName: settings?.displayName || settings?.display_name || "",
+    timezone: settings?.timezone || settings?.timezoneName || "",
+    defaultEnvironment: settings?.defaultEnvironment || settings?.default_environment || "",
+  };
 }
 
-/** Tooltip for a project's issue count: how the issues split by status. */
-function issueBreakdownTitle(p: ApiProject): string {
-  const s = p.issue_status;
-  if (!s) return "Issues";
-  return `${s.open} open (${s.regressed} regressed), ${s.resolved} resolved, ${s.muted} muted`;
-}
-
-function renderSettingsProjects(
-  projects: ApiProject[],
-  groups: import("../types.js").ApiProjectGroup[],
-  aliases: import("../types.js").ApiAlias[],
-): string {
-  const sortedProjects = [...projects].sort((a, b) => {
-    const aPending = (a.status ?? a.Status) === "pending" ? 0 : 1;
-    const bPending = (b.status ?? b.Status) === "pending" ? 0 : 1;
-    if (aPending !== bPending) return aPending - bPending;
-    const aName = String(a.name ?? a.Name ?? a.slug ?? a.Slug ?? "").toLowerCase();
-    const bName = String(b.name ?? b.Name ?? b.slug ?? b.Slug ?? "").toLowerCase();
-    return aName.localeCompare(bName);
-  });
-
-  const projectList = `
-    <div class="section">
-      <h3>Projects</h3>
-      ${projects.length === 0 ? `<p class="muted">No projects yet. Use the Quick Setup URL on the <a href="#/settings/overview">Settings overview</a>.</p>` : `
-      <div class="project-controls">
-        <input type="search" id="project-filter" placeholder="Filter projects…" autocomplete="off" />
-        <select id="project-sort">
-          <option value="default">Pending first, then A–Z</option>
-          <option value="name-asc">Name A–Z</option>
-          <option value="name-desc">Name Z–A</option>
-          <option value="issues-desc">Most issues</option>
-          <option value="events-desc">Most events</option>
-          <option value="logs-desc">Most logs</option>
-          <option value="status">Status</option>
-        </select>
-        <select id="project-status-filter">
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="active">Active</option>
-        </select>
-      </div>
-      <div id="project-list">
-      ${sortedProjects.map(p => {
-        const slug = String(p.slug ?? p.Slug ?? '');
-        const name = String(p.name ?? p.Name ?? slug);
-        const status = String(p.status ?? p.Status ?? 'active');
-        const setupUrl = `/api/v1/setup/${slug}`;
-        // Absent counts mean the usage aggregate was unavailable, which is not
-        // the same as zero — show a dash rather than claiming the project is
-        // empty. Sort/filter attributes still need a number, so they use 0.
-        const issues = p.issue_count;
-        const events = p.event_count;
-        const logs = p.log_count;
-        const group = p.group_id != null ? groups.find(g => g.id === p.group_id) : undefined;
-        return `
-          <div class="project-row" data-slug="${escapeAttr(slug)}" data-name="${escapeAttr(name.toLowerCase())}" data-status="${escapeAttr(status)}" data-issues="${issues ?? 0}" data-events="${events ?? 0}" data-logs="${logs ?? 0}">
-            <div class="project-info">
-              <strong>${escapeHtml(name)}</strong>
-              <span class="project-slug">${escapeHtml(slug)}</span>
-              ${group ? `<span class="chip" style="font-size:11px">${escapeHtml(group.name)}</span>` : ""}
-              ${status === 'pending' ? "" : `<form class="funnelbarn-form" data-funnelbarn-form="${escapeAttr(slug)}">
-                <input type="url" name="funnelbarn_url" maxlength="2048" value="${escapeAttr(String(p.funnelbarn_url ?? ""))}"
-                  placeholder="FunnelBarn funnel URL, {surface} is replaced per row"
-                  aria-label="FunnelBarn URL for ${escapeAttr(slug)}">
-                <button type="submit" class="btn-sm">Save link</button>
-              </form>`}
-            </div>
-            <div class="project-actions">
-              <div class="project-usage">
-                <span class="usage-stat" title="${escapeAttr(issueBreakdownTitle(p))}"><span class="usage-icon">◆</span>${escapeHtml(usageCount(issues))}<span class="usage-label">${issues === 1 ? "issue" : "issues"}</span></span>
-                <span class="usage-stat" title="Retained events (older ones are expired by the retention window)"><span class="usage-icon">▸</span>${escapeHtml(usageCount(events))}<span class="usage-label">${events === 1 ? "event" : "events"}</span></span>
-                <span class="usage-stat" title="Retained log lines"><span class="usage-icon">≡</span>${escapeHtml(usageCount(logs))}<span class="usage-label">${logs === 1 ? "log" : "logs"}</span></span>
-              </div>
-              <span class="chip ${status === 'pending' ? 'warn' : ''}">${escapeHtml(status)}</span>
-              <a class="ghost btn-sm" href="${escapeAttr(setupUrl)}" target="_blank">Setup</a>
-              ${status === 'pending'
-                ? `<button class="btn-sm" data-approve-project="${escapeAttr(slug)}">Approve</button><button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Reject</button>`
-                : `<button class="btn-sm danger" data-delete-project="${escapeAttr(slug)}">Delete</button>`}
-            </div>
-          </div>`;
-      }).join('')}
-      </div>`}
-    </div>`;
-
-  const groupsSection = `
-    <div class="section">
-      <h3>Project groups</h3>
-      <p class="muted">Group related projects so you can filter issues across all of them at once.</p>
-      ${groups.length === 0 ? `<p class="muted">No groups yet.</p>` : groups.map(g => {
-        const members = projects.filter(p => p.group_id === g.id);
-        const ungrouped = projects.filter(p => !p.group_id && (p.status ?? p.Status) !== "pending");
-        return `
-          <div class="project-row" style="flex-direction:column;align-items:flex-start;gap:8px">
-            <div style="display:flex;align-items:center;gap:8px;width:100%">
-              <strong>${escapeHtml(g.name)}</strong>
-              <span class="project-slug">${escapeHtml(g.slug)}</span>
-              <button class="btn-sm danger" style="margin-left:auto" data-delete-group="${escapeAttr(g.slug)}">Delete</button>
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-              ${members.map(p => {
-                const slug = String(p.slug ?? p.Slug ?? "");
-                return `<span class="chip">${escapeHtml(String(p.name ?? p.Name ?? slug))}<button class="btn-inline" data-remove-from-group="${escapeAttr(slug)}" title="Remove" style="margin-left:4px;opacity:.6;font-size:11px">×</button></span>`;
-              }).join("")}
-              ${ungrouped.length > 0 ? `
-              <form data-add-to-group="${escapeAttr(g.slug)}" style="display:flex;gap:4px">
-                <select name="project" style="font-size:12px">
-                  ${ungrouped.map(p => { const s = String(p.slug ?? p.Slug ?? ""); return `<option value="${escapeAttr(s)}">${escapeHtml(String(p.name ?? p.Name ?? s))}</option>`; }).join("")}
-                </select>
-                <button type="submit" class="btn-sm">Add</button>
-              </form>` : ""}
-            </div>
-          </div>`;
-      }).join("")}
-      <form id="create-group-form" class="form-grid" style="margin-top:12px">
-        ${renderField("Group name", "name", "text", "")}
-        <div class="link-row form-actions"><button type="submit">Create group</button></div>
-      </form>
-    </div>`;
-
-  const aliasesSection = `
-    <div class="section">
-      <h3>Project aliases</h3>
-      <p class="muted">An alias slug transparently routes events to an existing project — useful when an SDK is reporting under an old name.</p>
-      ${aliases.length === 0 ? `<p class="muted">No aliases yet.</p>` : `
-        <div class="grid">
-          ${aliases.map(a => `
-            <div class="kv">
-              <span><code>${escapeHtml(a.alias_slug)}</code> → <code>${escapeHtml(a.project_slug)}</code></span>
-              <button class="btn-sm danger" data-delete-alias="${escapeAttr(a.alias_slug)}">Delete</button>
-            </div>`).join("")}
-        </div>`}
-      <form id="create-alias-form" class="form-grid" style="margin-top:12px">
-        ${renderField("Alias slug", "alias", "text", "")}
-        <label class="field">
-          <span>Target project</span>
-          <select name="project">
-            ${projects.filter(p => (p.status ?? p.Status) !== "pending").map(p => {
-              const slug = String(p.slug ?? p.Slug ?? "");
-              return `<option value="${escapeAttr(slug)}">${escapeHtml(String(p.name ?? p.Name ?? slug))}</option>`;
-            }).join("")}
-          </select>
-        </label>
-        <div class="link-row form-actions"><button type="submit">Create alias</button></div>
-      </form>
-    </div>`;
-
-  return projectList + groupsSection + aliasesSection;
+function readNumberPreferences(settings: ApiSettings | null): { liveWindowMinutes: number; stacktraceContextLines: number } {
+  return {
+    liveWindowMinutes: settings?.liveWindowMinutes ?? settings?.live_window_minutes ?? 15,
+    stacktraceContextLines: settings?.stacktraceContextLines ?? settings?.stacktrace_context_lines ?? 3,
+  };
 }
 
 function renderSettingsPreferences(settings: ApiSettings | null): string {
-  const displayName = settings?.displayName || settings?.display_name || "";
-  const timezone = settings?.timezone || settings?.timezoneName || "";
-  const defaultEnvironment = settings?.defaultEnvironment || settings?.default_environment || "";
-  const liveWindowMinutes = settings?.liveWindowMinutes ?? settings?.live_window_minutes ?? 15;
-  const stacktraceContextLines = settings?.stacktraceContextLines ?? settings?.stacktrace_context_lines ?? 3;
+  const { displayName, timezone, defaultEnvironment } = readTextPreferences(settings);
+  const { liveWindowMinutes, stacktraceContextLines } = readNumberPreferences(settings);
+  return renderPreferencesForm(displayName, timezone, defaultEnvironment, liveWindowMinutes, stacktraceContextLines) +
+    renderSdkSection() +
+    renderSourceMapSection(defaultEnvironment);
+}
 
+function renderPreferencesForm(
+  displayName: string,
+  timezone: string,
+  defaultEnvironment: string,
+  liveWindowMinutes: number,
+  stacktraceContextLines: number,
+): string {
   return `
     <div class="section">
       <h3>Preferences</h3>
@@ -317,14 +186,22 @@ function renderSettingsPreferences(settings: ApiSettings | null): string {
         ${renderField("Stacktrace context lines", "stacktraceContextLines", "number", String(stacktraceContextLines))}
         <div class="link-row form-actions"><button type="submit">Save settings</button></div>
       </form>
-    </div>
+    </div>`;
+}
+
+function renderSdkSection(): string {
+  return `
     <div class="section">
       <h3>TypeScript SDK</h3>
       <p class="muted">Install the SDK to capture errors automatically from browser and Node.js apps.</p>
       <div id="sdk-info" class="grid">
         <div class="kv"><span>Status</span><span>Loading…</span></div>
       </div>
-    </div>
+    </div>`;
+}
+
+function renderSourceMapSection(defaultEnvironment: string): string {
+  return `
     <div class="section">
       <h3>Source maps</h3>
       <p class="muted">Upload source maps so stack frames show original source instead of minified output.</p>

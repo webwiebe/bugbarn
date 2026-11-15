@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compare, tally, refreshCommand, BASELINE_FILE, BUDGET_RULES } from "./oxlint-ratchet.mjs";
+import { compare, tally, refreshCommand, BASELINE_FILE } from "./oxlint-ratchet.mjs";
 
 const clean = { total: 0, counts: {} };
 
@@ -70,17 +70,15 @@ test("the refresh command is printed verbatim", () => {
   assert.equal(BASELINE_FILE, "oxlint-baseline.json");
 });
 
-// The budget rules belong to scripts/check-ts-budget.sh. If tally ever counted
-// them here, this zero baseline would fail on the budget soak's 18 findings;
-// if it dropped them entirely, the budget soak would read zero and go stale.
-test("budget-rule findings go to the budget list and nowhere else", () => {
-  const { counts, budget } = tally([
+// The size/complexity rules are counted like every other rule, so a new
+// complexity finding fails against the zero baseline.
+test("size and complexity findings count against the baseline", () => {
+  const counts = tally([
     { code: "eslint(complexity)" },
-    { code: "eslint(max-lines-per-function)" },
-    { code: "eslint(max-lines)" },
+    { code: "eslint(complexity)" },
     { code: "eslint(prefer-const)" },
+    {},
   ]);
-  assert.deepEqual(counts, { "eslint(prefer-const)": 1 });
-  assert.equal(budget.length, 3);
-  assert.deepEqual(budget.map((f) => f.code).sort(), [...BUDGET_RULES].sort());
+  assert.deepEqual(counts, { "eslint(complexity)": 2, "eslint(prefer-const)": 1, unknown: 1 });
+  assert.equal(compare({ total: 0, counts: {} }, counts).ok, false);
 });

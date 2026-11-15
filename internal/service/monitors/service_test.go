@@ -203,7 +203,7 @@ func TestCheckInLostLogLevel(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var buf bytes.Buffer
-			s := New(&fakeRepo{err: apperr.Internal("load monitor", context.Canceled)}, slog.New(slog.NewJSONHandler(&buf, nil)))
+			s := New(&fakeRepo{err: apperr.Internal("load monitor", errors.New("disk I/O error"))}, slog.New(slog.NewJSONHandler(&buf, nil)))
 			if _, err := s.CheckIn(tc.ctx, 1, CheckInInput{Slug: "sweep", Status: "ok"}); err == nil {
 				t.Fatal("expected the storage error")
 			}
