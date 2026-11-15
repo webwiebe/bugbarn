@@ -11,14 +11,8 @@
 // allowance of twelve is room for those five to come back with the gate still
 // green. The fix is one paste, and the script prints it.
 //
-// The three size/complexity budget rules are counted by
-// scripts/check-ts-budget.sh against its own baseline (see BUDGET_RULES), so
-// this baseline can sit at zero while that soak still has findings.
-//
 // `--write` refreshes the baseline after a deliberate change.
 // `--report-only` prints the same report but always exits 0.
-// `--budget` prints the budget-rule findings as JSON and exits; the
-// ts-budget soak reads it.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -27,11 +21,6 @@ import { fileURLToPath } from "node:url";
 
 export const BASELINE_FILE = "oxlint-baseline.json";
 const LINT_TARGETS = ["src"];
-export const BUDGET_RULES = [
-  "eslint(complexity)",
-  "eslint(max-lines)",
-  "eslint(max-lines-per-function)",
-];
 
 /**
  * The command that refreshes the baseline. Printed verbatim on every failure
@@ -74,21 +63,15 @@ export function compare(baseline, counts) {
 }
 
 /**
- * Split findings into per-rule counts for the ratchet and the budget-rule
- * findings for the ts-budget soak. Pure, so the split is testable.
+ * Count findings per rule for the ratchet. Pure, so the count is testable.
  */
 export function tally(findings) {
   const counts = {};
-  const budget = [];
   for (const f of findings) {
     const code = f.code ?? "unknown";
-    if (BUDGET_RULES.includes(code)) {
-      budget.push(f);
-      continue;
-    }
     counts[code] = (counts[code] ?? 0) + 1;
   }
-  return { counts, budget };
+  return counts;
 }
 
 function runOxlint(webDir) {
@@ -153,12 +136,7 @@ function report(res, counts, reportOnly) {
 function main() {
   const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const baselinePath = path.join(webDir, BASELINE_FILE);
-  const { counts, budget } = tally(runOxlint(webDir));
-
-  if (process.argv.includes("--budget")) {
-    console.log(JSON.stringify(budget));
-    return;
-  }
+  const counts = tally(runOxlint(webDir));
 
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   if (process.argv.includes("--write")) {

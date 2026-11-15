@@ -47,13 +47,9 @@
     // TypeScript checks undefined variables itself.
     "no-undef": "off",
 
-    // Size/complexity budgets. scripts/check-ts-budget.sh counts exactly these
-    // three rules and ratchets the count against scripts/ts-budget-baseline.txt,
-    // which may only fall; scripts/oxlint-ratchet.mjs leaves them to that soak.
-    // ENFORCE-AT: 0. When the budget baseline reaches 0, drop BUDGET_RULES from
-    // the oxlint ratchet and delete the soak script and its baseline.
-    "max-lines": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }],
-    "max-lines-per-function": ["warn", { "max": 80, "skipBlankLines": true, "skipComments": true, "IIFEs": true }],
-    "complexity": ["warn", 15]
+    // Size/complexity budgets. The tree has no findings, so they are errors.
+    "max-lines": ["error", { "max": 500, "skipBlankLines": true, "skipComments": true }],
+    "max-lines-per-function": ["error", { "max": 80, "skipBlankLines": true, "skipComments": true, "IIFEs": true }],
+    "complexity": ["error", 15]
   }
 }

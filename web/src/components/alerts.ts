@@ -66,6 +66,58 @@ function conditionLabel(condition: string | undefined): string {
   return condition || "n/a";
 }
 
+function conditionDetailText(alert: ApiAlert): string {
+  const condition = alert.condition ?? "";
+  const param = alert.param ?? "";
+  const threshold = alert.threshold ?? 0;
+  if (condition === "event_count_exceeds" && threshold) return ` > ${threshold}`;
+  if (condition === "message_contains" && param) return ` "${param}"`;
+  return "";
+}
+
+// renderAlertHead is the title row: name, enabled state and delivery chips.
+function renderAlertHead(alert: ApiAlert): string {
+  const title = alert.name || "Untitled alert";
+  const enabled = Boolean(alert.enabled);
+  const projectSlug = alert.project_slug ? String(alert.project_slug) : "";
+  return `<div class="route-item-head">
+                <strong>${escapeHtml(title)}</strong>
+                <span class="chip ${enabled ? "" : "bad"}">${escapeHtml(enabled ? "enabled" : "disabled")}</span>
+                ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
+                ${webhookBadge(alert.webhook_url ?? "")}
+                ${alert.email_to ? `<span class="chip">email</span>` : ""}
+              </div>`;
+}
+
+// renderAlertMeta is the condition, cooldown and delivery target rows.
+function renderAlertMeta(alert: ApiAlert): string {
+  const condition = alert.condition ?? "";
+  const webhookUrl = alert.webhook_url ?? "";
+  const emailTo = alert.email_to ?? "";
+  const cooldown = alert.cooldown_minutes ?? 0;
+  const lastFiredAt = formatTime(alert.last_fired_at) || "never";
+  return `<div class="route-item-meta">
+                <span>${escapeHtml(conditionLabel(condition))}${escapeHtml(conditionDetailText(alert))}</span>
+                ${cooldown ? `<span>cooldown ${escapeHtml(String(cooldown))}m</span>` : ""}
+                <span>last fired: ${escapeHtml(lastFiredAt)}</span>
+              </div>
+              ${webhookUrl ? `<div class="route-item-meta"><span class="muted url-truncate">${escapeHtml(webhookUrl)}</span></div>` : ""}
+              ${emailTo ? `<div class="route-item-meta"><span class="muted">${escapeHtml(emailTo)}</span></div>` : ""}`;
+}
+
+function renderAlertItem(alert: ApiAlert): string {
+  const id = alert.id ?? "";
+  return `
+            <article class="route-item">
+              ${renderAlertHead(alert)}
+              ${renderAlertMeta(alert)}
+              <div class="link-row">
+                <button class="btn-danger btn-sm" data-action="delete-alert" data-id="${escapeAttr(id)}">Delete</button>
+              </div>
+            </article>
+          `;
+}
+
 function renderAlertList(alerts: ApiAlert[]): string {
   if (!alerts.length) {
     return `
@@ -78,43 +130,7 @@ function renderAlertList(alerts: ApiAlert[]): string {
 
   return `
     <div class="route-list">
-      ${alerts
-        .map((alert) => {
-          const id = alert.id ?? "";
-          const title = alert.name || "Untitled alert";
-          const condition = alert.condition ?? "";
-          const param = alert.param ?? "";
-          const threshold = alert.threshold ?? 0;
-          const webhookUrl = alert.webhook_url ?? "";
-          const emailTo = alert.email_to ?? "";
-          const cooldown = alert.cooldown_minutes ?? 0;
-          const enabled = Boolean(alert.enabled);
-          const lastFiredAt = formatTime(alert.last_fired_at) || "never";
-          const projectSlug = alert.project_slug ? String(alert.project_slug) : "";
-          const conditionDetail = condition === "event_count_exceeds" && threshold ? ` > ${threshold}` : condition === "message_contains" && param ? ` "${param}"` : "";
-          return `
-            <article class="route-item">
-              <div class="route-item-head">
-                <strong>${escapeHtml(title)}</strong>
-                <span class="chip ${enabled ? "" : "bad"}">${escapeHtml(enabled ? "enabled" : "disabled")}</span>
-                ${projectSlug ? `<span class="chip" style="font-size:0.65rem;opacity:0.7">${escapeHtml(projectSlug)}</span>` : ""}
-                ${webhookBadge(webhookUrl)}
-                ${emailTo ? `<span class="chip">email</span>` : ""}
-              </div>
-              <div class="route-item-meta">
-                <span>${escapeHtml(conditionLabel(condition))}${escapeHtml(conditionDetail)}</span>
-                ${cooldown ? `<span>cooldown ${escapeHtml(String(cooldown))}m</span>` : ""}
-                <span>last fired: ${escapeHtml(lastFiredAt)}</span>
-              </div>
-              ${webhookUrl ? `<div class="route-item-meta"><span class="muted url-truncate">${escapeHtml(webhookUrl)}</span></div>` : ""}
-              ${emailTo ? `<div class="route-item-meta"><span class="muted">${escapeHtml(emailTo)}</span></div>` : ""}
-              <div class="link-row">
-                <button class="btn-danger btn-sm" data-action="delete-alert" data-id="${escapeAttr(id)}">Delete</button>
-              </div>
-            </article>
-          `;
-        })
-        .join("")}
+      ${alerts.map(renderAlertItem).join("")}
     </div>
   `;
 }

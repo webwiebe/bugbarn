@@ -15,7 +15,7 @@ export PATH := $(COREPACK_BIN):$(PATH)
 PNPM := $(COREPACK_BIN)/pnpm
 
 .PHONY: help setup test lint build dev docker-build spec-check vulncheck \
-	lint-go check-file-length check-claude-layout check-typed-boundaries coverage dup quality test-gates ts-budget secret-scan \
+	lint-go check-file-length check-claude-layout check-typed-boundaries coverage dup quality test-gates secret-scan \
 	woodpecker-secrets-edit woodpecker-secrets-sync
 
 help:
@@ -28,7 +28,6 @@ help:
 		'  check-file-length  fail on any source file over 500 lines' \
 		'  check-typed-boundaries  count raw DB errors and error-text matching outside their layer (enforcing since 2026-10-31)' \
 		'  coverage     measure Go coverage and ratchet against baseline' \
-		'  ts-budget    TypeScript size/complexity soak (needs web/node_modules)' \
 		'  secret-scan  gitleaks scan of the full git history (report-only, see #280)' \
 		'  test-gates   run the tests for the gate scripts themselves' \
 		'  dup          scan the repo for cross-file duplication (jscpd)' \
@@ -174,10 +173,6 @@ lint-go:
 vulncheck:
 	@sh scripts/check-govulncheck.sh
 
-# TypeScript size/complexity soak. Needs web/node_modules (make setup).
-ts-budget: $(PNPM)
-	@sh scripts/check-ts-budget.sh
-
 # Tests for the gate scripts themselves.
 test-gates:
 	@sh scripts/gates_test.sh
@@ -214,7 +209,7 @@ $(PNPM):
 # Umbrella gate used by CI: every code-quality check in one target. The gate
 # scripts' own tests run first, so a gate that has stopped failing is reported
 # before the gates it protects are trusted.
-quality: test-gates check-file-length check-claude-layout check-typed-boundaries lint-go vulncheck coverage ts-budget dup
+quality: test-gates check-file-length check-claude-layout check-typed-boundaries lint-go vulncheck coverage dup
 
 build: $(PNPM)
 	@set -eu; \

@@ -73,10 +73,36 @@ function updatePickerBtn(): void {
   pickerBtn.innerHTML = scopeLabelHtml();
 }
 
-export function renderPickerList(filter: string): void {
-  if (!pickerList) return;
-  const f = filter.trim().toLowerCase();
+function pickerAllHtml(f: string): string {
+  const allSel = !state.currentGroup && (!state.currentProject || state.currentProject === "__all");
+  if (f && !"all projects".includes(f)) return "";
+  return `<button class="picker-item${allSel ? " selected" : ""}" data-pick-project="__all">All projects</button>`;
+}
 
+function pickerGroupsHtml(visibleGroups: ApiProjectGroup[]): string {
+  if (visibleGroups.length === 0) return "";
+  let html = `<div class="picker-section-label">Groups</div>`;
+  for (const g of visibleGroups) {
+    const sel = state.currentGroup === g.slug;
+    const count = state.projects.filter(p => p.group_id === g.id).length;
+    html += `<button class="picker-item${sel ? " selected" : ""}" data-pick-group="${escapeHtml(g.slug)}">${escapeHtml(g.name)}<span class="picker-item-badge">${count}</span></button>`;
+  }
+  return html;
+}
+
+function pickerProjectsHtml(visibleProjects: ApiProject[]): string {
+  if (visibleProjects.length === 0) return "";
+  let html = `<div class="picker-section-label">Projects</div>`;
+  for (const p of visibleProjects) {
+    const slug = String(p.slug ?? p.Slug ?? "");
+    const name = String(p.name ?? p.Name ?? slug);
+    const sel = !state.currentGroup && slug === state.currentProject;
+    html += `<button class="picker-item${sel ? " selected" : ""}" data-pick-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
+  }
+  return html;
+}
+
+function pickerListHtml(f: string): string {
   const matchProject = (p: ApiProject) => {
     if (!f) return true;
     return String(p.name ?? p.Name ?? "").toLowerCase().includes(f) ||
@@ -86,36 +112,16 @@ export function renderPickerList(filter: string): void {
     g.name.toLowerCase().includes(f) || g.slug.toLowerCase().includes(f) ||
     state.projects.some(p => p.group_id === g.id && matchProject(p));
 
-  let html = "";
+  const html = pickerAllHtml(f) +
+    pickerGroupsHtml(state.groups.filter(matchGroup)) +
+    pickerProjectsHtml(state.projects.filter(matchProject));
+  return html || `<p class="picker-empty">No matches</p>`;
+}
 
-  const allSel = !state.currentGroup && (!state.currentProject || state.currentProject === "__all");
-  if (!f || "all projects".includes(f)) {
-    html += `<button class="picker-item${allSel ? " selected" : ""}" data-pick-project="__all">All projects</button>`;
-  }
-
-  const visibleGroups = state.groups.filter(matchGroup);
-  if (visibleGroups.length > 0) {
-    html += `<div class="picker-section-label">Groups</div>`;
-    for (const g of visibleGroups) {
-      const sel = state.currentGroup === g.slug;
-      const count = state.projects.filter(p => p.group_id === g.id).length;
-      html += `<button class="picker-item${sel ? " selected" : ""}" data-pick-group="${escapeHtml(g.slug)}">${escapeHtml(g.name)}<span class="picker-item-badge">${count}</span></button>`;
-    }
-  }
-
-  const visibleProjects = state.projects.filter(matchProject);
-  if (visibleProjects.length > 0) {
-    html += `<div class="picker-section-label">Projects</div>`;
-    for (const p of visibleProjects) {
-      const slug = String(p.slug ?? p.Slug ?? "");
-      const name = String(p.name ?? p.Name ?? slug);
-      const sel = !state.currentGroup && slug === state.currentProject;
-      html += `<button class="picker-item${sel ? " selected" : ""}" data-pick-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
-    }
-  }
-
-  if (!html) html = `<p class="picker-empty">No matches</p>`;
-  pickerList.innerHTML = html;
+export function renderPickerList(filter: string): void {
+  if (!pickerList) return;
+  const f = filter.trim().toLowerCase();
+  pickerList.innerHTML = pickerListHtml(f);
 
   pickerList.querySelectorAll<HTMLButtonElement>("[data-pick-group]").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -239,105 +245,126 @@ export function closeScopeSheet(): void {
   if (scopeBackdrop) scopeBackdrop.hidden = true;
 }
 
+type ScopeMatcher = (name: string, slug: string) => boolean;
+
+function scopeGroupSectionHtml(f: string, current: string, visGroups: ApiProjectGroup[]): string {
+  let html = `<div class="scope-section-label">Group</div>`;
+  if (!f) html += `<button class="scope-item${state.currentGroup === null && (current === "__all" || !current) ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
+  for (const g of visGroups) {
+    const selected = state.currentGroup === g.slug;
+    html += `<button class="scope-item${selected ? " selected" : ""}" data-scope-group="${escapeHtml(g.slug)}">${escapeHtml(g.name)}</button>`;
+  }
+  return html + `<div class="scope-divider"></div>`;
+}
+
+function scopeGroupedHtml(f: string, current: string, matchesFilter: ScopeMatcher): string {
+  let html = "";
+  const visGroups = state.groups.filter(g => matchesFilter(g.name, g.slug));
+  if (visGroups.length > 0 || !f) html += scopeGroupSectionHtml(f, current, visGroups);
+  html += `<div class="scope-section-label">Project</div>`;
+  if (f && "all projects".includes(f)) html += `<button class="scope-item" data-scope-project="__all">All projects</button>`;
+  for (const p of state.projects) {
+    const slug = String(p.slug ?? p.Slug ?? "");
+    const name = String(p.name ?? p.Name ?? slug);
+    if (!matchesFilter(name, slug)) continue;
+    const selected = !state.currentGroup && slug === current;
+    html += `<button class="scope-item${selected ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
+  }
+  return html;
+}
+
+function scopeFlatHtml(f: string, current: string, matchesFilter: ScopeMatcher): string {
+  let html = `<div class="scope-section-label">Project</div>`;
+  if (!f || "all projects".includes(f)) html += `<button class="scope-item${current === "__all" || !current ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
+  for (const p of state.projects) {
+    const slug = String(p.slug ?? p.Slug ?? "");
+    const name = String(p.name ?? p.Name ?? slug);
+    if (!matchesFilter(name, slug)) continue;
+    html += `<button class="scope-item${slug === current ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
+  }
+  return html;
+}
+
+function scopeEnvHtml(): string {
+  return `<div class="scope-divider"></div>` +
+    `<div class="scope-section-label">Environment</div>` +
+    `<button class="scope-item scope-item-sub${!state.currentEnv ? " selected" : ""}" data-scope-env="">All environments</button>` +
+    `<div id="scope-env-list"></div>`;
+}
+
+function scopeSheetHtml(filter: string, f: string, current: string, showEnv: boolean): string {
+  const matchesFilter: ScopeMatcher = (name, slug) => !f || name.toLowerCase().includes(f) || slug.toLowerCase().includes(f);
+  let html = `<input class="scope-sheet-filter" type="text" placeholder="Filter…" value="${escapeHtml(filter)}" autocomplete="off" />`;
+  html += state.groups.length > 0
+    ? scopeGroupedHtml(f, current, matchesFilter)
+    : scopeFlatHtml(f, current, matchesFilter);
+  if (showEnv) html += scopeEnvHtml();
+  return html;
+}
+
+function onScopeGroupClick(btn: HTMLButtonElement): void {
+  const slug = btn.getAttribute("data-scope-group") ?? "";
+  state.currentGroup = slug;
+  localStorage.setItem(groupKey, slug);
+  state.currentProject = "__all";
+  localStorage.removeItem(projectKey);
+  state.currentEnv = "";
+  localStorage.removeItem(envKey);
+  renderEnvSwitcher([]);
+  renderProjectSwitcher();
+  closeScopeSheet();
+  void refreshAll();
+}
+
+function onScopeProjectClick(btn: HTMLButtonElement): void {
+  const slug = btn.getAttribute("data-scope-project") ?? "__all";
+  state.currentGroup = null;
+  localStorage.removeItem(groupKey);
+  state.currentProject = slug;
+  localStorage.setItem(projectKey, slug);
+  state.currentEnv = "";
+  localStorage.removeItem(envKey);
+  renderProjectSwitcher();
+  if (slug === "__all") {
+    renderEnvSwitcher([]);
+    closeScopeSheet();
+    void refreshAll();
+  } else {
+    renderScopeSheetBody();
+    void Promise.all([loadEnvironments(), refreshAll()]);
+  }
+}
+
+function onScopeEnvClick(btn: HTMLButtonElement): void {
+  const env = btn.getAttribute("data-scope-env") ?? "";
+  state.currentEnv = env;
+  if (env) localStorage.setItem(envKey, env); else localStorage.removeItem(envKey);
+  renderEnvSwitcher([]);
+  updateScopeBtn();
+  closeScopeSheet();
+  void refreshAll();
+}
+
 function renderScopeSheetBody(filter = ""): void {
   if (!scopeBody) return;
   const f = filter.trim().toLowerCase();
   const current = state.currentProject;
-  let html = `<input class="scope-sheet-filter" type="text" placeholder="Filter…" value="${escapeHtml(filter)}" autocomplete="off" />`;
-
-  const matchesFilter = (name: string, slug: string) => !f || name.toLowerCase().includes(f) || slug.toLowerCase().includes(f);
-
-  if (state.groups.length > 0) {
-    const visGroups = state.groups.filter(g => matchesFilter(g.name, g.slug));
-    if (visGroups.length > 0 || !f) {
-      html += `<div class="scope-section-label">Group</div>`;
-      if (!f) html += `<button class="scope-item${state.currentGroup === null && (current === "__all" || !current) ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
-      for (const g of visGroups) {
-        const selected = state.currentGroup === g.slug;
-        html += `<button class="scope-item${selected ? " selected" : ""}" data-scope-group="${escapeHtml(g.slug)}">${escapeHtml(g.name)}</button>`;
-      }
-      html += `<div class="scope-divider"></div>`;
-    }
-    html += `<div class="scope-section-label">Project</div>`;
-    if (f && "all projects".includes(f)) html += `<button class="scope-item" data-scope-project="__all">All projects</button>`;
-    for (const p of state.projects) {
-      const slug = String(p.slug ?? p.Slug ?? "");
-      const name = String(p.name ?? p.Name ?? slug);
-      if (!matchesFilter(name, slug)) continue;
-      const selected = !state.currentGroup && slug === current;
-      html += `<button class="scope-item${selected ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
-    }
-  } else {
-    html += `<div class="scope-section-label">Project</div>`;
-    if (!f || "all projects".includes(f)) html += `<button class="scope-item${current === "__all" || !current ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
-    for (const p of state.projects) {
-      const slug = String(p.slug ?? p.Slug ?? "");
-      const name = String(p.name ?? p.Name ?? slug);
-      if (!matchesFilter(name, slug)) continue;
-      html += `<button class="scope-item${slug === current ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
-    }
-  }
-
-  if (!state.currentGroup && current && current !== "__all") {
-    html += `<div class="scope-divider"></div>`;
-    html += `<div class="scope-section-label">Environment</div>`;
-    html += `<button class="scope-item scope-item-sub${!state.currentEnv ? " selected" : ""}" data-scope-env="">All environments</button>`;
-    html += `<div id="scope-env-list"></div>`;
-  }
-  scopeBody.innerHTML = html;
+  const showEnv = !state.currentGroup && !!current && current !== "__all";
+  scopeBody.innerHTML = scopeSheetHtml(filter, f, current, showEnv);
   // The list container exists only once the markup is in the DOM.
-  if (!state.currentGroup && current && current !== "__all") void loadScopeEnvs();
+  if (showEnv) void loadScopeEnvs();
 
   scopeBody.querySelector<HTMLInputElement>(".scope-sheet-filter")?.addEventListener("input", (e) => {
     renderScopeSheetBody((e.target as HTMLInputElement).value);
   });
-
   scopeBody.querySelectorAll<HTMLButtonElement>("[data-scope-group]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const slug = btn.getAttribute("data-scope-group") ?? "";
-      state.currentGroup = slug;
-      localStorage.setItem(groupKey, slug);
-      state.currentProject = "__all";
-      localStorage.removeItem(projectKey);
-      state.currentEnv = "";
-      localStorage.removeItem(envKey);
-      renderEnvSwitcher([]);
-      renderProjectSwitcher();
-      closeScopeSheet();
-      void refreshAll();
-    });
+    btn.addEventListener("click", () => onScopeGroupClick(btn));
   });
-
   scopeBody.querySelectorAll<HTMLButtonElement>("[data-scope-project]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const slug = btn.getAttribute("data-scope-project") ?? "__all";
-      state.currentGroup = null;
-      localStorage.removeItem(groupKey);
-      state.currentProject = slug;
-      localStorage.setItem(projectKey, slug);
-      state.currentEnv = "";
-      localStorage.removeItem(envKey);
-      renderProjectSwitcher();
-      if (slug === "__all") {
-        renderEnvSwitcher([]);
-        closeScopeSheet();
-        void refreshAll();
-      } else {
-        renderScopeSheetBody();
-        void Promise.all([loadEnvironments(), refreshAll()]);
-      }
-    });
+    btn.addEventListener("click", () => onScopeProjectClick(btn));
   });
   scopeBody.querySelectorAll<HTMLButtonElement>("[data-scope-env]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const env = btn.getAttribute("data-scope-env") ?? "";
-      state.currentEnv = env;
-      if (env) localStorage.setItem(envKey, env); else localStorage.removeItem(envKey);
-      renderEnvSwitcher([]);
-      updateScopeBtn();
-      closeScopeSheet();
-      void refreshAll();
-    });
+    btn.addEventListener("click", () => onScopeEnvClick(btn));
   });
 }
 
