@@ -26,6 +26,19 @@ func TestRecorderKeepsOnlyErrorsInErrors(t *testing.T) {
 	}
 }
 
+func TestRecorderKeepsOnlyWarningsInWarnings(t *testing.T) {
+	t.Parallel()
+	log, rec := New()
+	log.Info("info")
+	log.Warn("warn")
+	log.Error("error")
+
+	warns := rec.Warnings()
+	if len(warns) != 1 || warns[0].Message != "warn" {
+		t.Fatalf("Warnings() = %v, want only the WARN record", warns)
+	}
+}
+
 func TestRecorderCarriesWithAttrs(t *testing.T) {
 	t.Parallel()
 	log, rec := New()

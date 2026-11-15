@@ -55,6 +55,41 @@ func TestFlushReturnsTheLastErrorWhenTheDeadlinePasses(t *testing.T) {
 	}
 }
 
+func TestFlushBeforeExitEmptiesTheSpool(t *testing.T) {
+	writer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer writer.Close()
+	sf := newTestSpool(t, writer.URL)
+	spoolRecord(t, sf)
+
+	sf.FlushBeforeExit(30*time.Second, time.Millisecond)
+
+	if sf.Pending() != 0 {
+		t.Fatalf("pending = %d after FlushBeforeExit, want 0", sf.Pending())
+	}
+}
+
+func TestFlushBeforeExitKeepsTheRecordWhenTheWriterStaysDown(t *testing.T) {
+	writer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer writer.Close()
+	sf := newTestSpool(t, writer.URL)
+	spoolRecord(t, sf)
+
+	sf.FlushBeforeExit(50*time.Millisecond, time.Millisecond)
+
+	if sf.Pending() != 1 {
+		t.Fatalf("pending = %d, want the record kept on disk", sf.Pending())
+	}
+}
+
+func TestFlushBeforeExitWithNothingPendingReturnsAtOnce(t *testing.T) {
+	sf := newTestSpool(t, "http://127.0.0.1:1")
+	sf.FlushBeforeExit(time.Hour, time.Hour)
+}
+
 func TestFlushOnAnEmptySpoolReturnsAtOnce(t *testing.T) {
 	sf := newTestSpool(t, "http://127.0.0.1:1")
 	if err := sf.Flush(context.Background(), time.Hour); err != nil {
