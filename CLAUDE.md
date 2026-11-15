@@ -83,7 +83,7 @@ web/                  SPA frontend (TypeScript, no framework)
 sdks/                 Client SDKs (Go, TypeScript, Python, PHP); the server builds against sdks/go
 deploy/               ★ Kustomize manifests per environment, Dockerfiles, packaging
 specs/                Product specs and OpenAPI
-docs/, site/          Documentation and the bugbarn.dev site (site mirrors docs)
+docs/, site/          Documentation and the marketing site (site mirrors docs)
 ```
 
 ## Runtime shape

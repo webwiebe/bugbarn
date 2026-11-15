@@ -93,3 +93,6 @@ docker-compose.override.yml
 
 # Python coverage data
 .coverage
+
+# Built server binary
+/cmd/bugbarn/bugbarn
