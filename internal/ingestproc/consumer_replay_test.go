@@ -21,10 +21,7 @@ func newReplayQueue(t *testing.T) *queue.RedisQueue {
 		t.Fatalf("miniredis: %v", err)
 	}
 	t.Cleanup(mr.Close)
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	t.Cleanup(func() { q.Close() })
 	return q
 }

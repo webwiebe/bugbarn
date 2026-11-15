@@ -10,7 +10,6 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
-	"github.com/wiebe-xyz/bugbarn/internal/queue"
 )
 
 // levelRecorder keeps the log records at WARN and above that carry a
@@ -72,10 +71,7 @@ func runAgainstDeadRedis(t *testing.T, rec *levelRecorder) (stop func()) {
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	t.Cleanup(func() { q.Close() })
 	mr.Close()
 

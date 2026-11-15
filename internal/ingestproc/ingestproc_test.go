@@ -121,10 +121,7 @@ func TestConsumerDrainsEventQueue(t *testing.T) {
 		t.Fatalf("miniredis: %v", err)
 	}
 	t.Cleanup(mr.Close)
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	t.Cleanup(func() { q.Close() })
 
 	proc, store := newProcessor(t)
@@ -170,10 +167,7 @@ func TestConsumerDrainsLogQueue(t *testing.T) {
 		t.Fatalf("miniredis: %v", err)
 	}
 	t.Cleanup(mr.Close)
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	t.Cleanup(func() { q.Close() })
 
 	proc, store := newProcessor(t)
@@ -225,10 +219,7 @@ func TestConsumerRequeuesOnShutdown(t *testing.T) {
 		t.Fatalf("miniredis: %v", err)
 	}
 	t.Cleanup(mr.Close)
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	t.Cleanup(func() { q.Close() })
 
 	proc, store := newProcessor(t)
@@ -307,10 +298,7 @@ func TestResolveProjectSeparatesUnroutableFromTransient(t *testing.T) {
 		t.Fatalf("miniredis: %v", err)
 	}
 	t.Cleanup(mr.Close)
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	t.Cleanup(func() { q.Close() })
 
 	proc, store := newProcessor(t)

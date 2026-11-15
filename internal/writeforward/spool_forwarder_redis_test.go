@@ -24,10 +24,7 @@ func TestRedisSpoolForwarderPublishes(t *testing.T) {
 		t.Fatalf("miniredis: %v", err)
 	}
 	defer mr.Close()
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	defer q.Close()
 
 	sf, err := NewRedisSpool(t.TempDir(), q, 1<<20, slog.Default())
@@ -93,10 +90,7 @@ func newTestRedisForwarder(t *testing.T) (*Spool, *queue.RedisQueue) {
 		t.Fatalf("miniredis: %v", err)
 	}
 	t.Cleanup(mr.Close)
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatalf("queue: %v", err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	t.Cleanup(func() { q.Close() })
 	sf, err := NewRedisSpool(t.TempDir(), q, 1<<20, slog.Default())
 	if err != nil {

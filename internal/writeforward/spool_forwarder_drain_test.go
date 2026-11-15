@@ -78,10 +78,7 @@ func TestAlertmanagerPublishFailureKeepsTheRecordForRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q, err := queue.NewRedisQueue("redis://" + mr.Addr())
-	if err != nil {
-		t.Fatal(err)
-	}
+	q := newTestQueue(t, mr.Addr())
 	defer q.Close()
 	sf, err := NewRedisSpool(t.TempDir(), q, 1<<20, slog.Default())
 	if err != nil {
