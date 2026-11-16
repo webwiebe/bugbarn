@@ -48,6 +48,20 @@ spec:
               value: staging
             - name: BUGBARN_ENVIRONMENT
               value: staging
+            # Self-reporting goes to the one canonical project on the production
+            # barn; the environment above is the attribute that tells the three apart.
+            - name: BUGBARN_SELF_ENDPOINT
+              value: https://bugbarn.wiebe.xyz
+            - name: BUGBARN_SELF_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_SELF_API_KEY
+            - name: BUGBARN_SELF_PROJECT
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_SELF_PROJECT
             # Shown in the UI; matches the writer, which runs the sweep.
             - name: BUGBARN_EVENT_RETENTION_DAYS
               value: "7"

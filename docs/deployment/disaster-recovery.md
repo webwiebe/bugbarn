@@ -48,7 +48,7 @@ WAL grows. Watch the `-wal` file size after changing either value.
 
 The writer logs the `-wal` file size after every tick. Above
 `BUGBARN_WAL_WARN_BYTES` (default 268435456, 256 MiB) it logs at Error, which
-BugBarn files as an issue in its own `bugbarn-service` project.
+BugBarn files as an issue in its own `bugbarn` project.
 
 ## Where snapshots live
 

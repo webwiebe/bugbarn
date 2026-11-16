@@ -280,7 +280,7 @@ As an operator, I want the BugBarn service to report its own panics, dead-letter
 
 **Why this priority**: If BugBarn is silently dropping events or panicking, the only evidence today is in `stderr` logs. Dogfooding gives operational visibility through the same UI and alert pipeline the operator already uses, and validates the Go SDK in a production workload.
 
-**Independent Test**: Trigger a panic recovery in the BugBarn HTTP handler. Verify an issue appears in the BugBarn UI under the `bugbarn-service` project, with the correct stack trace and the event count incrementing on repeat.
+**Independent Test**: Trigger a panic recovery in the BugBarn HTTP handler. Verify an issue appears in the BugBarn UI under the `bugbarn` project (environment `production`), with the correct stack trace and the event count incrementing on repeat.
 
 **Acceptance Scenarios**:
 
@@ -332,16 +332,16 @@ func WithUser(id, email, username string) CaptureOption
 
 ```sh
 # Create a project for BugBarn itself
-bugbarn project create --name="BugBarn Service"
+bugbarn project create --name="BugBarn"
 
 # Create an ingest-only key (so the self-reporting key can't access the API)
-bugbarn apikey create --project=bugbarn-service --name=self-report --scope=ingest
+bugbarn apikey create --project=bugbarn --name=self-report --scope=ingest
 # → bb_live_<key>
 
 # Set env vars (can point at itself — localhost is fine)
 BUGBARN_SELF_ENDPOINT=http://localhost:8080/api/v1/events
 BUGBARN_SELF_API_KEY=bb_live_<key>
-BUGBARN_SELF_PROJECT=bugbarn-service
+BUGBARN_SELF_PROJECT=bugbarn
 ```
 
 **Circular dependency note**: Self-reporting uses the same ingest endpoint as any other client, but the SDK sends asynchronously after the HTTP response is already sent. The ingest path itself does not call the SDK — only the panic recovery middleware and worker dead-letter code do. There is no risk of infinite self-reporting loops.
@@ -418,6 +418,7 @@ BUGBARN_SELF_PROJECT=bugbarn-service
 | `user.id` is indexed as a facet key | FR-111 | Holds since #227: `extractFacets` indexes `user.id` from the user context or a `user.id` attribute, and `?user.id=u-123` filters issues |
 | Self-reporting configured by `BUGBARN_SELF_ENDPOINT` alone | FR-118, FR-119 | `internal/selflog/CLAUDE.md`: the handler installs only when `BUGBARN_SELF_ENDPOINT` and `BUGBARN_SELF_API_KEY` are both set |
 | Self-reporting covers panics and dead-lettered records | FR-118 | Dead-lettering logs at ERROR in `cmd/bugbarn/worker.go`; the selflog handler reports every ERROR record |
+| Self-reporting goes to a project named `bugbarn-service`, in production only | Independent Test, setup | Since #281 production, staging and testing report to one project `bugbarn` on the production barn with one ingest key; the environment (`BUGBARN_ENVIRONMENT`) is the attribute that tells them apart |
 | Alert delivery is Slack Block Kit or generic JSON | FR-102 | `internal/alert/deliverer.go` also detects Discord webhooks, as Open Question 1 recommended |
 | Alert delivery is webhook only | P2-1 | `internal/alert/` also sends admin email for new issues, regressions and event-count milestones |
 | Status Draft | Header | Phase 2 and the dogfooding story ship; FR-111 does not |

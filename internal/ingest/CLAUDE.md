@@ -117,7 +117,7 @@ Use `ingestresp` for any new ingest response.
 key-project/header-project pair). Wired in both entrypoints through `SetProjectSlugResolver`.
 The first sighting of each pair is also shipped to the self-report project's log store through
 `SetForeignHeaderShipper` (`selflog.LogShipper`, `cmd/bugbarn/selfship.go`), tagged with `pod` and
-`component`, so `bb logs --project bugbarn-service --query "another project"` counts hits over days and
+`component`, so `bb logs --project bugbarn --query "another project"` counts hits over days and
 across rollouts. It needs `BUGBARN_SELF_ENDPOINT` and `BUGBARN_SELF_API_KEY`, and drops the line when
 the shipper is busy or the send fails.
 `requireIngestKey` (`internal/api/keycheck.go`) refuses those requests with 403 `forbidden`

@@ -19,12 +19,14 @@ in this repo, so an SDK change ships in the next server build and is dogfooded b
 SDK release. It also means a broken `sdks/go` breaks the server build.
 
 Captured messages go to the BugBarn instance at `BUGBARN_SELF_ENDPOINT`, which in production is
-itself. They show up as issues in project `bugbarn-service`
-(`bb issues --project bugbarn-service`).
+itself. Production, staging and testing all use the production endpoint, one ingest key and the one
+project `bugbarn` (`BUGBARN_SELF_PROJECT`, set per environment in the SOPS secret). The environment
+comes from `BUGBARN_ENVIRONMENT` and rides on every event and shipped log line, so the three are
+told apart by `bb issues --project bugbarn --env production|staging|testing`.
 
 Records below ERROR do not pass through `Handler`. `LogShipper` (`logship.go`) sends a chosen line to
 `POST /api/v1/logs` of the same endpoint with the same key, so it shows in
-`bb logs --project bugbarn-service` and works on readers, which cannot write the store. It never blocks
+`bb logs --project bugbarn` and works on readers, which cannot write the store. It never blocks
 (4 sends in flight, then it drops) and logs nothing on failure, because an ERROR record would file an
 issue. Use it only for lines worth keeping across rollouts; today that is the foreign project header
 reading (#248).
