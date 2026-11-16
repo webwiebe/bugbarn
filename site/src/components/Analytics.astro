@@ -1,11 +1,17 @@
 ---
-// FunnelBarn analytics — pageviews tracked automatically, CTA clicks tracked via data-track
+// FunnelBarn analytics — pageviews tracked automatically, CTA clicks tracked via data-track.
+// BrandTrace records AI-bot and first-paint traffic; its site key is public and allow-listed per origin (brandtrace#2121).
 ---
 <script is:inline
   src="https://funnelbarn.wiebe.xyz/sdk.js"
   data-api-key="64e5dfefab5b21cd111c9bad3ba8a4d5face2384b45c2722a5aa7391bb0de3d5"
   data-recording="true"
   defer
+></script>
+<script is:inline
+  src="https://brandtrace.net/sdk.js"
+  data-site-key="d0d3d8af13d84de2901241faca05430b"
+  async
 ></script>
 <script>
   declare global {

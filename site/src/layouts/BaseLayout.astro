@@ -1,5 +1,6 @@
 ---
 import Analytics from '../components/Analytics.astro';
+import ErrorReporter from '../components/ErrorReporter.astro';
 import '../styles/global.css';
 
 interface Props {
@@ -22,6 +23,7 @@ const canonicalUrl = new URL(Astro.url.pathname, 'https://bugbarn.webwiebe.nl');
     <link rel="canonical" href={canonicalUrl} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:type" content="website" />
+    <ErrorReporter />
     <Analytics />
   </head>
   <body class="antialiased" style="background-color: #0f1117; color: #e6edf3;">

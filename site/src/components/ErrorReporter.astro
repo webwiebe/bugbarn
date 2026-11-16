@@ -1,0 +1,44 @@
+---
+// Reports uncaught browser errors and rejected promises from the marketing site
+// to BugBarn (project bugbarn-site). The key is a public, project-bound ingest key
+// (it can only POST events for its own project), set at build time through
+// PUBLIC_BUGBARN_SITE_KEY. Without it the component renders nothing.
+const key = import.meta.env.PUBLIC_BUGBARN_SITE_KEY ?? '';
+const endpoint = 'https://bugbarn.wiebe.xyz/api/v1/events';
+---
+{key && (
+  <script is:inline define:vars={{ key, endpoint }}>
+    (function () {
+      var sent = 0;
+      var MAX_PER_PAGE = 5;
+      function report(error, kind) {
+        if (sent >= MAX_PER_PAGE) return;
+        sent++;
+        var isError = error instanceof Error;
+        var message = isError ? error.message : String(error);
+        var body = {
+          timestamp: new Date().toISOString(),
+          severityText: 'error',
+          body: message,
+          exception: {
+            type: isError ? error.name : 'Error',
+            message: message,
+            stacktrace: isError && error.stack ? [{ function: '', filename: location.href, lineno: 0, raw: error.stack }] : [],
+          },
+          attributes: { 'error.kind': kind, 'url.full': location.href, environment: 'production' },
+          resource: { 'service.name': 'bugbarn-site' },
+        };
+        try {
+          fetch(endpoint, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-bugbarn-api-key': key },
+            body: JSON.stringify(body),
+            keepalive: true,
+          }).catch(function () {});
+        } catch (e) {}
+      }
+      window.addEventListener('error', function (e) { report(e.error || e.message, 'window.onerror'); });
+      window.addEventListener('unhandledrejection', function (e) { report(e.reason, 'unhandledrejection'); });
+    })();
+  </script>
+)}

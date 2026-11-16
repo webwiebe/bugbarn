@@ -1,6 +1,7 @@
 ---
 import BaseLayout from './BaseLayout.astro';
 import Analytics from '../components/Analytics.astro';
+import ErrorReporter from '../components/ErrorReporter.astro';
 
 interface Props {
   title: string;
@@ -74,6 +75,7 @@ const nav: NavSection[] = [
     <title>{title} — BugBarn Docs</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonicalUrl} />
+    <ErrorReporter />
     <Analytics />
     <style>
       /* Prose styles for rendered markdown */
