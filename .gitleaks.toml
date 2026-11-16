@@ -1,10 +1,12 @@
 # gitleaks configuration (same shape as iambarn's): the bundled ruleset plus
 # allowlisted paths that legitimately hold secret-shaped strings. Known hits in
 # history go in .gitleaksignore as fingerprints; do not widen the path list for them.
+# Triaged false positives with a stable commit go in the commit-and-path allowlist at
+# the bottom, which matches only those files in those commits.
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "SOPS/age-encrypted secret stores (ciphertext, not plaintext credentials)"
 paths = [
   '''deploy/k8s/[a-z]+/secret\.yaml$''',
@@ -34,3 +36,25 @@ description = "Backticked 64-character hex string in markdown (seed or key lengt
 regex = '''`([0-9a-f]{64})`'''
 secretGroup = 1
 keywords = ["`"]
+
+# False positives found by the 2026-11-16 triage (bugbarn#280), none of them a credential.
+# Both the commit and the file must match, so the same file is scanned again in every
+# later commit and a real secret added there is found. Only commit hashes and paths are
+# listed here, never a value.
+#   933be3ee  the setup-page golden files hold a key derived from the fixed test secret "secret"
+#   52c715ed  the FunnelBarn browser key in the site's data-api-key attribute, public by design
+#   429ebe36, b48cce02  a made-up "secret: abcdefghijkl1234" input of a privacy scrubber test
+[[allowlists]]
+description = "Made-up or public keys in test fixtures and the site tag (triaged 2026-11-16, bugbarn#280)"
+condition = "AND"
+commits = [
+  "933be3ee407d3c692363861c1032105e6f256b73",
+  "52c715ed9e162aa669cc7710c8b22b99ef5a3dd0",
+  "429ebe36ba2effcbbb4d03a42f437a041f15b091",
+  "b48cce02443200de23961de15e6cec3cdf447bf3",
+]
+paths = [
+  '''internal/api/testdata/setup_page_(canonical|vanity)\.golden$''',
+  '''site/src/components/Analytics\.astro$''',
+  '''internal/privacy/strings_test\.go$''',
+]

@@ -151,5 +151,5 @@ Config lives at `~/.config/bugbarn/cli.json`. Authenticated against https://bugb
 - `go test ./...` — run all tests
 - `make spec-check` — validate OpenAPI specs
 - `make quality` — the CI quality gates (file length, lint at zero findings, coverage, duplication). Coverage ratchets the total and fails any Go package under 80.0% (constant `MIN_PACKAGE` in `scripts/check-coverage.sh`, no allowlist)
-- `make secret-scan` — gitleaks over the git history (`scripts/secret-scan.sh`, config in `.gitleaks.toml`, known hits as fingerprints in `.gitleaksignore`, which may only shrink; report-only until 2026-10-31)
+- `make secret-scan` — gitleaks over the git history (`scripts/secret-scan.sh`, config in `.gitleaks.toml`, known hits as fingerprints in `.gitleaksignore`, which may only shrink; triaged false positives sit in a commit-and-path allowlist in `.gitleaks.toml`; enforcing since 2026-11-16)
 - `bb issues` — check for open bugs (dogfood check)
