@@ -51,17 +51,18 @@ func TestMergeProjectsMovesAPIKeysAndReleases(t *testing.T) {
 	mustExec(ctx, t, store,
 		`INSERT INTO releases (project_id, name, observed_at) VALUES (?, 'v1', '2026-01-01T00:00:00Z')`, source.ID)
 
-	if err := store.MergeProjects(ctx, "source-proj", "target-proj"); err != nil {
+	if _, err := store.MergeProjects(ctx, "source-proj", "target-proj", "testing"); err != nil {
 		t.Fatalf("MergeProjects with an API key on the source: %v", err)
 	}
 
-	if got := countWhere(ctx, t, store, "api_keys", target.ID); got != 1 {
-		t.Errorf("target api_keys = %d, want 1 (the source key follows the merge)", got)
+	// The key stays bound to the archived source and authenticates as the target.
+	if pid, _, found, err := store.ValidAPIKeySHA256(ctx, "sha-source"); err != nil || !found || pid != target.ID {
+		t.Errorf("key project = %d found=%v err=%v, want target %d", pid, found, err, target.ID)
 	}
 	if got := countWhere(ctx, t, store, "releases", target.ID); got != 1 {
 		t.Errorf("target releases = %d, want 1", got)
 	}
-	if got := countWhere(ctx, t, store, "api_keys", source.ID); got != 0 {
-		t.Errorf("source api_keys = %d, want 0", got)
+	if got := countWhere(ctx, t, store, "api_keys", source.ID); got != 1 {
+		t.Errorf("source api_keys = %d, want 1 (kept on the archived source)", got)
 	}
 }

@@ -119,6 +119,8 @@ Examples:
   bb vibe issue-000042               # open a Claude Code session for the issue
   bb resolve issue-000042            # resolve an issue
   bb projects --create "My App"      # create a new project
+  bb projects --merge app-staging --into app --env staging   # fold a project in as an environment
+  bb projects --merges               # the record of merges, with the rows moved
   bb groups                          # list project groups
   bb issues --group bugbarn          # issues across all bugbarn-* projects
   bb apikeys                         # list API keys

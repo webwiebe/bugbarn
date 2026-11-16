@@ -8,7 +8,7 @@ full	POST	/api/v1/projects/life/approve		=>	200	acam=GET, POST, PUT, PATCH, DELE
 full	PUT	/api/v1/projects/life	{"name":"Life2","slug":"life2"}	=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=ok
 full	POST	/api/v1/projects	{"name":"Del","slug":"del"}	=>	201	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=project
 full	DELETE	/api/v1/projects/del		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=ok
-full	POST	/api/v1/projects/life2/merge	{"target":"default"}	=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=ok
+full	POST	/api/v1/projects/life2/merge	{"target":"default"}	=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=merge,ok
 full	POST	/api/v1/groups	{"name":"G1","slug":"g1"}	=>	201	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=group
 full	POST	/api/v1/groups/g1/projects	{"project":"default"}	=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=ok
 full	GET	/api/v1/groups/g1/projects		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=projects

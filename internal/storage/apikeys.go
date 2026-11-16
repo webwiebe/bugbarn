@@ -130,11 +130,14 @@ ON CONFLICT(key_sha256) DO NOTHING`,
 	return err
 }
 
-// ValidAPIKeySHA256 returns the project_id and scope for the API key matching the given SHA-256 hex digest.
+// ValidAPIKeySHA256 returns the (effective) project_id and scope for the API key matching the given SHA-256 hex digest.
 // Returns (0, "", false, nil) when no matching key exists.
 func (s *APIKeyStore) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error) {
-	err = s.readDB().QueryRowContext(ctx, `SELECT project_id, scope FROM api_keys WHERE key_sha256 = ?`, keySHA256).
-		Scan(&projectID, &scope)
+	// A key of a project merged into another (bugbarn#282) belongs to the target.
+	err = s.readDB().QueryRowContext(ctx, `
+SELECT CASE WHEN p.merged_into > 0 THEN p.merged_into ELSE k.project_id END, k.scope
+FROM api_keys k LEFT JOIN projects p ON p.id = k.project_id
+WHERE k.key_sha256 = ?`, keySHA256).Scan(&projectID, &scope)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, "", false, nil
 	}
@@ -142,4 +145,19 @@ func (s *APIKeyStore) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (
 		return 0, "", false, err
 	}
 	return projectID, scope, true, nil
+}
+
+// APIKeyOriginSlug returns the slug of the archived project the key was issued
+// for when that project has been merged into another (bugbarn#282), and "" for
+// any other key. Resolving that slug yields the target project and the
+// environment of the merge, so the key's events keep their environment.
+func (s *APIKeyStore) APIKeyOriginSlug(ctx context.Context, keySHA256 string) (string, error) {
+	var slug string
+	err := s.readDB().QueryRowContext(ctx, `
+SELECT p.slug FROM api_keys k JOIN projects p ON p.id = k.project_id
+WHERE k.key_sha256 = ? AND p.merged_into > 0`, keySHA256).Scan(&slug)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return slug, wrapErr(err, "api key origin")
 }

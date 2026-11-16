@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/wiebe-xyz/bugbarn/internal/writeforward"
@@ -121,6 +123,16 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 			}
 			if !ok || pid == 0 {
 				return "", nil
+			}
+			// A key of a project merged into another resolves through the
+			// archived project's slug, which carries the merge's environment.
+			sum := sha256.Sum256([]byte(strings.TrimSpace(apiKey)))
+			origin, oerr := store.APIKeyOriginSlug(ctx, hex.EncodeToString(sum[:]))
+			if oerr != nil {
+				return "", oerr
+			}
+			if origin != "" {
+				return origin, nil
 			}
 			proj, perr := store.ProjectByID(ctx, pid)
 			if perr != nil {

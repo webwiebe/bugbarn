@@ -176,7 +176,8 @@ func (s *Server) renameProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) mergeProject(w http.ResponseWriter, r *http.Request) {
 	sourceSlug := r.PathValue("slug")
 	var req struct {
-		Target string `json:"target"`
+		Target      string `json:"target"`
+		Environment string `json:"environment"`
 	}
 	if err := decodeJSON(w, r, &req); err != nil {
 		http.Error(w, "invalid payload", http.StatusBadRequest)
@@ -187,11 +188,27 @@ func (s *Server) mergeProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "target is required", http.StatusBadRequest)
 		return
 	}
-	if err := s.projects.Merge(r.Context(), sourceSlug, req.Target); err != nil {
+	res, err := s.projects.Merge(r.Context(), sourceSlug, req.Target, req.Environment)
+	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true})
+	writeJSON(w, map[string]any{"ok": true, "merge": res})
+}
+
+// listProjectMerges handles GET /api/v1/project-merges: the record of every
+// merge, with what moved.
+func (s *Server) listProjectMerges(w http.ResponseWriter, r *http.Request) {
+	merges, err := s.projects.Merges(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	// Merges span projects, so a confined key sees none of them.
+	if _, confined := boundProject(r.Context()); confined {
+		merges = nil
+	}
+	writeJSON(w, map[string]any{"merges": merges})
 }
 
 // --- Group endpoints ---

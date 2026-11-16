@@ -12,28 +12,37 @@ import (
 
 // CreateProject inserts a new project row; returns an error if the slug already exists.
 func (s *ProjectStore) CreateProject(ctx context.Context, name, slug string) (domain.Project, error) {
+	return s.insertProject(ctx, name, slug, "active", "CreateProject")
+}
+
+// insertProject refuses an environment-suffixed name, then inserts the project
+// with a unique issue prefix and the given status.
+func (s *ProjectStore) insertProject(ctx context.Context, name, slug, status, op string) (domain.Project, error) {
+	if err := refuseEnvironmentName(name, slug); err != nil {
+		return domain.Project{}, err
+	}
 	prefix, err := s.uniqueIssuePrefix(ctx, slug)
 	if err != nil {
-		return domain.Project{}, wrapErr(err, "CreateProject")
+		return domain.Project{}, wrapErr(err, op)
 	}
-	now := formatTime(time.Now().UTC())
+	now := time.Now().UTC()
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_at) VALUES (?, ?, 'active', ?, 0, ?)`,
-		name, slug, prefix, now,
+INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_at) VALUES (?, ?, ?, ?, 0, ?)`,
+		name, slug, status, prefix, formatTime(now),
 	)
 	if err != nil {
-		return domain.Project{}, wrapErr(err, "create project")
+		return domain.Project{}, wrapErr(err, op)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return domain.Project{}, wrapErr(err, "CreateProject")
+		return domain.Project{}, wrapErr(err, op)
 	}
-	return domain.Project{ID: id, Name: name, Slug: slug, Status: "active", IssuePrefix: prefix, CreatedAt: time.Now().UTC()}, nil
+	return domain.Project{ID: id, Name: name, Slug: slug, Status: status, IssuePrefix: prefix, CreatedAt: now}, nil
 }
 
 // ListProjects returns all projects ordered alphabetically by name.
 func (s *ProjectStore) ListProjects(ctx context.Context) ([]domain.Project, error) {
-	rows, err := s.readDB().QueryContext(ctx, `SELECT `+projectColumns+` FROM projects ORDER BY name ASC`)
+	rows, err := s.readDB().QueryContext(ctx, `SELECT `+projectColumns+` FROM projects WHERE status != 'archived' ORDER BY name ASC`)
 	if err != nil {
 		return nil, wrapErr(err, "list projects")
 	}
@@ -53,7 +62,7 @@ func (s *ProjectStore) ListProjects(ctx context.Context) ([]domain.Project, erro
 // projectColumns is the column list every single-project lookup selects, in the
 // order scanProject expects them.
 const projectColumns = `id, name, slug, status, issue_prefix, issue_counter, group_id, created_at,
-	retention_days, sampling_mode, funnelbarn_url`
+	retention_days, sampling_mode, funnelbarn_url, merged_into, merged_environment`
 
 // scanProject reads one project row, turning the nullable retention column into
 // the pointer the domain type uses.
@@ -62,7 +71,8 @@ func scanProject(row interface{ Scan(dest ...any) error }) (domain.Project, erro
 	var createdAt string
 	var retention sql.NullInt64
 	if err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.IssuePrefix, &p.IssueCounter,
-		&p.GroupID, &createdAt, &retention, &p.SamplingMode, &p.FunnelBarnURL); err != nil {
+		&p.GroupID, &createdAt, &retention, &p.SamplingMode, &p.FunnelBarnURL,
+		&p.MergedInto, &p.MergedEnvironment); err != nil {
 		return domain.Project{}, wrapNotFound(err, "project not found")
 	}
 	p.CreatedAt, _ = parseTime(createdAt)
@@ -71,9 +81,36 @@ func scanProject(row interface{ Scan(dest ...any) error }) (domain.Project, erro
 }
 
 // ProjectBySlug returns the project with the given slug.
+//
+// A project merged into another (bugbarn#282) answers with its target, carrying
+// the environment the merged project stood for in ResolvedEnvironment, so the
+// old slug keeps working for every caller.
 func (s *ProjectStore) ProjectBySlug(ctx context.Context, slug string) (domain.Project, error) {
-	return scanProject(s.readDB().QueryRowContext(ctx,
+	p, err := scanProject(s.readDB().QueryRowContext(ctx,
 		`SELECT `+projectColumns+` FROM projects WHERE slug = ?`, slug))
+	if err != nil {
+		return domain.Project{}, err
+	}
+	return s.followMerge(ctx, p)
+}
+
+// followMerge returns the target of an archived project with the environment of
+// the merge, and any other project unchanged.
+func (s *ProjectStore) followMerge(ctx context.Context, p domain.Project) (domain.Project, error) {
+	for hops := 0; p.MergedInto > 0 && hops < 8; hops++ {
+		env, from := p.MergedEnvironment, p.ID
+		target, err := scanProject(s.readDB().QueryRowContext(ctx,
+			`SELECT `+projectColumns+` FROM projects WHERE id = ?`, p.MergedInto))
+		if err != nil {
+			return domain.Project{}, err
+		}
+		if target.ResolvedEnvironment == "" {
+			target.ResolvedEnvironment = env
+		}
+		target.ResolvedFromID = from
+		p = target
+	}
+	return p, nil
 }
 
 // EnsureProject returns the project with the given slug, creating it if it does not exist.
@@ -87,7 +124,7 @@ func (s *ProjectStore) EnsureProject(ctx context.Context, slug string) (domain.P
 	// Check if slug is an alias.
 	targetID, aliasErr := s.ResolveAlias(ctx, slug)
 	if aliasErr == nil {
-		return s.ProjectByID(ctx, targetID)
+		return s.projectByIDFollowing(ctx, targetID)
 	}
 	if s.db == nil {
 		return domain.Project{}, apperr.NotFound("project not found (read-only)", nil)
@@ -106,7 +143,7 @@ func (s *ProjectStore) EnsureProjectPending(ctx context.Context, slug string) (d
 	// Check if slug is an alias.
 	targetID, aliasErr := s.ResolveAlias(ctx, slug)
 	if aliasErr == nil {
-		return s.ProjectByID(ctx, targetID)
+		return s.projectByIDFollowing(ctx, targetID)
 	}
 	if s.db == nil {
 		return domain.Project{}, apperr.NotFound("project not found (read-only)", nil)
@@ -116,23 +153,7 @@ func (s *ProjectStore) EnsureProjectPending(ctx context.Context, slug string) (d
 
 // CreateProjectPending inserts a new project with status=pending.
 func (s *ProjectStore) CreateProjectPending(ctx context.Context, slug string) (domain.Project, error) {
-	prefix, err := s.uniqueIssuePrefix(ctx, slug)
-	if err != nil {
-		return domain.Project{}, wrapErr(err, "CreateProjectPending")
-	}
-	now := formatTime(time.Now().UTC())
-	res, err := s.db.ExecContext(ctx, `
-INSERT INTO projects (name, slug, status, issue_prefix, issue_counter, created_at) VALUES (?, ?, 'pending', ?, 0, ?)`,
-		slug, slug, prefix, now,
-	)
-	if err != nil {
-		return domain.Project{}, wrapErr(err, "CreateProjectPending")
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return domain.Project{}, wrapErr(err, "CreateProjectPending")
-	}
-	return domain.Project{ID: id, Name: slug, Slug: slug, Status: "pending", IssuePrefix: prefix, CreatedAt: time.Now().UTC()}, nil
+	return s.insertProject(ctx, slug, slug, "pending", "CreateProjectPending")
 }
 
 // DeleteProject removes the project and all related rows. Child rows are
@@ -252,6 +273,15 @@ func (s *ProjectStore) ProjectByID(ctx context.Context, id int64) (domain.Projec
 		`SELECT `+projectColumns+` FROM projects WHERE id = ?`, id))
 }
 
+// projectByIDFollowing is ProjectByID that follows a merge.
+func (s *ProjectStore) projectByIDFollowing(ctx context.Context, id int64) (domain.Project, error) {
+	p, err := s.ProjectByID(ctx, id)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	return s.followMerge(ctx, p)
+}
+
 // nullIntToPtr converts a nullable integer column into the pointer the domain
 // type uses, where nil means "inherit the deployment default".
 func nullIntToPtr(n sql.NullInt64) *int {
@@ -363,6 +393,9 @@ func (s *ProjectStore) ListAliases(ctx context.Context) ([]domain.ProjectAlias, 
 
 // RenameProject updates the project's slug and name, creating an alias from the old slug.
 func (s *ProjectStore) RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error {
+	if err := refuseEnvironmentName(newName, newSlug); err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return wrapErr(err, "rename project")
@@ -388,44 +421,16 @@ func (s *ProjectStore) RenameProject(ctx context.Context, oldSlug, newSlug, newN
 	return wrapErr(tx.Commit(), "rename project")
 }
 
-// MergeProjects moves all data from the source project to the target project,
-// creates an alias from the source slug, and deletes the source project.
-func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return wrapErr(err, "merge projects")
+// refuseEnvironmentName refuses a project name or slug that ends in an
+// environment suffix ("-staging", "-test", ...). An environment is an attribute of
+// the data, not a project (bugbarn#282): send it as deployment.environment.
+func refuseEnvironmentName(name, slug string) error {
+	for _, candidate := range []string{slug, name} {
+		if base, env, ok := domain.EnvironmentSuffix(candidate); ok {
+			return apperr.InvalidInput(fmt.Sprintf(
+				"%q names an environment (%s), which is not a project: use the project %q and send deployment.environment=%s",
+				candidate, env, base, env), nil)
+		}
 	}
-	defer tx.Rollback()
-
-	var sourceID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, sourceSlug).Scan(&sourceID)
-	if err != nil {
-		return wrapNotFound(err, "source project not found")
-	}
-
-	var targetID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, targetSlug).Scan(&targetID)
-	if err != nil {
-		return wrapNotFound(err, "target project not found")
-	}
-
-	// Move or drop each project-owned table as projectTables says. The issues
-	// moved keep their ids, so facet and regression rows cannot collide with
-	// rows the target project already has.
-	if err := moveProjectRows(ctx, tx, sourceID, targetID); err != nil {
-		return wrapErr(err, "MergeProjects")
-	}
-
-	// Create alias from source slug → target project.
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO project_aliases (alias_slug, project_id) VALUES (?, ?)`, sourceSlug, targetID); err != nil {
-		return wrapErr(err, "merge: create alias")
-	}
-
-	// Delete source project.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, sourceID); err != nil {
-		return apperr.Internal("merge: delete source", err)
-	}
-
-	return wrapErr(tx.Commit(), "merge projects")
+	return nil
 }

@@ -107,18 +107,27 @@ func TestMergeProjectsMovesRowsAndReportsMissingSides(t *testing.T) {
 	if _, err := s.CreateAPIKey(ctx, "k", src.ID, "merge-hash", domain.APIKeyScopeIngest); err != nil {
 		t.Fatal(err)
 	}
-	wantKind(t, s.MergeProjects(ctx, "ghost", "dst"), apperr.ErrNotFound)
-	wantKind(t, s.MergeProjects(ctx, "src", "ghost"), apperr.ErrNotFound)
-	if err := s.MergeProjects(ctx, "src", "dst"); err != nil {
+	_, mergeGhostErr := s.MergeProjects(ctx, "ghost", "dst", "testing")
+	wantKind(t, mergeGhostErr, apperr.ErrNotFound)
+	_, mergeGhostErr = s.MergeProjects(ctx, "src", "ghost", "testing")
+	wantKind(t, mergeGhostErr, apperr.ErrNotFound)
+	if _, err := s.MergeProjects(ctx, "src", "dst", "testing"); err != nil {
 		t.Fatal(err)
 	}
-	wantKind(t, errOf(s.ProjectBySlug(ctx, "src")), apperr.ErrNotFound)
-	if id, err := s.ResolveAlias(ctx, "src"); err != nil || id != dst.ID {
-		t.Fatalf("alias after merge = %d, %v", id, err)
+	// The archived source keeps resolving to the target.
+	if p, err := s.ProjectBySlug(ctx, "src"); err != nil || p.ID != dst.ID {
+		t.Fatalf("source slug after merge = %+v, %v", p, err)
 	}
+	// Its key stays bound to the archived row, and authenticates as the target.
 	keys, err := s.ListAPIKeys(ctx)
 	if err != nil || len(keys) != 1 {
-		t.Fatalf("keys of target = %+v, %v", keys, err)
+		t.Fatalf("keys = %+v, %v", keys, err)
+	}
+	if pid, _, found, err := s.ValidAPIKeySHA256(ctx, "merge-hash"); err != nil || !found || pid != dst.ID {
+		t.Fatalf("key project after merge = %d found=%v err=%v, want %d", pid, found, err, dst.ID)
+	}
+	if origin, err := s.APIKeyOriginSlug(ctx, "merge-hash"); err != nil || origin != "src" {
+		t.Fatalf("key origin = %q, %v, want src", origin, err)
 	}
 }
 

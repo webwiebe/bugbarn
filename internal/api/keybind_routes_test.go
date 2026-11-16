@@ -52,6 +52,7 @@ var routesCoveredElsewhere = map[string]string{
 	"/api/v1/projects":                       "TestBoundReadKeySeesOnlyItsProject",
 	"/api/v1/projects/pending-count":         "TestBoundReadKeySeesOnlyItsProject",
 	"/api/v1/projects/{slug}/silence-watch":  "one project's rule, read by slug",
+	"/api/v1/project-merges":                 "TestBoundReadKeySeesOnlyItsProject; merges span projects, so a confined key gets an empty list",
 	"/api/v1/groups":                         "TestBoundReadKeySeesOnlyItsProject",
 	"/api/v1/groups/{slug}/projects":         "TestBoundReadKeySeesOnlyItsProject",
 	"/api/v1/settings":                       "a read key is refused /settings",

@@ -51,6 +51,40 @@ func TestProjectsListAndCreate(t *testing.T) {
 	}
 }
 
+func TestProjectsMergeIntoAnEnvironment(t *testing.T) {
+	newHarness(t)
+	inEmptyDir(t)
+
+	for _, slug := range []string{"shop", "shop-old"} {
+		if _, err := runCmd(t, cmdProjects, "--create", slug, "--slug", slug); err != nil {
+			t.Fatalf("create %s: %v", slug, err)
+		}
+	}
+	if out, err := runCmd(t, cmdProjects, "--create", "shop-staging"); err == nil {
+		t.Fatalf("an environment-suffixed name must be refused:\n%s", out)
+	}
+	if _, err := runCmd(t, cmdProjects, "--merge", "shop-old"); err == nil {
+		t.Fatal("a merge without --into must fail")
+	}
+	out, err := runCmd(t, cmdProjects, "--merge", "shop-old", "--into", "shop", "--env", "staging")
+	if err != nil {
+		t.Fatalf("merge: %v\n%s", err, out)
+	}
+	for _, want := range []string{`"source": "shop-old"`, `"target": "shop"`, `"environment": "staging"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("merge response lacks %s:\n%s", want, out)
+		}
+	}
+	out, err = runCmd(t, cmdProjects, "--merges")
+	if err != nil || !strings.Contains(out, `"source": "shop-old"`) {
+		t.Fatalf("merges: %v\n%s", err, out)
+	}
+	out, err = runCmd(t, cmdProjects)
+	if err != nil || strings.Contains(out, `"slug": "shop-old"`) {
+		t.Fatalf("an archived source must leave the project list: %v\n%s", err, out)
+	}
+}
+
 func TestGroupsListAndCreate(t *testing.T) {
 	newHarness(t)
 	inEmptyDir(t)

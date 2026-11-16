@@ -68,7 +68,7 @@ func TestMergeProjectsSkipsCollidingRows(t *testing.T) {
 	mustExec(ctx, t, store,
 		`INSERT INTO monitors (project_id, slug, interval_s, created_at) VALUES (?, 'hourly', 60, '2026-01-01T00:00:00Z')`, source.ID)
 
-	if err := store.MergeProjects(ctx, "source-proj", "target-proj"); err != nil {
+	if _, err := store.MergeProjects(ctx, "source-proj", "target-proj", "testing"); err != nil {
 		t.Fatalf("MergeProjects with colliding rows: %v", err)
 	}
 	if got := countWhere(ctx, t, store, "monitors", target.ID); got != 2 {

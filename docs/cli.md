@@ -111,7 +111,11 @@ bb logs --no-color                     # raw JSON for piping
 bb projects                            # list all projects
 bb projects --create "My App"          # create a new project
 bb projects --create "My App" --slug my-app
+bb projects --merge app-old --into app --env staging   # fold a project in as an environment
+bb projects --merges                   # the record of merges, with the rows moved
 ```
+
+A project is a product. `test`, `staging`, `production` and `e2e` are an environment on the data, so a name that ends in one is refused. `--merge` moves the source's data into the target stamped with `--env` (default: the source slug suffix, else `production`), archives the source and keeps its slug and ingest keys working: they resolve to the target with that environment. Nothing is deleted.
 
 ### Monitors
 

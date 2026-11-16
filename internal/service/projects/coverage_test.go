@@ -132,7 +132,7 @@ func TestWritesLogOutcomes(t *testing.T) {
 		"CreateAlias":            svc.CreateAlias(ctx, "old", 1),
 		"DeleteAlias":            svc.DeleteAlias(ctx, "old"),
 		"Rename":                 svc.Rename(ctx, "a", "b", "B"),
-		"Merge":                  svc.Merge(ctx, "a", "b"),
+		"Merge":                  mergeErr(svc.Merge(ctx, "a", "b", "")),
 		"DeleteGroup":            svc.DeleteGroup(ctx, "g"),
 		"AssignProjectToGroup":   svc.AssignProjectToGroup(ctx, "p", "g"),
 		"RemoveProjectFromGroup": svc.RemoveProjectFromGroup(ctx, "p"),
@@ -292,7 +292,7 @@ func TestFailuresKeepKindAndLogBoundary(t *testing.T) {
 		"createAlias":    func(s *Service) error { return s.CreateAlias(ctx, "a", 1) },
 		"deleteAlias":    func(s *Service) error { return s.DeleteAlias(ctx, "a") },
 		"rename":         func(s *Service) error { return s.Rename(ctx, "a", "b", "B") },
-		"merge":          func(s *Service) error { return s.Merge(ctx, "a", "b") },
+		"merge":          func(s *Service) error { _, err := s.Merge(ctx, "a", "b", ""); return err },
 		"updateLimits":   func(s *Service) error { return s.UpdateLimits(ctx, "a", &days, "") },
 		"createGroup":    func(s *Service) error { _, err := s.CreateGroup(ctx, "G", "g"); return err },
 		"deleteGroup":    func(s *Service) error { return s.DeleteGroup(ctx, "g") },
@@ -335,3 +335,5 @@ func TestFailuresKeepKindAndLogBoundary(t *testing.T) {
 		}
 	}
 }
+
+func mergeErr(_ domain.MergeResult, err error) error { return err }

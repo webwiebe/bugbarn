@@ -19,6 +19,10 @@ const (
 	// source row that would collide with a target row stays behind and goes
 	// with the source project, so the target's own value wins.
 	mergeMoveNew
+	// mergeKeep leaves the rows on the archived source project. The merge keeps
+	// the source row, so its ingest keys and aliases stay bound to it and reach
+	// the target through the redirect, carrying the merge's environment.
+	mergeKeep
 	// mergeDrop leaves the rows with the source project, where they are
 	// deleted with it.
 	mergeDrop
@@ -36,10 +40,9 @@ type projectTable struct {
 // that is missing here is caught by TestProjectTablesCoverEverySchemaTable.
 //
 // Moved tables and why:
-//   - api_keys: keys already handed to clients keep ingesting, now into the
-//     target. api_keys.project_id has no ON DELETE action, so a key left behind
-//     would block the final DELETE of the source project.
-//   - project_aliases: an alias that pointed at the source follows the data.
+//   - api_keys, project_aliases: kept on the archived source (mergeKeep). Keys
+//     already handed to clients keep ingesting; the redirect on the source row
+//     sends them to the target with the merge's environment.
 //   - log_entries, held_events: no foreign key, so a row left behind would be
 //     orphaned instead of deleted.
 //   - releases, source_maps, alerts, analytics_pageviews, regression_events,
@@ -48,7 +51,7 @@ type projectTable struct {
 // Skipped on collision: analytics_daily (primary key per day, page and
 // dimension) and monitors (unique slug per project).
 // Dropped: settings (the target keeps its own) and key_requests (short-lived
-// approval requests for the source project).
+// approval requests for the source project). Both stay on the archived source.
 var projectTables = []projectTable{
 	{"issue_facets", mergeMove},
 	{"regression_events", mergeMove},
@@ -60,9 +63,9 @@ var projectTables = []projectTable{
 	{"alerts", mergeMove},
 	{"settings", mergeDrop},
 	{"source_maps", mergeMove},
-	{"api_keys", mergeMove},
+	{"api_keys", mergeKeep},
 	{"log_entries", mergeMove},
-	{"project_aliases", mergeMove},
+	{"project_aliases", mergeKeep},
 	{"held_events", mergeMove},
 	{"key_requests", mergeDrop},
 	{"monitors", mergeMoveNew},

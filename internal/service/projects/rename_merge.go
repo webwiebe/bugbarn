@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -48,16 +49,39 @@ func (s *Service) UpdateLimits(ctx context.Context, slug string, retentionDays *
 // show what a project inheriting the default actually gets.
 func (s *Service) SampleAfter() int64 { return s.repo.SampleAfter() }
 
-func (s *Service) Merge(ctx context.Context, sourceSlug, targetSlug string) error {
+func (s *Service) Merge(ctx context.Context, sourceSlug, targetSlug, environment string) (domain.MergeResult, error) {
+	if environment == "" {
+		environment = defaultMergeEnvironment(sourceSlug)
+	}
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.Merge",
-		trace.WithAttributes(attribute.String("source", sourceSlug), attribute.String("target", targetSlug)))
+		trace.WithAttributes(attribute.String("source", sourceSlug), attribute.String("target", targetSlug),
+			attribute.String("environment", environment)))
 	defer span.End()
-	if err := s.repo.MergeProjects(ctx, sourceSlug, targetSlug); err != nil {
+	res, err := s.repo.MergeProjects(ctx, sourceSlug, targetSlug, environment)
+	if err != nil {
 		tracing.SetError(span, err)
 		apperr.LogFailure(ctx, s.logger, "merge projects", err, "source", sourceSlug, "target", targetSlug)
-		return err
+		return domain.MergeResult{}, err
 	}
 	s.usage.invalidate()
-	s.logger.InfoContext(ctx, "projects merged", "source", sourceSlug, "target", targetSlug)
-	return nil
+	c := res.Counts
+	s.logger.InfoContext(ctx, "projects merged", "source", res.Source, "target", res.Target, "environment", res.Environment,
+		"issues_moved", c.IssuesMoved, "issues_folded", c.IssuesFolded, "events", c.Events, "logs", c.Logs,
+		"releases", c.Releases, "alerts", c.Alerts, "source_maps", c.SourceMaps,
+		"api_keys_redirected", c.APIKeys, "aliases_redirected", c.Aliases, "issue_number_offset", res.IssueNumberOffset)
+	return res, nil
+}
+
+// defaultMergeEnvironment is the environment a merged source stood for when the
+// caller names none: the one its slug suffix says, else production.
+func defaultMergeEnvironment(sourceSlug string) string {
+	if _, env, ok := domain.EnvironmentSuffix(sourceSlug); ok {
+		return env
+	}
+	return "production"
+}
+
+// Merges returns the recorded merges, newest first.
+func (s *Service) Merges(ctx context.Context) ([]domain.MergeResult, error) {
+	return s.repo.ProjectMerges(ctx)
 }

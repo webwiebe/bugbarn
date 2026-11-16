@@ -20,7 +20,7 @@ func TestOpenReadOnlyReadsExistingData(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	created, err := rw.CreateProject(ctx, "Read Only Test", "ro-test")
+	created, err := rw.CreateProject(ctx, "Read Only Test", "ro-proj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestOpenReadOnlyReadsExistingData(t *testing.T) {
 	defer ro.Close()
 
 	// Reads must work.
-	got, err := ro.ProjectBySlug(ctx, "ro-test")
+	got, err := ro.ProjectBySlug(ctx, "ro-proj")
 	if err != nil {
 		t.Fatalf("ProjectBySlug on read-only store: %v", err)
 	}

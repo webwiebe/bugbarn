@@ -118,7 +118,21 @@ type Project struct {
 	// FunnelBarnURL is the FunnelBarn page the By surface rows link to. "" means
 	// the project has none. A "{surface}" in it is replaced by each row's surface.
 	FunnelBarnURL string `json:"funnelbarn_url"`
+
+	// MergedInto is the project this one was merged into (bugbarn#282). A merged
+	// project is archived: its slug and ingest keys keep working and resolve to
+	// that project, with MergedEnvironment on the data. 0 means not merged.
+	MergedInto        int64  `json:"merged_into,omitempty"`
+	MergedEnvironment string `json:"merged_environment,omitempty"`
+	// ResolvedEnvironment is set on the project a lookup returned through an
+	// archived source: the environment its data stands for. It is never stored.
+	ResolvedEnvironment string `json:"-"`
+	// ResolvedFromID is the archived source project that lookup went through.
+	ResolvedFromID int64 `json:"-"`
 }
+
+// ProjectStatusArchived marks a project merged into another one.
+const ProjectStatusArchived = "archived"
 
 // ProjectGroup represents a named collection of related projects.
 type ProjectGroup struct {

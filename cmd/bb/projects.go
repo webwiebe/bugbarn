@@ -4,14 +4,67 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
+	"strings"
 )
 
 func cmdProjects(args []string) error {
+	if wantsMerge(args) {
+		return cmdProjectMerge(args)
+	}
 	// Ask for usage counts explicitly: the API omits them by default because
 	// computing them scans the events and log_entries tables in full, but they
 	// are part of what `bb projects` has always reported and this is a
 	// low-frequency interactive command.
 	return cmdResourceList(args, "projects", "project", "/api/v1/projects", "/api/v1/projects?usage=true")
+}
+
+// wantsMerge reports whether the arguments ask for a merge or the merge record.
+func wantsMerge(args []string) bool {
+	for _, a := range args {
+		name := strings.TrimLeft(a, "-")
+		if name == "merges" || name == "merge" || strings.HasPrefix(name, "merge=") {
+			return true
+		}
+	}
+	return false
+}
+
+// cmdProjectMerge implements `bb projects --merge SRC --into TARGET [--env ENV]`
+// and `bb projects --merges`. The merge moves SRC's data into TARGET stamped
+// with ENV, archives SRC and keeps its ingest keys and slug routing to TARGET.
+func cmdProjectMerge(args []string) error {
+	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
+	source := fs.String("merge", "", "slug of the project to merge away")
+	target := fs.String("into", "", "slug of the project that receives the data")
+	env := fs.String("env", "", "environment the source stands for (default: the source slug suffix, else production)")
+	list := fs.Bool("merges", false, "list the recorded merges with the rows moved")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	if *list {
+		data, err := client.get("/api/v1/project-merges")
+		if err != nil {
+			return err
+		}
+		return writeRaw(data)
+	}
+	if *source == "" || *target == "" {
+		return fmt.Errorf("usage: bb projects --merge SOURCE --into TARGET [--env ENV]")
+	}
+	body := map[string]string{"target": *target}
+	if *env != "" {
+		body["environment"] = *env
+	}
+	data, err := client.post("/api/v1/projects/"+url.PathEscape(*source)+"/merge", body)
+	if err != nil {
+		return err
+	}
+	return writeRaw(data)
 }
 
 func cmdGroups(args []string) error {

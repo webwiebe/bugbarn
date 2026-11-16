@@ -924,6 +924,38 @@ Each project also carries `retention_days` (null when it inherits the deployment
 
 Each project also carries `funnelbarn_url`, the FunnelBarn page its "By surface" rows link to (`""` when unset).
 
+Archived projects (the sources of a merge) are not listed. A project name or slug that ends in an environment word (`-prod`, `-staging`, `-test`, `-e2e`, `-dev` and their long forms) is refused with `400` on create and rename: send `deployment.environment` instead.
+
+---
+
+#### POST /api/v1/projects/:slug/merge
+
+Merge the project `:slug` into another one as an environment.
+
+**Request body:**
+```json
+{"target": "my-app", "environment": "staging"}
+```
+
+`environment` defaults to the environment suffix of the source slug, else `production`.
+
+**Response:**
+```json
+{"ok": true, "merge": {"id": 3, "source": "my-app-old", "target": "my-app", "environment": "staging",
+  "issue_number_offset": 120,
+  "counts": {"issues_moved": 8, "issues_folded": 2, "events": 5120, "logs": 0, "releases": 4, "alerts": 1,
+             "source_maps": 0, "analytics_pageviews": 0, "api_keys_redirected": 2, "aliases_redirected": 0},
+  "merged_at": "2026-11-16T19:40:00Z"}}
+```
+
+The source's issues, events, logs, releases, alerts and source maps move to the target, and the moved issues carry the `environment` facet. An issue with a fingerprint the target already has folds into the target's issue. The other issues are renumbered after the target's own, by `issue_number_offset`. The source row stays, archived and hidden from lists. Its ingest keys and slug keep working and resolve to the target: an event that names no environment is stored with `deployment.environment` set to the merge's environment. `404` for an unknown project, `400` for an invalid environment or a merge into itself, `409` when either project is archived.
+
+---
+
+#### GET /api/v1/project-merges
+
+The record of every merge, newest first, with the rows moved per table, as `{"merges": [...]}`. A key confined to one project gets an empty list.
+
 ---
 
 #### PUT /api/v1/projects/:slug/funnelbarn

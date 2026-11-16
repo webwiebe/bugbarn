@@ -3,6 +3,8 @@ package projects
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 type fakeRepo struct {
 	projects map[string]domain.Project
 	err      error
+	mergeEnv string
 
 	// Volume policy, recorded so the tests can assert what the service passed on.
 	limitsSlug      string
@@ -172,8 +175,13 @@ func (f *fakeRepo) RenameProject(_ context.Context, _, _, _ string) error {
 	return f.err
 }
 
-func (f *fakeRepo) MergeProjects(_ context.Context, _, _ string) error {
-	return f.err
+func (f *fakeRepo) MergeProjects(_ context.Context, source, target, env string) (domain.MergeResult, error) {
+	f.mergeEnv = env
+	return domain.MergeResult{Source: source, Target: target, Environment: env}, f.err
+}
+
+func (f *fakeRepo) ProjectMerges(context.Context) ([]domain.MergeResult, error) {
+	return nil, f.err
 }
 
 func (f *fakeRepo) CreateGroup(_ context.Context, name, slug string) (domain.ProjectGroup, error) {
@@ -317,5 +325,27 @@ func TestApprove_ReplayFailureDoesNotFailApproval(t *testing.T) {
 	}
 	if rep.calls != 1 {
 		t.Errorf("replayer calls = %d, want 1", rep.calls)
+	}
+}
+
+func TestMergeDefaultsTheEnvironmentFromTheSourceSlug(t *testing.T) {
+	t.Parallel()
+	for slug, want := range map[string]string{
+		"bananasketch-staging": "staging", "bananasketch-test": "testing", "brandtrace-e2e": "e2e",
+		"videoslop-production": "production", "webwiebe": "production",
+	} {
+		repo := &fakeRepo{}
+		svc := New(repo, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		if _, err := svc.Merge(context.Background(), slug, "target", ""); err != nil {
+			t.Fatal(err)
+		}
+		if repo.mergeEnv != want {
+			t.Errorf("Merge from %q used environment %q, want %q", slug, repo.mergeEnv, want)
+		}
+	}
+	repo := &fakeRepo{}
+	svc := New(repo, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := svc.Merge(context.Background(), "x-staging", "x", "e2e"); err != nil || repo.mergeEnv != "e2e" {
+		t.Errorf("an explicit environment must win: env=%q err=%v", repo.mergeEnv, err)
 	}
 }

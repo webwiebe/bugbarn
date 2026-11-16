@@ -1081,7 +1081,14 @@ paths:
     post:
       operationId: mergeProject
       tags: [Projects]
-      summary: Merge a project into another
+      summary: Merge a project into another as an environment
+      description: |
+        Moves the source project's issues, events, logs, releases, alerts and
+        source maps into the target and stamps `deployment.environment` on the
+        moved data. Issues with the same fingerprint fold into the target's issue;
+        the rest are renumbered after the target's. The source row stays, archived
+        and hidden from lists. Its ingest keys and slug keep working and resolve to
+        the target project with the stated environment.
       parameters:
         - $ref: "#/components/parameters/projectSlug"
       requestBody:
@@ -1095,13 +1102,41 @@ paths:
                 target:
                   type: string
                   description: Target project slug to merge into
+                environment:
+                  type: string
+                  description: Environment the source's data stands for. Defaults to the suffix of the source slug (staging, testing, e2e, dev), else production.
       responses:
         "200":
           description: Project merged
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OkResponse"
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  merge:
+                    $ref: "#/components/schemas/ProjectMerge"
+
+  /api/v1/project-merges:
+    get:
+      operationId: listProjectMerges
+      tags: [Projects]
+      summary: List recorded project merges
+      description: The audit record of every merge, newest first, with the rows moved per table. A key confined to one project gets an empty list.
+      responses:
+        "200":
+          description: Recorded merges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merges:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectMerge"
 
   # ──────────────────────────────────────────────
   # Groups
@@ -3300,6 +3335,28 @@ components:
       description: Attribute filter as `key=value`. Repeatable.
 
   schemas:
+    ProjectMerge:
+      type: object
+      properties:
+        id:
+          type: integer
+        source:
+          type: string
+        target:
+          type: string
+        environment:
+          type: string
+        issue_number_offset:
+          type: integer
+          description: Added to the source's issue numbers when they moved into the target.
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        merged_at:
+          type: string
+          format: date-time
+
     OkResponse:
       type: object
       properties:

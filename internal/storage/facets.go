@@ -57,10 +57,7 @@ func extractFacets(evt event.Event) map[string]string {
 		out["severity"] = evt.Severity
 	}
 
-	// environment: prefer attributes over resource
-	if env := stringFromMap(evt.Attributes, "deployment.environment"); env != "" {
-		out["environment"] = env
-	} else if env := stringFromMap(evt.Resource, "deployment.environment"); env != "" {
+	if env := EventEnvironment(evt); env != "" {
 		out["environment"] = env
 	}
 
@@ -381,4 +378,23 @@ func (s *FacetStore) ListFacetValues(ctx context.Context, projectID int64, key s
 		values = append(values, v)
 	}
 	return values, rows.Err()
+}
+
+// EventEnvironment returns the environment an event reports: attributes
+// deployment.environment, then the `environment` attribute the SDKs send, then the
+// resource's deployment.environment. It is "" when the event names none.
+func EventEnvironment(evt event.Event) string {
+	for _, c := range []struct {
+		from map[string]any
+		key  string
+	}{
+		{evt.Attributes, "deployment.environment"},
+		{evt.Attributes, "environment"},
+		{evt.Resource, "deployment.environment"},
+	} {
+		if v := stringFromMap(c.from, c.key); v != "" {
+			return v
+		}
+	}
+	return ""
 }

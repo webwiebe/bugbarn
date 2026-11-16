@@ -17,6 +17,7 @@ import (
 
 	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/domainevents"
+	"github.com/wiebe-xyz/bugbarn/internal/event"
 	"github.com/wiebe-xyz/bugbarn/internal/spool"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 	"github.com/wiebe-xyz/bugbarn/internal/worker"
@@ -126,6 +127,9 @@ func (p *Processor) PersistRecord(ctx context.Context, record spool.Record) Resu
 			return p.holdEvent(ctx, res, proj, record)
 		}
 		persistCtx = domain.WithProjectID(ctx, proj.ID)
+		// A project merged into another (bugbarn#282) stamps the environment it
+		// stood for on events that name none, after the fingerprint was taken.
+		processed.Event = stampEnvironment(processed.Event, proj.ResolvedEnvironment)
 	}
 
 	// Annotate JS stack frames with original positions from stored source maps.
@@ -245,4 +249,19 @@ func (p *Processor) Hold(ctx context.Context, h storage.HeldRecord) error {
 		return err
 	}
 	return nil
+}
+
+// stampEnvironment sets deployment.environment on the event's resource when the
+// event reports no environment of its own.
+func stampEnvironment(evt event.Event, env string) event.Event {
+	if env == "" || storage.EventEnvironment(evt) != "" {
+		return evt
+	}
+	resource := make(map[string]any, len(evt.Resource)+1)
+	for k, v := range evt.Resource {
+		resource[k] = v
+	}
+	resource["deployment.environment"] = env
+	evt.Resource = resource
+	return evt
 }

@@ -31,7 +31,8 @@ type Repository interface {
 
 	// Rename and merge
 	RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error
-	MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error
+	MergeProjects(ctx context.Context, sourceSlug, targetSlug, environment string) (domain.MergeResult, error)
+	ProjectMerges(ctx context.Context) ([]domain.MergeResult, error)
 
 	// Volume policy: retention window and event sampling.
 	UpdateProjectLimits(ctx context.Context, slug string, retentionDays *int, sampling string) error

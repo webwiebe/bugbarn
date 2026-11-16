@@ -39,7 +39,7 @@ func TestLoggingRule(t *testing.T) {
 		{Name: "ListAliases", Run: run(func(s *Service) { _, _ = s.ListAliases(ctx) })},
 		{Name: "Rename", Run: run(func(s *Service) { _ = s.Rename(ctx, "a", "b", "B") })},
 		{Name: "UpdateLimits", Run: run(func(s *Service) { _ = s.UpdateLimits(ctx, "a", nil, "") })},
-		{Name: "Merge", Run: run(func(s *Service) { _ = s.Merge(ctx, "a", "b") })},
+		{Name: "Merge", Run: run(func(s *Service) { _, _ = s.Merge(ctx, "a", "b", "") })},
 		{Name: "CreateGroup", Run: run(func(s *Service) { _, _ = s.CreateGroup(ctx, "n", "s") })},
 		{Name: "ListGroups", Run: run(func(s *Service) { _, _ = s.ListGroups(ctx) })},
 		{Name: "DeleteGroup", Run: run(func(s *Service) { _ = s.DeleteGroup(ctx, "s") })},

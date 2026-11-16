@@ -197,23 +197,31 @@ func TestMergeProjectsMovesDataAndCreatesAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := store.MergeProjects(ctx, "source-proj", "target-proj"); err != nil {
+	if _, err := store.MergeProjects(ctx, "source-proj", "target-proj", "staging"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Source project should no longer exist.
-	_, err = store.ProjectBySlug(ctx, "source-proj")
-	if err == nil {
-		t.Fatal("expected source project to be deleted")
-	}
-
-	// Alias should resolve to target.
-	aliasID, err := store.ResolveAlias(ctx, "source-proj")
+	// The source slug keeps resolving, to the target with the merge's environment.
+	resolved, err := store.ProjectBySlug(ctx, "source-proj")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if aliasID != target.ID {
-		t.Errorf("alias resolves to %d, want %d", aliasID, target.ID)
+	if resolved.ID != target.ID || resolved.ResolvedEnvironment != "staging" {
+		t.Errorf("source slug resolves to project %d env %q, want %d staging", resolved.ID, resolved.ResolvedEnvironment, target.ID)
+	}
+	// The source row is archived, not deleted, and leaves the project list.
+	var status string
+	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM projects WHERE id = ?`, source.ID).Scan(&status); err != nil || status != "archived" {
+		t.Errorf("source status = %q, err %v, want archived", status, err)
+	}
+	list, err := store.ListProjects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range list {
+		if p.ID == source.ID {
+			t.Error("archived source is still in the project list")
+		}
 	}
 
 	// Alert should now belong to target.
@@ -237,7 +245,7 @@ func TestDeleteProjectWithRelatedData(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	p, err := store.CreateProject(ctx, "LoadTest", "load-test")
+	p, err := store.CreateProject(ctx, "LoadTest", "load-gen")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +352,7 @@ func TestDeleteProjectWithRelatedData(t *testing.T) {
 	}
 
 	// Now delete the project.
-	if err := store.DeleteProject(ctx, "load-test"); err != nil {
+	if err := store.DeleteProject(ctx, "load-gen"); err != nil {
 		t.Fatalf("DeleteProject failed: %v", err)
 	}
 
