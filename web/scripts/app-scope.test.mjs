@@ -29,8 +29,12 @@ test("picking a project scopes issue requests with the project header and loads 
   assert.equal(win.localStorage.getItem("bugbarn_project"), "web");
   assert.match(id("project-picker-btn").textContent, /Web/);
   assert.equal(header(lastIssueCall(), "X-BugBarn-Project"), "web");
-  assert.ok(fetchStub.calls.some((c) => c.url.startsWith("/api/v1/facets/attributes.environment")));
+  assert.ok(fetchStub.calls.some((c) => c.url.startsWith("/api/v1/facets/environment")));
   assert.deepEqual(qa("#env-select option").map((o) => o.value), ["", "production", "staging"]);
+  // A project opens on production, so the first issue query already carries it.
+  assert.equal(id("env-select").value, "production");
+  assert.match(lastIssueCall().url, /[?&]environment=production/);
+  assert.equal(win.localStorage.getItem("bugbarn_env"), "production");
 });
 
 test("choosing an environment adds it to the issue query and the scope label", async () => {
@@ -38,7 +42,7 @@ test("choosing an environment adds it to the issue query and the scope label", a
   pick(select, "production");
   await settleAll();
   assert.equal(win.localStorage.getItem("bugbarn_env"), "production");
-  assert.match(lastIssueCall().url, /attributes\.environment=production/);
+  assert.match(lastIssueCall().url, /[?&]environment=production/);
 });
 
 test("keyboard navigation moves through picker items and Escape closes it", () => {
@@ -104,8 +108,8 @@ test("All environments in the scope sheet clears the environment, closes the she
   click(q("#scope-sheet-body [data-scope-env='']"));
   await settleAll();
   assert.equal(id("scope-sheet").hidden, true);
-  assert.equal(win.localStorage.getItem("bugbarn_env"), null);
-  assert.doesNotMatch(lastIssueCall().url, /attributes\.environment/);
+  assert.equal(win.localStorage.getItem("bugbarn_env"), "", "an explicit All is remembered");
+  assert.doesNotMatch(lastIssueCall().url, /[?&]environment=/);
 });
 
 test("the scope sheet group and all-projects buttons reset the scope", async () => {

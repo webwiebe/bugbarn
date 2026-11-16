@@ -201,8 +201,11 @@ async function start(): Promise<void> {
     renderLogin();
     return;
   }
-  const envLoad = state.currentProject !== "__all" ? loadEnvironments() : (renderEnvSwitcher([]), Promise.resolve());
-  await Promise.all([loadProjects(), envLoad, refreshAll()]);
+  // The environments load first: a project opens on production, and the first
+  // issue query has to know it.
+  if (state.currentProject !== "__all") await loadEnvironments();
+  else renderEnvSwitcher([]);
+  await Promise.all([loadProjects(), refreshAll()]);
   initInstallPrompt();
   void checkPendingProjects();
   requestNotificationPermission();

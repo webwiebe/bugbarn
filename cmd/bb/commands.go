@@ -148,6 +148,7 @@ func cmdIssues(args []string) error {
 	limit := fs.Int("limit", 0, "page size, 1 to 500 (default: the server's 100)")
 	offset := fs.Int("offset", 0, "skip this many issues")
 	all := fs.Bool("all", false, "follow every page and print one merged list")
+	env := fs.String("env", "", "environment filter, such as production or staging (default: every environment)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -169,6 +170,9 @@ func cmdIssues(args []string) error {
 	params.Set("sort", *sort)
 	if *query != "" {
 		params.Set("q", *query)
+	}
+	if *env != "" {
+		params.Set("environment", *env)
 	}
 
 	res, err := fetchIssues(client, params.Encode(), paging)

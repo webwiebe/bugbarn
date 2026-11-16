@@ -363,7 +363,9 @@ List issues with optional filtering.
 | `status` | Filter by status: `open`, `muted`, `resolved`, or `all`. |
 | `q` | Full-text search query. |
 | `new_in_release` | A release ID. Returns the issues first seen at or after that release's `observed_at` and before the next release of the same environment. The latest release of an environment has no upper bound. The total is then approximate. An unknown release returns 404. |
-| `<facet_key>=<value>` | Filter by any facet key. Example: `environment=production`. Multiple facets can be combined. |
+| `<facet_key>=<value>` | Filter by any facet key. Example: `environment=production`. Multiple facets can be combined. A facet filter needs a project scope. |
+
+The `environment` facet is the event's `deployment.environment` (attribute or resource), else its `environment` attribute. Events that arrive through a merged project's key or slug carry the environment of the merge. `GET /api/v1/facets/environment` lists the environments a project has. The web UI opens a project on `production` when it has that environment, and offers "All environments".
 
 **Response:**
 ```json

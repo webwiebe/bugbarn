@@ -110,9 +110,20 @@ func inEmptyDir(t *testing.T) string {
 // seedIssue stores one event, which creates its issue, and returns the issue.
 func (h *harness) seedIssue(t *testing.T, message string) domain.Issue {
 	t.Helper()
+	return h.seedIssueIn(t, message, "")
+}
+
+// seedIssueIn is seedIssue for an event that reports the given environment.
+func (h *harness) seedIssueIn(t *testing.T, message, environment string) domain.Issue {
+	t.Helper()
 	now := time.Now().UTC()
+	var attrs map[string]any
+	if environment != "" {
+		attrs = map[string]any{"deployment.environment": environment}
+	}
 	pe := event.ProcessedEvent{
 		Event: event.Event{
+			Attributes: attrs,
 			ObservedAt: now,
 			ReceivedAt: now.Add(time.Second),
 			Severity:   "ERROR",

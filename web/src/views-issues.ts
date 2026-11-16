@@ -27,7 +27,7 @@ function issueQueryParams(offset = 0): URLSearchParams {
   if (state.issueSort && state.issueSort !== "last_seen") params.set("sort", state.issueSort);
   if (state.issueStatus && state.issueStatus !== "all") params.set("status", state.issueStatus);
   if (state.issueQuery) params.set("q", state.issueQuery);
-  if (state.currentEnv) params.set("attributes.environment", state.currentEnv);
+  if (state.currentEnv) params.set("environment", state.currentEnv);
   if (state.issueRelease) params.set("release", state.issueRelease);
   return params;
 }

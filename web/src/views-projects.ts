@@ -149,7 +149,7 @@ function selectProject(slug: string): void {
   state.currentEnv = ""; localStorage.removeItem(envKey);
   updatePickerBtn(); updateScopeBtn();
   if (slug === "__all") { renderEnvSwitcher([]); void refreshAll(); }
-  else { void Promise.all([loadEnvironments(), refreshAll()]); }
+  else { void loadEnvironments().then(refreshAll); }
 }
 
 // The error timeline legend asks for a project through this event, which keeps
@@ -208,11 +208,24 @@ function updatePendingBadge(count: number): void {
   badge.textContent = String(count);
 }
 
+/**
+ * A project opens on production. A stored choice, including an explicit "All
+ * environments" (stored as an empty string), is kept. A project without a
+ * production environment opens on all of them.
+ */
+function applyDefaultEnvironment(envs: string[]): void {
+  if (state.currentEnv || localStorage.getItem(envKey) !== null) return;
+  if (!envs.includes("production")) return;
+  state.currentEnv = "production";
+  localStorage.setItem(envKey, "production");
+}
+
 export async function loadEnvironments(): Promise<void> {
   try {
-    const payload = await fetchJson("/api/v1/facets/attributes.environment", true);
+    const payload = await fetchJson("/api/v1/facets/environment", true);
     const raw = payload as Record<string, unknown>;
     const envs = Array.isArray(raw?.["values"]) ? (raw["values"] as string[]) : [];
+    applyDefaultEnvironment(envs);
     renderEnvSwitcher(envs);
   } catch {
     renderEnvSwitcher([]);
@@ -331,14 +344,14 @@ function onScopeProjectClick(btn: HTMLButtonElement): void {
     void refreshAll();
   } else {
     renderScopeSheetBody();
-    void Promise.all([loadEnvironments(), refreshAll()]);
+    void loadEnvironments().then(refreshAll);
   }
 }
 
 function onScopeEnvClick(btn: HTMLButtonElement): void {
   const env = btn.getAttribute("data-scope-env") ?? "";
   state.currentEnv = env;
-  if (env) localStorage.setItem(envKey, env); else localStorage.removeItem(envKey);
+  localStorage.setItem(envKey, env);
   renderEnvSwitcher([]);
   updateScopeBtn();
   closeScopeSheet();
@@ -372,7 +385,7 @@ async function loadScopeEnvs(): Promise<void> {
   const el = document.getElementById("scope-env-list");
   if (!el) return;
   try {
-    const payload = await fetchJson("/api/v1/facets/attributes.environment", true);
+    const payload = await fetchJson("/api/v1/facets/environment", true);
     const raw = payload as Record<string, unknown>;
     const envs = Array.isArray(raw?.["values"]) ? (raw["values"] as string[]) : [];
     let html = "";
@@ -384,7 +397,7 @@ async function loadScopeEnvs(): Promise<void> {
       btn.addEventListener("click", () => {
         const env = btn.getAttribute("data-scope-env") ?? "";
         state.currentEnv = env;
-        if (env) localStorage.setItem(envKey, env); else localStorage.removeItem(envKey);
+        localStorage.setItem(envKey, env);
         updateScopeBtn();
         closeScopeSheet();
         void refreshAll();
