@@ -156,10 +156,14 @@ func (s *Server) oidcCallbackError(w http.ResponseWriter, r *http.Request, oidcE
 // clean flow.
 func (s *Server) oidcCallbackDenied(w http.ResponseWriter, r *http.Request, claims auth.Claims) {
 	s.logger.Warn("oidc: access denied",
-		"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
+		"sub", claims.Subject, "organization_id", claims.OrganizationID, "groups", claims.Groups, "roles", claims.Roles)
 	clearOIDCFlowCookies(w, s.secureCookie(r), oidcStateCookie, oidcNonceCookie, oidcReturnCookie)
 	q := url.Values{}
-	q.Set("oidc_error", "access_denied")
+	if s.oidc.WrongOrganization(claims) {
+		q.Set("oidc_error", "wrong_organization")
+	} else {
+		q.Set("oidc_error", "access_denied")
+	}
 	if id := claims.PreferredName(); id != "" {
 		q.Set("identity", id)
 	}

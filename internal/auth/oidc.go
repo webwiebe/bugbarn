@@ -17,11 +17,14 @@ import (
 
 // OIDCConfig is the static configuration for the OIDC login flow.
 type OIDCConfig struct {
-	Issuer        string // iambarn issuer URL, e.g. https://iam.wiebe.xyz
-	ClientID      string
-	ClientSecret  string
-	RedirectURL   string // e.g. https://bugbarn.wiebe.xyz/api/v1/oidc/callback
-	RequiredGroup string // group slug that grants access; bypass roles always win
+	Issuer       string // iambarn issuer URL, e.g. https://iam.wiebe.xyz
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string // e.g. https://bugbarn.wiebe.xyz/api/v1/oidc/callback
+	// RequiredOrganizationID is the IAMBarn organization this instance belongs
+	// to. A token from any other organization is refused, and an empty value
+	// refuses every token.
+	RequiredOrganizationID string
 }
 
 // Enabled reports whether all four required fields are present.
@@ -49,9 +52,6 @@ type OIDCClient struct {
 // NewOIDCClient returns a client. Discovery is deferred to the first call so
 // that an unreachable issuer at startup does not crash the process.
 func NewOIDCClient(cfg OIDCConfig) *OIDCClient {
-	if cfg.RequiredGroup == "" {
-		cfg.RequiredGroup = "bugbarn-users"
-	}
 	return &OIDCClient{cfg: cfg, timeout: 10 * time.Second}
 }
 
@@ -175,21 +175,29 @@ func (c *OIDCClient) EndSessionURL() string {
 	return c.endSessionEndpoint
 }
 
-// Allowed returns true if the claims grant access to this barn.
-// Owner/organization_admin/operator roles bypass the group check.
+// Allowed returns true if the claims grant access to this barn: an
+// owner/organization_admin/operator role in the required organization. IAMBarn
+// scopes a role to the organization it was issued in. Groups do not count, since
+// signing up through a client can add a member to a project group.
 func (c *OIDCClient) Allowed(claims Claims) bool {
+	if c.cfg.RequiredOrganizationID == "" || c.WrongOrganization(claims) {
+		return false
+	}
 	for _, role := range claims.Roles {
 		switch role {
 		case "owner", "organization_admin", "operator":
 			return true
 		}
 	}
-	for _, g := range claims.Groups {
-		if g == c.cfg.RequiredGroup {
-			return true
-		}
-	}
 	return false
+}
+
+// WrongOrganization reports whether the claims come from an organization other
+// than the required one, or from none. A user with several memberships can fix
+// this by switching organization in IAMBarn. It is false when no organization
+// is configured, because switching cannot help then.
+func (c *OIDCClient) WrongOrganization(claims Claims) bool {
+	return c.cfg.RequiredOrganizationID != "" && claims.OrganizationID != c.cfg.RequiredOrganizationID
 }
 
 // ensureReady performs the one-time discovery + provider wiring. Safe for
@@ -245,6 +253,7 @@ type Claims struct {
 	Email             string   `json:"email"`
 	PreferredUsername string   `json:"preferred_username"`
 	Name              string   `json:"name"`
+	OrganizationID    string   `json:"organization_id"` // the IAMBarn org the token was issued in
 	Groups            []string `json:"groups"`
 	Roles             []string `json:"roles"`
 }

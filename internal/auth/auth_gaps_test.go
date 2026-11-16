@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/oidctest"
 )
 
 func TestNewHashedAcceptsEmptyAndRejectsBadDigests(t *testing.T) {
@@ -135,7 +136,7 @@ func TestOIDCClientAccessorsAndLogoutURL(t *testing.T) {
 	t.Parallel()
 	idp, client := newClient(t)
 	cfg := client.Config()
-	if cfg.ClientID != testClientID || cfg.RequiredGroup != "bugbarn-users" {
+	if cfg.ClientID != testClientID || cfg.RequiredOrganizationID != oidctest.OrganizationID {
 		t.Fatalf("Config = %+v", cfg)
 	}
 	if client.Issuer() != strings.TrimRight(idp.Issuer(), "/") {

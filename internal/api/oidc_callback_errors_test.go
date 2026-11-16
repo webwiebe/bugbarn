@@ -126,11 +126,13 @@ func TestOIDCCallbackExchangeFailureIs401(t *testing.T) {
 	}
 }
 
-func TestOIDCCallbackDeniedByGroupRedirectsWithIdentity(t *testing.T) {
+func TestOIDCCallbackDeniedByOrganizationRedirectsWithIdentity(t *testing.T) {
 	server, idp, _ := newOIDCServer(t)
 	authorize, cookies := startOIDCLogin(t, server, "")
 	nonce := cookieValue(cookies, oidcNonceCookie)
-	idToken := idp.SignJWT(idp.IDTokenClaims("sub-x", "sid-x", nonce, []string{"someone-else"}))
+	claims := idp.IDTokenClaims("sub-x", "sid-x", nonce, []string{"someone-else"})
+	claims["organization_id"] = "org_someone_else"
+	idToken := idp.SignJWT(claims)
 	idp.SetTokenHandler(func(w http.ResponseWriter, _ *http.Request) {
 		oidctest.WriteTokenResponse(w, idToken, "at", "rt", 900)
 	})
@@ -144,8 +146,8 @@ func TestOIDCCallbackDeniedByGroupRedirectsWithIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loc.Path != "/app/" || loc.Query().Get("oidc_error") != "access_denied" {
-		t.Errorf("redirect = %q, want the app with oidc_error=access_denied", loc.String())
+	if loc.Path != "/app/" || loc.Query().Get("oidc_error") != "wrong_organization" {
+		t.Errorf("redirect = %q, want the app with oidc_error=wrong_organization", loc.String())
 	}
 	if cookieValue(rr.Result().Cookies(), "bugbarn_session") != "" {
 		t.Error("a denied login must not set a session cookie")
