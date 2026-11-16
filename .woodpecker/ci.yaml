@@ -289,6 +289,10 @@ steps:
         sh scripts/check-file-length.sh
         sh scripts/check-typed-boundaries.sh
         sh scripts/check-claude-layout.sh
+        # Render the three kustomize overlays and assert on the output against
+        # scripts/infra-baseline.txt. Needs kustomize or kubectl on the runner;
+        # a missing tool fails the step.
+        go run ./scripts/infracheck
         # Create the origin/* remote-tracking refs (a plain `git fetch origin main`
         # only updates FETCH_HEAD), with enough depth for the diff base. Without
         # this golangci-lint's diff mode treats the whole tree as new. (A colon
