@@ -230,7 +230,7 @@ async function start(): Promise<void> {
 declare global {
   interface Window {
     funnelbarn?: {
-      init(options: { apiKey: string; endpoint: string }): void;
+      init(options: { apiKey: string; endpoint: string; recording?: boolean }): void;
       page(): void;
       track(name: string, properties?: Record<string, unknown>): void;
     };
@@ -269,7 +269,7 @@ async function initFunnelBarn(): Promise<void> {
 
   if (typeof window.funnelbarn?.init !== "function") return;
 
-  window.funnelbarn.init({ apiKey, endpoint });
+  window.funnelbarn.init({ apiKey, endpoint, recording: true });
   window.funnelbarn.page();
 
   // Track subsequent hash-based route changes as additional page views.
