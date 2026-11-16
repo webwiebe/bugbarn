@@ -199,6 +199,9 @@ coverage:
 	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
 	sh scripts/check-coverage.sh
 
+infracheck:
+	@go run ./scripts/infracheck
+
 dup: $(PNPM)
 	@pnpm dlx jscpd@5.4.2 .
 
