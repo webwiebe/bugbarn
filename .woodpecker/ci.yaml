@@ -151,7 +151,7 @@ steps:
         # (floor, drift band, fixed 80% minimum). Runs every scripts/*.test.mjs.
         node scripts/coverage-ratchet.mjs
         pnpm run build
-        pnpm dlx jscpd@latest .
+        pnpm dlx jscpd@5.4.2 .
         cd ..
 
   - name: node-site
@@ -318,12 +318,11 @@ steps:
           sh scripts/diff-coverage.sh --enforce coverage/diff.out "origin/$CI_COMMIT_TARGET_BRANCH"
         fi
         . "$CI_WORKSPACE/scripts/use-pnpm.sh"
-        pnpm dlx jscpd@latest .
+        pnpm dlx jscpd@5.4.2 .
 
   # Secret scan (gitleaks 8.30.1, scripts/secret-scan.sh). Pull requests scan their
-  # own commits, pushes to main and manual runs scan all history. Report-only until
-  # 2026-10-31: findings are printed and the step passes; flip SECRET_SCAN_MODE to
-  # enforce then. A scan that cannot run (shallow clone, missing gitleaks, scanned
+  # own commits, pushes to main and manual runs scan all history. Enforced: a finding
+  # or growth of .gitleaksignore fails the step. A scan that cannot run (shallow clone, missing gitleaks, scanned
   # fewer commits than the floor) fails the step in both modes. Known hits in
   # history are fingerprints in .gitleaksignore, which may only shrink. The wrapper
   # tests itself against a planted fake secret first.
@@ -332,7 +331,7 @@ steps:
     environment:
       GITEA_READ_TOKEN:
         from_secret: gitea_read_token
-      SECRET_SCAN_MODE: report
+      SECRET_SCAN_MODE: enforce
       SECRET_SCAN_MIN_COMMITS: "400"
     commands:
       - |
