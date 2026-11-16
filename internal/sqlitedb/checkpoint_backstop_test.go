@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -13,6 +14,24 @@ import (
 func capturingLogger() (*slog.Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})), buf
+}
+
+// lockedBuffer lets the test read the log while a checkpoint tick is still writing to it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // When TRUNCATE keeps losing to reader snapshots the WAL must still be bounded:
@@ -28,7 +47,8 @@ func TestCheckpointBackstopFiresAfterRepeatedFailures(t *testing.T) {
 	release := pinSnapshot(t, db, dbPath)
 	defer release()
 
-	log, buf := capturingLogger()
+	buf := &lockedBuffer{}
+	log := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	policy := CheckpointPolicy{
 		TruncateEvery: 1, TruncateBusyTimeout: 200 * time.Millisecond, WALSize: WALFileSize(dbPath),
 	}
@@ -51,10 +71,15 @@ func TestCheckpointBackstopFiresAfterRepeatedFailures(t *testing.T) {
 		t.Fatal("WAL was truncated despite a pinned snapshot; the setup does not block TRUNCATE")
 	}
 
-	// The second failed tick reaches the threshold. The reader lets go while the
-	// backstop waits, so its full-wait TRUNCATE can finish.
+	// The second failed tick reaches the threshold. The reader lets go once that
+	// tick's own TRUNCATE attempt has been blocked (its second "blocked by reader" line),
+	// so the backstop's full-wait TRUNCATE is the one that finishes. Waiting on the log
+	// instead of a fixed delay keeps the order the same on a loaded host.
 	go func() {
-		time.Sleep(700 * time.Millisecond)
+		deadline := time.Now().Add(2500 * time.Millisecond)
+		for time.Now().Before(deadline) && strings.Count(buf.String(), "blocked by reader, retrying") < 2 {
+			time.Sleep(5 * time.Millisecond)
+		}
 		release()
 	}()
 	tick()
