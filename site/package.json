@@ -6,7 +6,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "lint": "astro check",
-    "test": "node --test tests/nav-links.test.mjs"
+    "test": "node --test tests/nav-links.test.mjs tests/tracking.test.mjs"
   },
   "dependencies": {
     "astro": "^4.16.0",
