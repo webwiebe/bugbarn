@@ -60,7 +60,7 @@ export function defaultRoutes(overrides = {}) {
     "GET /api/v1/runtime-config": { oidc: {}, funnelbarn: {}, bugbarn: {}, spanbarn: {} },
     "GET /api/v1/projects/pending-count": { count: 1 },
     "GET /api/v1/projects": () => ({ projects: fixtures.projects }),
-    "GET /api/v1/facets/attributes.environment": { values: ["production", "staging"], items: [{ value: "production", count: 3 }] },
+    "GET /api/v1/facets/environment": { values: ["production", "staging"], items: [{ value: "production", count: 3 }] },
     "GET /api/v1/issues/sparklines": () => ({ sparklines: { "issue-1": [1, 2, 3, 0, 5] } }),
     "GET /api/v1/issues/issue-1/releases": { releases: [{ release: "1.0.0", events: 4 }], sampled_events: 4 },
     "GET /api/v1/issues/issue-1/events": () => ({ events: [event(1), event(2)], hasMore: true }),

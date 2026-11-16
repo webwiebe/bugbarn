@@ -93,6 +93,28 @@ func TestIssuesFiltersAndPaging(t *testing.T) {
 	}
 }
 
+func TestIssuesFilteredByEnvironment(t *testing.T) {
+	h := newHarness(t)
+	inEmptyDir(t)
+	h.seedIssueIn(t, "prod failure", "production")
+	h.seedIssueIn(t, "stage failure", "staging")
+	h.seedIssueIn(t, "stage failure two", "staging")
+
+	for env, want := range map[string]int{"production": 1, "staging": 2, "e2e": 0} {
+		out, err := runCmd(t, cmdIssues, "--project", "default", "--env", env)
+		if err != nil {
+			t.Fatalf("issues --env %s: %v\n%s", env, err, out)
+		}
+		if got := len(decodeIssues(t, out).Issues); got != want {
+			t.Errorf("--env %s: %d issues, want %d", env, got, want)
+		}
+	}
+	out, err := runCmd(t, cmdIssues, "--project", "default")
+	if err != nil || len(decodeIssues(t, out).Issues) != 3 {
+		t.Errorf("without --env every environment shows: %v\n%s", err, out)
+	}
+}
+
 func TestIssuesFlagAndScopeErrors(t *testing.T) {
 	h := newHarness(t)
 	inEmptyDir(t)
