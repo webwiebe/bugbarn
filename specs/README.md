@@ -22,6 +22,7 @@ All specs were last verified against the tree on 2026-10-17 at `70a663f`.
 | [005 UI fixes and project management](./005-ui-fixes-project-management/spec.md) | Partial | Narrow-screen layout, the issues list, deleting projects, aliases, merges and groups. Rejecting a pending project has no route. Its [tasks](./005-ui-fixes-project-management/tasks.md) are the original checklist. |
 | [006 CQRS read/write split](./006-cqrs-read-write-split/spec.md) | Shipped | The writer and reader modes, read-only storage and write forwarding. The Litestream restore it describes is gone. |
 | [007 Redis write queue](./007-redis-write-queue/spec.md) | Partial | The Redis queue between readers and the writer. Phase 5, retiring the HTTP drain, is open. |
+| [008 OOMKilled reporting](./008-oomwatch/spec.md) | Partial | The in-cluster watcher that reports OOMKilled containers to BugBarn. Its ingest key and the testing kill test are open. |
 
 ## Workflow
 

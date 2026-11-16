@@ -115,3 +115,7 @@ one-off run: it matches no workflow and starts no pipeline.
   three environments (the testing monolith is `testing/deployment.yaml`).
 - Check `kubectl kustomize deploy/k8s/<env>` renders before pushing; there is no other
   local check.
+
+## oomwatch
+
+`.woodpecker/oomwatch-deploy.yaml` deploys the OOMKilled watcher (`deploy/oomwatch/`) to k3s1 and layer7 on a version tag, after `release`, by image digest. Its secret is `deploy/oomwatch/k8s/<overlay>/secret.yaml` (SOPS, rule in `.sops.yaml`). See `deploy/oomwatch/README.md`.
