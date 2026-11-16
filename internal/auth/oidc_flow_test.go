@@ -27,6 +27,8 @@ func newClient(t *testing.T) (*oidctest.IdP, *auth.OIDCClient) {
 		ClientID:     testClientID,
 		ClientSecret: "sek",
 		RedirectURL:  "https://bugbarn.example.com/api/v1/oidc/callback",
+
+		RequiredOrganizationID: oidctest.OrganizationID,
 	})
 	return idp, client
 }
