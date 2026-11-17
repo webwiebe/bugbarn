@@ -124,3 +124,61 @@ func TestRunAPIKeyFindRunsAgainstTheConfiguredDatabase(t *testing.T) {
 		t.Fatal("an unopenable database was accepted")
 	}
 }
+
+func TestRevokeMatchingKeyNeedsTheIdAndThePrefixToAgree(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	project, err := store.CreateProject(ctx, "gone", "gone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const hash = "603ae7d5bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	key, err := store.CreateAPIKey(ctx, "leaked", project.ID, hash, "ingest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := revokeMatchingKey(ctx, store, key.ID, "ffffff", &out); err == nil || !strings.Contains(err.Error(), "nothing revoked") {
+		t.Fatalf("err = %v, want a refusal on a prefix mismatch", err)
+	}
+	if err := revokeMatchingKey(ctx, store, key.ID+99, "603ae7d5", &out); err == nil || !strings.Contains(err.Error(), "no key with id") {
+		t.Fatalf("err = %v, want an unknown id", err)
+	}
+	if err := revokeMatchingKey(ctx, store, key.ID, "603ae7d5", &out); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if !strings.Contains(out.String(), "revoked id=") || strings.Contains(out.String(), hash) {
+		t.Fatalf("output = %q", out.String())
+	}
+	keys, _ := store.ListAPIKeys(ctx)
+	if len(keys) != 0 {
+		t.Fatalf("%d keys left, want 0", len(keys))
+	}
+	_ = store.Close()
+	if err := revokeMatchingKey(ctx, store, key.ID, "603ae7d5", &out); err == nil || !strings.Contains(err.Error(), "list api keys") {
+		t.Fatalf("err = %v, want the list failure", err)
+	}
+}
+
+func TestRunAPIKeyRevokeValidatesAndRunsAgainstTheDatabase(t *testing.T) {
+	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "bugbarn.db")}
+	cases := map[string][]string{
+		"id":     {"revoke", "--sha256-prefix=603ae7d5"},
+		"prefix": {"revoke", "--id=1", "--sha256-prefix=60"},
+		"flag":   {"revoke", "--bogus"},
+		"absent": {"revoke", "--id=1", "--sha256-prefix=603ae7d5"},
+	}
+	for name, args := range cases {
+		if err := RunAPIKey(cfg, args); err == nil {
+			t.Errorf("%s: revoke was accepted", name)
+		}
+	}
+	cfg.DBPath = t.TempDir()
+	if err := RunAPIKey(cfg, []string{"revoke", "--id=1", "--sha256-prefix=603ae7d5"}); err == nil {
+		t.Fatal("an unopenable database was accepted")
+	}
+}

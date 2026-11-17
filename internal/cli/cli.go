@@ -139,13 +139,15 @@ func RunProject(cfg config.Config, args []string) error {
 // RunAPIKey handles: bugbarn apikey create --project=default --name=my-app
 func RunAPIKey(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: bugbarn apikey <create|find>")
+		return fmt.Errorf("usage: bugbarn apikey <create|find|revoke>")
 	}
 	switch args[0] {
 	case "create":
 		return createAPIKey(cfg, args[1:])
 	case "find":
 		return findAPIKey(cfg, args[1:])
+	case "revoke":
+		return revokeAPIKey(cfg, args[1:])
 	default:
 		return fmt.Errorf("unknown apikey subcommand %q", args[0])
 	}
