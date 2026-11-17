@@ -80,3 +80,47 @@ func TestWriteAPIKeyMatchesReportsTheKeyWithoutItsHash(t *testing.T) {
 		t.Fatalf("no-match output = %q err = %v", out.String(), err)
 	}
 }
+
+func TestWriteAPIKeyMatchesShowsLastUseAndSurfacesAListFailure(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	project, err := store.CreateProject(ctx, "used", "used")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const hash = "abc123def456aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if _, err := store.CreateAPIKey(ctx, "in use", project.ID, hash, "full"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.TouchAPIKey(ctx, hash); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := writeAPIKeyMatches(ctx, store, "abc123", &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "last_used=never") || !strings.Contains(out.String(), "last_used=20") {
+		t.Fatalf("output = %q, want the last use time", out.String())
+	}
+	_ = store.Close()
+	if err := writeAPIKeyMatches(ctx, store, "abc123", &out); err == nil || !strings.Contains(err.Error(), "list api keys") {
+		t.Fatalf("err = %v, want the list failure", err)
+	}
+}
+
+func TestRunAPIKeyFindRunsAgainstTheConfiguredDatabase(t *testing.T) {
+	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "bugbarn.db")}
+	if err := RunAPIKey(cfg, []string{"find", "--sha256-prefix=ffffff"}); err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if err := RunAPIKey(cfg, []string{"find", "--bogus"}); err == nil {
+		t.Fatal("an unknown flag was accepted")
+	}
+	cfg.DBPath = t.TempDir()
+	if err := RunAPIKey(cfg, []string{"find", "--sha256-prefix=ffffff"}); err == nil {
+		t.Fatal("an unopenable database was accepted")
+	}
+}
