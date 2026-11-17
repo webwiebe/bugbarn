@@ -37,6 +37,20 @@ spec:
               value: testing
             - name: BUGBARN_ENVIRONMENT
               value: testing
+            # Self-reporting goes to the one canonical project on the production
+            # barn; the environment above is the attribute that tells the three apart.
+            - name: BUGBARN_SELF_ENDPOINT
+              value: https://bugbarn.wiebe.xyz
+            - name: BUGBARN_SELF_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_SELF_API_KEY
+            - name: BUGBARN_SELF_PROJECT
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_SELF_PROJECT
             # Short retention: testing shares k3s1's disk with staging and the
             # CI runners' images (webwiebe/k3s-infra#61). Production keeps the
             # code defaults.

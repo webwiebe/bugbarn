@@ -221,7 +221,7 @@ steps:
         curl -sf -X POST "$BUGBARN_ENDPOINT/api/v1/releases" \
           -H "Content-Type: application/json" \
           -H "X-BugBarn-Api-Key: $BUGBARN_API_KEY" \
-          -H "X-BugBarn-Project: bugbarn-service" \
+          -H "X-BugBarn-Project: bugbarn" \
           -d "{\"name\":\"$CI_COMMIT_TAG\",\"environment\":\"production\",\"version\":\"$CI_COMMIT_TAG\",\"commitSha\":\"$CI_COMMIT_SHA\",\"url\":\"$CI_REPO_URL/releases/tag/$CI_COMMIT_TAG\",\"notes\":\"Deployed by Woodpecker #$CI_PIPELINE_NUMBER\"}" \
           || echo "WARN: BugBarn release marker failed"
         echo "Production deploy complete: $CI_COMMIT_TAG -> https://bugbarn.wiebe.xyz"

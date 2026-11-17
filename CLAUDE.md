@@ -111,7 +111,7 @@ at ERROR and sends it to BugBarn's own ingest (enabled by `BUGBARN_SELF_ENDPOINT
 
 - All error-level log paths MUST use `slog` (never stdlib `log.Printf`) so selflog captures them
 - Log at ERROR only when something was lost; cancellations and shutdowns file bugs against ourselves
-- After a deploy, check `bb issues --project bugbarn-service`
+- After a deploy, check `bb issues --project bugbarn --env production` (testing and staging report to the same project with their own environment)
 
 ## Environments & Deployment
 
@@ -133,7 +133,7 @@ The `bb` command-line tool is available for querying BugBarn. Use it to verify d
 
 ```bash
 bb issues                              # list open issues (JSON)
-bb issues --project bugbarn-service    # filter by project
+bb issues --project bugbarn    # filter by project
 bb issues --status all --query "panic" # search all issues
 bb issue BW-3                          # get issue detail (Jira-style ID)
 bb events BW-3                         # list events for an issue

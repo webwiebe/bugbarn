@@ -9,7 +9,7 @@ import (
 )
 
 // shipForeignHeaderLines sends the foreign-project-header line (#235, #248) to
-// the self-report project's log store, tagged with the pod and role, so a
+// the self-report project's log store, tagged with the pod, role and environment, so a
 // reading over days does not depend on one pod's lifetime. It does nothing
 // without self-reporting.
 func shipForeignHeaderLines(handler *ingest.Handler, cfg config.Config, component string) {
@@ -19,7 +19,7 @@ func shipForeignHeaderLines(handler *ingest.Handler, cfg config.Config, componen
 	shipper := selflog.NewLogShipper(cfg.SelfEndpoint, cfg.SelfAPIKey, cfg.SelfProject)
 	pod, _ := os.Hostname()
 	handler.SetForeignHeaderShipper(func(msg string, attrs map[string]any) {
-		attrs["pod"], attrs["component"] = pod, component
+		attrs["pod"], attrs["component"], attrs["environment"] = pod, component, cfg.Environment
 		shipper.Ship("info", msg, attrs)
 	})
 }
