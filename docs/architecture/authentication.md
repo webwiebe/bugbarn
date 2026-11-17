@@ -113,6 +113,8 @@ A static env-var key is always `full`-scoped and is not bound to any project (`p
 
 Keys created with `bugbarn apikey create` are stored in the `api_keys` table. They are bound to a specific project and can have either scope. The `bugbarn apikey create` CLI command generates a 32-byte random key, prints the plaintext once, and stores only the SHA-256 hash.
 
+To check whether a leaked key is live, hash the value (hex SHA-256) elsewhere and run `bugbarn apikey find --sha256-prefix=<first 6 or more hex characters>` in the writer pod. It prints the id, name, project, scope and last use of each match and never the stored hash. Revoke the key with `DELETE /api/v1/apikeys/{id}`.
+
 When both a static env-var key and database keys are configured, the static key is checked first.
 
 ---
