@@ -44,6 +44,7 @@ keywords = ["`"]
 #   933be3ee  the setup-page golden files hold a key derived from the fixed test secret "secret"
 #   52c715ed  the FunnelBarn browser key in the site's data-api-key attribute, public by design
 #   1905775a  the BrandTrace site key in the site's data-site-key attribute, public by design (served in the page)
+#   b661ead2  the same BrandTrace site key line, rewritten by the site error reporter change (#297)
 #   429ebe36, b48cce02  a made-up "secret: abcdefghijkl1234" input of a privacy scrubber test
 [[allowlists]]
 description = "Made-up or public keys in test fixtures and the site tag (triaged 2026-11-16, bugbarn#280)"
@@ -54,6 +55,7 @@ commits = [
   "1905775acdac219ca8286532480d44eed062befb",
   "429ebe36ba2effcbbb4d03a42f437a041f15b091",
   "b48cce02443200de23961de15e6cec3cdf447bf3",
+  "b661ead2fd0a1e61164f8b8fc7be34fff807da55",
 ]
 paths = [
   '''internal/api/testdata/setup_page_(canonical|vanity)\.golden$''',
