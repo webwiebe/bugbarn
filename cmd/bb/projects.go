@@ -2,16 +2,64 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"net/url"
+	"strings"
 )
 
 func cmdProjects(args []string) error {
+	if wantsMerge(args) {
+		return cmdProjectsMerge(args)
+	}
 	// Ask for usage counts explicitly: the API omits them by default because
 	// computing them scans the events and log_entries tables in full, but they
 	// are part of what `bb projects` has always reported and this is a
 	// low-frequency interactive command.
 	return cmdResourceList(args, "projects", "project", "/api/v1/projects", "/api/v1/projects?usage=true")
+}
+
+// wantsMerge reports whether args ask for `bb projects --merge ...`.
+func wantsMerge(args []string) bool {
+	for _, a := range args {
+		if a == "-merge" || a == "--merge" || strings.HasPrefix(a, "-merge=") || strings.HasPrefix(a, "--merge=") {
+			return true
+		}
+	}
+	return false
+}
+
+// cmdProjectsMerge implements `bb projects --merge SRC --into TARGET [--env ENV]`:
+// it moves the source project's data into the target and turns the source slug
+// into an alias. With --env, the source rows that name no environment get it.
+func cmdProjectsMerge(args []string) error {
+	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
+	src := fs.String("merge", "", "slug of the project to merge away")
+	into := fs.String("into", "", "slug of the project that receives the data")
+	env := fs.String("env", "", "environment to stamp on the source rows that name none")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *src == "" || *into == "" {
+		return errors.New("usage: bb projects --merge SRC --into TARGET [--env ENV]")
+	}
+	if *src == *into {
+		return errors.New("--merge and --into name the same project")
+	}
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	body := map[string]string{"target": *into}
+	if *env != "" {
+		body["environment"] = *env
+	}
+	data, err := client.post("/api/v1/projects/"+url.PathEscape(*src)+"/merge", body)
+	if err != nil {
+		return err
+	}
+	return writeRaw(data)
 }
 
 func cmdGroups(args []string) error {

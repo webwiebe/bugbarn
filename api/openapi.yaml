@@ -1095,6 +1095,9 @@ paths:
                 target:
                   type: string
                   description: Target project slug to merge into
+                environment:
+                  type: string
+                  description: Environment to stamp on the source rows that name none (1 to 64 letters, digits, dots, underscores or hyphens)
       responses:
         "200":
           description: Project merged

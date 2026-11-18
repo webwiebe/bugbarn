@@ -22,6 +22,8 @@ type fakeRepo struct {
 	funnelSlug, funnelURL string
 
 	silenceSlug, silenceValue string
+
+	mergeEnv string
 }
 
 func (f *fakeRepo) UpdateProjectSilenceWatch(_ context.Context, slug, value string) error {
@@ -173,6 +175,11 @@ func (f *fakeRepo) RenameProject(_ context.Context, _, _, _ string) error {
 }
 
 func (f *fakeRepo) MergeProjects(_ context.Context, _, _ string) error {
+	return f.err
+}
+
+func (f *fakeRepo) MergeProjectsAs(_ context.Context, _, _, env string) error {
+	f.mergeEnv = env
 	return f.err
 }
 

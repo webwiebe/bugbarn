@@ -176,18 +176,20 @@ func (s *Server) renameProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) mergeProject(w http.ResponseWriter, r *http.Request) {
 	sourceSlug := r.PathValue("slug")
 	var req struct {
-		Target string `json:"target"`
+		Target      string `json:"target"`
+		Environment string `json:"environment"`
 	}
 	if err := decodeJSON(w, r, &req); err != nil {
 		http.Error(w, "invalid payload", http.StatusBadRequest)
 		return
 	}
 	req.Target = strings.TrimSpace(req.Target)
+	req.Environment = strings.TrimSpace(req.Environment)
 	if req.Target == "" {
 		http.Error(w, "target is required", http.StatusBadRequest)
 		return
 	}
-	if err := s.projects.Merge(r.Context(), sourceSlug, req.Target); err != nil {
+	if err := s.projects.MergeInto(r.Context(), sourceSlug, req.Target, req.Environment); err != nil {
 		writeServiceError(w, err)
 		return
 	}

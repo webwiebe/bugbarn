@@ -122,6 +122,7 @@ Examples:
   bb resolve issue-000042            # resolve an issue
   bb projects --create "My App"      # create a new project
   bb environments --project bugbarn  # environments with issue counts and last activity
+  bb projects --merge OLD --into NEW --env staging   # merge a project, stamping the environment
   bb groups                          # list project groups
   bb issues --group bugbarn          # issues across all bugbarn-* projects
   bb apikeys                         # list API keys
