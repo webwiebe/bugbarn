@@ -15,23 +15,24 @@ var (
 // commands maps each subcommand to its entry point; each takes the arguments
 // after the subcommand name.
 var commands = map[string]func(args []string) error{
-	"init":        cmdInit,
-	"login":       cmdLogin,
-	"issues":      cmdIssues,
-	"tui":         cmdTUI,
-	"logs":        cmdLogs,
-	"issue":       cmdIssue,
-	"events":      cmdEvents,
-	"vibe":        cmdVibe,
-	"resolve":     cmdResolve,
-	"reopen":      cmdReopen,
-	"mute":        cmdMute,
-	"unmute":      cmdUnmute,
-	"projects":    cmdProjects,
-	"monitors":    cmdMonitors,
-	"groups":      cmdGroups,
-	"apikeys":     cmdAPIKeys,
-	"key-request": cmdKeyRequest,
+	"init":         cmdInit,
+	"login":        cmdLogin,
+	"issues":       cmdIssues,
+	"tui":          cmdTUI,
+	"logs":         cmdLogs,
+	"issue":        cmdIssue,
+	"events":       cmdEvents,
+	"vibe":         cmdVibe,
+	"resolve":      cmdResolve,
+	"reopen":       cmdReopen,
+	"mute":         cmdMute,
+	"unmute":       cmdUnmute,
+	"projects":     cmdProjects,
+	"monitors":     cmdMonitors,
+	"environments": cmdEnvironments,
+	"groups":       cmdGroups,
+	"apikeys":      cmdAPIKeys,
+	"key-request":  cmdKeyRequest,
 }
 
 func main() {
@@ -95,6 +96,7 @@ Commands:
   mute        Mute an issue
   unmute      Unmute an issue
   monitors    List check-in monitors of a project
+  environments List the environments of a project with issue counts and last activity
   projects    List or create projects
   groups      List or create project groups
   apikeys     List API keys
@@ -119,6 +121,7 @@ Examples:
   bb vibe issue-000042               # open a Claude Code session for the issue
   bb resolve issue-000042            # resolve an issue
   bb projects --create "My App"      # create a new project
+  bb environments --project bugbarn  # environments with issue counts and last activity
   bb groups                          # list project groups
   bb issues --group bugbarn          # issues across all bugbarn-* projects
   bb apikeys                         # list API keys
