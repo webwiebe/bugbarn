@@ -120,6 +120,7 @@ bb projects --create "My App" --slug my-app
 bb monitors                            # check-in monitors of the current project (JSON)
 bb monitors --project geo              # another project
 bb monitors --project geo --delete pending-sweep   # delete one; its issues stay
+bb environments --project geo           # environments with issue counts and last activity (JSON)
 ```
 
 Monitors that are failing or missed come first. Each entry has `slug`, `state` (`ok`, `missed`, `error`), `lastCheckInAt`, `intervalSeconds`, `graceSeconds` and `dueBy`. Monitors on a cron schedule also carry `schedule` and `timezone` (and `intervalSeconds` is `0`).

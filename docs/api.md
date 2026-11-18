@@ -891,7 +891,7 @@ Issues seen per value of the `surface` event attribute (for example `wordpress`,
 
 #### GET /api/v1/environments
 
-The environments the current project has issues for, newest activity first. Each row carries the issue count, the open count (unresolved and regressed) and the newest `last_seen` among its issues. Facets are an issue-level set, so the numbers count issues.
+The environments the current project has issues for, newest activity first. Each row carries the issue count, the open count (unresolved and regressed) and the newest `last_seen` among its issues. The environment is the `environment` attribute SDKs send (facet `attributes.environment`) or the OpenTelemetry `deployment.environment` attribute (facet `environment`); an issue that carries both counts once. Facets are an issue-level set, so the numbers count issues. Issues stored before an SDK sent the attribute carry no environment and are not listed.
 
 **Response:**
 ```json
