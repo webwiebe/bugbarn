@@ -155,6 +155,7 @@ type LogShipper struct {
 	logs     LogInserter
 	projects ProjectLookup
 	project  string
+	env      string
 	log      *slog.Logger
 	now      func() time.Time
 }
@@ -163,6 +164,22 @@ type LogShipper struct {
 // project. An empty slug disables it.
 func NewLogShipper(logs LogInserter, projects ProjectLookup, project string, log *slog.Logger) *LogShipper {
 	return &LogShipper{logs: logs, projects: projects, project: project, log: log, now: time.Now}
+}
+
+// WithEnvironment tags every entry with the deploy environment, so the project
+// that collects the entries of several environments can tell them apart (#281).
+// An empty name adds no tag.
+func (s *LogShipper) WithEnvironment(env string) *LogShipper {
+	s.env = env
+	return s
+}
+
+// tag adds the environment to an entry's data.
+func (s *LogShipper) tag(data map[string]any) map[string]any {
+	if s.env != "" {
+		data["environment"] = s.env
+	}
+	return data
 }
 
 // Ship stores one info-level log entry for the finding. A failure is logged at
@@ -179,6 +196,7 @@ func (s *LogShipper) Ship(ctx context.Context, f Finding, mode Mode) {
 	attrs := findingAttrs(f)
 	attrs["mode"] = string(mode)
 	attrs["component"] = "silence-rules"
+	s.tag(attrs)
 	entry := domain.LogEntry{
 		ProjectID:  p.ID,
 		ReceivedAt: s.now().UTC(),
@@ -211,9 +229,9 @@ func (s *LogShipper) ShipSweep(ctx context.Context, mode Mode, projects, wouldFi
 		LevelNum:   30,
 		Level:      "info",
 		Message:    "silence rules swept",
-		Data: map[string]any{
+		Data: s.tag(map[string]any{
 			"mode": string(mode), "projects": projects, "would_fire": wouldFire, "component": "silence-rules",
-		},
+		}),
 	}
 	if err := s.logs.InsertLogEntries(ctx, []domain.LogEntry{entry}); err != nil {
 		s.log.Warn("silence rules: ship sweep: insert", "project", s.project, "error", err)

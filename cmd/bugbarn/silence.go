@@ -20,7 +20,7 @@ func startSilenceRules(ctx context.Context, cfg config.Config, store *storage.St
 	rulesCfg.Mode = silence.ParseMode(cfg.SilenceRules)
 	rulesLog := log.With("component", "silence-rules")
 	silence.NewRules(rulesCfg, silence.StoreSource{ProjectStore: store.Domains().Projects}, rulesLog).
-		WithShipper(silence.NewLogShipper(store, store, cfg.SelfProject, rulesLog)).
+		WithShipper(silence.NewLogShipper(store, store, cfg.SelfProject, rulesLog).WithEnvironment(cfg.Environment)).
 		WithFiler(silence.NewReporter(store, internalPersist(proc), cfg.SilenceProject, rulesLog)).
 		Start(ctx, wg)
 }
