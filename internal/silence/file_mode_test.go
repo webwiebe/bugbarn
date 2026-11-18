@@ -416,3 +416,31 @@ func TestLogShipperWritesTheSweepCountsWithoutAProjectName(t *testing.T) {
 		t.Errorf("a shipper without a self project stored a line")
 	}
 }
+
+func TestLogShipperTagsEntriesWithTheEnvironment(t *testing.T) {
+	t.Parallel()
+	logs := &fakeLogs{}
+	s := NewLogShipper(logs, &fakeIssues{target: domain.Project{ID: 5, Slug: "bugbarn"}}, "bugbarn",
+		slog.New(slog.NewTextHandler(io.Discard, nil))).WithEnvironment("production")
+	s.now = func() time.Time { return now }
+
+	s.ShipSweep(context.Background(), ModeDryRun, 55, 2)
+	s.Ship(context.Background(), Finding{Slug: "web", Rule: "events"}, ModeDryRun)
+
+	if len(logs.entries) != 2 {
+		t.Fatalf("stored %d entries, want 2", len(logs.entries))
+	}
+	for _, e := range logs.entries {
+		if e.Data["environment"] != "production" {
+			t.Errorf("%q has environment %v, want production", e.Message, e.Data["environment"])
+		}
+	}
+
+	untagged := &fakeLogs{}
+	u := NewLogShipper(untagged, &fakeIssues{target: domain.Project{ID: 5, Slug: "bugbarn"}}, "bugbarn",
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	u.ShipSweep(context.Background(), ModeDryRun, 1, 0)
+	if _, ok := untagged.entries[0].Data["environment"]; ok {
+		t.Errorf("a shipper without an environment tagged its entry: %+v", untagged.entries[0].Data)
+	}
+}
