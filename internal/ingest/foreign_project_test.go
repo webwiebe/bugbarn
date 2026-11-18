@@ -37,7 +37,7 @@ func TestObserveProjectHeaderLogsForeignNamesOncePerPair(t *testing.T) {
 	}
 	send("")
 	send("alpha")
-	if logs.Len() != 0 {
+	if strings.Contains(logs.String(), "bound api key named another project") {
 		t.Fatalf("own project or no header logged: %s", logs.String())
 	}
 	send("beta")
@@ -67,7 +67,7 @@ func TestObserveProjectHeaderIgnoresFullScopeKeys(t *testing.T) {
 	if _, _, ok, _ := h.CheckAPIKey(req); !ok {
 		t.Fatal("key rejected")
 	}
-	if logs.Len() != 0 {
+	if strings.Contains(logs.String(), "bound api key named another project") {
 		t.Fatalf("full-scope key logged: %s", logs.String())
 	}
 }

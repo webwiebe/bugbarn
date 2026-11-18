@@ -75,15 +75,3 @@ func TestDeniedLogIsThrottledPerCaller(t *testing.T) {
 		t.Fatalf("logged %d times after the window, want 2", n)
 	}
 }
-
-func TestAcceptedKeyIsNotLogged(t *testing.T) {
-	var buf bytes.Buffer
-	h := NewHandler(auth.New("secret"), mustSpool(t), 1024)
-	h.logger = slog.New(slog.NewTextHandler(&buf, nil))
-
-	h.APIKeyProjectScope(deniedRequest("secret"))
-
-	if buf.Len() != 0 {
-		t.Fatalf("accepted key logged: %q", buf.String())
-	}
-}

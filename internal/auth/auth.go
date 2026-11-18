@@ -29,6 +29,20 @@ type DBKeyLookup func(ctx context.Context, keySHA256 string) (bool, error)
 // on match, (0, "", false, nil) when not found.
 type DBKeyLookupWithProject func(ctx context.Context, keySHA256 string) (projectID int64, scope string, found bool, err error)
 
+// DBKeyLookupIdentity is DBKeyLookupWithProject that also returns the key's
+// row id, so a request can be traced to the key that authenticated it without
+// ever carrying the key or its hash.
+type DBKeyLookupIdentity func(ctx context.Context, keySHA256 string) (keyID, projectID int64, scope string, found bool, err error)
+
+// KeyIdentity names the key that authenticated a request. ID is the api_keys
+// row id, and 0 for the static environment key and for setup keys, which have
+// no row at check time.
+type KeyIdentity struct {
+	ID        int64
+	ProjectID int64
+	Scope     string
+}
+
 // DBKeyTouch is called after a successful DB-based auth to update last_used_at.
 type DBKeyTouch func(ctx context.Context, keySHA256 string) error
 
@@ -40,7 +54,7 @@ type SetupKeyVerifier func(ctx context.Context, rawKey, projectSlug string) (pro
 
 type Authorizer struct {
 	apiKeyHash    []byte
-	dbLookup      DBKeyLookupWithProject
+	dbLookup      DBKeyLookupIdentity
 	dbTouch       DBKeyTouch
 	setupVerifier SetupKeyVerifier
 }
@@ -72,6 +86,18 @@ func NewHashed(apiKeySHA256 string) (*Authorizer, error) {
 // WithDBLookup returns a copy of the Authorizer that will also accept API keys
 // found in the database. The lookup and touch functions are called per-request.
 func (a *Authorizer) WithDBLookup(lookup DBKeyLookupWithProject, touch DBKeyTouch) *Authorizer {
+	if lookup == nil {
+		return a.WithDBIdentityLookup(nil, touch)
+	}
+	return a.WithDBIdentityLookup(func(ctx context.Context, keySHA256 string) (int64, int64, string, bool, error) {
+		pid, scope, found, err := lookup(ctx, keySHA256)
+		return 0, pid, scope, found, err
+	}, touch)
+}
+
+// WithDBIdentityLookup is WithDBLookup for a lookup that also returns the key's
+// row id, which request tracing records as the caller.
+func (a *Authorizer) WithDBIdentityLookup(lookup DBKeyLookupIdentity, touch DBKeyTouch) *Authorizer {
 	if a == nil {
 		return &Authorizer{dbLookup: lookup, dbTouch: touch}
 	}
@@ -137,13 +163,21 @@ func (a *Authorizer) resolveKey(ctx context.Context, provided string, touch bool
 func (a *Authorizer) resolveKeyErr(
 	ctx context.Context, provided string, touch bool,
 ) (projectID int64, scope string, ok bool, err error) {
+	id, ok, err := a.resolveIdentity(ctx, provided, touch)
+	return id.ProjectID, id.Scope, ok, err
+}
+
+// resolveIdentity is resolveKeyErr that also names the key by its row id.
+func (a *Authorizer) resolveIdentity(
+	ctx context.Context, provided string, touch bool,
+) (id KeyIdentity, ok bool, err error) {
 	if a == nil || !a.Enabled() {
-		return 0, "full", true, nil
+		return KeyIdentity{Scope: "full"}, true, nil
 	}
 
 	provided = strings.TrimSpace(provided)
 	if provided == "" {
-		return 0, "", false, nil
+		return KeyIdentity{}, false, nil
 	}
 	sum := sha256.Sum256([]byte(provided))
 	hexSum := hex.EncodeToString(sum[:])
@@ -151,7 +185,7 @@ func (a *Authorizer) resolveKeyErr(
 	// Check static env-var hash first (global access, no project binding).
 	if len(a.apiKeyHash) == sha256.Size {
 		if subtle.ConstantTimeCompare(sum[:], a.apiKeyHash) == 1 {
-			return 0, "full", true, nil
+			return KeyIdentity{Scope: "full"}, true, nil
 		}
 	}
 
@@ -162,23 +196,23 @@ func (a *Authorizer) resolveKeyErr(
 // an error wrapping ErrKeyLookup; a key that is not found has a nil err.
 func (a *Authorizer) lookupStoredKey(
 	ctx context.Context, hexSum string, touch bool,
-) (projectID int64, scope string, ok bool, err error) {
+) (id KeyIdentity, ok bool, err error) {
 	if a.dbLookup == nil {
-		return 0, "", false, nil
+		return KeyIdentity{}, false, nil
 	}
-	pid, sc, found, lookupErr := a.dbLookup(ctx, hexSum)
+	keyID, pid, sc, found, lookupErr := a.dbLookup(ctx, hexSum)
 	if lookupErr != nil {
-		return 0, "", false, errors.Join(ErrKeyLookup, lookupErr)
+		return KeyIdentity{}, false, errors.Join(ErrKeyLookup, lookupErr)
 	}
 	if !found {
-		return 0, "", false, nil
+		return KeyIdentity{}, false, nil
 	}
 	if touch && a.dbTouch != nil {
 		if touchErr := a.dbTouch(ctx, hexSum); touchErr != nil {
 			slog.WarnContext(ctx, "auth: failed to update api key last-used timestamp", "project_id", pid, "error", touchErr)
 		}
 	}
-	return pid, sc, true, nil
+	return KeyIdentity{ID: keyID, ProjectID: pid, Scope: sc}, true, nil
 }
 
 // ValidWithSetupFallback is like ValidWithProject but also tries setup key
@@ -197,23 +231,31 @@ func (a *Authorizer) ValidWithSetupFallback(
 func (a *Authorizer) CheckWithSetupFallback(
 	ctx context.Context, provided, projectSlug string,
 ) (projectID int64, scope string, ok bool, err error) {
-	pid, sc, valid, err := a.resolveKeyErr(ctx, provided, true)
+	id, ok, err := a.CheckIdentity(ctx, provided, projectSlug)
+	return id.ProjectID, id.Scope, ok, err
+}
+
+// CheckIdentity is CheckWithSetupFallback that also names the key that matched.
+func (a *Authorizer) CheckIdentity(
+	ctx context.Context, provided, projectSlug string,
+) (id KeyIdentity, ok bool, err error) {
+	id, valid, err := a.resolveIdentity(ctx, provided, true)
 	if valid {
-		return pid, sc, true, nil
+		return id, true, nil
 	}
 	if err != nil {
-		return 0, "", false, err
+		return KeyIdentity{}, false, err
 	}
 	if a.setupVerifier != nil && projectSlug != "" {
 		setupPID, setupOK, setupErr := a.setupVerifier(ctx, strings.TrimSpace(provided), projectSlug)
 		if setupErr != nil {
-			return 0, "", false, errors.Join(ErrKeyLookup, setupErr)
+			return KeyIdentity{}, false, errors.Join(ErrKeyLookup, setupErr)
 		}
 		if setupOK {
-			return setupPID, "ingest", true, nil
+			return KeyIdentity{ProjectID: setupPID, Scope: "ingest"}, true, nil
 		}
 	}
-	return 0, "", false, nil
+	return KeyIdentity{}, false, nil
 }
 
 // ValidWithContext checks the provided key against the env-var hash first, then

@@ -198,3 +198,7 @@ Exposing an API key in browser JavaScript is acceptable for `ingest`-scoped keys
 3. The key is bound to a specific project, so any noise is isolated to that project.
 
 `full`-scoped keys should never be used in browser-side code.
+
+## Who is using a key
+
+`ingest.Handler.CheckAPIKey` is the one place every key-authenticated request passes, on the ingest paths and on the authenticated routes. It records the key's row id (`bugbarn.caller.api_key_id`) and the User-Agent (`bugbarn.caller.user_agent`, cut at 120 characters) on the server span, and logs `api key used` at INFO once per key and user agent per hour, with the project, scope, client address and path. A key that only calls now and then therefore shows up in `bb logs` with its id. The id is the `api_keys` row id, `0` for the static key and for setup keys. The key and its hash are never logged; `bugbarn apikey find` maps a hash prefix to an id.

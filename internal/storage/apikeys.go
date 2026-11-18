@@ -143,3 +143,19 @@ func (s *APIKeyStore) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (
 	}
 	return projectID, scope, true, nil
 }
+
+// LookupAPIKeySHA256 is ValidAPIKeySHA256 that also returns the key's row id, so
+// a request can be traced to the key that authenticated it.
+func (s *APIKeyStore) LookupAPIKeySHA256(
+	ctx context.Context, keySHA256 string,
+) (keyID, projectID int64, scope string, found bool, err error) {
+	err = s.readDB().QueryRowContext(ctx, `SELECT id, project_id, scope FROM api_keys WHERE key_sha256 = ?`, keySHA256).
+		Scan(&keyID, &projectID, &scope)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, "", false, nil
+	}
+	if err != nil {
+		return 0, 0, "", false, err
+	}
+	return keyID, projectID, scope, true, nil
+}

@@ -136,3 +136,40 @@ func TestTouchAPIKeysAt_NeedsTheWriteConnection(t *testing.T) {
 		t.Fatal("a read-only store must report that it cannot record touches")
 	}
 }
+
+func TestLookupAPIKeySHA256ReturnsTheRowID(t *testing.T) {
+	t.Parallel()
+
+	rw, err := Open(filepath.Join(t.TempDir(), "bugbarn.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rw.Close()
+
+	ctx := context.Background()
+	proj, err := rw.CreateProject(ctx, "Test", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := rw.CreateAPIKey(ctx, "k1", proj.ID, "abc123hash", domain.APIKeyScopeIngest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, pid, scope, found, err := rw.LookupAPIKeySHA256(ctx, "abc123hash")
+	if err != nil || !found {
+		t.Fatalf("found=%v err=%v, want the key", found, err)
+	}
+	if id != key.ID || pid != proj.ID || scope != domain.APIKeyScopeIngest {
+		t.Fatalf("got id=%d project=%d scope=%q, want id=%d project=%d scope=%q", id, pid, scope, key.ID, proj.ID, domain.APIKeyScopeIngest)
+	}
+
+	if _, _, _, found, err := rw.LookupAPIKeySHA256(ctx, "nope"); found || err != nil {
+		t.Fatalf("unknown key: found=%v err=%v, want not found", found, err)
+	}
+
+	rw.Close()
+	if _, _, _, _, err := rw.LookupAPIKeySHA256(ctx, "abc123hash"); err == nil {
+		t.Fatal("a closed store must report the lookup failure")
+	}
+}
