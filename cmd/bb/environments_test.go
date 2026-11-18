@@ -74,3 +74,41 @@ func TestEnvironmentsReportsFailures(t *testing.T) {
 		t.Errorf("a server error must surface, got %v", err)
 	}
 }
+
+func TestProjectsMergeStampsTheEnvironment(t *testing.T) {
+	h := newHarness(t)
+	inEmptyDir(t)
+	ctx := context.Background()
+	src, err := h.Store.CreateProject(ctx, "Legacy", "legacy-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Store.DB().ExecContext(ctx,
+		`INSERT INTO releases (project_id, name, observed_at, environment) VALUES (?, 'v1', '2026-01-01T00:00:00Z', '')`, src.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := runCmd(t, cmdProjects, "--merge", "legacy-app"); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Errorf("a merge without --into must print usage, got %v", err)
+	}
+	if _, err := runCmd(t, cmdProjects, "--merge", "default", "--into", "default"); err == nil {
+		t.Error("merging a project into itself must fail")
+	}
+	if _, err := runCmd(t, cmdProjects, "--merge=legacy-app", "--into", "default", "--env", "bad env"); err == nil {
+		t.Error("a bad environment must fail")
+	}
+
+	out, err := runCmd(t, cmdProjects, "--merge", "legacy-app", "--into", "default", "--env", "staging")
+	if err != nil || !strings.Contains(out, `"ok"`) {
+		t.Fatalf("merge: %v\n%s", err, out)
+	}
+	def, err := h.Store.ProjectBySlug(ctx, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env string
+	if err := h.Store.DB().QueryRowContext(ctx,
+		`SELECT environment FROM releases WHERE project_id = ?`, def.ID).Scan(&env); err != nil || env != "staging" {
+		t.Fatalf("release environment = %q (%v), want staging", env, err)
+	}
+}

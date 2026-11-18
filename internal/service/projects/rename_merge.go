@@ -49,15 +49,51 @@ func (s *Service) UpdateLimits(ctx context.Context, slug string, retentionDays *
 func (s *Service) SampleAfter() int64 { return s.repo.SampleAfter() }
 
 func (s *Service) Merge(ctx context.Context, sourceSlug, targetSlug string) error {
+	return s.MergeInto(ctx, sourceSlug, targetSlug, "")
+}
+
+// MergeInto merges the source project into the target and, when environment is
+// not empty, stamps it on the source rows that name none. The name must be
+// letters, digits, dots, underscores or hyphens, at most 64 bytes.
+func (s *Service) MergeInto(ctx context.Context, sourceSlug, targetSlug, environment string) error {
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.Merge",
-		trace.WithAttributes(attribute.String("source", sourceSlug), attribute.String("target", targetSlug)))
+		trace.WithAttributes(attribute.String("source", sourceSlug), attribute.String("target", targetSlug),
+			attribute.String("environment", environment)))
 	defer span.End()
-	if err := s.repo.MergeProjects(ctx, sourceSlug, targetSlug); err != nil {
+	if !validEnvironmentName(environment) {
+		return apperr.InvalidInput("environment must be 1 to 64 letters, digits, dots, underscores or hyphens", nil)
+	}
+	var err error
+	if environment == "" {
+		err = s.repo.MergeProjects(ctx, sourceSlug, targetSlug)
+	} else {
+		err = s.repo.MergeProjectsAs(ctx, sourceSlug, targetSlug, environment)
+	}
+	if err != nil {
 		tracing.SetError(span, err)
 		apperr.LogFailure(ctx, s.logger, "merge projects", err, "source", sourceSlug, "target", targetSlug)
 		return err
 	}
 	s.usage.invalidate()
-	s.logger.InfoContext(ctx, "projects merged", "source", sourceSlug, "target", targetSlug)
+	s.logger.InfoContext(ctx, "projects merged", "source", sourceSlug, "target", targetSlug, "environment", environment)
 	return nil
+}
+
+// validEnvironmentName reports whether name is empty (no stamping) or a plain
+// environment name.
+func validEnvironmentName(name string) bool {
+	if name == "" {
+		return true
+	}
+	if len(name) > 64 {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }

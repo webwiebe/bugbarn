@@ -391,6 +391,12 @@ func (s *ProjectStore) RenameProject(ctx context.Context, oldSlug, newSlug, newN
 // MergeProjects moves all data from the source project to the target project,
 // creates an alias from the source slug, and deletes the source project.
 func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error {
+	return s.MergeProjectsAs(ctx, sourceSlug, targetSlug, "")
+}
+
+// MergeProjectsAs merges like MergeProjects and, when environment is not empty,
+// first stamps it on the source rows that carry none (see stampEnvironment).
+func (s *ProjectStore) MergeProjectsAs(ctx context.Context, sourceSlug, targetSlug, environment string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return wrapErr(err, "merge projects")
@@ -407,6 +413,14 @@ func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug
 	err = tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, targetSlug).Scan(&targetID)
 	if err != nil {
 		return wrapNotFound(err, "target project not found")
+	}
+
+	// Stamp before the move: afterwards the rows are the target's and the
+	// source's own can no longer be told apart.
+	if environment != "" {
+		if err := stampEnvironment(ctx, tx, sourceID, environment); err != nil {
+			return err
+		}
 	}
 
 	// Move or drop each project-owned table as projectTables says. The issues

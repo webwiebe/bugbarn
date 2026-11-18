@@ -1000,6 +1000,24 @@ A name or slug that ends in an environment (`-prod`, `-production`, `-staging`, 
 
 ---
 
+#### POST /api/v1/projects/:slug/merge
+
+Merge the project `:slug` into another project. The source project's data moves to the target, the source slug becomes an alias that still routes SDK traffic to the target, and the source project is deleted.
+
+**Request body:**
+```json
+{"target": "bugbarn", "environment": "staging"}
+```
+
+`environment` is optional. When it is set, the source rows that name no environment get it: issues receive the `attributes.environment` facet, releases the environment column and log entries the `environment` attribute. Rows that already name an environment keep it. Event payloads are not rewritten. The value is 1 to 64 letters, digits, dots, underscores or hyphens; anything else is refused with `400` and nothing merges.
+
+**Response:**
+```json
+{"ok": true}
+```
+
+---
+
 ### API Keys
 
 **Auth:** Session cookie or full-scope API key.
