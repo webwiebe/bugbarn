@@ -43,11 +43,32 @@ func parseAnalyticsQuery(r *http.Request, projectID int64) (analytics.Query, err
 		start = end.AddDate(0, 0, -analyticsMaxDays)
 	}
 
+	environment := strings.TrimSpace(r.URL.Query().Get("environment"))
+	if environment != "" && !validEnvironment(environment) {
+		return analytics.Query{}, fmt.Errorf("environment must be 1 to 64 letters, digits, dots, underscores or hyphens")
+	}
+
 	return analytics.Query{
-		ProjectID: projectID,
-		Start:     start,
-		End:       end,
+		ProjectID:   projectID,
+		Start:       start,
+		End:         end,
+		Environment: environment,
 	}, nil
+}
+
+// validEnvironment accepts 1 to 64 letters, digits, dots, underscores and hyphens.
+func validEnvironment(v string) bool {
+	if v == "" || len(v) > 64 {
+		return false
+	}
+	for _, c := range v {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) resolveAnalyticsProjectID(r *http.Request) int64 {
@@ -258,6 +279,18 @@ func capPageViewProps(in map[string]string) map[string]string {
 	return props
 }
 
+// setPageViewEnvironment puts the environment in props, where the environment
+// filter reads it, so the page-view table needs no new column. It runs after the
+// props cap so the environment can never be the prop that is cut. An invalid
+// value is dropped.
+func setPageViewEnvironment(props map[string]string, field string) {
+	if env := strings.TrimSpace(field); validEnvironment(env) {
+		props["environment"] = env
+	} else if !validEnvironment(props["environment"]) {
+		delete(props, "environment")
+	}
+}
+
 func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
 	if err != nil {
@@ -277,6 +310,7 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 		InteractionCount int               `json:"interactionCount"`
 		ExitPathname     string            `json:"exitPathname"`
 		Props            map[string]string `json:"props"`
+		Environment      string            `json:"environment"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -292,6 +326,7 @@ func (s *Server) collectPageView(w http.ResponseWriter, r *http.Request) {
 	projectID := s.pageViewProjectID(r)
 	referrerHost, referrerPath := splitReferrer(payload.Referrer)
 	props := capPageViewProps(payload.Props)
+	setPageViewEnvironment(props, payload.Environment)
 
 	pv := analytics.PageView{
 		ProjectID:        projectID,

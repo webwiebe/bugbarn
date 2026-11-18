@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,5 +173,26 @@ func TestAnalyticsStartAfterEndReturns400(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAnalyticsEnvironmentParameter(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		query string
+		want  int
+	}{
+		{"environment=production", http.StatusOK},
+		{"environment=bad%20env!", http.StatusBadRequest},
+		{"environment=" + strings.Repeat("a", 65), http.StatusBadRequest},
+	} {
+		srv, _ := setupTestServer(t)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/analytics/overview?"+tc.query, nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != tc.want {
+			t.Errorf("%s: status %d, want %d (%s)", tc.query, rr.Code, tc.want, rr.Body.String())
+		}
 	}
 }
