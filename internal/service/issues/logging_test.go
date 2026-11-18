@@ -31,6 +31,7 @@ func TestLoggingRule(t *testing.T) {
 		{Name: "ListLiveEvents", Run: run(func(s *Service) { _, _ = s.ListLiveEvents(ctx, 10, time.Now()) })},
 		{Name: "ListFacetKeys", Run: run(func(s *Service) { _, _ = s.ListFacetKeys(ctx, 1) })},
 		{Name: "SurfaceActivity", Run: run(func(s *Service) { _, _ = s.SurfaceActivity(ctx, 1) })},
+		{Name: "EnvironmentActivity", Run: run(func(s *Service) { _, _ = s.EnvironmentActivity(ctx, 1) })},
 		{Name: "ListFacetValues", Run: run(func(s *Service) { _, _ = s.ListFacetValues(ctx, 1, "k") })},
 		{Name: "Counts", Run: run(func(s *Service) { _, _ = s.Counts(ctx) })},
 	})

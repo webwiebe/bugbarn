@@ -889,6 +889,17 @@ Issues seen per value of the `surface` event attribute (for example `wordpress`,
 
 ---
 
+#### GET /api/v1/environments
+
+The environments the current project has issues for, newest activity first. Each row carries the issue count, the open count (unresolved and regressed) and the newest `last_seen` among its issues. Facets are an issue-level set, so the numbers count issues.
+
+**Response:**
+```json
+{"environments": [{"environment": "production", "issues": 12, "open": 3, "last_seen": "2026-11-18T03:12:44Z"}]}
+```
+
+---
+
 ### Projects
 
 **Auth:** Session cookie or full-scope API key.

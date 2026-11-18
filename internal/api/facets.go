@@ -24,6 +24,20 @@ func (s *Server) serveSurfaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"surfaces": rows})
 }
 
+// serveEnvironments answers GET /api/v1/environments: the environments the
+// project has issues for, newest activity first.
+func (s *Server) serveEnvironments(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.issues.EnvironmentActivity(r.Context(), s.scopedProjectID(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []domain.EnvironmentActivity{}
+	}
+	writeJSON(w, map[string]any{"environments": rows})
+}
+
 // listFacetKeys answers GET /api/v1/facets: the attribute keys seen in the project.
 func (s *Server) listFacetKeys(w http.ResponseWriter, r *http.Request) {
 	keys, err := s.issues.ListFacetKeys(r.Context(), s.scopedProjectID(r))

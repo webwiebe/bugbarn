@@ -1256,6 +1256,20 @@ full	GET	/api/v1/surfaces/		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	c
 full	GET	/api/v1/surfaces/zzz		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
 none	OPTIONS	/api/v1/surfaces		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	OPTIONS	/api/v1/surfaces		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
+full	GET	/api/v1/environments		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=environments
+none	GET	/api/v1/environments		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
+read	GET	/api/v1/environments		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=environments
+ingestkey	GET	/api/v1/environments		=>	403	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=forbidden: ingest-only key cannot access this endpoint
+session	GET	/api/v1/environments		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=environments
+full	POST	/api/v1/environments		=>	405	allow=GET, HEAD	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
+full	PUT	/api/v1/environments		=>	405	allow=GET, HEAD	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
+full	PATCH	/api/v1/environments		=>	405	allow=GET, HEAD	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
+full	DELETE	/api/v1/environments		=>	405	allow=GET, HEAD	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=method not allowed
+none	DELETE	/api/v1/environments		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
+full	GET	/api/v1/environments/		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
+full	GET	/api/v1/environments/zzz		=>	404	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=404 page not found
+none	OPTIONS	/api/v1/environments		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
+full	OPTIONS	/api/v1/environments		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	GET	/api/v1/analytics/overview		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=avgDurationMs,pages,pageviews,sessions
 none	GET	/api/v1/analytics/overview		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 read	GET	/api/v1/analytics/overview		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=avgDurationMs,pages,pageviews,sessions
@@ -2166,6 +2180,10 @@ full	GET	/api/v1/surfaces		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct
 none	GET	/api/v1/surfaces		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/surfaces		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/surfaces
 full	GET	/api/v1/surfaces		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=surfaces
+full	GET	/api/v1/environments		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=environments
+none	GET	/api/v1/environments		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
+full	DELETE	/api/v1/environments		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/environments
+full	GET	/api/v1/environments		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=environments
 full	GET	/api/v1/analytics/overview		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=avgDurationMs,pages,pageviews,sessions
 none	GET	/api/v1/analytics/overview		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 full	DELETE	/api/v1/analytics/overview		=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=DELETE /api/v1/analytics/overview

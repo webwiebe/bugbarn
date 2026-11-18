@@ -85,6 +85,7 @@ func (s *Server) registerCatalogRoutes(prot group) {
 	prot.handle("DELETE /api/v1/aliases/{slug}", s.deleteAlias)
 
 	prot.handle("GET /api/v1/surfaces", s.serveSurfaces)
+	prot.handle("GET /api/v1/environments", s.serveEnvironments)
 	prot.handle("GET /api/v1/facets", s.listFacetKeys)
 	prot.fallback("GET /api/v1/facets/{$}", s.listFacetKeys)
 	prot.handle("GET /api/v1/facets/{key}", s.listFacetValues)

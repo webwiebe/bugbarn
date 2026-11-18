@@ -43,6 +43,7 @@ var scopedReadRoutes = []scopedReadRoute{
 // case above covers, each with where it is covered or why it needs none. Keys
 // are the registered paths, wildcards included.
 var routesCoveredElsewhere = map[string]string{
+	"/api/v1/environments":                   "TestEnvironmentsEndpoint (answers the request's own project)",
 	"/api/v1/issues":                         "TestBoundKeyIsConfinedToItsProject",
 	"/api/v1/issues/sparklines":              "TestBoundKeyIsConfinedToItsProject",
 	"/api/v1/issues/{id}":                    "TestBoundKeyIsConfinedToItsProject (inIssueScope)",

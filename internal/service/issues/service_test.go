@@ -113,6 +113,10 @@ func (f *fakeRepo) SurfaceActivity(_ context.Context, _ int64, _ time.Time) ([]d
 	return nil, f.err
 }
 
+func (f *fakeRepo) EnvironmentActivity(_ context.Context, _ int64) ([]domain.EnvironmentActivity, error) {
+	return nil, f.err
+}
+
 func TestGet_Happy(t *testing.T) {
 	t.Parallel()
 
