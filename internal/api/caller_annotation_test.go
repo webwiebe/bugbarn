@@ -1,15 +1,22 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/wiebe-xyz/bugbarn/internal/auth"
+	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 )
 
 // recordSpan runs fn inside a real recording span and returns its attributes.
@@ -108,4 +115,29 @@ func TestAnnotateCallerNoopWithoutRecordingSpan(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
 	req.RemoteAddr = "192.0.2.1:1234"
 	server.annotateCaller(req, true, false, 0)
+}
+
+// The key-use log line names the caller the way the span does: through the
+// trusted-proxy aware resolver the server hands to the ingest handler.
+func TestSetTrustedProxiesGivesTheIngestHandlerTheClientIPResolver(t *testing.T) {
+	store := mustOpenStore(t)
+	defer store.Close()
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	handler := ingest.NewHandler(auth.New("secret"), nil, 1024)
+	slog.SetDefault(prev)
+	server := NewServer(handler, store, nil)
+	_, cidr, _ := net.ParseCIDR("10.0.0.0/8")
+	server.SetTrustedProxies([]*net.IPNet{cidr})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", nil)
+	req.RemoteAddr = "10.1.2.3:4000"
+	req.Header.Set("X-Forwarded-For", "198.51.100.77, 10.1.2.3")
+	req.Header.Set(auth.HeaderAPIKey, "secret")
+	handler.CheckAPIKey(req)
+
+	if !strings.Contains(logs.String(), "ip=198.51.100.77") {
+		t.Fatalf("log %q lacks the forwarded client ip", logs.String())
+	}
 }

@@ -306,3 +306,41 @@ func TestCheckWithSetupFallbackSeparatesLookupErrorFromMissingKey(t *testing.T) 
 		t.Fatalf("missing key: ok=%v err=%v, want ok=false and nil error", ok, err)
 	}
 }
+
+func TestCheckIdentityNamesTheStoredKey(t *testing.T) {
+	lookup := func(_ context.Context, sha string) (int64, int64, string, bool, error) {
+		return 40, 9, "ingest", true, nil
+	}
+	a := New("static").WithDBIdentityLookup(lookup, nil)
+
+	id, ok, err := a.CheckIdentity(context.Background(), "stored", "")
+	if err != nil || !ok || id != (KeyIdentity{ID: 40, ProjectID: 9, Scope: "ingest"}) {
+		t.Fatalf("id=%+v ok=%v err=%v", id, ok, err)
+	}
+
+	id, ok, err = a.CheckIdentity(context.Background(), "static", "")
+	if err != nil || !ok || id != (KeyIdentity{Scope: "full"}) {
+		t.Fatalf("static key: id=%+v ok=%v err=%v, want id 0 and full scope", id, ok, err)
+	}
+}
+
+func TestCheckIdentitySetupKeyHasNoRowID(t *testing.T) {
+	a := New("static").WithDBLookup(
+		func(context.Context, string) (int64, string, bool, error) { return 0, "", false, nil }, nil,
+	).WithSetupKeyVerifier(func(context.Context, string, string) (int64, bool, error) { return 5, true, nil })
+
+	id, ok, err := a.CheckIdentity(context.Background(), "setup", "web")
+	if err != nil || !ok || id != (KeyIdentity{ProjectID: 5, Scope: "ingest"}) {
+		t.Fatalf("id=%+v ok=%v err=%v", id, ok, err)
+	}
+}
+
+func TestCheckIdentityReportsLookupFailure(t *testing.T) {
+	boom := errors.New("busy")
+	a := New("static").WithDBIdentityLookup(
+		func(context.Context, string) (int64, int64, string, bool, error) { return 0, 0, "", false, boom }, nil,
+	)
+	if _, ok, err := a.CheckIdentity(context.Background(), "stored", ""); ok || !errors.Is(err, ErrKeyLookup) {
+		t.Fatalf("ok=%v err=%v, want a wrapped ErrKeyLookup", ok, err)
+	}
+}

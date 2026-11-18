@@ -55,6 +55,12 @@ type Handler struct {
 	deniedMu sync.Mutex
 	deniedAt map[string]time.Time
 
+	// keyUseAt throttles the accepted-key log line: see observeKeyUse.
+	keyUseMu sync.Mutex
+	keyUseAt map[keyUseCaller]time.Time
+	// clientIP names a caller's address in that line; nil uses the remote address.
+	clientIP func(*http.Request) string
+
 	// funnelbarnLastFired throttles the "event_ingested" product event: see
 	// trackEventIngested.
 	funnelbarnLastFired sync.Map // map[int64]time.Time, keyed by project ID
@@ -118,6 +124,7 @@ func NewHandler(authorizer *auth.Authorizer, eventSpool *spool.Spool, maxBodyByt
 		idFn:         generateIngestID,
 		logger:       slog.Default(),
 		deniedAt:     map[string]time.Time{},
+		keyUseAt:     map[keyUseCaller]time.Time{},
 	}
 }
 
@@ -193,7 +200,8 @@ func (h *Handler) CheckAPIKey(r *http.Request) (projectID int64, scope string, o
 		return 0, "full", true, nil
 	}
 	slug := r.Header.Get("x-bugbarn-project")
-	projectID, scope, ok, err = h.auth.CheckWithSetupFallback(r.Context(), r.Header.Get(auth.HeaderAPIKey), slug)
+	id, ok, err := h.auth.CheckIdentity(r.Context(), r.Header.Get(auth.HeaderAPIKey), slug)
+	projectID, scope = id.ProjectID, id.Scope
 	switch {
 	case err != nil:
 		h.logger.WarnContext(r.Context(), "ingest api key lookup failed; answering retryable", "path", r.URL.Path, "error", err)
@@ -201,6 +209,7 @@ func (h *Handler) CheckAPIKey(r *http.Request) (projectID int64, scope string, o
 		h.logDenied(r)
 	default:
 		h.observeProjectHeader(r.Context(), projectID, scope, slug)
+		h.observeKeyUse(r, id)
 	}
 	return projectID, scope, ok, err
 }

@@ -161,6 +161,7 @@ func (s *Server) SetInternalSessionSecret(secret string) {
 // SetTrustedProxies sets the CIDRs from which X-Forwarded-For, -Host and -Proto are trusted.
 func (s *Server) SetTrustedProxies(cidrs []*net.IPNet) {
 	s.trustedProxies = cidrs
+	s.ingestHandler.SetClientIP(s.clientIP)
 }
 
 // SetMaxSourceMapBytes sets the maximum source map upload size. Defaults to 32 MiB.
