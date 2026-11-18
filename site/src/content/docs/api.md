@@ -576,6 +576,8 @@ List recent events (polling alternative to SSE).
 
 List the scoped project's newest 200 releases, newest observed first. Each project keeps its newest 1000 release rows; the writer's hourly retention sweep deletes older ones.
 
+**Query parameters:** `environment` (optional) keeps only the releases whose environment equals it, chosen from those 200.
+
 **Response:**
 ```json
 {"releases": [ ...release objects... ]}

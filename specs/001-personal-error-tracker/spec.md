@@ -172,6 +172,7 @@ As a user, I want releases, alerts, settings, issue resolution, source-map uploa
 - **FR-036**: The web UI MUST display fingerprint material and concise traceback source details when the backend provides them. [inferred]
 - **FR-037**: The web UI SHOULD keep issue event lists scrollable and place them after the exception, context, and stacktrace sections. [inferred]
 - **FR-038**: The log reads (`GET /api/v1/logs`, `/histogram`, `/facets`) MUST accept an `environment` parameter that keeps only the entries whose `environment` attribute equals it, and `bb logs --env` MUST send it. Issues: [#282](https://github.com/webwiebe/bugbarn/issues/282). Tests: `cmd/bb/cmds_logs_test.go::TestLogsEnvFilter`.
+- **FR-039**: `GET /api/v1/releases` MUST accept an `environment` parameter that keeps only the releases whose environment equals it. Issues: [#282](https://github.com/webwiebe/bugbarn/issues/282). Tests: `internal/api/releases_env_test.go::TestListReleasesFiltersByEnvironment`.
 
 ### Non-Functional Requirements
 
