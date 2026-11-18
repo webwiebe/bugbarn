@@ -13,6 +13,9 @@ import (
 // QueryOverview returns aggregate stats. Uses analytics_daily for the bulk of
 // the range; includes un-rolled-up rows from analytics_pageviews for today.
 func (s *AnalyticsStore) QueryOverview(ctx context.Context, q analytics.Query) (analytics.OverviewResult, error) {
+	if q.Environment != "" {
+		return s.queryOverviewEnv(ctx, q)
+	}
 	startStr := q.Start.UTC().Format("2006-01-02")
 	endStr := q.End.UTC().Format("2006-01-02")
 
@@ -112,6 +115,9 @@ func queryDailyTop[T any](
 
 // QueryPages returns per-pathname stats ordered by pageviews DESC.
 func (s *AnalyticsStore) QueryPages(ctx context.Context, q analytics.Query) ([]analytics.PageStat, error) {
+	if q.Environment != "" {
+		return s.queryPagesEnv(ctx, q)
+	}
 	return queryDailyTop(ctx, s.readDB(), q, dailyTop{
 		column: "pathname", filter: "pathname != '' AND dim_key = ''", order: "SUM(pageviews)",
 	}, func(rows *sql.Rows) (analytics.PageStat, error) {
@@ -125,6 +131,9 @@ func (s *AnalyticsStore) QueryPages(ctx context.Context, q analytics.Query) ([]a
 func (s *AnalyticsStore) QueryTimeline(
 	ctx context.Context, q analytics.Query, granularity string,
 ) ([]analytics.TimelineBucket, error) {
+	if q.Environment != "" {
+		return s.queryTimelineEnv(ctx, q, granularity)
+	}
 	startStr := q.Start.UTC().Format("2006-01-02")
 	endStr := q.End.UTC().Format("2006-01-02")
 
@@ -168,6 +177,9 @@ func (s *AnalyticsStore) QueryTimeline(
 
 // QueryReferrers returns top referring hostnames.
 func (s *AnalyticsStore) QueryReferrers(ctx context.Context, q analytics.Query) ([]analytics.ReferrerStat, error) {
+	if q.Environment != "" {
+		return s.queryReferrersEnv(ctx, q)
+	}
 	return queryDailyTop(ctx, s.readDB(), q, dailyTop{
 		column: "dim_value", filter: "dim_key = 'referrer_host'", order: "SUM(pageviews)",
 	}, func(rows *sql.Rows) (analytics.ReferrerStat, error) {
@@ -184,6 +196,7 @@ func (s *AnalyticsStore) QuerySegments(ctx context.Context, q analytics.Query, d
 		return []analytics.SegmentBucket{}, nil
 	}
 	limit := queryLimit(q)
+	ef, efa := envFilter(q, "props")
 
 	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT
@@ -193,15 +206,11 @@ func (s *AnalyticsStore) QuerySegments(ctx context.Context, q analytics.Query, d
 		FROM analytics_pageviews
 		WHERE project_id = ?
 		  AND ts BETWEEN ? AND ?
-		  AND json_extract(props, '$.' || ?) IS NOT NULL
+		  AND json_extract(props, '$.' || ?) IS NOT NULL`+ef+`
 		GROUP BY val
 		ORDER BY pageviews DESC
 		LIMIT ?`,
-		dimKey,
-		q.ProjectID,
-		q.Start.Unix(), q.End.Unix(),
-		dimKey,
-		limit,
+		append(append([]any{dimKey, q.ProjectID, q.Start.Unix(), q.End.Unix(), dimKey}, efa...), limit)...,
 	)
 	if err != nil {
 		return nil, wrapErr(err, "query analytics")
@@ -244,13 +253,14 @@ func (s *AnalyticsStore) QueryPageFlow(ctx context.Context, q analytics.Query, p
 
 // queryWentTo aggregates exit_pathname from raw pageviews for the given path.
 func (s *AnalyticsStore) queryWentTo(ctx context.Context, q analytics.Query, pathname string) ([]analytics.FlowEntry, error) {
+	ef, efa := envFilter(q, "props")
 	wentToRows, err := s.readDB().QueryContext(ctx, `
 		SELECT exit_pathname, COUNT(*) as cnt, COUNT(DISTINCT session_id) as sess
 		FROM analytics_pageviews
 		WHERE project_id = ? AND pathname = ? AND exit_pathname != ''
-		  AND ts BETWEEN ? AND ?
+		  AND ts BETWEEN ? AND ?`+ef+`
 		GROUP BY exit_pathname ORDER BY cnt DESC LIMIT 5`,
-		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
+		append([]any{q.ProjectID, pathname, q.Start.Unix(), q.End.Unix()}, efa...)...,
 	)
 	if err != nil {
 		return nil, wrapErr(err, "query analytics")
@@ -282,6 +292,7 @@ func (s *AnalyticsStore) queryWentTo(ctx context.Context, q analytics.Query, pat
 // queryCameFrom finds what page users were on just before visiting pathname in
 // the same session.
 func (s *AnalyticsStore) queryCameFrom(ctx context.Context, q analytics.Query, pathname string) ([]analytics.FlowEntry, error) {
+	ef, efa := envFilter(q, "cur.props")
 	cameFromRows, err := s.readDB().QueryContext(ctx, `
 		SELECT prev.pathname, COUNT(*) as cnt
 		FROM analytics_pageviews cur
@@ -291,7 +302,7 @@ func (s *AnalyticsStore) queryCameFrom(ctx context.Context, q analytics.Query, p
 		 AND prev.ts < cur.ts
 		 AND prev.pathname != cur.pathname
 		WHERE cur.project_id = ? AND cur.pathname = ?
-		  AND cur.ts BETWEEN ? AND ?
+		  AND cur.ts BETWEEN ? AND ?`+ef+`
 		  AND prev.ts = (
 		    SELECT MAX(p2.ts) FROM analytics_pageviews p2
 		    WHERE p2.project_id = cur.project_id
@@ -300,7 +311,7 @@ func (s *AnalyticsStore) queryCameFrom(ctx context.Context, q analytics.Query, p
 		      AND p2.pathname != cur.pathname
 		  )
 		GROUP BY prev.pathname ORDER BY cnt DESC LIMIT 5`,
-		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
+		append([]any{q.ProjectID, pathname, q.Start.Unix(), q.End.Unix()}, efa...)...,
 	)
 	if err != nil {
 		return nil, wrapErr(err, "query analytics")
@@ -337,6 +348,7 @@ func (s *AnalyticsStore) QueryScrollDepth(
 		Buckets:  []analytics.ScrollBucket{},
 	}
 
+	ef, efa := envFilter(q, "props")
 	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT
 		  CASE
@@ -348,9 +360,9 @@ func (s *AnalyticsStore) QueryScrollDepth(
 		  END AS bucket,
 		  COUNT(*) AS cnt
 		FROM analytics_pageviews
-		WHERE project_id = ? AND pathname = ? AND ts BETWEEN ? AND ?
+		WHERE project_id = ? AND pathname = ? AND ts BETWEEN ? AND ?`+ef+`
 		GROUP BY bucket ORDER BY MIN(max_scroll_pct)`,
-		q.ProjectID, pathname, q.Start.Unix(), q.End.Unix(),
+		append([]any{q.ProjectID, pathname, q.Start.Unix(), q.End.Unix()}, efa...)...,
 	)
 	if err != nil {
 		return result, wrapErr(err, "query analytics")
@@ -381,6 +393,7 @@ func (s *AnalyticsStore) QueryScrollDepth(
 // QueryDropout returns pages ordered by bounce (zero-interaction) sessions.
 func (s *AnalyticsStore) QueryDropout(ctx context.Context, q analytics.Query) ([]analytics.DropoutStat, error) {
 	limit := queryLimit(q)
+	ef, efa := envFilter(q, "props")
 
 	rows, err := s.readDB().QueryContext(ctx, `
 		SELECT
@@ -388,11 +401,11 @@ func (s *AnalyticsStore) QueryDropout(ctx context.Context, q analytics.Query) ([
 		  COUNT(*) AS pageviews,
 		  SUM(CASE WHEN interaction_count = 0 THEN 1 ELSE 0 END) AS bounced
 		FROM analytics_pageviews
-		WHERE project_id = ? AND ts BETWEEN ? AND ? AND pathname != ''
+		WHERE project_id = ? AND ts BETWEEN ? AND ? AND pathname != ''`+ef+`
 		GROUP BY pathname
 		ORDER BY bounced DESC
 		LIMIT ?`,
-		q.ProjectID, q.Start.Unix(), q.End.Unix(), limit,
+		append(append([]any{q.ProjectID, q.Start.Unix(), q.End.Unix()}, efa...), limit)...,
 	)
 	if err != nil {
 		return nil, wrapErr(err, "query analytics")

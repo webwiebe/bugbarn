@@ -1,13 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/wiebe-xyz/bugbarn/internal/analytics"
 	"github.com/wiebe-xyz/bugbarn/internal/storage"
 )
 
@@ -152,4 +155,44 @@ func TestServeAnalyticsSnippet(t *testing.T) {
 			t.Errorf("expected snippet to contain 'mysite', got:\n%s", body)
 		}
 	})
+}
+
+// The environment lands in props so the environment filter finds it; an invalid
+// value is dropped and the page view is still recorded.
+func TestCollectPageViewStoresTheEnvironment(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, body, want string }{
+		{"top-level field", `{"pathname":"/a","environment":"staging"}`, "staging"},
+		{"props key", `{"pathname":"/a","props":{"environment":"testing"}}`, "testing"},
+		{"field wins over props", `{"pathname":"/a","environment":"staging","props":{"environment":"testing"}}`, "staging"},
+		{"invalid dropped", `{"pathname":"/a","environment":"bad env!","props":{"environment":"x y"}}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := mustOpenAnalyticsStore(t)
+			defer store.Close()
+			server := NewServer(nil, store, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/analytics/collect", strings.NewReader(tc.body))
+			rr := httptest.NewRecorder()
+			server.collectPageView(rr, req)
+			if rr.Code != http.StatusAccepted {
+				t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+			}
+			q := analytics.Query{ProjectID: store.DefaultProjectID(), Start: time.Now().Add(-time.Hour), End: time.Now(), Environment: tc.want}
+			res, err := store.QueryOverview(context.Background(), q)
+			if tc.want == "" {
+				q.Environment = ""
+				res, err = store.QueryOverview(context.Background(), q)
+			}
+			if err != nil || res.Pageviews != 1 {
+				t.Fatalf("overview for %q = %+v, %v; want 1 view", tc.want, res, err)
+			}
+			if tc.want == "" {
+				q.Environment = "staging"
+				if res, _ := store.QueryOverview(context.Background(), q); res.Pageviews != 0 {
+					t.Fatalf("invalid environment still matched staging: %+v", res)
+				}
+			}
+		})
+	}
 }

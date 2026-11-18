@@ -1719,6 +1719,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/analyticsStart"
         - $ref: "#/components/parameters/analyticsEnd"
+        - $ref: "#/components/parameters/analyticsEnvironment"
       responses:
         "200":
           description: Overview stats
@@ -1735,6 +1736,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/analyticsStart"
         - $ref: "#/components/parameters/analyticsEnd"
+        - $ref: "#/components/parameters/analyticsEnvironment"
       responses:
         "200":
           description: Page stats
@@ -1756,6 +1758,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/analyticsStart"
         - $ref: "#/components/parameters/analyticsEnd"
+        - $ref: "#/components/parameters/analyticsEnvironment"
         - name: granularity
           in: query
           schema:
@@ -1785,6 +1788,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/analyticsStart"
         - $ref: "#/components/parameters/analyticsEnd"
+        - $ref: "#/components/parameters/analyticsEnvironment"
       responses:
         "200":
           description: Referrer stats
@@ -1806,6 +1810,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/analyticsStart"
         - $ref: "#/components/parameters/analyticsEnd"
+        - $ref: "#/components/parameters/analyticsEnvironment"
         - name: dim
           in: query
           schema:
@@ -1834,6 +1839,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/analyticsStart"
         - $ref: "#/components/parameters/analyticsEnd"
+        - $ref: "#/components/parameters/analyticsEnvironment"
         - name: pathname
           in: query
           schema:
@@ -1855,6 +1861,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/analyticsStart"
         - $ref: "#/components/parameters/analyticsEnd"
+        - $ref: "#/components/parameters/analyticsEnvironment"
         - name: pathname
           in: query
           schema:
@@ -1876,6 +1883,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/analyticsStart"
         - $ref: "#/components/parameters/analyticsEnd"
+        - $ref: "#/components/parameters/analyticsEnvironment"
       responses:
         "200":
           description: Dropout stats per page
@@ -3243,6 +3251,17 @@ components:
         format: date
         example: "2025-01-31"
       description: End date (YYYY-MM-DD), defaults to today
+    analyticsEnvironment:
+      name: environment
+      in: query
+      schema:
+        type: string
+        maxLength: 64
+        pattern: "^[A-Za-z0-9._-]+$"
+      description: |
+        Only count page views whose environment equals this value. These reads
+        use raw page views, which are kept for the retention window (90 days by
+        default); the daily rollups hold no environment. A malformed value is a 400.
 
     keyRequestId:
       name: id
@@ -3945,6 +3964,9 @@ components:
           type: string
         hostname:
           type: string
+        environment:
+          type: string
+          description: Environment of the page view (1 to 64 letters, digits, dots, underscores or hyphens). An invalid value is dropped. Also accepted as props.environment.
         referrer:
           type: string
         visitorId:

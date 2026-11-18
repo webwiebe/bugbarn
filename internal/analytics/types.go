@@ -56,6 +56,10 @@ type Query struct {
 	End       time.Time
 	Pathname  string
 	Limit     int
+	// Environment, when set, restricts the query to page views whose
+	// props.environment equals it. Those reads use raw page views, which are
+	// kept for the retention window; the daily rollups carry no environment.
+	Environment string
 }
 
 type PageFlowResult struct {
