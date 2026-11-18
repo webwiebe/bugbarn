@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/url"
@@ -23,6 +24,7 @@ func cmdLogs(args []string) error {
 	project := fs.String("project", "", "project slug")
 	group := fs.String("group", "", "group slug (shows logs from all projects in the group)")
 	query := fs.String("query", "", "search text")
+	env := fs.String("env", "", "only entries from this environment (production, staging, testing, ...)")
 	limit := fs.Int("limit", 50, "max entries (non-follow mode)")
 	noColor := fs.Bool("no-color", false, "disable colored output")
 	if err := fs.Parse(args); err != nil {
@@ -39,13 +41,23 @@ func cmdLogs(args []string) error {
 	}
 
 	if *follow {
+		if *env != "" {
+			return errors.New("--env works without --follow")
+		}
 		return streamLogs(client, *level, client.project, *noColor)
 	}
-	return fetchLogs(client, *level, client.project, *query, *limit, *noColor)
+	return fetchLogs(client, *level, client.project, logFilter{query: *query, env: *env}, *limit, *noColor)
 }
 
-func fetchLogs(client *Client, level, project, query string, limit int, noColor bool) error {
+// logFilter is what narrows a log fetch beyond level and project.
+type logFilter struct{ query, env string }
+
+func fetchLogs(client *Client, level, project string, filter logFilter, limit int, noColor bool) error {
+	query := filter.query
 	params := url.Values{}
+	if filter.env != "" {
+		params.Set("environment", filter.env)
+	}
 	if level != "" {
 		params.Set("level", level)
 	}

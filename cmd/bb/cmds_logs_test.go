@@ -231,3 +231,22 @@ func TestPrintLogEntryTruncatesLongData(t *testing.T) {
 		t.Errorf("long data not truncated: %q", out)
 	}
 }
+
+func TestLogsEnvFilter(t *testing.T) {
+	h := newHarness(t)
+	inEmptyDir(t)
+	h.seedLogs(t,
+		domain.LogEntry{Level: "info", LevelNum: 30, Message: "from production", Data: map[string]any{"environment": "production"}},
+		domain.LogEntry{Level: "info", LevelNum: 30, Message: "from staging", Data: map[string]any{"environment": "staging"}},
+		domain.LogEntry{Level: "info", LevelNum: 30, Message: "from nowhere"},
+	)
+
+	out, err := runCmd(t, cmdLogs, "--no-color", "--env", "staging")
+	if err != nil || !strings.Contains(out, "from staging") || strings.Contains(out, "from production") || strings.Contains(out, "from nowhere") {
+		t.Fatalf("--env staging: %v\n%s", err, out)
+	}
+
+	if _, err := runCmd(t, cmdLogs, "--follow", "--env", "staging"); err == nil || !strings.Contains(err.Error(), "--env") {
+		t.Fatalf("--follow with --env: err = %v, want the --env refusal", err)
+	}
+}

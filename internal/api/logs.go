@@ -145,7 +145,8 @@ func (s *Server) writeLogReadError(w http.ResponseWriter, err error) bool {
 }
 
 // logQueryFromRequest reads the explorer filters from the query string: level,
-// q, from, to (RFC 3339), before, and attr=key=value (repeatable, ANDed). The
+// q, from, to (RFC 3339), before, environment (the same as attr=environment=value)
+// and attr=key=value (repeatable, ANDed). The
 // project comes from the request context, as for every other read.
 func logQueryFromRequest(r *http.Request) (logsvc.Query, error) {
 	projectID, _ := domain.ProjectIDFromContext(r.Context())
@@ -175,6 +176,9 @@ func logQueryFromRequest(r *http.Request) (logsvc.Query, error) {
 			return q, apperr.InvalidInput("attr must be key=value", nil)
 		}
 		q.Attrs = append(q.Attrs, logsvc.AttrFilter{Key: key, Value: value})
+	}
+	if env := query.Get("environment"); env != "" {
+		q.Attrs = append(q.Attrs, logsvc.AttrFilter{Key: "environment", Value: env})
 	}
 	return q, nil
 }

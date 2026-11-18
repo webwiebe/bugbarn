@@ -798,6 +798,7 @@ Query stored log entries.
 | `from` | — | Only entries received at or after this RFC 3339 time. |
 | `to` | — | Only entries received before this RFC 3339 time. |
 | `attr` | — | Attribute filter `key=value`, repeatable; all filters must match (AND). `key` is a top-level attribute of the entry. |
+| `environment` | — | Only entries whose `environment` attribute equals this value (`production`, `staging`, `testing`, ...). The same as `attr=environment=<value>`. Entries without an `environment` attribute match no value. |
 
 **Response:**
 ```json
@@ -813,7 +814,7 @@ Pass `next_cursor` as `before` in the next request to page backwards through old
 
 #### GET /api/v1/logs/histogram
 
-Entry counts per time bucket and level over `from`..`to` (default: the last 24 hours), for the same filters as `GET /api/v1/logs` (`level`, `q`, `attr`).
+Entry counts per time bucket and level over `from`..`to` (default: the last 24 hours), for the same filters as `GET /api/v1/logs` (`level`, `q`, `attr`, `environment`).
 
 | Parameter | Default | Description |
 |---|---|---|

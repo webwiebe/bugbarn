@@ -99,6 +99,7 @@ bb logs --limit 200                    # more entries
 bb logs --level warn                   # only warnings and above
 bb logs --level error --project backend
 bb logs --query "failed"               # search log messages
+bb logs --env staging                  # only entries from one environment (not with --follow)
 bb logs -f                             # live-tail via SSE
 bb logs -f --level error               # stream only errors
 bb logs -f --project backend           # stream one project
