@@ -982,6 +982,8 @@ Create a project.
 {"project": {"id": 1, "name": "My App", "slug": "my-app"}}
 ```
 
+A name or slug that ends in an environment (`-prod`, `-production`, `-staging`, `-test`, `-testing`, `-dev`, `-e2e`) is refused with `400` and a message pointing at the environment field. A project is one product; send the environment with each event (SDK option `environment`, or `deployment.environment`).
+
 ---
 
 ### API Keys

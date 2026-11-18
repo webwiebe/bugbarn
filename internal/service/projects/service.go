@@ -111,6 +111,9 @@ func (s *Service) Create(ctx context.Context, name, slug string) (domain.Project
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.Create",
 		trace.WithAttributes(attribute.String("slug", slug)))
 	defer span.End()
+	if err := rejectEnvironmentName(name, slug); err != nil {
+		return domain.Project{}, err
+	}
 	proj, err := s.repo.CreateProject(ctx, name, slug)
 	if err != nil {
 		tracing.SetError(span, err)
