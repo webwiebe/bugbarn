@@ -31,6 +31,7 @@ type Repository interface {
 	ListFacetKeys(ctx context.Context, projectID int64) ([]string, error)
 	ListFacetValues(ctx context.Context, projectID int64, key string) ([]string, error)
 	SurfaceActivity(ctx context.Context, projectID int64, now time.Time) ([]domain.SurfaceActivity, error)
+	EnvironmentActivity(ctx context.Context, projectID int64) ([]domain.EnvironmentActivity, error)
 }
 
 type Service struct {
@@ -243,6 +244,19 @@ func (s *Service) SurfaceActivity(ctx context.Context, projectID int64) ([]domai
 	if err != nil {
 		tracing.SetError(span, err)
 		apperr.LogFailure(ctx, s.logger, "surface activity", err)
+	}
+	return out, err
+}
+
+// EnvironmentActivity lists the environments a project has events for, with
+// the issue count and the newest last-seen time of each.
+func (s *Service) EnvironmentActivity(ctx context.Context, projectID int64) ([]domain.EnvironmentActivity, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.issues.EnvironmentActivity")
+	defer span.End()
+	out, err := s.repo.EnvironmentActivity(ctx, projectID)
+	if err != nil {
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "environment activity", err)
 	}
 	return out, err
 }

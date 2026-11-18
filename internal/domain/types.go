@@ -258,6 +258,17 @@ type SurfaceActivity struct {
 	Open     int    `json:"open"`
 }
 
+// EnvironmentActivity describes one value of the `environment` attribute in a
+// project: how many issues carry it, how many of those are open, and when one
+// of them was last seen. Facets are an issue-level set, so the numbers are
+// issues, not events.
+type EnvironmentActivity struct {
+	Environment string `json:"environment"`
+	Issues      int    `json:"issues"`
+	Open        int    `json:"open"`
+	LastSeen    string `json:"last_seen"`
+}
+
 // User represents an admin user stored in the database.
 type User struct {
 	ID             int64     `json:"id"`

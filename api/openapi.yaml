@@ -2802,6 +2802,27 @@ paths:
                     items:
                       $ref: "#/components/schemas/SurfaceActivity"
 
+  /api/v1/environments:
+    get:
+      operationId: listEnvironments
+      tags: [Facets]
+      summary: Issue activity per environment
+      description: The environments the project has issues for, newest activity first, with the issue count, the open count and the newest last-seen time of each.
+      parameters:
+        - $ref: "#/components/parameters/XBugBarnProject"
+      responses:
+        "200":
+          description: Environments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  environments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EnvironmentActivity"
+
   # ──────────────────────────────────────────────
   # Aliases
   # ──────────────────────────────────────────────
@@ -4409,6 +4430,19 @@ components:
           type: integer
         open:
           type: integer
+
+    EnvironmentActivity:
+      type: object
+      properties:
+        environment:
+          type: string
+        issues:
+          type: integer
+        open:
+          type: integer
+        last_seen:
+          type: string
+          format: date-time
 
     ProjectAlias:
       type: object

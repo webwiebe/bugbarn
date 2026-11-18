@@ -75,6 +75,10 @@ func (d *dataRepo) SurfaceActivity(context.Context, int64, time.Time) ([]domain.
 	return []domain.SurfaceActivity{{}}, d.err
 }
 
+func (d *dataRepo) EnvironmentActivity(context.Context, int64) ([]domain.EnvironmentActivity, error) {
+	return []domain.EnvironmentActivity{{}}, d.err
+}
+
 func TestReadMethodsReturnRepoData(t *testing.T) {
 	t.Parallel()
 	svc := New(&dataRepo{}, nil)
