@@ -109,6 +109,15 @@ func (s *Server) listReleases(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	if env := r.URL.Query().Get("environment"); env != "" {
+		kept := make([]domain.Release, 0, len(releases))
+		for _, rel := range releases {
+			if rel.Environment == env {
+				kept = append(kept, rel)
+			}
+		}
+		releases = kept
+	}
 	writeJSON(w, map[string]any{"releases": releases})
 }
 
