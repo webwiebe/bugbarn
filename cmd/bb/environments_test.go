@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,5 +53,24 @@ func TestEnvironmentsListsProjectEnvironments(t *testing.T) {
 	}
 	if len(got.Environments) != 1 || got.Environments[0].Environment != "staging" || got.Environments[0].Issues != 1 {
 		t.Fatalf("environments = %+v, want one staging row with one issue", got.Environments)
+	}
+}
+
+func TestEnvironmentsReportsFailures(t *testing.T) {
+	inEmptyDir(t)
+
+	if _, err := runCmd(t, cmdEnvironments, "--no-such-flag"); err == nil {
+		t.Error("an unknown flag must fail")
+	}
+
+	t.Setenv("BB_CONFIG", filepath.Join(t.TempDir(), "missing.json"))
+	if _, err := runCmd(t, cmdEnvironments); err == nil {
+		t.Error("a missing config must fail")
+	}
+
+	srv := newScripted(t, 500, "boom")
+	useConfig(t, apiKeyConfig(srv.URL))
+	if _, err := runCmd(t, cmdEnvironments); err == nil || !strings.Contains(err.Error(), "HTTP 500: boom") {
+		t.Errorf("a server error must surface, got %v", err)
 	}
 }
