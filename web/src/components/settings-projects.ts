@@ -1,7 +1,7 @@
 // The settings Projects page: the project list with usage counts, the project
 // group editor and the alias editor.
-import { escapeAttr, escapeHtml } from "../format.js";
-import type { ApiAlias, ApiProject, ApiProjectGroup } from "../types.js";
+import { escapeAttr, escapeHtml, formatAge } from "../format.js";
+import type { ApiAlias, ApiEnvironment, ApiProject, ApiProjectGroup } from "../types.js";
 import { renderField } from "./event-detail.js";
 
 // usageCount formats a per-project count for display. An absent count means the
@@ -175,12 +175,37 @@ function renderAliasesSection(projects: ApiProject[], aliases: ApiAlias[]): stri
     </div>`;
 }
 
+/** The environments one project reports from, with their issue counts. */
+function renderEnvironmentsSection(environments: ApiEnvironment[], currentProject: string): string {
+  if (currentProject === "__all") {
+    return `
+    <div class="section">
+      <h3>Environments</h3>
+      <p class="muted">Select a project in the scope picker to see the environments it reports from.</p>
+    </div>`;
+  }
+  const rows = environments.map((e) => `
+        <div class="kv" data-environment="${escapeAttr(e.environment)}">
+          <span><code>${escapeHtml(e.environment)}</code></span>
+          <span>${escapeHtml(String(e.open))} open of ${escapeHtml(String(e.issues))} ${e.issues === 1 ? "issue" : "issues"}${e.last_seen ? `, last seen ${escapeHtml(formatAge(e.last_seen))}` : ""}</span>
+        </div>`).join("");
+  return `
+    <div class="section">
+      <h3>Environments of ${escapeHtml(currentProject)}</h3>
+      <p class="muted">One project holds every environment of an app. Pick one in the environment switcher to filter issues, logs and releases.</p>
+      ${environments.length === 0 ? `<p class="muted">No issue carries an environment yet. Send it as the <code>environment</code> attribute from the SDK.</p>` : `<div class="grid">${rows}</div>`}
+    </div>`;
+}
+
 export function renderSettingsProjects(
   projects: ApiProject[],
   groups: ApiProjectGroup[],
   aliases: ApiAlias[],
+  environments: ApiEnvironment[] = [],
+  currentProject = "__all",
 ): string {
   return renderProjectList(projects, groups) +
+    renderEnvironmentsSection(environments, currentProject) +
     renderGroupsSection(projects, groups) +
     renderAliasesSection(projects, aliases);
 }

@@ -38,6 +38,7 @@ export const state: AppState = {
   projects: [],
   groups: [],
   aliases: [],
+  environments: [],
   currentProject: (() => { const v = localStorage.getItem(projectKey); return (v && v !== "default") ? v : "__all"; })(),
   currentGroup: localStorage.getItem(groupKey) || null,
   settingsTab: "overview",
