@@ -880,11 +880,18 @@ paths:
       tags: [Projects]
       summary: List all projects
       description: >
-        Returns every project. Per-project usage counts are opt-in via
+        Returns every project except archived ones, which `include_archived=true`
+        adds. Per-project usage counts are opt-in via
         `usage=true` because computing them aggregates the issues, events and
         log_entries tables in full; callers that only need the project list
         (the project picker, the scope switcher) should omit the parameter.
       parameters:
+        - name: include_archived
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Also list archived projects
         - name: usage
           in: query
           required: false
@@ -1105,6 +1112,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkResponse"
+
+  /api/v1/projects/{slug}/archive:
+    post:
+      operationId: archiveProject
+      tags: [Projects]
+      summary: Archive a project that stopped receiving data
+      description: |
+        Sets the project's status to `archived` once it has received no event,
+        log line or page view for 7 days. Archived data stays readable and the
+        project drops out of `GET /api/v1/projects` unless `include_archived=true`.
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      responses:
+        "200":
+          description: Project archived
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  last_event_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                    description: Time of the project's last event, log line or page view; null when it never had one
+        "404":
+          description: Project not found
+        "409":
+          description: The project received data inside the 7 day quiet period
+
+  /api/v1/projects/{slug}/unarchive:
+    post:
+      operationId: unarchiveProject
+      tags: [Projects]
+      summary: Return an archived project to active
+      parameters:
+        - $ref: "#/components/parameters/projectSlug"
+      responses:
+        "200":
+          description: Project active again
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "404":
+          description: No archived project with that slug
 
   # ──────────────────────────────────────────────
   # Groups

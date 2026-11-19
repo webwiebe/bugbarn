@@ -1018,6 +1018,23 @@ Merge the project `:slug` into another project. The source project's data moves 
 
 ---
 
+#### POST /api/v1/projects/:slug/archive
+
+Archive a project that stopped receiving data. The project must have received no event, log line or page view for 7 days; otherwise the call is refused with `409`. Archived data stays readable, and the project drops out of `GET /api/v1/projects` unless `include_archived=true` is passed.
+
+**Response:**
+```json
+{"ok": true, "last_event_at": "2026-11-01T10:00:00Z"}
+```
+
+`last_event_at` is the time of the project's last event, log line or page view (`null` when it never had one). The server logs it with the archive.
+
+#### POST /api/v1/projects/:slug/unarchive
+
+Return an archived project to active. Answers `404` when the project is not archived.
+
+---
+
 ### API Keys
 
 **Auth:** Session cookie or full-scope API key.

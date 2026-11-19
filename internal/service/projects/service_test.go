@@ -23,7 +23,9 @@ type fakeRepo struct {
 
 	silenceSlug, silenceValue string
 
-	mergeEnv string
+	mergeEnv             string
+	archived, unarchived string
+	archivedLast         time.Time
 }
 
 func (f *fakeRepo) UpdateProjectSilenceWatch(_ context.Context, slug, value string) error {
@@ -180,6 +182,16 @@ func (f *fakeRepo) MergeProjects(_ context.Context, _, _ string) error {
 
 func (f *fakeRepo) MergeProjectsAs(_ context.Context, _, _, env string) error {
 	f.mergeEnv = env
+	return f.err
+}
+
+func (f *fakeRepo) ArchiveProject(_ context.Context, slug string, _ time.Duration) (time.Time, error) {
+	f.archived = slug
+	return f.archivedLast, f.err
+}
+
+func (f *fakeRepo) UnarchiveProject(_ context.Context, slug string) error {
+	f.unarchived = slug
 	return f.err
 }
 

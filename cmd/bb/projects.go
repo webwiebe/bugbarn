@@ -13,6 +13,9 @@ func cmdProjects(args []string) error {
 	if wantsMerge(args) {
 		return cmdProjectsMerge(args)
 	}
+	if hasFlag(args, "archive") || hasFlag(args, "unarchive") {
+		return cmdProjectsArchive(args)
+	}
 	// Ask for usage counts explicitly: the API omits them by default because
 	// computing them scans the events and log_entries tables in full, but they
 	// are part of what `bb projects` has always reported and this is a

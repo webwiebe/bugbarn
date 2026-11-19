@@ -99,6 +99,10 @@ type Event struct {
 }
 
 // Project represents a project row.
+// ProjectStatusArchived marks a project that stopped receiving data. Its data
+// stays readable; nothing is purged.
+const ProjectStatusArchived = "archived"
+
 type Project struct {
 	ID           int64     `json:"id"`
 	Name         string    `json:"name"`

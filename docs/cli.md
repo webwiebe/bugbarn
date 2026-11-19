@@ -122,6 +122,8 @@ bb monitors --project geo              # another project
 bb monitors --project geo --delete pending-sweep   # delete one; its issues stay
 bb environments --project geo           # environments with issue counts and last activity (JSON)
 bb projects --merge geo-staging --into geo --env staging   # merge a legacy project into geo and stamp the environment
+bb projects --archive geo-staging   # archive a project that got nothing for 7 days; prints its last event time
+bb projects --unarchive geo-staging
 ```
 
 Monitors that are failing or missed come first. Each entry has `slug`, `state` (`ok`, `missed`, `error`), `lastCheckInAt`, `intervalSeconds`, `graceSeconds` and `dueBy`. Monitors on a cron schedule also carry `schedule` and `timezone` (and `intervalSeconds` is `0`).

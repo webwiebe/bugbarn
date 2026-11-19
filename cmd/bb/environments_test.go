@@ -112,3 +112,29 @@ func TestProjectsMergeStampsTheEnvironment(t *testing.T) {
 		t.Fatalf("release environment = %q (%v), want staging", env, err)
 	}
 }
+
+func TestProjectsArchiveAndUnarchive(t *testing.T) {
+	h := newHarness(t)
+	inEmptyDir(t)
+	ctx := context.Background()
+	if _, err := h.Store.CreateProject(ctx, "Legacy", "legacy-app"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := runCmd(t, cmdProjects, "--archive", "a", "--unarchive", "b"); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Errorf("both flags must print usage, got %v", err)
+	}
+	out, err := runCmd(t, cmdProjects, "--archive=legacy-app")
+	if err != nil || !strings.Contains(out, `"ok"`) {
+		t.Fatalf("archive: %v\n%s", err, out)
+	}
+	if p, _ := h.Store.ProjectBySlug(ctx, "legacy-app"); p.Status != "archived" {
+		t.Errorf("status = %q, want archived", p.Status)
+	}
+	if out, err = runCmd(t, cmdProjects, "--unarchive", "legacy-app"); err != nil || !strings.Contains(out, `"ok"`) {
+		t.Fatalf("unarchive: %v\n%s", err, out)
+	}
+	if _, err := runCmd(t, cmdProjects, "--archive", "no-such-app"); err == nil {
+		t.Error("archiving an unknown project must fail")
+	}
+}
