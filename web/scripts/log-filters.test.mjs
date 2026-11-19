@@ -68,3 +68,11 @@ test("the live stream only matches level and text filters", () => {
 test("an attribute splits at the first equals sign", () => {
   assert.deepEqual(splitAttr("q=a=b"), { key: "q", value: "a=b" });
 });
+
+test("the selected environment goes to the query and turns the live stream off", () => {
+  const now = Date.parse("2026-11-11T10:00:00Z");
+  assert.equal(logQueryParams(defaultLogFilters(), now, "production").get("environment"), "production");
+  assert.equal(logQueryParams(defaultLogFilters(), now).has("environment"), false);
+  assert.equal(liveCompatible(defaultLogFilters(), "production"), false);
+  assert.equal(liveCompatible(defaultLogFilters(), ""), true);
+});

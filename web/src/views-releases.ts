@@ -8,7 +8,7 @@ import { fetchJson, postJson } from "./http.js";
 
 export async function loadReleases(): Promise<void> {
   try {
-    const payload = await fetchJson("/api/v1/releases", true);
+    const payload = await fetchJson(state.currentEnv ? `/api/v1/releases?environment=${encodeURIComponent(state.currentEnv)}` : "/api/v1/releases", true);
     state.releases = payload ? normalizeList<ApiRelease>(payload, "releases") : [];
     if (state.currentRoute === "releases") renderReleasesView();
   } catch (error) {

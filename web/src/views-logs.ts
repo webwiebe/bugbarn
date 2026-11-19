@@ -36,7 +36,7 @@ async function fetchPanel<T>(path: string, params: URLSearchParams): Promise<T |
 }
 
 async function loadPanels(filters: LogFilters, now: number): Promise<LogExplorerPanels> {
-  const params = logQueryParams(filters, now);
+  const params = logQueryParams(filters, now, state.currentEnv);
   const valueParams = new URLSearchParams(params);
   if (filters.facetKey) valueParams.set("key", filters.facetKey);
   const [histogram, facetKeys, facetValues] = await Promise.all([
@@ -53,7 +53,7 @@ export async function loadLogs(): Promise<void> {
   state.logSearch = filters.q;
   const now = Date.now();
   try {
-    const params = logQueryParams(filters, now);
+    const params = logQueryParams(filters, now, state.currentEnv);
     params.set("limit", "200");
     const [payload, nextPanels] = await Promise.all([
       fetchJson(`/api/v1/logs?${params.toString()}`, true),
@@ -100,7 +100,7 @@ export function connectLogSSE(): void {
       if (state.currentProject !== "__all" && entry.project_slug && entry.project_slug !== state.currentProject) {
         return;
       }
-      if (!liveCompatible(currentFilters())) {
+      if (!liveCompatible(currentFilters(), state.currentEnv)) {
         return;
       }
       if (state.logLevel && entry.level_num < logLevelMinNum(state.logLevel)) {

@@ -41,7 +41,6 @@ import {
   renderEnvSwitcher,
   renderPickerList,
 } from "./views-projects.js";
-import { loadIssues } from "./views-issues.js";
 import { registerAppActions } from "./app-actions.js";
 
 registerAppActions({ refreshAll, loadProjects, setRouteStatus });
@@ -169,7 +168,7 @@ envSelect?.addEventListener("change", () => {
   const env = (envSelect as HTMLSelectElement).value;
   state.currentEnv = env;
   localStorage.setItem(envKey, env);
-  void loadIssues();
+  void refreshAll();
 });
 
 scopeBtn?.addEventListener("click", openScopeSheet);
