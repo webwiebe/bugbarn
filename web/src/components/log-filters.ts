@@ -89,7 +89,7 @@ export function logWindow(filters: LogFilters, nowMs: number): LogWindow {
 
 /** logQueryParams are the query parameters shared by the list, histogram and
  * facets endpoints. */
-export function logQueryParams(filters: LogFilters, nowMs: number): URLSearchParams {
+export function logQueryParams(filters: LogFilters, nowMs: number, environment = ""): URLSearchParams {
   const params = new URLSearchParams();
   const win = logWindow(filters, nowMs);
   params.set("from", win.from);
@@ -97,6 +97,7 @@ export function logQueryParams(filters: LogFilters, nowMs: number): URLSearchPar
   if (filters.level) params.set("level", filters.level);
   if (filters.q) params.set("q", filters.q);
   for (const attr of filters.attrs) params.append("attr", attr);
+  if (environment) params.set("environment", environment);
   return params;
 }
 
@@ -113,8 +114,8 @@ export function withoutAttr(filters: LogFilters, attr: string): LogFilters {
 
 /** liveCompatible is true when the SSE stream can be filtered client side to
  * the same rows the list shows: it carries level and text only. */
-export function liveCompatible(filters: LogFilters): boolean {
-  return filters.attrs.length === 0 && !(filters.from && filters.to);
+export function liveCompatible(filters: LogFilters, environment = ""): boolean {
+  return !environment && filters.attrs.length === 0 && !(filters.from && filters.to);
 }
 
 /** splitAttr splits "key=value" at the first "=". */
