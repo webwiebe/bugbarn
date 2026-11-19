@@ -176,7 +176,7 @@ function renderAliasesSection(projects: ApiProject[], aliases: ApiAlias[]): stri
 }
 
 /** The environments one project reports from, with their issue counts. */
-export function renderEnvironmentsSection(environments: ApiEnvironment[], currentProject: string): string {
+function renderEnvironmentsSection(environments: ApiEnvironment[], currentProject: string): string {
   if (currentProject === "__all") {
     return `
     <div class="section">
