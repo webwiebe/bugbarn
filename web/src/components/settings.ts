@@ -16,6 +16,8 @@ export function renderSettingsViewMarkup(
   tab: import("../types.js").SettingsTab = "overview",
   systemHealth: import("../types.js").SystemHealth | null = null,
   keyRequests: ApiKeyRequest[] = [],
+  environments: import("../types.js").ApiEnvironment[] = [],
+  currentProject = "__all",
 ): string {
   const pendingProjects = projects.filter(p => (p.status ?? p.Status) === "pending");
   const activeProjects = projects.filter(p => (p.status ?? p.Status) !== "pending");
@@ -25,7 +27,7 @@ export function renderSettingsViewMarkup(
   if (tab === "overview") {
     content = renderSettingsOverview(settings, username, activeProjects, groups, apiKeys, pendingProjects, error);
   } else if (tab === "projects") {
-    content = renderKeyRequests(keyRequests) + renderSettingsProjects(projects, groups, aliases);
+    content = renderKeyRequests(keyRequests) + renderSettingsProjects(projects, groups, aliases, environments, currentProject);
   } else if (tab === "preferences") {
     content = renderSettingsPreferences(settings);
   } else if (tab === "system") {

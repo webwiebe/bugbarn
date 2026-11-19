@@ -182,6 +182,13 @@ export interface ApiProjectGroup {
   created_at: string;
 }
 
+export interface ApiEnvironment {
+  environment: string;
+  issues: number;
+  open: number;
+  last_seen?: string;
+}
+
 export interface ApiAlias {
   alias_slug: string;
   project_id: number;
@@ -287,6 +294,7 @@ export interface AppState {
   projects: ApiProject[];
   groups: ApiProjectGroup[];
   aliases: ApiAlias[];
+  environments: ApiEnvironment[];
   currentProject: string;
   currentGroup: string | null;
   settingsTab: SettingsTab;

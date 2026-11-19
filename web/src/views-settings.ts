@@ -5,14 +5,14 @@ import { renderSettingsViewMarkup } from "./components.js";
 import { fetchSystemHealth } from "./health-api.js";
 import { normalizeList, normalizeObject } from "./records.js";
 import { errorMessage, escapeHtml } from "./format.js";
-import type { ApiAlias, ApiApiKey, ApiKeyRequest, ApiProject, ApiProjectGroup, ApiSettings } from "./types.js";
+import type { ApiAlias, ApiApiKey, ApiEnvironment, ApiKeyRequest, ApiProject, ApiProjectGroup, ApiSettings } from "./types.js";
 import { elements, liveWindowMinutes, setActiveView, setStatus, showFlash, state } from "./core.js";
 import { apiFetch, fetchJson, logout, postFormData, postJson } from "./http.js";
 import { checkPendingProjects, renderProjectSwitcher } from "./views-projects.js";
 
 export async function loadSettings(): Promise<void> {
   try {
-    const [settingsPayload, keysPayload, projectsPayload, groupsPayload, aliasesPayload, keyRequestsPayload] = await Promise.all([
+    const [settingsPayload, keysPayload, projectsPayload, groupsPayload, aliasesPayload, keyRequestsPayload, environmentsPayload] = await Promise.all([
       fetchJson("/api/v1/settings", true),
       fetchJson("/api/v1/apikeys", true).catch(() => null),
       // ?usage=true: the settings screen is the only view that renders the
@@ -22,7 +22,10 @@ export async function loadSettings(): Promise<void> {
       fetchJson("/api/v1/groups", true).catch(() => null),
       fetchJson("/api/v1/aliases", true).catch(() => null),
       fetchJson("/api/v1/key-requests", true).catch(() => null),
+      // The environments of the selected project; the API has no all-projects form.
+      state.currentProject === "__all" ? Promise.resolve(null) : fetchJson("/api/v1/environments", true).catch(() => null),
     ]);
+    state.environments = environmentsPayload ? ((environmentsPayload as Record<string, unknown>)["environments"] as ApiEnvironment[] ?? []) : [];
     state.settings = settingsPayload ? normalizeObject<ApiSettings>(settingsPayload, "settings") : null;
     state.apiKeys = keysPayload ? normalizeList<ApiApiKey>(keysPayload as Record<string, unknown>, "apiKeys") : [];
     if (projectsPayload) state.projects = normalizeList<ApiProject>(projectsPayload, "projects");
@@ -90,7 +93,7 @@ async function loadSystemHealth(): Promise<void> {
 // loadSettings renders it again when its fetches land.
 function renderSettingsBody(error: unknown): void {
   const kept = snapshotProjectList(elements.overviewView);
-  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth, state.keyRequests);
+  elements.overviewView.innerHTML = renderSettingsViewMarkup(state.settings, state.username, state.apiKeys, error, state.projects, state.groups, state.aliases, state.settingsTab, state.systemHealth, state.keyRequests, state.environments, state.currentProject);
   wireSettingsActions(kept);
 }
 
