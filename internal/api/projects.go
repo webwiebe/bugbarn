@@ -344,7 +344,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	projects = projectsInScope(r.Context(), projects)
+	projects = withoutArchived(r, projectsInScope(r.Context(), projects))
 
 	out := make([]projectWithUsage, len(projects))
 	for i, p := range projects {

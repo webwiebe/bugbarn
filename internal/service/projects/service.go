@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -33,6 +34,8 @@ type Repository interface {
 	RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error
 	MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error
 	MergeProjectsAs(ctx context.Context, sourceSlug, targetSlug, environment string) error
+	ArchiveProject(ctx context.Context, slug string, quietFor time.Duration) (time.Time, error)
+	UnarchiveProject(ctx context.Context, slug string) error
 
 	// Volume policy: retention window and event sampling.
 	UpdateProjectLimits(ctx context.Context, slug string, retentionDays *int, sampling string) error

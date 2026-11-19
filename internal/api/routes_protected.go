@@ -110,6 +110,8 @@ func (s *Server) registerProjectRoutes(g group) {
 	g.handle("GET /api/v1/projects/pending-count", s.servePendingProjectCount)
 	g.handle("POST /api/v1/projects/{slug}/approve", s.approveProject)
 	g.handle("POST /api/v1/projects/{slug}/merge", s.mergeProject)
+	g.handle("POST /api/v1/projects/{slug}/archive", s.archiveProject)
+	g.handle("POST /api/v1/projects/{slug}/unarchive", s.unarchiveProject)
 	g.handle("PUT /api/v1/projects/{slug}/limits", s.updateProjectLimits)
 	g.handle("PUT /api/v1/projects/{slug}/funnelbarn", s.updateProjectFunnelBarnURL)
 	g.handle("GET /api/v1/projects/{slug}/silence-watch", s.getSilenceWatch)
