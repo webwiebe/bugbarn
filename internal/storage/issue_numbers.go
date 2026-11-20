@@ -15,7 +15,9 @@ import (
 // one of them.
 func shiftSourceIssueNumbers(ctx context.Context, tx *sql.Tx, sourceID, targetID int64) error {
 	var targetCounter, sourceCounter int64
-	if err := tx.QueryRowContext(ctx, `SELECT issue_counter FROM projects WHERE id = ?`, targetID).Scan(&targetCounter); err != nil {
+	if err := tx.QueryRowContext(ctx, `
+		SELECT MAX(issue_counter, COALESCE((SELECT MAX(issue_number) FROM issues WHERE project_id = projects.id), 0))
+		FROM projects WHERE id = ?`, targetID).Scan(&targetCounter); err != nil {
 		return apperr.Internal("merge: read target counter", err)
 	}
 	if err := tx.QueryRowContext(ctx,
@@ -27,7 +29,7 @@ func shiftSourceIssueNumbers(ctx context.Context, tx *sql.Tx, sourceID, targetID
 		return apperr.Internal("merge: shift issue numbers", err)
 	}
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE projects SET issue_counter = issue_counter + ? WHERE id = ?`, sourceCounter, targetID); err != nil {
+		`UPDATE projects SET issue_counter = ? WHERE id = ?`, targetCounter+sourceCounter, targetID); err != nil {
 		return apperr.Internal("merge: raise issue counter", err)
 	}
 	return nil
@@ -55,6 +57,14 @@ func (s *ProjectStore) RenumberDuplicateIssues(ctx context.Context, slug, enviro
 	if err != nil {
 		return nil, wrapNotFound(err, "project not found")
 	}
+	// A merge made before the shift left numbers above the counter. New numbers
+	// start after the highest of the two, or they would collide with those.
+	var highest int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(issue_number), 0) FROM issues WHERE project_id = ?`, projectID).Scan(&highest); err != nil {
+		return nil, apperr.Internal("renumber: read highest number", err)
+	}
+	counter = max(counter, highest)
 	groups, err := duplicateIssueGroups(ctx, tx, projectID, environment)
 	if err != nil {
 		return nil, err
