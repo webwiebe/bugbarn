@@ -209,3 +209,21 @@ func TestRenumberIssuesReportsTheChange(t *testing.T) {
 		t.Error("unknown project returned no error")
 	}
 }
+
+func TestRunProjectRenumberRunsAgainstTheDatabase(t *testing.T) {
+	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "bugbarn.db")}
+	store, err := storage.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateProject(context.Background(), "P", "proj"); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Close()
+	if err := RunProject(cfg, []string{"renumber", "--slug=proj", "--environment=e2e"}); err != nil {
+		t.Fatalf("renumber: %v", err)
+	}
+	if err := RunProject(cfg, []string{"renumber", "--slug=missing", "--environment=e2e"}); err == nil {
+		t.Error("unknown project returned no error")
+	}
+}

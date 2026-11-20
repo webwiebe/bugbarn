@@ -107,3 +107,54 @@ func TestRenumberDuplicateIssuesKeepsOneWhenAllMatch(t *testing.T) {
 		t.Errorf("first issue number = %d (%v), want 1", lowest, err)
 	}
 }
+
+func TestShiftSourceIssueNumbersReportsFailures(t *testing.T) {
+	t.Parallel()
+	for _, setup := range []string{
+		`DROP TABLE projects`,
+		`DROP TABLE issues`,
+		`CREATE TRIGGER stop BEFORE UPDATE ON issues BEGIN SELECT RAISE(ABORT, 'stop'); END`,
+		`CREATE TRIGGER stop BEFORE UPDATE ON projects BEGIN SELECT RAISE(ABORT, 'stop'); END`,
+	} {
+		store, ctx := openMergeStore(t)
+		source, _ := store.CreateProject(ctx, "Source", "source-proj")
+		target, _ := store.CreateProject(ctx, "Target", "target-proj")
+		persistFingerprints(t, store, source.ID, "e2e", "s1")
+		tx, err := store.DB().BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, setup); err != nil {
+			t.Fatal(err)
+		}
+		if err := shiftSourceIssueNumbers(ctx, tx, source.ID, target.ID); err == nil {
+			t.Errorf("%q: shift returned no error", setup)
+		}
+		_ = tx.Rollback()
+	}
+}
+
+func TestRenumberDuplicateIssuesReportsFailures(t *testing.T) {
+	t.Parallel()
+	for _, setup := range []string{
+		`DROP TABLE issue_facets`,
+		`CREATE TRIGGER stop BEFORE UPDATE ON issues BEGIN SELECT RAISE(ABORT, 'stop'); END`,
+		`CREATE TRIGGER stop BEFORE UPDATE ON projects BEGIN SELECT RAISE(ABORT, 'stop'); END`,
+	} {
+		store, ctx := openMergeStore(t)
+		p, _ := store.CreateProject(ctx, "P", "proj")
+		persistFingerprints(t, store, p.ID, "e2e", "a", "b")
+		mustExec(ctx, t, store, `UPDATE issues SET issue_number = 1`)
+		mustExec(ctx, t, store, setup)
+		if _, err := store.RenumberDuplicateIssues(ctx, "proj", "e2e"); err == nil {
+			t.Errorf("%q: renumber returned no error", setup)
+		}
+	}
+	store, ctx := openMergeStore(t)
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RenumberDuplicateIssues(ctx, "proj", "e2e"); err == nil {
+		t.Error("renumber on a closed store returned no error")
+	}
+}
