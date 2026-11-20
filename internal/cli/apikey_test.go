@@ -182,3 +182,48 @@ func TestRunAPIKeyRevokeValidatesAndRunsAgainstTheDatabase(t *testing.T) {
 		t.Fatal("an unopenable database was accepted")
 	}
 }
+
+func TestRenumberIssuesReportsTheChange(t *testing.T) {
+	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "bugbarn.db")}
+	for _, args := range [][]string{{"renumber"}, {"renumber", "--slug=x"}} {
+		if err := RunProject(cfg, args); err == nil || !strings.Contains(err.Error(), "usage") {
+			t.Errorf("%v: err = %v, want usage", args, err)
+		}
+	}
+	store, err := storage.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if _, err := store.CreateProject(context.Background(), "P", "proj"); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := renumberIssues(context.Background(), store, "proj", "e2e", &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "renumbered 0 issues in proj") {
+		t.Errorf("output = %q", out.String())
+	}
+	if err := renumberIssues(context.Background(), store, "missing", "e2e", &out); err == nil {
+		t.Error("unknown project returned no error")
+	}
+}
+
+func TestRunProjectRenumberRunsAgainstTheDatabase(t *testing.T) {
+	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "bugbarn.db")}
+	store, err := storage.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateProject(context.Background(), "P", "proj"); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Close()
+	if err := RunProject(cfg, []string{"renumber", "--slug=proj", "--environment=e2e"}); err != nil {
+		t.Fatalf("renumber: %v", err)
+	}
+	if err := RunProject(cfg, []string{"renumber", "--slug=missing", "--environment=e2e"}); err == nil {
+		t.Error("unknown project returned no error")
+	}
+}

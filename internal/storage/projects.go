@@ -428,6 +428,10 @@ func (s *ProjectStore) MergeProjectsAs(ctx context.Context, sourceSlug, targetSl
 		return err
 	}
 
+	if err := shiftSourceIssueNumbers(ctx, tx, sourceID, targetID); err != nil {
+		return err
+	}
+
 	// Move or drop each project-owned table as projectTables says. The issues
 	// moved keep their ids, so facet and regression rows cannot collide with
 	// rows the target project already has.

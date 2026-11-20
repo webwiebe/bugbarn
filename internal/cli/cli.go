@@ -96,7 +96,7 @@ func RunUser(cfg config.Config, args []string) error {
 // RunProject handles: bugbarn project create --name=X [--slug=Y]
 func RunProject(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: bugbarn project <create>")
+		return fmt.Errorf("usage: bugbarn project <create|renumber>")
 	}
 	switch args[0] {
 	case "create":
@@ -131,6 +131,8 @@ func RunProject(cfg config.Config, args []string) error {
 			"name": p.Name,
 			"slug": p.Slug,
 		})
+	case "renumber":
+		return renumberProjectIssues(cfg, args[1:])
 	default:
 		return fmt.Errorf("unknown project subcommand %q", args[0])
 	}
