@@ -158,3 +158,26 @@ func TestRenumberDuplicateIssuesReportsFailures(t *testing.T) {
 		t.Error("renumber on a closed store returned no error")
 	}
 }
+
+// New numbers start after the highest number in use even when the counter lags
+// behind it, as it did after a merge made before the shift.
+func TestRenumberDuplicateIssuesStartsAfterTheHighestNumber(t *testing.T) {
+	t.Parallel()
+	store, ctx := openMergeStore(t)
+	p, _ := store.CreateProject(ctx, "P", "proj")
+	persistFingerprints(t, store, p.ID, "production", "a")
+	persistFingerprints(t, store, p.ID, "e2e", "x", "y")
+	mustExec(ctx, t, store, `UPDATE issues SET issue_number = 1 WHERE fingerprint = 'x'`)
+	mustExec(ctx, t, store, `UPDATE issues SET issue_number = 7 WHERE fingerprint = 'y'`)
+
+	if _, err := store.RenumberDuplicateIssues(ctx, "proj", "e2e"); err != nil {
+		t.Fatal(err)
+	}
+	if got := displayDuplicates(t, store, p.ID); got != 0 {
+		t.Errorf("duplicate numbers = %d, want 0", got)
+	}
+	var x int64
+	if err := store.DB().QueryRowContext(ctx, `SELECT issue_number FROM issues WHERE fingerprint = 'x'`).Scan(&x); err != nil || x != 8 {
+		t.Errorf("renumbered issue = %d (%v), want 8 (after the highest, 7)", x, err)
+	}
+}
