@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sort"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
@@ -34,12 +33,17 @@ func shiftSourceIssueNumbers(ctx context.Context, tx *sql.Tx, sourceID, targetID
 	return nil
 }
 
+type numberedIssue struct {
+	id, number int64
+	matches    bool
+}
+
 // RenumberDuplicateIssues gives a new number to the issues of a project that
 // share an issue number with another issue, so each display id names one issue
 // again. Only issues that carry the given environment are renumbered: they are
 // the ones a merge moved in. When every issue of a group carries it, the one
 // with the lowest row id keeps the number. The new numbers continue after the
-// project's counter. It returns the old and new display numbers.
+// project's counter. It returns the old and new numbers.
 func (s *ProjectStore) RenumberDuplicateIssues(ctx context.Context, slug, environment string) ([][2]int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -47,9 +51,50 @@ func (s *ProjectStore) RenumberDuplicateIssues(ctx context.Context, slug, enviro
 	}
 	defer tx.Rollback()
 	var projectID, counter int64
-	if err := tx.QueryRowContext(ctx, `SELECT id, issue_counter FROM projects WHERE slug = ?`, slug).Scan(&projectID, &counter); err != nil {
+	err = tx.QueryRowContext(ctx, `SELECT id, issue_counter FROM projects WHERE slug = ?`, slug).Scan(&projectID, &counter)
+	if err != nil {
 		return nil, wrapNotFound(err, "project not found")
 	}
+	groups, err := duplicateIssueGroups(ctx, tx, projectID, environment)
+	if err != nil {
+		return nil, err
+	}
+	var changed [][2]int64
+	for _, members := range groups {
+		for _, m := range renumberCandidates(members) {
+			counter++
+			if _, err := tx.ExecContext(ctx, `UPDATE issues SET issue_number = ? WHERE id = ?`, counter, m.id); err != nil {
+				return nil, apperr.Internal(fmt.Sprintf("renumber issue %d", m.id), err)
+			}
+			changed = append(changed, [2]int64{m.number, counter})
+		}
+	}
+	if len(changed) > 0 {
+		if _, err := tx.ExecContext(ctx, `UPDATE projects SET issue_counter = ? WHERE id = ?`, counter, projectID); err != nil {
+			return nil, apperr.Internal("renumber: raise counter", err)
+		}
+	}
+	return changed, wrapErr(tx.Commit(), "renumber issues")
+}
+
+// renumberCandidates picks the members of one group that take a new number.
+func renumberCandidates(members []numberedIssue) []numberedIssue {
+	all := true
+	for _, m := range members {
+		all = all && m.matches
+	}
+	var out []numberedIssue
+	for i, m := range members {
+		if m.matches && (!all || i > 0) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// duplicateIssueGroups returns the issues that share a number, grouped by
+// number in ascending order, each group in row id order.
+func duplicateIssueGroups(ctx context.Context, tx *sql.Tx, projectID int64, environment string) ([][]numberedIssue, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT i.id, i.issue_number,
 			EXISTS (SELECT 1 FROM issue_facets f WHERE f.issue_id = i.id
@@ -61,50 +106,18 @@ func (s *ProjectStore) RenumberDuplicateIssues(ctx context.Context, slug, enviro
 	if err != nil {
 		return nil, apperr.Internal("renumber: find duplicates", err)
 	}
-	type member struct {
-		id, number int64
-		matches    bool
-	}
-	groups := map[int64][]member{}
+	defer rows.Close()
+	var groups [][]numberedIssue
 	for rows.Next() {
-		var m member
+		var m numberedIssue
 		if err := rows.Scan(&m.id, &m.number, &m.matches); err != nil {
-			_ = rows.Close()
 			return nil, apperr.Internal("renumber: scan", err)
 		}
-		groups[m.number] = append(groups[m.number], m)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, apperr.Internal("renumber: find duplicates", err)
-	}
-	numbers := make([]int64, 0, len(groups))
-	for n := range groups {
-		numbers = append(numbers, n)
-	}
-	sort.Slice(numbers, func(i, j int) bool { return numbers[i] < numbers[j] })
-
-	var changed [][2]int64
-	for _, n := range numbers {
-		members := groups[n]
-		all := true
-		for _, m := range members {
-			all = all && m.matches
-		}
-		for i, m := range members {
-			if !m.matches || (all && i == 0) {
-				continue
-			}
-			counter++
-			if _, err := tx.ExecContext(ctx, `UPDATE issues SET issue_number = ? WHERE id = ?`, counter, m.id); err != nil {
-				return nil, apperr.Internal(fmt.Sprintf("renumber issue %d", m.id), err)
-			}
-			changed = append(changed, [2]int64{n, counter})
+		if n := len(groups); n > 0 && groups[n-1][0].number == m.number {
+			groups[n-1] = append(groups[n-1], m)
+		} else {
+			groups = append(groups, []numberedIssue{m})
 		}
 	}
-	if len(changed) > 0 {
-		if _, err := tx.ExecContext(ctx, `UPDATE projects SET issue_counter = ? WHERE id = ?`, counter, projectID); err != nil {
-			return nil, apperr.Internal("renumber: raise counter", err)
-		}
-	}
-	return changed, wrapErr(tx.Commit(), "renumber issues")
+	return groups, wrapErr(rows.Err(), "renumber: find duplicates")
 }
