@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
 )
@@ -13,35 +14,23 @@ import (
 // fail the whole merge. Events, regression rows and facets follow the issue;
 // the target keeps its status, mute mode and representative event.
 func foldCollidingIssues(ctx context.Context, tx *sql.Tx, sourceID, targetID int64) error {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT s.id, t.id FROM issues s
-		JOIN issues t ON t.project_id = ? AND t.fingerprint = s.fingerprint
-		WHERE s.project_id = ?`, targetID, sourceID)
-	if err != nil {
-		return apperr.Internal("merge: find colliding issues", err)
-	}
-	type pair struct{ source, target int64 }
-	var pairs []pair
-	for rows.Next() {
-		var p pair
-		if err := rows.Scan(&p.source, &p.target); err != nil {
-			_ = rows.Close()
-			return apperr.Internal("merge: scan colliding issues", err)
+	// Each fold deletes its source issue, so the next lookup finds the next pair.
+	for {
+		var from, into int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT s.id, t.id FROM issues s
+			JOIN issues t ON t.project_id = ? AND t.fingerprint = s.fingerprint
+			WHERE s.project_id = ? LIMIT 1`, targetID, sourceID).Scan(&from, &into)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
 		}
-		pairs = append(pairs, p)
-	}
-	if err := rows.Close(); err != nil {
-		return apperr.Internal("merge: find colliding issues", err)
-	}
-	if err := rows.Err(); err != nil {
-		return apperr.Internal("merge: find colliding issues", err)
-	}
-	for _, p := range pairs {
-		if err := foldIssue(ctx, tx, p.source, p.target); err != nil {
+		if err != nil {
+			return apperr.Internal("merge: find colliding issues", err)
+		}
+		if err := foldIssue(ctx, tx, from, into); err != nil {
 			return err
 		}
 	}
-	return nil
 }
 
 func foldIssue(ctx context.Context, tx *sql.Tx, from, into int64) error {

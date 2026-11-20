@@ -68,3 +68,38 @@ func TestMergeProjectsFoldsCollidingFingerprints(t *testing.T) {
 		t.Errorf("issue environments = %v, want production 1 and staging 2", counts)
 	}
 }
+
+// A failure while folding surfaces as an error and the transaction rolls back.
+func TestFoldCollidingIssuesReportsFailures(t *testing.T) {
+	t.Parallel()
+	store, ctx := openMergeStore(t)
+	source, err := store.CreateProject(ctx, "Source", "source-proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := store.CreateProject(ctx, "Target", "target-proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for _, id := range []int64{source.ID, target.ID} {
+		p := releaseEvent(now, map[string]any{}, nil)
+		p.Fingerprint, p.FingerprintMaterial = "same", "same"
+		if _, _, _, _, err := store.PersistProcessedEvent(domain.WithProjectID(ctx, id), p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, drop := range []string{"regression_events", "issues"} {
+		tx, err := store.DB().BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, "DROP TABLE "+drop); err != nil {
+			t.Fatal(err)
+		}
+		if err := foldCollidingIssues(ctx, tx, source.ID, target.ID); err == nil {
+			t.Errorf("fold with %s dropped returned no error", drop)
+		}
+		_ = tx.Rollback()
+	}
+}
