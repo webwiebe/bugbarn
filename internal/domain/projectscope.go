@@ -33,3 +33,18 @@ func ProjectIDsFromContext(ctx context.Context) ([]int64, bool) {
 	ids, ok := ctx.Value(ctxProjectIDsKey{}).([]int64)
 	return ids, ok && len(ids) > 0
 }
+
+type ctxIssueProjectKey struct{}
+
+// WithIssueProject confines the lookup of an issue by its display id to one
+// project. Admin writes use it so that an id which names an issue in another
+// project can never be the one changed.
+func WithIssueProject(ctx context.Context, id int64) context.Context {
+	return context.WithValue(ctx, ctxIssueProjectKey{}, id)
+}
+
+// IssueProjectFromContext returns the project set by WithIssueProject.
+func IssueProjectFromContext(ctx context.Context) (int64, bool) {
+	id, ok := ctx.Value(ctxIssueProjectKey{}).(int64)
+	return id, ok && id > 0
+}

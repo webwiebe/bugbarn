@@ -212,7 +212,15 @@ func (s *Server) mutateIssue(
 	w http.ResponseWriter, r *http.Request, rec mutqueue.Record,
 	apply func(ctx context.Context) (domain.Issue, error),
 ) {
-	issue, queued, err := tryMutate(r.Context(), s.mutQueue, rec, apply)
+	ctx := r.Context()
+	// Only a project the caller named confines the lookup. Without the header the
+	// context holds the default project, which says nothing about the issue (#232).
+	if r.Header.Get("X-BugBarn-Project") != "" {
+		if id, ok := domain.ProjectIDFromContext(ctx); ok && id > 0 {
+			ctx = domain.WithIssueProject(ctx, id)
+		}
+	}
+	issue, queued, err := tryMutate(ctx, s.mutQueue, rec, apply)
 	if queued {
 		writeJSONStatus(w, http.StatusAccepted, map[string]any{"queued": true, "issue_id": rec.IssueID})
 		return
