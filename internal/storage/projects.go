@@ -423,6 +423,11 @@ func (s *ProjectStore) MergeProjectsAs(ctx context.Context, sourceSlug, targetSl
 		}
 	}
 
+	// Issues the target already holds by fingerprint fold into its own.
+	if err := foldCollidingIssues(ctx, tx, sourceID, targetID); err != nil {
+		return err
+	}
+
 	// Move or drop each project-owned table as projectTables says. The issues
 	// moved keep their ids, so facet and regression rows cannot collide with
 	// rows the target project already has.
