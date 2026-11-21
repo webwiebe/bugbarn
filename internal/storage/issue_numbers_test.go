@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -181,3 +182,45 @@ func TestRenumberDuplicateIssuesStartsAfterTheHighestNumber(t *testing.T) {
 		t.Errorf("renumbered issue = %d (%v), want 8 (after the highest, 7)", x, err)
 	}
 }
+
+// A write that names a project finds the issue inside it, even when another
+// project holds the same display id.
+func TestIssueRowIDByDisplayIDHonoursTheIssueProject(t *testing.T) {
+	t.Parallel()
+	store, ctx := openMergeStore(t)
+	a, _ := store.CreateProject(ctx, "A", "proj-a")
+	b, _ := store.CreateProject(ctx, "B", "proj-b")
+	persistFingerprints(t, store, a.ID, "production", "a")
+	persistFingerprints(t, store, b.ID, "production", "b")
+	mustExec(ctx, t, store, `UPDATE projects SET issue_prefix = 'SAME'`)
+	mustExec(ctx, t, store, `UPDATE issues SET issue_number = 7`)
+
+	var rowA, rowB int64
+	if err := store.DB().QueryRowContext(ctx, `SELECT id FROM issues WHERE project_id = ?`, a.ID).Scan(&rowA); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRowContext(ctx, `SELECT id FROM issues WHERE project_id = ?`, b.ID).Scan(&rowB); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		project int64
+		want    int64
+	}{{a.ID, rowA}, {b.ID, rowB}} {
+		got, err := store.IssueRowIDByDisplayID(domain.WithIssueProject(ctx, c.project), "SAME-7")
+		if err != nil || got != c.want {
+			t.Errorf("project %d: row = %d (%v), want %d", c.project, got, err, c.want)
+		}
+	}
+	if _, err := store.IssueRowIDByDisplayID(domain.WithIssueProject(ctx, b.ID+100), "SAME-7"); err == nil {
+		t.Error("an issue lookup in a project without it returned no error")
+	}
+	// Legacy row-id form stays inside the project too.
+	if got, err := store.IssueRowIDByDisplayID(domain.WithIssueProject(ctx, a.ID), "issue-"+itoa(rowA)); err != nil || got != rowA {
+		t.Errorf("legacy id in its project = %d (%v), want %d", got, err, rowA)
+	}
+	if _, err := store.IssueRowIDByDisplayID(domain.WithIssueProject(ctx, a.ID), "issue-"+itoa(rowB)); err == nil {
+		t.Error("legacy id of another project returned no error")
+	}
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }

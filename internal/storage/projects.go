@@ -231,15 +231,24 @@ func (s *core) IssueRowIDByDisplayID(ctx context.Context, displayID string) (int
 	if err != nil {
 		return 0, wrapErr(err, "IssueRowIDByDisplayID")
 	}
+	// A write that names a project looks the issue up inside it only.
+	scope, scoped := domain.IssueProjectFromContext(ctx)
 	if prefix == "" {
 		// Legacy format: number is the row ID.
+		if scoped {
+			var rowID int64
+			err := s.readDB().QueryRowContext(ctx,
+				`SELECT id FROM issues WHERE id = ? AND project_id = ?`, number, scope).Scan(&rowID)
+			return rowID, wrapNotFound(err, "issue not found")
+		}
 		return int64(number), nil
 	}
 	var rowID int64
 	err = s.readDB().QueryRowContext(ctx, `
 SELECT i.id FROM issues i
 JOIN projects p ON p.id = i.project_id
-WHERE p.issue_prefix = ? AND i.issue_number = ?`, prefix, number).Scan(&rowID)
+WHERE p.issue_prefix = ? AND i.issue_number = ? AND (? = 0 OR i.project_id = ?)
+ORDER BY i.id LIMIT 1`, prefix, number, scope, scope).Scan(&rowID)
 	if err != nil {
 		return 0, wrapNotFound(err, "issue not found")
 	}
