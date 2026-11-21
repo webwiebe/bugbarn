@@ -98,6 +98,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 - **FR-515**: A project that received no event, log line or page view for 7 days MAY be archived (`POST /api/v1/projects/{slug}/archive`, `bb projects --archive SLUG`); a busier project is refused with 409. The response and the service log carry the time of its last activity. An archived project keeps its data and stays readable by slug, drops out of `GET /api/v1/projects` unless `include_archived=true`, and returns to active with `unarchive`. Issues: [#282](https://github.com/webwiebe/bugbarn/issues/282). Tests: `internal/storage/project_archive_test.go`, `internal/api/project_archive_test.go`, `internal/service/projects/archive_test.go`, `cmd/bb/environments_test.go::TestProjectsArchiveAndUnarchive`.
 
 ---
+- **FR-516**: Every `<select>` in the SPA lists its options alphabetically by label, case-insensitive and in the browser's language, through `web/src/components/select-options.ts`; leading "All ..." options stay first. A select whose options have a natural order keeps it and says which in a comment at its call site: the time ranges (Logs, Security) and the log level ladder. Owner rule of 2026-11-21. Tests: `web/scripts/select-options.test.mjs`.
 
 ## Drift
 

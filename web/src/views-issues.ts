@@ -11,6 +11,7 @@ import { setRouteStatus } from "./app-actions.js";
 import { createPageLoader, observeSentinel } from "./infinite-scroll.js";
 import { loadErrorTimeline, renderErrorTimelineSlot } from "./views-error-timeline.js";
 import { loadSurfaces, renderSurfacesSlot } from "./views-surfaces.js";
+import { sortedOptionsHtml } from "./components/select-options.js";
 
 let issueLoadGeneration = 0;
 let loadingMore = false;
@@ -157,9 +158,11 @@ export function renderIssuesView(error: unknown = null): void {
         <input id="issue-filter" type="search" placeholder="Search issues…" aria-label="Search issues" value="${escapeHtml(state.issueQuery)}" />
         <input id="issue-release" type="search" placeholder="Release…" aria-label="Filter by release" value="${escapeHtml(state.issueRelease)}" />
         <select id="issue-sort" aria-label="Sort issues">
-          <option value="last_seen"${state.issueSort === "last_seen" ? " selected" : ""}>Last seen</option>
-          <option value="first_seen"${state.issueSort === "first_seen" ? " selected" : ""}>First seen</option>
-          <option value="event_count"${state.issueSort === "event_count" ? " selected" : ""}>Event count</option>
+          ${sortedOptionsHtml([
+            { value: "last_seen", label: "Last seen" },
+            { value: "first_seen", label: "First seen" },
+            { value: "event_count", label: "Event count" },
+          ], state.issueSort)}
         </select>
       </div>
     </div>
