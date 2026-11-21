@@ -2,6 +2,7 @@ import { escapeAttr, escapeHtml, formatTime } from "../format.js";
 import type { LogFilters } from "./log-filters.js";
 import type { ApiLogEntry } from "../types.js";
 import { renderAttrChips, renderLogFacets, renderLogHistogram, renderRangeSelect, type LogExplorerPanels } from "./log-explorer.js";
+import { optionsHtml } from "../select-options.js";
 
 function attrText(v: unknown): string {
   return typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? "");
@@ -87,7 +88,7 @@ export function renderLogsViewMarkup(
     <div class="log-toolbar">
       ${renderRangeSelect(filters)}
       <select id="log-level-filter" aria-label="Filter by level">
-        ${levelOptions.map((opt) => `<option value="${escapeAttr(opt.value)}"${opt.value === filters.level ? " selected" : ""}>${escapeHtml(opt.label)}</option>`).join("")}
+        ${/* Natural order kept: the severity ladder from debug to fatal. */ optionsHtml(levelOptions, filters.level)}
       </select>
       <input id="log-search" type="search" placeholder="Filter by message…" value="${escapeAttr(filters.q)}" />
       <button id="log-clear" type="button">Clear</button>

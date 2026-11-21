@@ -3,6 +3,7 @@
 import { escapeAttr, escapeHtml, formatAge } from "../format.js";
 import type { ApiAlias, ApiEnvironment, ApiProject, ApiProjectGroup } from "../types.js";
 import { renderField } from "./event-detail.js";
+import { sortedOptionsHtml } from "../select-options.js";
 
 // usageCount formats a per-project count for display. An absent count means the
 // server could not produce the usage aggregate, which must not be shown as "0"
@@ -87,18 +88,22 @@ function renderProjectList(projects: ApiProject[], groups: ApiProjectGroup[]): s
       <div class="project-controls">
         <input type="search" id="project-filter" placeholder="Filter projects…" autocomplete="off" />
         <select id="project-sort">
-          <option value="default">Pending first, then A–Z</option>
-          <option value="name-asc">Name A–Z</option>
-          <option value="name-desc">Name Z–A</option>
-          <option value="issues-desc">Most issues</option>
-          <option value="events-desc">Most events</option>
-          <option value="logs-desc">Most logs</option>
-          <option value="status">Status</option>
+          ${sortedOptionsHtml([
+            { value: "default", label: "Pending first, then A–Z" },
+            { value: "name-asc", label: "Name A–Z" },
+            { value: "name-desc", label: "Name Z–A" },
+            { value: "issues-desc", label: "Most issues" },
+            { value: "events-desc", label: "Most events" },
+            { value: "logs-desc", label: "Most logs" },
+            { value: "status", label: "Status" },
+          ], "default")}
         </select>
         <select id="project-status-filter">
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="active">Active</option>
+          ${sortedOptionsHtml([
+            { value: "all", label: "All statuses" },
+            { value: "pending", label: "Pending" },
+            { value: "active", label: "Active" },
+          ], "all", 1)}
         </select>
       </div>
       <div id="project-list">
@@ -125,7 +130,7 @@ function renderGroupRow(g: ApiProjectGroup, projects: ApiProject[]): string {
               ${ungrouped.length > 0 ? `
               <form data-add-to-group="${escapeAttr(g.slug)}" style="display:flex;gap:4px">
                 <select name="project" style="font-size:12px">
-                  ${ungrouped.map(p => { const s = String(p.slug ?? p.Slug ?? ""); return `<option value="${escapeAttr(s)}">${escapeHtml(String(p.name ?? p.Name ?? s))}</option>`; }).join("")}
+                  ${sortedOptionsHtml(ungrouped.map(p => { const s = String(p.slug ?? p.Slug ?? ""); return { value: s, label: String(p.name ?? p.Name ?? s) }; }))}
                 </select>
                 <button type="submit" class="btn-sm">Add</button>
               </form>` : ""}
@@ -164,10 +169,10 @@ function renderAliasesSection(projects: ApiProject[], aliases: ApiAlias[]): stri
         <label class="field">
           <span>Target project</span>
           <select name="project">
-            ${projects.filter(p => (p.status ?? p.Status) !== "pending").map(p => {
+            ${sortedOptionsHtml(projects.filter(p => (p.status ?? p.Status) !== "pending").map(p => {
               const slug = String(p.slug ?? p.Slug ?? "");
-              return `<option value="${escapeAttr(slug)}">${escapeHtml(String(p.name ?? p.Name ?? slug))}</option>`;
-            }).join("")}
+              return { value: slug, label: String(p.name ?? p.Name ?? slug) };
+            }))}
           </select>
         </label>
         <div class="link-row form-actions"><button type="submit">Create alias</button></div>

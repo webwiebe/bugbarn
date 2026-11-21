@@ -27,6 +27,7 @@ import {
   issueTitle,
 } from "../domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "../format.js";
+import { sortedOptionsHtml } from "../select-options.js";
 import type { ApiEvent, ApiIssue, ApiRelease, BreadcrumbEntry, RawRecord } from "../types.js";
 import {
   renderDataSection,
@@ -306,8 +307,10 @@ function renderMuteButton(issue: ApiIssue): string {
   return `
     <span class="mute-group">
       <select id="mute-mode-select" aria-label="Mute mode">
-        <option value="until_regression">Until regression</option>
-        <option value="forever">Forever</option>
+        ${sortedOptionsHtml([
+          { value: "until_regression", label: "Until regression" },
+          { value: "forever", label: "Forever" },
+        ], "until_regression")}
       </select>
       <button class="btn btn--secondary" data-action="mute-issue" data-issue-id="${issue.ID || issue.id}">Mute</button>
     </span>`;

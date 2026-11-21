@@ -21,6 +21,7 @@ import {
 } from "./core.js";
 import { fetchJson } from "./http.js";
 import { refreshAll } from "./app-actions.js";
+import { sortedOptionsHtml } from "./select-options.js";
 
 export async function loadProjects(): Promise<void> {
   try {
@@ -223,12 +224,7 @@ export function renderEnvSwitcher(envs: string[]): void {
   if (!envSelect) return;
   const current = state.currentEnv;
   envSelect.innerHTML = `<option value="">All environments</option>` +
-    envs
-      .map((e) => {
-        const selected = e === current ? ' selected' : '';
-        return `<option value="${escapeHtml(e)}"${selected}>${escapeHtml(e)}</option>`;
-      })
-      .join("");
+    sortedOptionsHtml(envs.map((e) => ({ value: e, label: e })), current);
   envSelect.hidden = envs.length === 0;
   updateScopeBtn();
 }

@@ -3,6 +3,7 @@
 import { escapeAttr, escapeHtml, formatTime } from "../format.js";
 import { logRanges, splitAttr, type LogFilters } from "./log-filters.js";
 import type { ApiLogFacets, ApiLogHistogram } from "../types.js";
+import { optionsHtml } from "../select-options.js";
 
 export interface LogExplorerPanels {
   histogram: ApiLogHistogram | null;
@@ -14,9 +15,8 @@ const chartLevels = ["fatal", "error", "warn", "info", "debug", "trace"];
 
 export function renderRangeSelect(filters: LogFilters): string {
   const custom = filters.from && filters.to;
-  const options = logRanges
-    .map((r) => `<option value="${escapeAttr(r)}"${!custom && r === filters.range ? " selected" : ""}>Last ${escapeHtml(r)}</option>`)
-    .join("");
+  // Natural order kept: the range runs from the shortest window to the longest.
+  const options = optionsHtml(logRanges.map((r) => ({ value: r, label: `Last ${r}` })), custom ? undefined : filters.range);
   return `<select id="log-range" aria-label="Time range">${custom ? `<option value="" selected>Custom range</option>` : ""}${options}</select>`;
 }
 

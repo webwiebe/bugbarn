@@ -1,5 +1,6 @@
 import { escapeAttr, escapeHtml } from "../format.js";
 import type { ApiProject, VolumeDefaults } from "../types.js";
+import { sortedOptionsHtml } from "../select-options.js";
 
 // Volume settings: how much of the database each project is allowed to occupy.
 //
@@ -67,9 +68,11 @@ function renderProjectRow(p: ApiProject, defaults: VolumeDefaults): string {
       </td>
       <td>
         <select data-volume-sampling="${escapeAttr(slug)}" aria-label="Sampling for ${escapeAttr(slug)}">
-          <option value=""${mode === "" ? " selected" : ""}>Inherit</option>
-          <option value="on"${mode === "on" ? " selected" : ""}>On</option>
-          <option value="off"${mode === "off" ? " selected" : ""}>Off</option>
+          ${sortedOptionsHtml([
+            { value: "", label: "Inherit" },
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ], mode)}
         </select>
       </td>
       <td class="volume-actions">

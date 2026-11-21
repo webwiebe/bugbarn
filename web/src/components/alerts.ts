@@ -1,6 +1,7 @@
 import { escapeAttr, escapeHtml, errorMessage, formatTime } from "../format.js";
 import type { ApiAlert } from "../types.js";
 import { renderField } from "./event-detail.js";
+import { sortedOptionsHtml } from "../select-options.js";
 
 export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null): string {
   return `
@@ -21,10 +22,12 @@ export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null
           <label class="field">
             <span>Condition</span>
             <select name="condition" id="alert-condition-select">
-              <option value="new_issue">New issue created</option>
-              <option value="regression">Issue regressed</option>
-              <option value="event_count_exceeds">Event count exceeds</option>
-              <option value="message_contains">Message contains</option>
+              ${sortedOptionsHtml([
+                { value: "new_issue", label: "New issue created" },
+                { value: "regression", label: "Issue regressed" },
+                { value: "event_count_exceeds", label: "Event count exceeds" },
+                { value: "message_contains", label: "Message contains" },
+              ], "new_issue")}
             </select>
           </label>
           <label class="field alert-threshold-field" hidden>

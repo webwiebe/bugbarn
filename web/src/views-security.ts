@@ -4,6 +4,7 @@
 import { escapeAttr, escapeHtml, errorMessage, formatTime } from "./format.js";
 import { elements, setActiveView, setStatus, state } from "./core.js";
 import { telemetryGet } from "./telemetry-api.js";
+import { optionsHtml } from "./select-options.js";
 
 interface SecurityRow {
   id: number;
@@ -120,8 +121,8 @@ function renderForm(): string {
         <input type="${f === "status" ? "number" : "search"}" name="${f}" value="${escapeAttr(sec.filters[f] ?? "")}"
           autocomplete="off" spellcheck="false">
       </label>`).join("");
-  const options = rangeOptions.map(([v, label]) =>
-    `<option value="${v}"${v === sec.range ? " selected" : ""}>${label}</option>`).join("");
+  // Natural order kept: the range runs from the shortest window to the longest.
+  const options = optionsHtml(rangeOptions.map(([value, label]) => ({ value, label })), sec.range);
   const custom = sec.range === "custom" ? `
       <label class="sec-field"><span>From</span>
         <input type="datetime-local" name="customFrom" value="${escapeAttr(sec.customFrom)}"></label>
