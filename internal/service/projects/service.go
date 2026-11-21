@@ -34,6 +34,7 @@ type Repository interface {
 	RenameProject(ctx context.Context, oldSlug, newSlug, newName string) error
 	MergeProjects(ctx context.Context, sourceSlug, targetSlug string) error
 	MergeProjectsAs(ctx context.Context, sourceSlug, targetSlug, environment string) error
+	MergeProjectsReport(ctx context.Context, sourceSlug, targetSlug, environment string, dryRun bool) (domain.MergeReport, error)
 	ArchiveProject(ctx context.Context, slug string, quietFor time.Duration) (time.Time, error)
 	UnarchiveProject(ctx context.Context, slug string) error
 

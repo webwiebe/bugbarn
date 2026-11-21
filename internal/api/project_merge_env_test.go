@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +67,52 @@ func TestMergeProjectRefusesBadEnvironment(t *testing.T) {
 	}
 	if _, err := store.ProjectBySlug(ctx, "legacy-app"); err != nil {
 		t.Errorf("source project must survive a refused merge: %v", err)
+	}
+}
+
+// A dry run reports the counts and leaves the source project in place.
+func TestMergeProjectDryRunReportsAndChangesNothing(t *testing.T) {
+	t.Parallel()
+
+	srv, store := setupTestServer(t)
+	ctx := context.Background()
+	source, err := store.CreateProject(ctx, "Legacy", "legacy-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx,
+		`INSERT INTO releases (project_id, name, observed_at, environment) VALUES (?, 'v1', '2026-01-01T00:00:00Z', '')`, source.ID); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/legacy-app/merge?dry_run=true",
+		bytes.NewReader([]byte(`{"target":"default","environment":"staging"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Report struct {
+			DryRun bool             `json:"dry_run"`
+			Moved  map[string]int64 `json:"moved"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Report.DryRun || got.Report.Moved["releases"] != 1 {
+		t.Errorf("report = %+v, want dry run with 1 release", got.Report)
+	}
+	if _, err := store.ProjectBySlug(ctx, "legacy-app"); err != nil {
+		t.Errorf("a dry run must keep the source project: %v", err)
+	}
+	// The real merge, then the re-run, reports already merged.
+	if rr := postMerge(t, srv, "legacy-app", `{"target":"default"}`); rr.Code != http.StatusOK {
+		t.Fatalf("merge: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = postMerge(t, srv, "legacy-app", `{"target":"default"}`)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"already_merged":true`) {
+		t.Errorf("re-run: %d %s", rr.Code, rr.Body.String())
 	}
 }

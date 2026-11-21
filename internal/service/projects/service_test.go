@@ -23,6 +23,7 @@ type fakeRepo struct {
 
 	silenceSlug, silenceValue string
 
+	mergeDry             bool
 	mergeEnv             string
 	archived, unarchived string
 	archivedLast         time.Time
@@ -183,6 +184,12 @@ func (f *fakeRepo) MergeProjects(_ context.Context, _, _ string) error {
 func (f *fakeRepo) MergeProjectsAs(_ context.Context, _, _, env string) error {
 	f.mergeEnv = env
 	return f.err
+}
+
+func (f *fakeRepo) MergeProjectsReport(_ context.Context, src, tgt, env string, dry bool) (domain.MergeReport, error) {
+	f.mergeEnv = env
+	f.mergeDry = dry
+	return domain.MergeReport{Source: src, Target: tgt, Environment: env, DryRun: dry}, f.err
 }
 
 func (f *fakeRepo) ArchiveProject(_ context.Context, slug string, _ time.Duration) (time.Time, error) {

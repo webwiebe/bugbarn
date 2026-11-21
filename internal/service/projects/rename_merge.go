@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/bugbarn/internal/apperr"
+	"github.com/wiebe-xyz/bugbarn/internal/domain"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
 
@@ -77,6 +78,31 @@ func (s *Service) MergeInto(ctx context.Context, sourceSlug, targetSlug, environ
 	s.usage.invalidate()
 	s.logger.InfoContext(ctx, "projects merged", "source", sourceSlug, "target", targetSlug, "environment", environment)
 	return nil
+}
+
+// MergeReport merges like MergeInto and returns what moved. With dryRun it
+// changes nothing and returns what the merge would move. A source that already
+// is an alias of the target returns an already-merged report, so a re-run is safe.
+func (s *Service) MergeReport(ctx context.Context, sourceSlug, targetSlug, environment string, dryRun bool) (domain.MergeReport, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "service.projects.MergeReport",
+		trace.WithAttributes(attribute.String("source", sourceSlug), attribute.String("target", targetSlug),
+			attribute.String("environment", environment), attribute.Bool("dry_run", dryRun)))
+	defer span.End()
+	if !validEnvironmentName(environment) {
+		return domain.MergeReport{}, apperr.InvalidInput("environment must be 1 to 64 letters, digits, dots, underscores or hyphens", nil)
+	}
+	rep, err := s.repo.MergeProjectsReport(ctx, sourceSlug, targetSlug, environment, dryRun)
+	if err != nil {
+		tracing.SetError(span, err)
+		apperr.LogFailure(ctx, s.logger, "merge projects", err, "source", sourceSlug, "target", targetSlug)
+		return rep, err
+	}
+	if dryRun || rep.AlreadyMerged {
+		return rep, nil
+	}
+	s.usage.invalidate()
+	s.logger.InfoContext(ctx, "projects merged", "source", sourceSlug, "target", targetSlug, "environment", environment)
+	return rep, nil
 }
 
 // validEnvironmentName reports whether name is empty (no stamping) or a plain

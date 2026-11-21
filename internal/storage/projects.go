@@ -406,58 +406,6 @@ func (s *ProjectStore) MergeProjects(ctx context.Context, sourceSlug, targetSlug
 // MergeProjectsAs merges like MergeProjects and, when environment is not empty,
 // first stamps it on the source rows that carry none (see stampEnvironment).
 func (s *ProjectStore) MergeProjectsAs(ctx context.Context, sourceSlug, targetSlug, environment string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return wrapErr(err, "merge projects")
-	}
-	defer tx.Rollback()
-
-	var sourceID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, sourceSlug).Scan(&sourceID)
-	if err != nil {
-		return wrapNotFound(err, "source project not found")
-	}
-
-	var targetID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = ?`, targetSlug).Scan(&targetID)
-	if err != nil {
-		return wrapNotFound(err, "target project not found")
-	}
-
-	// Stamp before the move: afterwards the rows are the target's and the
-	// source's own can no longer be told apart.
-	if environment != "" {
-		if err := stampEnvironment(ctx, tx, sourceID, environment); err != nil {
-			return err
-		}
-	}
-
-	// Issues the target already holds by fingerprint fold into its own.
-	if err := foldCollidingIssues(ctx, tx, sourceID, targetID); err != nil {
-		return err
-	}
-
-	if err := shiftSourceIssueNumbers(ctx, tx, sourceID, targetID); err != nil {
-		return err
-	}
-
-	// Move or drop each project-owned table as projectTables says. The issues
-	// moved keep their ids, so facet and regression rows cannot collide with
-	// rows the target project already has.
-	if err := moveProjectRows(ctx, tx, sourceID, targetID); err != nil {
-		return wrapErr(err, "MergeProjects")
-	}
-
-	// Create alias from source slug → target project.
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO project_aliases (alias_slug, project_id) VALUES (?, ?)`, sourceSlug, targetID); err != nil {
-		return wrapErr(err, "merge: create alias")
-	}
-
-	// Delete source project.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, sourceID); err != nil {
-		return apperr.Internal("merge: delete source", err)
-	}
-
-	return wrapErr(tx.Commit(), "merge projects")
+	_, err := s.MergeProjectsReport(ctx, sourceSlug, targetSlug, environment, false)
+	return err
 }

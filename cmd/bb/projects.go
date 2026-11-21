@@ -36,16 +36,18 @@ func wantsMerge(args []string) bool {
 // cmdProjectsMerge implements `bb projects --merge SRC --into TARGET [--env ENV]`:
 // it moves the source project's data into the target and turns the source slug
 // into an alias. With --env, the source rows that name no environment get it.
+// With --dry-run the report lists the counts and nothing changes.
 func cmdProjectsMerge(args []string) error {
 	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
 	src := fs.String("merge", "", "slug of the project to merge away")
 	into := fs.String("into", "", "slug of the project that receives the data")
 	env := fs.String("env", "", "environment to stamp on the source rows that name none")
+	dry := fs.Bool("dry-run", false, "report what the merge would move and change nothing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *src == "" || *into == "" {
-		return errors.New("usage: bb projects --merge SRC --into TARGET [--env ENV]")
+		return errors.New("usage: bb projects --merge SRC --into TARGET [--env ENV] [--dry-run]")
 	}
 	if *src == *into {
 		return errors.New("--merge and --into name the same project")
@@ -58,7 +60,11 @@ func cmdProjectsMerge(args []string) error {
 	if *env != "" {
 		body["environment"] = *env
 	}
-	data, err := client.post("/api/v1/projects/"+url.PathEscape(*src)+"/merge", body)
+	path := "/api/v1/projects/" + url.PathEscape(*src) + "/merge"
+	if *dry {
+		path += "?dry_run=true"
+	}
+	data, err := client.post(path, body)
 	if err != nil {
 		return err
 	}

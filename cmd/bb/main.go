@@ -123,6 +123,7 @@ Examples:
   bb projects --create "My App"      # create a new project
   bb environments --project bugbarn  # environments with issue counts and last activity
   bb projects --merge OLD --into NEW --env staging   # merge a project, stamping the environment
+  bb projects --merge OLD --into NEW --dry-run       # report the counts, change nothing
   bb projects --archive SLUG         # archive a project quiet for 7 days (prints its last event time)
   bb projects --unarchive SLUG       # bring an archived project back
   bb groups                          # list project groups

@@ -138,3 +138,19 @@ func TestProjectsArchiveAndUnarchive(t *testing.T) {
 		t.Error("archiving an unknown project must fail")
 	}
 }
+
+func TestProjectsMergeDryRunChangesNothing(t *testing.T) {
+	h := newHarness(t)
+	inEmptyDir(t)
+	ctx := context.Background()
+	if _, err := h.Store.CreateProject(ctx, "Legacy", "legacy-app"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCmd(t, cmdProjects, "--merge", "legacy-app", "--into", "default", "--env", "staging", "--dry-run")
+	if err != nil || !strings.Contains(out, `"dry_run": true`) && !strings.Contains(out, `"dry_run":true`) {
+		t.Fatalf("dry run: %v\n%s", err, out)
+	}
+	if _, err := h.Store.ProjectBySlug(ctx, "legacy-app"); err != nil {
+		t.Errorf("a dry run must keep the source project: %v", err)
+	}
+}
