@@ -27,7 +27,7 @@ import {
   issueTitle,
 } from "../domain.js";
 import { escapeAttr, escapeHtml, errorMessage, formatAge, formatTime } from "../format.js";
-import { sortedOptionsHtml } from "../select-options.js";
+import { sortedOptionsHtml } from "./select-options.js";
 import type { ApiEvent, ApiIssue, ApiRelease, BreadcrumbEntry, RawRecord } from "../types.js";
 import {
   renderDataSection,

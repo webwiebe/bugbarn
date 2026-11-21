@@ -1,7 +1,7 @@
 import { escapeAttr, escapeHtml, errorMessage, formatTime } from "../format.js";
 import type { ApiAlert } from "../types.js";
 import { renderField } from "./event-detail.js";
-import { sortedOptionsHtml } from "../select-options.js";
+import { sortedOptionsHtml } from "./select-options.js";
 
 export function renderAlertsViewMarkup(alerts: ApiAlert[], error: unknown = null): string {
   return `

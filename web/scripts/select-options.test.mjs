@@ -4,7 +4,7 @@
 import "./support/dom-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-const { optionsHtml, sortedOptionsHtml, sortOptions } = await import("../src/select-options.ts");
+const { optionsHtml, sortedOptionsHtml, sortOptions } = await import("../src/components/select-options.ts");
 
 const labels = (options) => options.map((o) => o.label);
 

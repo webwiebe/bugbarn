@@ -3,7 +3,7 @@
 import { escapeAttr, escapeHtml, formatTime } from "../format.js";
 import { logRanges, splitAttr, type LogFilters } from "./log-filters.js";
 import type { ApiLogFacets, ApiLogHistogram } from "../types.js";
-import { optionsHtml } from "../select-options.js";
+import { optionsHtml } from "./select-options.js";
 
 export interface LogExplorerPanels {
   histogram: ApiLogHistogram | null;

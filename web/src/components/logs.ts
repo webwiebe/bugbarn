@@ -2,7 +2,7 @@ import { escapeAttr, escapeHtml, formatTime } from "../format.js";
 import type { LogFilters } from "./log-filters.js";
 import type { ApiLogEntry } from "../types.js";
 import { renderAttrChips, renderLogFacets, renderLogHistogram, renderRangeSelect, type LogExplorerPanels } from "./log-explorer.js";
-import { optionsHtml } from "../select-options.js";
+import { optionsHtml } from "./select-options.js";
 
 function attrText(v: unknown): string {
   return typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? "");

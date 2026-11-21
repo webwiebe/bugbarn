@@ -21,7 +21,7 @@ import {
 } from "./core.js";
 import { fetchJson } from "./http.js";
 import { refreshAll } from "./app-actions.js";
-import { sortedOptionsHtml } from "./select-options.js";
+import { sortedOptionsHtml } from "./components/select-options.js";
 
 export async function loadProjects(): Promise<void> {
   try {

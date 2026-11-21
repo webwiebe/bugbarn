@@ -11,7 +11,7 @@ import { setRouteStatus } from "./app-actions.js";
 import { createPageLoader, observeSentinel } from "./infinite-scroll.js";
 import { loadErrorTimeline, renderErrorTimelineSlot } from "./views-error-timeline.js";
 import { loadSurfaces, renderSurfacesSlot } from "./views-surfaces.js";
-import { sortedOptionsHtml } from "./select-options.js";
+import { sortedOptionsHtml } from "./components/select-options.js";
 
 let issueLoadGeneration = 0;
 let loadingMore = false;

@@ -4,7 +4,7 @@
 import { escapeAttr, escapeHtml, errorMessage, formatTime } from "./format.js";
 import { elements, setActiveView, setStatus, state } from "./core.js";
 import { telemetryGet } from "./telemetry-api.js";
-import { optionsHtml } from "./select-options.js";
+import { optionsHtml } from "./components/select-options.js";
 
 interface SecurityRow {
   id: number;

@@ -3,7 +3,7 @@
 import { escapeAttr, escapeHtml, formatAge } from "../format.js";
 import type { ApiAlias, ApiEnvironment, ApiProject, ApiProjectGroup } from "../types.js";
 import { renderField } from "./event-detail.js";
-import { sortedOptionsHtml } from "../select-options.js";
+import { sortedOptionsHtml } from "./select-options.js";
 
 // usageCount formats a per-project count for display. An absent count means the
 // server could not produce the usage aggregate, which must not be shown as "0"

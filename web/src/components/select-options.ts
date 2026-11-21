@@ -4,7 +4,7 @@
 // ranges, severity) renders with `optionsHtml` unsorted and a comment naming
 // that order at the call site.
 
-import { escapeAttr, escapeHtml } from "./format.js";
+import { escapeAttr, escapeHtml } from "../format.js";
 
 export interface SelectOption {
   value: string;

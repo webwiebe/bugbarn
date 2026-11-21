@@ -1,6 +1,6 @@
 import { escapeAttr, escapeHtml } from "../format.js";
 import type { ApiProject, VolumeDefaults } from "../types.js";
-import { sortedOptionsHtml } from "../select-options.js";
+import { sortedOptionsHtml } from "./select-options.js";
 
 // Volume settings: how much of the database each project is allowed to occupy.
 //
