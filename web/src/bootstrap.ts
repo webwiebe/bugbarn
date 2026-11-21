@@ -153,6 +153,7 @@ pickerFilter?.addEventListener("input", () => {
 
 pickerFilter?.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { closePicker(); pickerBtn?.focus(); }
+  if (e.key === "Enter") { pickerList?.querySelector<HTMLButtonElement>(".picker-item")?.click(); e.preventDefault(); }
   if (e.key === "ArrowDown") { (pickerList?.querySelector<HTMLButtonElement>(".picker-item") )?.focus(); e.preventDefault(); }
 });
 

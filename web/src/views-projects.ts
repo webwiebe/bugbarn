@@ -8,6 +8,7 @@ import {
   apiUrl,
   envKey,
   envSelect,
+  favouritesKey,
   groupKey,
   pickerBtn,
   pickerDropdown,
@@ -22,6 +23,7 @@ import {
 import { fetchJson } from "./http.js";
 import { refreshAll } from "./app-actions.js";
 import { sortedOptionsHtml } from "./components/select-options.js";
+import { compareByName, matchesSearch, orderProjects, parseFavourites, toggleFavourite, type SwitcherProject } from "./components/project-order.js";
 
 export async function loadProjects(): Promise<void> {
   try {
@@ -83,7 +85,7 @@ function pickerAllHtml(f: string): string {
 function pickerGroupsHtml(visibleGroups: ApiProjectGroup[]): string {
   if (visibleGroups.length === 0) return "";
   let html = `<div class="picker-section-label">Groups</div>`;
-  for (const g of visibleGroups) {
+  for (const g of [...visibleGroups].sort((a, b) => compareByName({ slug: a.slug, name: a.name }, { slug: b.slug, name: b.name }))) {
     const sel = state.currentGroup === g.slug;
     const count = state.projects.filter(p => p.group_id === g.id).length;
     html += `<button class="picker-item${sel ? " selected" : ""}" data-pick-group="${escapeHtml(g.slug)}">${escapeHtml(g.name)}<span class="picker-item-badge">${count}</span></button>`;
@@ -91,38 +93,72 @@ function pickerGroupsHtml(visibleGroups: ApiProjectGroup[]): string {
   return html;
 }
 
-function pickerProjectsHtml(visibleProjects: ApiProject[]): string {
-  if (visibleProjects.length === 0) return "";
-  let html = `<div class="picker-section-label">Projects</div>`;
-  for (const p of visibleProjects) {
-    const slug = String(p.slug ?? p.Slug ?? "");
-    const name = String(p.name ?? p.Name ?? slug);
-    const sel = !state.currentGroup && slug === state.currentProject;
-    html += `<button class="picker-item${sel ? " selected" : ""}" data-pick-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
+// Favourites live in this browser: BugBarn keeps its settings per project, not
+// per user, so there is no server-side place that follows a user across devices.
+function loadFavourites(): Set<string> {
+  try {
+    return new Set(parseFavourites(localStorage.getItem(favouritesKey)));
+  } catch {
+    return new Set();
   }
+}
+
+function flipFavourite(slug: string): void {
+  try {
+    localStorage.setItem(favouritesKey, JSON.stringify(toggleFavourite([...loadFavourites()], slug)));
+  } catch {
+    // Storage can be blocked; the star then does nothing.
+  }
+}
+
+function switcherProjects(): SwitcherProject[] {
+  return state.projects.map(switcherProjectOf);
+}
+
+function starHtml(slug: string, name: string, starred: boolean, cls: string): string {
+  return `<button type="button" class="${cls}${starred ? " starred" : ""}" data-favourite="${escapeHtml(slug)}" aria-pressed="${starred}" aria-label="${starred ? "Remove" : "Add"} ${escapeHtml(name)} ${starred ? "from" : "to"} favourites">${starred ? "★" : "☆"}</button>`;
+}
+
+function pickerRowHtml(p: SwitcherProject, starred: boolean): string {
+  const sel = !state.currentGroup && p.slug === state.currentProject;
+  return `<div class="picker-row"><button class="picker-item${sel ? " selected" : ""}"${sel ? ' aria-current="true"' : ""} data-pick-project="${escapeHtml(p.slug)}">${escapeHtml(p.name)}</button>${starHtml(p.slug, p.name, starred, "picker-star")}</div>`;
+}
+
+function pickerProjectsHtml(search: string): string {
+  const { favourites, others } = orderProjects(switcherProjects(), loadFavourites(), search);
+  let html = "";
+  if (favourites.length > 0) html += `<div class="picker-section-label">Favourites</div>` + favourites.map((p) => pickerRowHtml(p, true)).join("");
+  if (others.length > 0) html += `<div class="picker-section-label">Projects</div>` + others.map((p) => pickerRowHtml(p, false)).join("");
   return html;
 }
 
 function pickerListHtml(f: string): string {
-  const matchProject = (p: ApiProject) => {
-    if (!f) return true;
-    return String(p.name ?? p.Name ?? "").toLowerCase().includes(f) ||
-           String(p.slug ?? p.Slug ?? "").toLowerCase().includes(f);
-  };
-  const matchGroup = (g: ApiProjectGroup) => !f ||
-    g.name.toLowerCase().includes(f) || g.slug.toLowerCase().includes(f) ||
-    state.projects.some(p => p.group_id === g.id && matchProject(p));
+  const matchGroup = (g: ApiProjectGroup) => matchesSearch({ slug: g.slug, name: g.name }, f) ||
+    state.projects.some(p => p.group_id === g.id && matchesSearch(switcherProjectOf(p), f));
 
   const html = pickerAllHtml(f) +
     pickerGroupsHtml(state.groups.filter(matchGroup)) +
-    pickerProjectsHtml(state.projects.filter(matchProject));
-  return html || `<p class="picker-empty">No matches</p>`;
+    pickerProjectsHtml(f);
+  return html || `<p class="picker-empty">No projects match</p>`;
+}
+
+function switcherProjectOf(p: ApiProject): SwitcherProject {
+  const slug = String(p.slug ?? p.Slug ?? "");
+  return { slug, name: String(p.name ?? p.Name ?? slug) };
 }
 
 export function renderPickerList(filter: string): void {
   if (!pickerList) return;
   const f = filter.trim().toLowerCase();
   pickerList.innerHTML = pickerListHtml(f);
+
+  pickerList.querySelectorAll<HTMLButtonElement>("[data-favourite]").forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      flipFavourite(btn.dataset["favourite"] ?? "");
+      renderPickerList(pickerFilter?.value ?? "");
+    });
+  });
 
   pickerList.querySelectorAll<HTMLButtonElement>("[data-pick-group]").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -253,32 +289,33 @@ function scopeGroupSectionHtml(f: string, current: string, visGroups: ApiProject
   return html + `<div class="scope-divider"></div>`;
 }
 
-function scopeGroupedHtml(f: string, current: string, matchesFilter: ScopeMatcher): string {
+function scopeRowHtml(p: SwitcherProject, starred: boolean, selected: boolean): string {
+  return `<div class="scope-row"><button class="scope-item${selected ? " selected" : ""}" data-scope-project="${escapeHtml(p.slug)}">${escapeHtml(p.name)}</button>${starHtml(p.slug, p.name, starred, "scope-star")}</div>`;
+}
+
+function scopeProjectsHtml(f: string, current: string): string {
+  const { favourites, others } = orderProjects(switcherProjects(), loadFavourites(), f);
+  const row = (starred: boolean) => (p: SwitcherProject) => scopeRowHtml(p, starred, !state.currentGroup && p.slug === current);
   let html = "";
-  const visGroups = state.groups.filter(g => matchesFilter(g.name, g.slug));
-  if (visGroups.length > 0 || !f) html += scopeGroupSectionHtml(f, current, visGroups);
-  html += `<div class="scope-section-label">Project</div>`;
-  if (f && "all projects".includes(f)) html += `<button class="scope-item" data-scope-project="__all">All projects</button>`;
-  for (const p of state.projects) {
-    const slug = String(p.slug ?? p.Slug ?? "");
-    const name = String(p.name ?? p.Name ?? slug);
-    if (!matchesFilter(name, slug)) continue;
-    const selected = !state.currentGroup && slug === current;
-    html += `<button class="scope-item${selected ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
-  }
+  if (favourites.length > 0) html += `<div class="scope-section-label">Favourites</div>` + favourites.map(row(true)).join("");
+  if (others.length > 0) html += `<div class="scope-section-label">Project</div>` + others.map(row(false)).join("");
+  if (favourites.length + others.length === 0) html += `<p class="picker-empty">No projects match</p>`;
   return html;
 }
 
-function scopeFlatHtml(f: string, current: string, matchesFilter: ScopeMatcher): string {
-  let html = `<div class="scope-section-label">Project</div>`;
+function scopeGroupedHtml(f: string, current: string, matchesFilter: ScopeMatcher): string {
+  let html = "";
+  const visGroups = state.groups.filter(g => matchesFilter(g.name, g.slug))
+    .sort((a, b) => compareByName({ slug: a.slug, name: a.name }, { slug: b.slug, name: b.name }));
+  if (visGroups.length > 0 || !f) html += scopeGroupSectionHtml(f, current, visGroups);
+  if (f && "all projects".includes(f)) html += `<button class="scope-item" data-scope-project="__all">All projects</button>`;
+  return html + scopeProjectsHtml(f, current);
+}
+
+function scopeFlatHtml(f: string, current: string): string {
+  let html = "";
   if (!f || "all projects".includes(f)) html += `<button class="scope-item${current === "__all" || !current ? " selected" : ""}" data-scope-project="__all">All projects</button>`;
-  for (const p of state.projects) {
-    const slug = String(p.slug ?? p.Slug ?? "");
-    const name = String(p.name ?? p.Name ?? slug);
-    if (!matchesFilter(name, slug)) continue;
-    html += `<button class="scope-item${slug === current ? " selected" : ""}" data-scope-project="${escapeHtml(slug)}">${escapeHtml(name)}</button>`;
-  }
-  return html;
+  return html + scopeProjectsHtml(f, current);
 }
 
 function scopeEnvHtml(): string {
@@ -293,7 +330,7 @@ function scopeSheetHtml(filter: string, f: string, current: string, showEnv: boo
   let html = `<input class="scope-sheet-filter" type="text" placeholder="Filter…" value="${escapeHtml(filter)}" autocomplete="off" />`;
   html += state.groups.length > 0
     ? scopeGroupedHtml(f, current, matchesFilter)
-    : scopeFlatHtml(f, current, matchesFilter);
+    : scopeFlatHtml(f, current);
   if (showEnv) html += scopeEnvHtml();
   return html;
 }
@@ -352,6 +389,12 @@ function renderScopeSheetBody(filter = ""): void {
 
   scopeBody.querySelector<HTMLInputElement>(".scope-sheet-filter")?.addEventListener("input", (e) => {
     renderScopeSheetBody((e.target as HTMLInputElement).value);
+  });
+  scopeBody.querySelectorAll<HTMLButtonElement>("[data-favourite]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      flipFavourite(btn.dataset["favourite"] ?? "");
+      renderScopeSheetBody(scopeBody?.querySelector<HTMLInputElement>(".scope-sheet-filter")?.value ?? "");
+    });
   });
   scopeBody.querySelectorAll<HTMLButtonElement>("[data-scope-group]").forEach(btn => {
     btn.addEventListener("click", () => onScopeGroupClick(btn));

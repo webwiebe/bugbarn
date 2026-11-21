@@ -99,6 +99,7 @@ As a mobile user, I want the issue detail page to be readable on small screens, 
 
 ---
 - **FR-516**: Every `<select>` in the SPA lists its options alphabetically by label, case-insensitive and in the browser's language, through `web/src/components/select-options.ts`; leading "All ..." options stay first. A select whose options have a natural order keeps it and says which in a comment at its call site: the time ranges (Logs, Security) and the log level ladder. Owner rule of 2026-11-21. Tests: `web/scripts/select-options.test.mjs`.
+- **FR-517**: The project switcher (desktop picker and mobile scope sheet) lists projects and groups alphabetically by name with `Intl.Collator`, filters on name and slug as the user types, and answers "No projects match" for an empty result. A star on each project row moves it to a Favourites group that is alphabetical too. Enter in the search field picks the first match and Esc closes the picker. The picker list scrolls inside a menu of at most 60vh. Favourites are stored in the browser (`bugbarn_favourite_projects` in localStorage), because BugBarn's settings belong to a project and not to a user. Tests: `web/scripts/project-order.test.mjs`, `web/scripts/app-scope.test.mjs`.
 
 ## Drift
 

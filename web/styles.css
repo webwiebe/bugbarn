@@ -2728,7 +2728,7 @@ button.settings-nav-item:last-child {
   z-index: 300;
   display: flex;
   flex-direction: column;
-  max-height: 400px;
+  max-height: 60vh;
   overflow: hidden;
 }
 .project-picker-dropdown[hidden] { display: none; }
@@ -2748,6 +2748,7 @@ button.settings-nav-item:last-child {
 
 .project-picker-list {
   overflow-y: auto;
+  overscroll-behavior: contain;
   flex: 1;
   padding: 4px 0;
 }
@@ -2775,6 +2776,23 @@ button.settings-nav-item:last-child {
 }
 .picker-item:hover, .picker-item:focus { background: var(--hover); outline: none; }
 .picker-item.selected { color: var(--accent); }
+
+.picker-row { display: flex; align-items: center; }
+.picker-row .picker-item { flex: 1; min-width: 0; width: auto; }
+.picker-star, .scope-star {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.picker-star:hover, .picker-star:focus-visible, .scope-star:hover, .scope-star:focus-visible { color: var(--accent); outline: none; }
+.picker-star.starred, .scope-star.starred { color: var(--accent); }
+.scope-row { display: flex; align-items: center; }
+.scope-row .scope-item { flex: 1; min-width: 0; width: auto; }
+.scope-star { padding: 12px 16px; font-size: 18px; }
 
 .picker-item-badge {
   margin-left: auto;
