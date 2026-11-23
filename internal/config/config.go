@@ -79,6 +79,7 @@ type Config struct {
 	// 1.8M events in production and nothing bounded it.
 	EventSampleAfter    int
 	FunnelBarnEndpoint  string // BUGBARN_FUNNELBARN_ENDPOINT
+	BrandTraceSiteKey   string // BUGBARN_BRANDTRACE_SITE_KEY (public, allow-listed per origin)
 	FunnelBarnAPIKey    string // BUGBARN_FUNNELBARN_API_KEY
 	FrontendTracesURL   string // BUGBARN_FRONTEND_TRACES_URL: SpanBarn base URL the browser spans are relayed to
 	SpanBarnUIURL       string // BUGBARN_SPANBARN_UI_URL: public SpanBarn URL the log explorer links trace ids to (empty: no link)
@@ -192,7 +193,7 @@ func Load() Config {
 	cfg.Digest = parseDigestConfig(cfg.PublicURL, cfg.Environment)
 	cfg.Telemetry = parseTelemetryConfig(cfg.DBPath)
 	cfg.Cloudflare = parseCloudflareConfig()
-	cfg.Compact = parseCompactConfig()
+	cfg.Compact, cfg.BrandTraceSiteKey = parseCompactConfig(), os.Getenv("BUGBARN_BRANDTRACE_SITE_KEY")
 	cfg.SilenceRules, cfg.SilenceProject = os.Getenv("BUGBARN_SILENCE_RULES"), getenv("BUGBARN_SILENCE_PROJECT", "infra")
 
 	// Global admin alert recipient. Every new issue and regression across all

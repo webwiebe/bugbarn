@@ -57,6 +57,7 @@ type Server struct {
 	publicURL           string
 	maxSourceMapBytes   int64
 	funnelBarnEndpoint  string
+	brandTraceSiteKey   string
 	funnelBarnAPIKey    string
 	frontendTraces      *frontendTracesProxy
 	spanBarnUIURL       string
@@ -193,6 +194,13 @@ func (s *Server) SetSetupConfig(sessionSecret, publicURL string) {
 func (s *Server) SetFunnelBarnConfig(endpoint, apiKey string) {
 	s.funnelBarnEndpoint = endpoint
 	s.funnelBarnAPIKey = apiKey
+}
+
+// SetBrandTraceSiteKey wires the public BrandTrace site key. The runtime-config
+// endpoint hands it to the dashboard, which loads the BrandTrace SDK only when
+// the key is set.
+func (s *Server) SetBrandTraceSiteKey(key string) {
+	s.brandTraceSiteKey = key
 }
 
 // SetSelfReportingConfig exposes the ingest API key to the web frontend so it

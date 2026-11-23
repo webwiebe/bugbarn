@@ -195,3 +195,14 @@ func TestEnvironmentAndIsProduction(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadBrandTraceSiteKey(t *testing.T) {
+	t.Setenv("BUGBARN_BRANDTRACE_SITE_KEY", "")
+	if got := Load().BrandTraceSiteKey; got != "" {
+		t.Errorf("BrandTraceSiteKey default = %q, want empty", got)
+	}
+	t.Setenv("BUGBARN_BRANDTRACE_SITE_KEY", "bt-site")
+	if got := Load().BrandTraceSiteKey; got != "bt-site" {
+		t.Errorf("BrandTraceSiteKey = %q, want the env value", got)
+	}
+}

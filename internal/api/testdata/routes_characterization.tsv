@@ -40,7 +40,7 @@ none	GET	/api/v1/version/		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct
 none	GET	/api/v1/version/zzz		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 none	OPTIONS	/api/v1/version		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
 full	OPTIONS	/api/v1/version		=>	204	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS
-none	GET	/api/v1/runtime-config		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=bugbarn,funnelbarn,iambarn,oidc,spanbarn
+none	GET	/api/v1/runtime-config		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=brandtrace,bugbarn,funnelbarn,iambarn,oidc,spanbarn
 none	POST	/api/v1/runtime-config		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 none	PUT	/api/v1/runtime-config		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 none	PATCH	/api/v1/runtime-config		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
@@ -1812,10 +1812,10 @@ none	GET	/api/v1/version		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=
 none	GET	/api/v1/version		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=built,commit,version
 none	DELETE	/api/v1/version		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
 none	GET	/api/v1/version		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=built,commit,version
-none	GET	/api/v1/runtime-config		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=bugbarn,funnelbarn,iambarn,oidc,spanbarn
-none	GET	/api/v1/runtime-config		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=bugbarn,funnelbarn,iambarn,oidc,spanbarn
+none	GET	/api/v1/runtime-config		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=brandtrace,bugbarn,funnelbarn,iambarn,oidc,spanbarn
+none	GET	/api/v1/runtime-config		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=brandtrace,bugbarn,funnelbarn,iambarn,oidc,spanbarn
 none	DELETE	/api/v1/runtime-config		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized
-none	GET	/api/v1/runtime-config		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=bugbarn,funnelbarn,iambarn,oidc,spanbarn
+none	GET	/api/v1/runtime-config		=>	200	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=application/json	json=brandtrace,bugbarn,funnelbarn,iambarn,oidc,spanbarn
 none	POST	/api/v1/login	{"username":"admin","password":"wrong"}	=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=POST /api/v1/login
 none	POST	/api/v1/login	{"username":"admin","password":"wrong"}	=>	202	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	writer=POST /api/v1/login
 none	DELETE	/api/v1/login		=>	401	acam=GET, POST, PUT, PATCH, DELETE, OPTIONS	ct=text/plain; charset=utf-8	body=unauthorized

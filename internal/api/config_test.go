@@ -105,3 +105,39 @@ func TestRuntimeConfigIAMBarn(t *testing.T) {
 		}
 	})
 }
+
+// TestRuntimeConfigBrandTrace verifies the site key reaches the dashboard only
+// when the server has one.
+func TestRuntimeConfigBrandTrace(t *testing.T) {
+	t.Parallel()
+
+	store := mustOpenStore(t)
+	defer store.Close()
+
+	get := func(server *Server) (bool, string) {
+		rr := httptest.NewRecorder()
+		server.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/runtime-config", nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("runtime-config status = %d, want 200", rr.Code)
+		}
+		var cfg struct {
+			BrandTrace struct {
+				Enabled bool   `json:"enabled"`
+				SiteKey string `json:"siteKey"`
+			} `json:"brandtrace"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		return cfg.BrandTrace.Enabled, cfg.BrandTrace.SiteKey
+	}
+
+	if enabled, key := get(NewServer(nil, store, nil)); enabled || key != "" {
+		t.Errorf("without a key: enabled=%v key=%q, want off and empty", enabled, key)
+	}
+	server := NewServer(nil, store, nil)
+	server.SetBrandTraceSiteKey("bt-site")
+	if enabled, key := get(server); !enabled || key != "bt-site" {
+		t.Errorf("with a key: enabled=%v key=%q, want on and the key", enabled, key)
+	}
+}

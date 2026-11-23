@@ -166,6 +166,12 @@ spec:
                   name: bugbarn-secrets
                   key: BUGBARN_FUNNELBARN_API_KEY
                   optional: true
+            - name: BUGBARN_BRANDTRACE_SITE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugbarn-secrets
+                  key: BUGBARN_BRANDTRACE_SITE_KEY
+                  optional: true
             - name: BUGBARN_SPANBARN_UI_URL
               value: https://spanbarn.wiebe.xyz
             - name: BUGBARN_FRONTEND_TRACES_URL

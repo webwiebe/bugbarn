@@ -27,6 +27,7 @@ import {
   userAvatarBtn,
 } from "./core.js";
 import { login, loadSession, logout, renderLogin } from "./http.js";
+import { initBrandTrace } from "./brandtrace.js";
 import { initIAMBarnWidgets } from "./iambarn.js";
 import { requestNotificationPermission, stopLiveStream } from "./live.js";
 import { refreshAll, route, setRouteStatus } from "./router.js";
@@ -190,6 +191,7 @@ void start();
 async function start(): Promise<void> {
   await instrumentationReady;
   void initFunnelBarn();
+  void initBrandTrace();
   void initSelfReporting();
   void initIAMBarnWidgets();
 

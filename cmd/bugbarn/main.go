@@ -315,6 +315,7 @@ func run() error {
 	apiServer.SetHeldReplayer(heldReplayer)
 	apiServer.SetMonitorReporter(monitorReporter)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
+	apiServer.SetBrandTraceSiteKey(cfg.BrandTraceSiteKey)
 	apiServer.SetFrontendTraces(cfg.FrontendTracesURL, cfg.FrontendTracesKey, "bugbarn-web")
 	apiServer.SetSpanBarnUIURL(cfg.SpanBarnUIURL)
 	if selfReporting {

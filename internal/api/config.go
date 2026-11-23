@@ -10,6 +10,13 @@ type funnelBarnConfig struct {
 	APIKey   string `json:"apiKey,omitempty"`
 }
 
+// brandTraceConfig carries the public BrandTrace site key. Site keys are
+// allow-listed per origin, so serving one to the page leaks nothing.
+type brandTraceConfig struct {
+	Enabled bool   `json:"enabled"`
+	SiteKey string `json:"siteKey,omitempty"`
+}
+
 type bugbarnSelfConfig struct {
 	Enabled bool   `json:"enabled"`
 	APIKey  string `json:"apiKey,omitempty"`
@@ -46,6 +53,7 @@ type spanBarnConfig struct {
 type runtimeConfigBody struct {
 	SpanBarn   spanBarnConfig    `json:"spanbarn"`
 	FunnelBarn funnelBarnConfig  `json:"funnelbarn"`
+	BrandTrace brandTraceConfig  `json:"brandtrace"`
 	BugBarn    bugbarnSelfConfig `json:"bugbarn"`
 	OIDC       oidcConfigOut     `json:"oidc"`
 	IAMBarn    iambarnConfig     `json:"iambarn"`
@@ -68,20 +76,7 @@ func (s *Server) buildRuntimeConfig() runtimeConfigBody {
 	if s.frontendTraces != nil {
 		cfg.SpanBarn = spanBarnConfig{Enabled: true, Endpoint: frontendTracesBase, Service: s.frontendTraces.service}
 	}
-	if s.funnelBarnEndpoint != "" {
-		cfg.FunnelBarn = funnelBarnConfig{
-			Enabled:  true,
-			Endpoint: s.funnelBarnEndpoint,
-			APIKey:   s.funnelBarnAPIKey,
-		}
-	}
-	if s.selfAPIKey != "" {
-		cfg.BugBarn = bugbarnSelfConfig{
-			Enabled: true,
-			APIKey:  s.selfAPIKey,
-			Project: s.selfProject,
-		}
-	}
+	s.addTelemetryConfig(&cfg)
 	if s.oidc != nil {
 		cfg.OIDC = oidcConfigOut{
 			Enabled:          true,
@@ -97,4 +92,26 @@ func (s *Server) buildRuntimeConfig() runtimeConfigBody {
 	}
 	cfg.SpanBarn.UIURL = s.spanBarnUIURL
 	return cfg
+}
+
+// addTelemetryConfig fills the analytics and self-reporting blocks the server
+// has switched on.
+func (s *Server) addTelemetryConfig(cfg *runtimeConfigBody) {
+	if s.funnelBarnEndpoint != "" {
+		cfg.FunnelBarn = funnelBarnConfig{
+			Enabled:  true,
+			Endpoint: s.funnelBarnEndpoint,
+			APIKey:   s.funnelBarnAPIKey,
+		}
+	}
+	if s.brandTraceSiteKey != "" {
+		cfg.BrandTrace = brandTraceConfig{Enabled: true, SiteKey: s.brandTraceSiteKey}
+	}
+	if s.selfAPIKey != "" {
+		cfg.BugBarn = bugbarnSelfConfig{
+			Enabled: true,
+			APIKey:  s.selfAPIKey,
+			Project: s.selfProject,
+		}
+	}
 }

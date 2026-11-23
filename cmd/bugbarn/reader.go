@@ -173,6 +173,7 @@ func runReader(cfg config.Config, logHandler slog.Handler) error {
 	apiServer.SetAutoApproveProjects(cfg.AutoApproveProjects)
 	apiServer.SetRetentionDays(cfg.EventRetentionDays)
 	apiServer.SetFunnelBarnConfig(cfg.FunnelBarnEndpoint, cfg.FunnelBarnAPIKey)
+	apiServer.SetBrandTraceSiteKey(cfg.BrandTraceSiteKey)
 	apiServer.SetFrontendTraces(cfg.FrontendTracesURL, cfg.FrontendTracesKey, "bugbarn-web")
 	apiServer.SetSpanBarnUIURL(cfg.SpanBarnUIURL)
 	if oidcClient != nil {
