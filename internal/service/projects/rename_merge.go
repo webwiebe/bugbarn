@@ -83,7 +83,8 @@ func (s *Service) MergeInto(ctx context.Context, sourceSlug, targetSlug, environ
 // MergeReport merges like MergeInto and returns what moved. With dryRun it
 // changes nothing and returns what the merge would move. A source that already
 // is an alias of the target returns an already-merged report, so a re-run is safe.
-func (s *Service) MergeReport(ctx context.Context, sourceSlug, targetSlug, environment string, dryRun bool) (domain.MergeReport, error) {
+func (s *Service) MergeReport(ctx context.Context, sourceSlug, targetSlug, environment string,
+	dryRun bool) (domain.MergeReport, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "service.projects.MergeReport",
 		trace.WithAttributes(attribute.String("source", sourceSlug), attribute.String("target", targetSlug),
 			attribute.String("environment", environment), attribute.Bool("dry_run", dryRun)))

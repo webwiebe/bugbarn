@@ -48,3 +48,23 @@ func TestMergeProjectsReportDryRunRollsBack(t *testing.T) {
 		t.Errorf("unknown source: %v", err)
 	}
 }
+
+func TestMergeProjectsReportErrors(t *testing.T) {
+	t.Parallel()
+	store, ctx := openMergeStore(t)
+	if _, err := store.CreateProject(ctx, "Source", "source-proj"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MergeProjectsReport(ctx, "source-proj", "ghost", "", true); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("unknown target: %v", err)
+	}
+	if _, err := store.MergeProjectsReport(ctx, "source-proj", "ghost", "", true); err == nil {
+		t.Error("a dry run against a missing target must fail")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MergeProjectsReport(ctx, "source-proj", "target-proj", "", false); err == nil {
+		t.Error("a closed store must fail")
+	}
+}
