@@ -67,35 +67,40 @@ func mergeProjectIDs(ctx context.Context, tx *sql.Tx, sourceSlug, targetSlug str
 	return sourceID, targetID, nil
 }
 
-// applyMerge counts, then runs every merge step inside tx.
+// applyMerge counts, then runs every merge step inside tx. The first step
+// that fails ends it.
 func applyMerge(ctx context.Context, tx *sql.Tx, sourceID, targetID int64, sourceSlug, environment string,
 	rep *domain.MergeReport) error {
-	if err := countMerge(ctx, tx, sourceID, targetID, rep); err != nil {
-		return err
+	exec := func(what, query string, args ...any) func() error {
+		return func() error {
+			_, err := tx.ExecContext(ctx, query, args...)
+			return wrapErr(err, what)
+		}
 	}
-	if environment != "" {
-		if err := stampEnvironment(ctx, tx, sourceID, environment); err != nil {
+	steps := []func() error{
+		func() error { return countMerge(ctx, tx, sourceID, targetID, rep) },
+		func() error {
+			if environment == "" {
+				return nil
+			}
+			return stampEnvironment(ctx, tx, sourceID, environment)
+		},
+		func() error { return foldCollidingIssues(ctx, tx, sourceID, targetID) },
+		func() error { return shiftSourceIssueNumbers(ctx, tx, sourceID, targetID) },
+		func() error { return wrapErr(moveProjectRows(ctx, tx, sourceID, targetID), "MergeProjects") },
+		exec("merge: create alias", `INSERT INTO project_aliases (alias_slug, project_id) VALUES (?, ?)`, sourceSlug, targetID),
+		exec("merge: delete source", `DELETE FROM projects WHERE id = ?`, sourceID),
+		func() error {
+			err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM issues WHERE project_id = ?`, targetID).Scan(&rep.TargetIssuesAfter)
+			return wrapErr(err, "merge: count target issues")
+		},
+	}
+	for _, step := range steps {
+		if err := step(); err != nil {
 			return err
 		}
 	}
-	if err := foldCollidingIssues(ctx, tx, sourceID, targetID); err != nil {
-		return err
-	}
-	if err := shiftSourceIssueNumbers(ctx, tx, sourceID, targetID); err != nil {
-		return err
-	}
-	if err := moveProjectRows(ctx, tx, sourceID, targetID); err != nil {
-		return wrapErr(err, "MergeProjects")
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO project_aliases (alias_slug, project_id) VALUES (?, ?)`, sourceSlug, targetID); err != nil {
-		return wrapErr(err, "merge: create alias")
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, sourceID); err != nil {
-		return apperr.Internal("merge: delete source", err)
-	}
-	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM issues WHERE project_id = ?`, targetID).Scan(&rep.TargetIssuesAfter)
-	return wrapErr(err, "merge: count target issues")
+	return nil
 }
 
 func aliasPointsAt(ctx context.Context, tx *sql.Tx, alias, targetSlug string) (bool, error) {
@@ -111,24 +116,23 @@ func aliasPointsAt(ctx context.Context, tx *sql.Tx, alias, targetSlug string) (b
 
 // countMerge fills the counts that must be read before the merge changes rows.
 func countMerge(ctx context.Context, tx *sql.Tx, sourceID, targetID int64, rep *domain.MergeReport) error {
+	scan := func(what, query string, dest *int64, args ...any) error {
+		return wrapErr(tx.QueryRowContext(ctx, query, args...).Scan(dest), "merge: count "+what)
+	}
 	for _, t := range projectTables {
 		var n int64
-		if err := tx.QueryRowContext(ctx,
-			fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE project_id = ?`, t.name), sourceID).Scan(&n); err != nil {
-			return apperr.Internal("merge: count "+t.name, err)
+		if err := scan(t.name, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE project_id = ?`, t.name), &n, sourceID); err != nil {
+			return err
 		}
 		rep.Moved[t.name] = n
 	}
-	if err := tx.QueryRowContext(ctx, `
+	if err := scan("folded issues", `
 		SELECT COUNT(*) FROM issues s WHERE s.project_id = ?
 		AND EXISTS (SELECT 1 FROM issues t WHERE t.project_id = ? AND t.fingerprint = s.fingerprint)`,
-		sourceID, targetID).Scan(&rep.Folded); err != nil {
-		return apperr.Internal("merge: count folded issues", err)
+		&rep.Folded, sourceID, targetID); err != nil {
+		return err
 	}
-	if err := tx.QueryRowContext(ctx, `
+	return scan("target counter", `
 		SELECT MAX(issue_counter, COALESCE((SELECT MAX(issue_number) FROM issues WHERE project_id = projects.id), 0))
-		FROM projects WHERE id = ?`, targetID).Scan(&rep.IssueNumberShift); err != nil {
-		return apperr.Internal("merge: read target counter", err)
-	}
-	return nil
+		FROM projects WHERE id = ?`, &rep.IssueNumberShift, targetID)
 }
