@@ -43,6 +43,19 @@ func recordIngestReceived(ctx context.Context, outcome string) {
 	ingestReceivedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
 }
 
+// EventDrop classifies a normalize.Validate error: an empty event gets its own
+// reason so a sender that posts one shows up in the drop counts (#289).
+func EventDrop(err error) ingestresp.Drop {
+	if errors.Is(err, normalize.ErrEmptyEvent) {
+		return ingestresp.DropEmptyEvent
+	}
+	return ingestresp.DropMalformed
+}
+
+// RecordReceived counts one ingest request's outcome for callers outside this
+// package, such as the reader's forwarder.
+func RecordReceived(ctx context.Context, outcome string) { recordIngestReceived(ctx, outcome) }
+
 type Handler struct {
 	auth         *auth.Authorizer
 	spool        *spool.Spool
@@ -306,9 +319,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// worker. A body that passes this check will not fail to parse downstream,
 	// so the 202 below honestly means "accepted".
 	if err := normalize.Validate(body); err != nil {
-		span.SetStatus(codes.Error, "malformed payload")
-		recordIngestReceived(ctx, ingestresp.DropMalformed.Reason)
-		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+		drop := EventDrop(err)
+		span.SetStatus(codes.Error, drop.Reason)
+		recordIngestReceived(ctx, drop.Reason)
+		ingestresp.WriteDropped(w, drop)
 		return
 	}
 

@@ -2,6 +2,7 @@ package normalize
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -186,6 +187,15 @@ func TestNormalizeBreadcrumbCap(t *testing.T) {
 	}
 }
 
+func TestValidateEmptyEventIsItsOwnError(t *testing.T) {
+	if err := Validate([]byte(`{}`)); !errors.Is(err, ErrEmptyEvent) {
+		t.Errorf("Validate({}) = %v, want ErrEmptyEvent", err)
+	}
+	if err := Validate([]byte(`not json`)); errors.Is(err, ErrEmptyEvent) || err == nil {
+		t.Errorf("Validate(not json) = %v, want a parse error", err)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -193,8 +203,14 @@ func TestValidate(t *testing.T) {
 		wantErr bool
 	}{
 		{"object", `{"message":"boom"}`, false},
-		{"empty object", `{}`, false},
-		{"null", `null`, false},
+		{"empty object", `{}`, true},
+		{"null", `null`, true},
+		{"body only", `{"body":"x"}`, false},
+		{"exception type only", `{"exception":{"type":"Boom"}}`, false},
+		{"exception message only", `{"exception":{"message":"x"}}`, false},
+		{"browser error with properties", `{"exception":{},"properties":{"message":"x"}}`, false},
+		{"empty exception", `{"exception":{}}`, true},
+		{"only a level", `{"level":"error"}`, true},
 		{"not json", `not json`, true},
 		{"empty body", ``, true},
 		{"json array", `[1,2,3]`, true},

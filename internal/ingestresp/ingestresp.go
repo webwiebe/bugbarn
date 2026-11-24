@@ -33,6 +33,7 @@ type Accepted struct {
 type Dropped struct {
 	Accepted  bool   `json:"accepted"` // always false
 	Reason    string `json:"reason"`
+	Detail    string `json:"detail,omitempty"`
 	Retryable bool   `json:"retryable"`
 }
 
@@ -41,6 +42,7 @@ type Dropped struct {
 type Drop struct {
 	Status    int
 	Reason    string
+	Detail    string // optional human-readable hint, sent as "detail"
 	Retryable bool
 }
 
@@ -49,6 +51,9 @@ type Drop struct {
 var (
 	// DropMalformed: the body is not a structurally valid event payload.
 	DropMalformed = Drop{Status: http.StatusBadRequest, Reason: "malformed_payload", Retryable: false}
+	// DropEmptyEvent: the body is a JSON object with nothing to report.
+	DropEmptyEvent = Drop{Status: http.StatusBadRequest, Reason: "empty_event", Retryable: false,
+		Detail: "the event needs one of: message, body, exception.type, exception.message"}
 	// DropUnauthorized: missing or invalid API key.
 	DropUnauthorized = Drop{Status: http.StatusUnauthorized, Reason: "unauthorized", Retryable: false}
 	// DropForbidden: a project-bound key named another project.
@@ -78,7 +83,7 @@ func WriteDropped(w http.ResponseWriter, d Drop) {
 	if d.Retryable {
 		w.Header().Set("Retry-After", "1")
 	}
-	writeJSON(w, d.Status, Dropped{Accepted: false, Reason: d.Reason, Retryable: d.Retryable})
+	writeJSON(w, d.Status, Dropped{Accepted: false, Reason: d.Reason, Detail: d.Detail, Retryable: d.Retryable})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

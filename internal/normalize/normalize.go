@@ -19,9 +19,37 @@ import (
 // decode, no scrubbing or fingerprinting — so the synchronous ingest path can
 // reject malformed events before durably queuing them, making a 202 mean the
 // event was genuinely accepted rather than accepted-then-silently-dropped.
+//
+// A body with nothing to report is refused too: none of body, message,
+// exception.type, exception.message or the SDK fallbacks Normalize reads for
+// them (exception.name, exception.value, properties.message). It would open an
+// issue with a blank title (bugbarn#289). The error then wraps ErrEmptyEvent.
 func Validate(raw []byte) error {
 	var payload map[string]any
-	return json.Unmarshal(raw, &payload)
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return err
+	}
+	if !hasEventContent(payload) {
+		return ErrEmptyEvent
+	}
+	return nil
+}
+
+// ErrEmptyEvent says an event body is a JSON object with no body, message or
+// exception to report.
+var ErrEmptyEvent = errors.New("event has no message, body or exception")
+
+// hasEventContent reports whether the payload names something to report, using
+// the same fields Normalize reads for the message and exception.
+func hasEventContent(payload map[string]any) bool {
+	if stringValue(payload["body"]) != "" || stringValue(payload["message"]) != "" {
+		return true
+	}
+	if ex := objectValue(payload["exception"]); ex != nil && firstString(ex, "type", "name", "message", "value") != "" {
+		return true
+	}
+	props := objectValue(payload["properties"])
+	return props != nil && stringValue(props["message"]) != ""
 }
 
 func Normalize(raw []byte, ingestID string, receivedAt time.Time) (event.Event, error) {

@@ -295,3 +295,24 @@ func TestServeHTTPUnknownKeyStaysUnauthorized(t *testing.T) {
 		t.Fatalf("unknown key: got %d, want 401", rr.Code)
 	}
 }
+
+// An event body with nothing to report answers 400 with its own reason and is
+// not spooled; a body with only "body" is accepted (#289).
+func TestServeHTTPRefusesAnEmptyEventBody(t *testing.T) {
+	for _, body := range []string{`{}`, `{"exception":{}}`} {
+		sp := mustSpool(t)
+		handler := NewHandler(auth.New(""), sp, 1024)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body)))
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"reason":"empty_event"`) ||
+			!strings.Contains(rr.Body.String(), "exception.message") {
+			t.Errorf("%s: status %d body %s, want 400 empty_event naming the fields", body, rr.Code, rr.Body.String())
+		}
+	}
+	handler := NewHandler(auth.New(""), mustSpool(t), 1024)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"body":"x"}`)))
+	if rr.Code != http.StatusAccepted {
+		t.Errorf("body-only event: status %d, want 202", rr.Code)
+	}
+}

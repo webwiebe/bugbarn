@@ -22,7 +22,9 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/wiebe-xyz/bugbarn/internal/ingest"
 	"github.com/wiebe-xyz/bugbarn/internal/ingestresp"
+	"github.com/wiebe-xyz/bugbarn/internal/normalize"
 	"github.com/wiebe-xyz/bugbarn/internal/queue"
 	"github.com/wiebe-xyz/bugbarn/internal/tracing"
 )
@@ -179,7 +181,12 @@ func (s *Spool) Forward(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !bodyHasIngestShape(r.URL.Path, r.Header.Get("Content-Type"), body) {
-		ingestresp.WriteDropped(w, ingestresp.DropMalformed)
+		drop := ingestresp.DropMalformed
+		if kindForPath(r.URL.Path) == queue.KindEvent {
+			drop = ingest.EventDrop(normalize.Validate(body))
+		}
+		ingest.RecordReceived(r.Context(), drop.Reason)
+		ingestresp.WriteDropped(w, drop)
 		return
 	}
 

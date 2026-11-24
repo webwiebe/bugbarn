@@ -23,7 +23,7 @@ func newTestSpool(t *testing.T, writerURL string) *Spool {
 
 func spoolRecord(t *testing.T, sf *Spool) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"message":"boom"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	sf.Forward(rec, req)
@@ -259,5 +259,32 @@ func TestSpoolForwarder_Drain_KeepsRecordsTheWriterRefuses(t *testing.T) {
 	}
 	if records, _, err := readRecords(sf.path, offset); err != nil || len(records) != 1 {
 		t.Errorf("records past the cursor = %d, err %v; want 1", len(records), err)
+	}
+}
+
+// An event body with nothing to report is refused with its own reason before it
+// is spooled (#289); one with only a body is spooled.
+func TestSpoolForwarder_RefusesAnEmptyEventBody(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{`{}`, `null`, `{"exception":{}}`, `{"level":"error"}`} {
+		sf := newTestSpool(t, "http://localhost:0")
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		sf.Forward(rec, req)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"reason":"empty_event"`) {
+			t.Errorf("%s: status %d body %s, want 400 empty_event", body, rec.Code, rec.Body.String())
+		}
+		if sf.Pending() != 0 {
+			t.Errorf("%s: %d pending, want 0", body, sf.Pending())
+		}
+	}
+	sf := newTestSpool(t, "http://localhost:0")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"body":"x"}`))
+	rec := httptest.NewRecorder()
+	sf.Forward(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Errorf("a body-only event: status %d, want 202", rec.Code)
 	}
 }
