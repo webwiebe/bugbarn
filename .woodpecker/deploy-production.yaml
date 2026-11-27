@@ -146,6 +146,20 @@ steps:
             echo 'ERROR: a :local image is left in the rendered manifests'
             exit 1
           fi
+          # One-off for the move to ssd2 (k3s-infra#213): while the live writer
+          # still mounts the layer7 claim, the apply waits (up to 20 minutes)
+          # for the ConfigMap ssd2-move-ready, which k3s-infra creates once the
+          # data copy is verified. Without it the new writer would start on an
+          # empty ssd2 directory. After the move the writer mounts the ssd2
+          # claim and this block does nothing; remove it in a later change.
+          if kubectl -n $NAMESPACE get deploy bugbarn-writer -o jsonpath='{.spec.template.spec.volumes[*].persistentVolumeClaim.claimName}' | grep -qx 'bugbarn-data'; then
+            echo 'writer still on the layer7 claim: waiting for configmap ssd2-move-ready'
+            for i in \$(seq 1 120); do
+              kubectl -n $NAMESPACE get configmap ssd2-move-ready >/dev/null 2>&1 && break
+              sleep 10
+            done
+            kubectl -n $NAMESPACE get configmap ssd2-move-ready >/dev/null
+          fi
           kubectl apply -k /tmp/bugbarn-deploy/deploy/k8s/production
           kubectl -n $NAMESPACE delete deployment/bugbarn --ignore-not-found=true
           # 600s, not 180s: the writer runs schema migrations at startup, and a
