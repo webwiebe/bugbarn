@@ -13,7 +13,7 @@ manifests and this file.
 
 | | testing | staging | production |
 |---|---|---|---|
-| Host | k3s1 | k3s1 | layer7 (`layer7-prod`) |
+| Host | k3s1 | k3s1 | ssd2 for the data pods, layer7 (`layer7-prod`) for Redis and ingress |
 | Shape | monolith `deployment/bugbarn` | writer + readers + Redis | writer + readers + Redis |
 | Readers | none | 2, HPA to 5 | 2, HPA to 6 |
 | Reader spool | none | none (synchronous proxy) | `emptyDir` 512Mi at `BUGBARN_SPOOL_DIR` |
@@ -23,10 +23,17 @@ The role comes from `BUGBARN_MODE` (`writer`, `reader`, unset for the monolith);
 `internal/ingest/CLAUDE.md` for what each role runs.
 
 - **Writer** (`writer-deployment.yaml`): `replicas: 1`, `strategy: Recreate`, mounts PVC
-  `bugbarn-data` read-write. SQLite allows one writer and the PVC is `ReadWriteOnce`;
+  `bugbarn-data-ssd2` read-write. SQLite allows one writer and the PVC is `ReadWriteOnce`;
   a RollingUpdate would start a second writer against the same file. Keep it at 1 and
   Recreate. The startupProbe allows 600s because migrations on the production database
   (over 10 GB) take minutes, and the pipelines wait 600s on the writer rollout to match.
+- **Production volumes** (k3s-infra#213): the writer, readers, web and the settings-snapshot
+  CronJob mount `bugbarn-data-ssd2` and `bugbarn-packages-ssd2` (StorageClass `ssd2-local`,
+  Retain). k3s-infra owns the claims, so `kustomization.yaml` has no `pvc.yaml`. Every pod that
+  mounts them carries the toleration `node-role.wiebe.xyz/remote=true:NoSchedule` and the
+  selector `topology.wiebe.xyz/link: wan`; a pod without both stays Pending. The old
+  `bugbarn-data` and `bugbarn-packages` claims on layer7 stay untouched until the owner
+  deletes them. Redis keeps no volume and stays on layer7.
 - **Reader** (`reader-deployment.yaml`): RollingUpdate with `maxUnavailable: 0`, mounts
   the same PVC `readOnly`, forwards writes to `http://bugbarn-writer:8080`. The HPA
   scales on 60% CPU. In production `terminationGracePeriodSeconds: 75` must stay above

@@ -38,6 +38,15 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          # The claim lives on ssd2 (k3s-infra#213); without the toleration and
+          # the selector this pod stays Pending.
+          nodeSelector:
+            topology.wiebe.xyz/link: wan
+          tolerations:
+            - key: node-role.wiebe.xyz/remote
+              operator: Equal
+              value: "true"
+              effect: NoSchedule
           imagePullSecrets:
             - name: ghcr-secret
           initContainers:
@@ -124,6 +133,6 @@ spec:
           volumes:
             - name: bugbarn-data
               persistentVolumeClaim:
-                claimName: bugbarn-data
+                claimName: bugbarn-data-ssd2
             - name: shared
               emptyDir: {}

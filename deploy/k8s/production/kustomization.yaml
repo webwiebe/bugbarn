@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: bugbarn-production
 resources:
   - namespace.yaml
-  - pvc.yaml
   - writer-deployment.yaml
   - writer-service.yaml
   - reader-deployment.yaml

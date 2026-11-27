@@ -15,8 +15,15 @@ spec:
         app.kubernetes.io/name: bugbarn-web
         app.kubernetes.io/environment: production
     spec:
+      # ssd2 holds the data volumes (k3s-infra#213). The node is tainted for
+      # remote workloads and labelled for the WAN link.
       nodeSelector:
-        kubernetes.io/hostname: layer7-prod
+        topology.wiebe.xyz/link: wan
+      tolerations:
+        - key: node-role.wiebe.xyz/remote
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
       imagePullSecrets:
         - name: ghcr-secret
       containers:
@@ -46,4 +53,4 @@ spec:
       volumes:
         - name: bugbarn-packages
           persistentVolumeClaim:
-            claimName: bugbarn-packages
+            claimName: bugbarn-packages-ssd2
