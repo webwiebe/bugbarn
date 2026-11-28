@@ -139,6 +139,27 @@ func TestProjectsArchiveAndUnarchive(t *testing.T) {
 	}
 }
 
+func TestProjectsArchivedListsOnlyArchived(t *testing.T) {
+	h := newHarness(t)
+	inEmptyDir(t)
+	ctx := context.Background()
+	for _, slug := range []string{"quiet-app", "live-app"} {
+		if _, err := h.Store.CreateProject(ctx, slug, slug); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := runCmd(t, cmdProjects, "--archive", "quiet-app"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCmd(t, cmdProjects, "--archived")
+	if err != nil {
+		t.Fatalf("archived: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "quiet-app") || strings.Contains(out, "live-app") {
+		t.Errorf("--archived must list quiet-app only:\n%s", out)
+	}
+}
+
 func TestProjectsMergeDryRunChangesNothing(t *testing.T) {
 	h := newHarness(t)
 	inEmptyDir(t)

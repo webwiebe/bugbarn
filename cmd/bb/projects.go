@@ -13,6 +13,9 @@ func cmdProjects(args []string) error {
 	if wantsMerge(args) {
 		return cmdProjectsMerge(args)
 	}
+	if hasFlag(args, "archived") {
+		return cmdProjectsArchived(args)
+	}
 	if hasFlag(args, "archive") || hasFlag(args, "unarchive") {
 		return cmdProjectsArchive(args)
 	}

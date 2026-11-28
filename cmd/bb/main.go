@@ -126,6 +126,7 @@ Examples:
   bb projects --merge OLD --into NEW --dry-run       # report the counts, change nothing
   bb projects --archive SLUG         # archive a project quiet for 7 days (prints its last event time)
   bb projects --unarchive SLUG       # bring an archived project back
+  bb projects --archived             # list the archived projects
   bb groups                          # list project groups
   bb issues --group bugbarn          # issues across all bugbarn-* projects
   bb apikeys                         # list API keys

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"net/url"
@@ -46,4 +47,46 @@ func cmdProjectsArchive(args []string) error {
 		return err
 	}
 	return writeRaw(data)
+}
+
+// cmdProjectsArchived implements `bb projects --archived`: the projects the
+// default list hides, each with its usage counts, so an archive can be checked
+// and a mistaken one brought back with --unarchive.
+func cmdProjectsArchived(args []string) error {
+	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
+	fs.Bool("archived", false, "list the archived projects")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	data, err := client.get("/api/v1/projects?usage=true&include_archived=true")
+	if err != nil {
+		return err
+	}
+	var resp struct {
+		Projects []json.RawMessage `json:"projects"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return err
+	}
+	archived := make([]json.RawMessage, 0, len(resp.Projects))
+	for _, raw := range resp.Projects {
+		var p struct {
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return err
+		}
+		if p.Status == "archived" {
+			archived = append(archived, raw)
+		}
+	}
+	out, err := json.Marshal(map[string]any{"projects": archived})
+	if err != nil {
+		return err
+	}
+	return writeRaw(out)
 }
