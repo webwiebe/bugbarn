@@ -35,3 +35,22 @@ func TestMergeIntoRefusesBadEnvironmentNames(t *testing.T) {
 		t.Error("an empty name and a plain name must pass")
 	}
 }
+
+func TestMergeReportPassesDryRunAndRefusesBadEnvironment(t *testing.T) {
+	repo := &fakeRepo{}
+	rep, err := New(repo, nil).MergeReport(context.Background(), "a", "b", "dev", true)
+	if err != nil || !rep.DryRun || !repo.mergeDry || repo.mergeEnv != "dev" {
+		t.Fatalf("report %+v, err %v, repo %+v", rep, err, repo)
+	}
+	if _, err := New(repo, nil).MergeReport(context.Background(), "a", "b", "bad env", false); err == nil {
+		t.Error("a bad environment must be refused")
+	}
+	repo.err = errors.New("boom")
+	if _, err := New(repo, nil).MergeReport(context.Background(), "a", "b", "", false); err == nil {
+		t.Error("a repo error must surface")
+	}
+	repo.err = nil
+	if _, err := New(repo, nil).MergeReport(context.Background(), "a", "b", "", false); err != nil {
+		t.Errorf("real merge: %v", err)
+	}
+}

@@ -189,11 +189,13 @@ func (s *Server) mergeProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "target is required", http.StatusBadRequest)
 		return
 	}
-	if err := s.projects.MergeInto(r.Context(), sourceSlug, req.Target, req.Environment); err != nil {
+	dryRun := r.URL.Query().Get("dry_run") == "true"
+	rep, err := s.projects.MergeReport(r.Context(), sourceSlug, req.Target, req.Environment, dryRun)
+	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true})
+	writeJSON(w, map[string]any{"ok": true, "report": rep})
 }
 
 // --- Group endpoints ---
