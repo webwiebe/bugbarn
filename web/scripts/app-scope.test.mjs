@@ -14,11 +14,33 @@ const header = (call, name) => (call.init.headers instanceof win.Headers || type
 test("the picker opens with every project and filters by name", async () => {
   click(id("project-picker-btn"));
   assert.equal(id("project-picker-dropdown").hidden, false);
-  assert.deepEqual(qa("#project-picker-list [data-pick-project]").map((b) => b.dataset.pickProject), ["__all", "web", "api"]);
+  assert.deepEqual(qa("#project-picker-list [data-pick-project]").map((b) => b.dataset.pickProject), ["__all", "api", "web"]);
   type(id("project-picker-filter"), "AP");
   assert.deepEqual(qa("#project-picker-list [data-pick-project]").map((b) => b.dataset.pickProject), ["api"]);
   type(id("project-picker-filter"), "nomatch");
-  assert.match(id("project-picker-list").textContent, /No matches/);
+  assert.match(id("project-picker-list").textContent, /No projects match/);
+});
+
+test("a star puts a project under Favourites, and the choice survives a reload of the list", () => {
+  win.localStorage.removeItem("bugbarn_favourite_projects");
+  if (id("project-picker-dropdown").hidden) click(id("project-picker-btn"));
+  type(id("project-picker-filter"), "");
+  click(q("#project-picker-list [data-favourite='web']"));
+  const rows = qa("#project-picker-list .picker-section-label, #project-picker-list [data-pick-project]");
+  assert.deepEqual(rows.map((r) => r.dataset.pickProject ?? r.textContent), ["__all", "Favourites", "web", "Projects", "api"]);
+  assert.equal(q("#project-picker-list [data-favourite='web']").getAttribute("aria-pressed"), "true");
+  assert.equal(win.localStorage.getItem("bugbarn_favourite_projects"), '["web"]');
+  click(q("#project-picker-list [data-favourite='web']"));
+  assert.equal(win.localStorage.getItem("bugbarn_favourite_projects"), "[]");
+  assert.equal(id("project-picker-dropdown").hidden, false);
+});
+
+test("Enter in the search field picks the first match", async () => {
+  type(id("project-picker-filter"), "we");
+  key(id("project-picker-filter"), "Enter");
+  await settleAll();
+  assert.equal(id("project-picker-dropdown").hidden, true);
+  assert.equal(win.localStorage.getItem("bugbarn_project"), "web");
 });
 
 test("picking a project scopes issue requests with the project header and loads environments", async () => {
@@ -78,6 +100,19 @@ test("groups appear in the picker once settings loaded them, and picking one set
   assert.match(id("project-picker-btn").textContent, /Frontend/);
   await go("#/issues");
   assert.equal(header(lastIssueCall(), "X-BugBarn-Group"), "frontend");
+});
+
+test("the mobile sheet sorts projects, stars them and says when nothing matches", () => {
+  win.localStorage.removeItem("bugbarn_favourite_projects");
+  click(id("scope-btn"));
+  assert.deepEqual(qa("#scope-sheet-body [data-scope-project]").map((b) => b.dataset.scopeProject).filter((v) => v !== "__all"), ["api", "web"]);
+  click(q("#scope-sheet-body [data-favourite='web']"));
+  assert.deepEqual(qa("#scope-sheet-body [data-scope-project]").map((b) => b.dataset.scopeProject).filter((v) => v !== "__all"), ["web", "api"]);
+  assert.match(q("#scope-sheet-body").textContent, /Favourites/);
+  type(q("#scope-sheet-body .scope-sheet-filter"), "nomatch");
+  assert.match(q("#scope-sheet-body").textContent, /No projects match/);
+  win.localStorage.removeItem("bugbarn_favourite_projects");
+  click(id("scope-close"));
 });
 
 test("the scope sheet lists groups and projects, filters, and selects a project", async () => {

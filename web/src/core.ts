@@ -13,6 +13,7 @@ export const sidebarKey = "bugbarn_sidebar";
 export const projectKey = "bugbarn_project";
 export const envKey = "bugbarn_env";
 export const groupKey = "bugbarn_group";
+export const favouritesKey = "bugbarn_favourite_projects";
 export const notifiedRegressionKey = "bugbarn_notified_regressions";
 
 export type OIDCRuntime = {
