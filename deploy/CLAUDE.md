@@ -106,6 +106,11 @@ status on main's head commit; fix a failure, no skips and no quarantine. It sign
 cron-only `e2e_testing_password`). A cron entry named `revocation-check` may remain from a
 one-off run: it matches no workflow and starts no pipeline.
 
+`secret-scan-nightly` is a cron that runs `scripts/secret-scan.sh history` over every commit on main. The
+`secret-scan` step in `ci.yaml` scans only the commits a push added (`push <before>`; a full scan took 10 to
+19 minutes per merge, all of it inside gitleaks) and the commits of a PR. A red nightly run is a leak or a
+scan that could not run; fix it like the ci step, no skips.
+
 `ghcr-prune` is a daily cron. `.github/workflows/` still holds mirrors; only `ci.yml` and
 `deploy-site.yml` are enabled on GitHub, and the deploy chain there is disabled.
 

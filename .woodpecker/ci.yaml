@@ -325,11 +325,13 @@ steps:
         pnpm dlx jscpd@5.4.2 .
 
   # Secret scan (gitleaks 8.30.1, scripts/secret-scan.sh). Pull requests scan their
-  # own commits, pushes to main and manual runs scan all history. Enforced: a finding
-  # or growth of .gitleaksignore fails the step. A scan that cannot run (shallow clone, missing gitleaks, scanned
-  # fewer commits than the floor) fails the step in both modes. Known hits in
-  # history are fingerprints in .gitleaksignore, which may only shrink. The wrapper
-  # tests itself against a planted fake secret first.
+  # own commits, a push to main scans the commits it added, and the nightly
+  # secret-scan-nightly cron and manual runs scan all history (a full scan took 10 to
+  # 19 minutes on a main push, nearly all of it inside gitleaks). Enforced: a finding
+  # or growth of .gitleaksignore fails the step. A scan that cannot run (shallow clone,
+  # missing gitleaks, scanned fewer commits than the floor) fails the step in every
+  # mode. Known hits in history are fingerprints in .gitleaksignore, which may only
+  # shrink. The wrapper tests itself against a planted fake secret first.
   - name: secret-scan
     image: bash
     environment:
@@ -341,12 +343,17 @@ steps:
       - |
         set -euo pipefail
         bash scripts/tests/secret-scan.test.sh
-        # The clone is shallow; the scan reads every commit and the PR base.
+        # The default clone is complete, so nothing is fetched unless it came out
+        # shallow. A pull request needs its target branch to diff against.
         git remote set-url origin "https://wiebe:$GITEA_READ_TOKEN@git.nijmegen.wiebe.xyz/webwiebe/bugbarn.git"
         git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
-        git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=2000 origin
-        if [ "${CI_PIPELINE_EVENT:-}" = pull_request ]; then
-          bash scripts/secret-scan.sh diff "origin/$CI_COMMIT_TARGET_BRANCH"
-        else
-          bash scripts/secret-scan.sh history
+        if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+          git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=2000 origin
+        elif [ "${CI_PIPELINE_EVENT:-}" = pull_request ]; then
+          git fetch --no-tags origin "+refs/heads/$CI_COMMIT_TARGET_BRANCH:refs/remotes/origin/$CI_COMMIT_TARGET_BRANCH"
         fi
+        case "${CI_PIPELINE_EVENT:-}" in
+          pull_request) bash scripts/secret-scan.sh diff "origin/$CI_COMMIT_TARGET_BRANCH" ;;
+          push) bash scripts/secret-scan.sh push "${CI_PREV_COMMIT_SHA:-}" ;;
+          *) bash scripts/secret-scan.sh history ;;
+        esac

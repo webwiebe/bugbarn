@@ -21,6 +21,7 @@ keychain-free `DOCKER_CONFIG` trick all work unchanged.
 | `tag-check.yaml` | tag | `tag-check.yml` |
 | `ghcr-prune.yaml` | cron `ghcr-prune` (daily) | new: deletes GHCR versions older than 7 days |
 | `e2e-nightly.yaml` | cron `e2e-nightly` (daily 01:00 UTC) | new: runs the `web/e2e` specs against testing |
+| `secret-scan-nightly.yaml` | cron `secret-scan-nightly` (daily) | new: gitleaks over all history; a push to main scans only the commits it added |
 | `binary-release.yaml` | push main, manual | `binary-release.yml` (GitHub Releases + Homebrew tap + rapid-root APT dispatch) |
 
 ### Still on GitHub Actions (intentionally)

@@ -4,7 +4,12 @@
 #
 # Usage:
 #   scripts/secret-scan.sh diff <base-ref>   # commits in <base-ref>..HEAD (pull requests)
-#   scripts/secret-scan.sh history           # every commit reachable from HEAD (main, tags)
+#   scripts/secret-scan.sh push [<before>]   # commits a push to main added: <before>..HEAD
+#   scripts/secret-scan.sh history           # every commit reachable from HEAD (nightly, manual runs)
+#
+# push mode scans <before>..HEAD when <before> is a commit that is an ancestor of HEAD
+# and not HEAD itself, and otherwise HEAD^1..HEAD (everything a merge brought in). The
+# full history scan stays on the nightly cron, so a gap here is closed within a day.
 #
 # Mode, set by the caller in SECRET_SCAN_MODE (default report):
 #   report   findings are printed and annotated, the script exits 0.
@@ -47,8 +52,9 @@ case "$MODE" in report | enforce) ;; *) die "SECRET_SCAN_MODE must be report or 
 kind="${1:-}"
 case "$kind" in
   diff) base="${2:-}"; [ -n "$base" ] || die "diff needs a base ref" ;;
+  push) base="" ;;
   history) base="" ;;
-  *) die "usage: secret-scan.sh diff <base-ref> | history" ;;
+  *) die "usage: secret-scan.sh diff <base-ref> | push [<before>] | history" ;;
 esac
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository"
@@ -83,7 +89,18 @@ run_gitleaks() {
 [ "$(git rev-parse --is-shallow-repository)" = "false" ] ||
   die "shallow clone: history is incomplete (checkout needs fetch-depth: 0)"
 
-if [ "$kind" = diff ]; then
+if [ "$kind" = push ]; then
+  before="${2:-}"
+  if [ -n "$before" ] && git rev-parse --verify --quiet "$before^{commit}" >/dev/null &&
+    git merge-base --is-ancestor "$before" HEAD &&
+    [ "$(git rev-parse "$before^{commit}")" != "$(git rev-parse HEAD)" ]; then
+    base=$(git rev-parse "$before^{commit}")
+  else
+    base=$(git rev-parse --verify --quiet "HEAD^1") || die "push: no usable <before> and HEAD has no parent"
+  fi
+fi
+
+if [ "$kind" != history ]; then
   range="$base..HEAD"
   git rev-parse --verify --quiet "$base^{commit}" >/dev/null || die "base ref '$base' not found"
   floor=1
@@ -97,7 +114,7 @@ expected=$(git rev-list --count "$range" 2>/dev/null) || die "cannot list commit
 
 # Ignore-list shrink check (pull requests only). New fingerprints are violations.
 grown=0
-if [ "$kind" = diff ] && git cat-file -e "$base:$IGNORE_FILE" 2>/dev/null; then
+if [ "$kind" != history ] && git cat-file -e "$base:$IGNORE_FILE" 2>/dev/null; then
   added=$(comm -13 \
     <(git show "$base:$IGNORE_FILE" | grep -v '^#' | grep -v '^$' | sort -u) \
     <(grep -v '^#' "$IGNORE_FILE" 2>/dev/null | grep -v '^$' | sort -u))

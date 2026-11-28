@@ -87,6 +87,20 @@ case "$OUT" in *"$VAL"*|*"$SEED"*) fail=$((fail + 1)); echo "FAIL output leaks a
 echo more >> "$R/a.txt"; commit "$R" "clean change"
 run "$R" enforce diff HEAD~1;        check "diff, enforce: clean range passes" 0 "$RC"
 
+# ---- push mode scans only what the push added; the leak sits before that range
+run "$R" enforce push "$BASE_CLEAN"; check "push, enforce: before the leak, the leak is in range and fails" 1 "$RC"
+run "$R" enforce push HEAD~1;        check "push, enforce: clean added commit passes" 0 "$RC"
+run "$R" enforce push;               check "push, enforce: no before falls back to HEAD^1 and passes" 0 "$RC"
+run "$R" enforce push "$(cd "$R" && git rev-parse HEAD)"
+check "push, enforce: before equal to HEAD falls back to HEAD^1" 0 "$RC"
+run "$R" enforce push 0123456789abcdef0123456789abcdef01234567
+check "push, enforce: unknown before falls back to HEAD^1" 0 "$RC"
+RP=$(new_repo pushleak)
+echo "token=$TOKEN" > "$RP/new-leak.env"
+commit "$RP" "add a leak in the newest commit"
+run "$RP" enforce push;              check "push, enforce: a leak in the newest commit fails" 1 "$RC"
+case "$OUT" in *"$TOKEN"*) fail=$((fail + 1)); echo "FAIL push output leaks the secret value" ;; *) pass=$((pass + 1)); echo "ok   push output never shows the secret value" ;; esac
+
 # ---- the ignore list takes known history hits and can only shrink
 FP=$(cd "$R" && git log --all --format=%H -n 1 --diff-filter=A -- leak.env)":leak.env:github-pat:1"
 echo "$FP" > "$R/.gitleaksignore"; commit "$R" "baseline known hit"
